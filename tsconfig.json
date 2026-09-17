@@ -1,0 +1,60 @@
+{
+  "compilerOptions": {
+    "lib": [
+      "ESNext",
+      "DOM"
+    ],
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "@opentui/react",
+    "strict": true,
+    "skipLibCheck": true,
+    "noUncheckedIndexedAccess": true,
+    "allowImportingTsExtensions": true,
+    "types": [
+      "bun"
+    ],
+    "paths": {
+      "@vimex/conversation": [
+        "./packages/conversation/src/index.ts"
+      ],
+      "@vimex/transcript": [
+        "./packages/transcript/src/index.ts"
+      ],
+      "@vimex/composer": [
+        "./packages/composer/src/index.ts"
+      ],
+      "@vimex/interaction": [
+        "./packages/interaction/src/index.ts"
+      ],
+      "@vimex/approvals": [
+        "./packages/approvals/src/index.ts"
+      ],
+      "@vimex/workbench": [
+        "./packages/workbench/src/index.ts"
+      ],
+      "@vimex/ui-opentui-react": [
+        "./packages/ui-opentui-react/src/index.tsx"
+      ],
+      "@vimex/codex-app-server": [
+        "./packages/codex-app-server/src/index.ts"
+      ],
+      "@vimex/platform-node": [
+        "./packages/platform-node/src/index.ts"
+      ],
+      "@vimex/herdr": [
+        "./plugins/herdr/src/index.ts"
+      ]
+    },
+    "noEmit": true
+  },
+  "include": [
+    "apps",
+    "packages",
+    "plugins",
+    "tests",
+    "scripts"
+  ]
+}

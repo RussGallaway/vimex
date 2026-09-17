@@ -1,0 +1,31 @@
+{
+  "name": "vimex",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "plugins/*"
+  ],
+  "scripts": {
+    "dev": "bun run apps/tui/src/main.tsx",
+    "start": "bun run apps/tui/src/main.tsx",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "check": "bun run typecheck && bun test",
+    "generate:codex": "bun run scripts/generate-codex-types.ts"
+  },
+  "dependencies": {
+    "@opentui/core": "0.5.11",
+    "@opentui/keymap": "0.5.11",
+    "@opentui/react": "0.5.11",
+    "react": "19.3.0",
+    "zustand": "5.0.15"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.2",
+    "@types/react": "19.3.0",
+    "typescript": "7.0.2"
+  }
+}
