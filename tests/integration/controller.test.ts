@@ -272,7 +272,11 @@ test("controlled restart rehydrates the active thread and preserves drafts witho
   await h.controller.initialize("/tmp")
   h.controller.changeDraft("Keep this draft", 4)
   let restarts = 0
-  h.backend.restart = async () => { restarts++ }
+  h.backend.restart = async () => {
+    restarts++
+    h.emit({ type: "disconnected", message: "Restarting Codex app server", reason: "restart" })
+    expect(h.controller.getSnapshot().connection).toBe("connecting")
+  }
   h.emit({ type: "disconnected", message: "Server exited" })
   h.controller.restart()
   h.controller.restart()

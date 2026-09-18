@@ -43,7 +43,15 @@ with tempfile.TemporaryDirectory(prefix='vimex-side-') as temporary:
         assert 'SIDE · focused' in view(), 'New side was not focused'
     checks=[]
     try:
-        wait('fixture-model');send(b'i');send(b'Keep implementing');send(b'\r');wait('Parent progress')
+        wait('fixture-model')
+        command('restart')
+        deadline=time.monotonic()+10
+        while len(calls('initialize'))<2 or not calls('thread/resume'):
+            pump(.1)
+            if time.monotonic()>deadline:raise AssertionError('Restart did not reconnect and resume')
+        wait('connected')
+        checks.append('restart-reconnects-and-resumes')
+        send(b'i');send(b'Keep implementing');send(b'\r');wait('Parent progress')
         send(b'/side');send(b'\r');wait('Side chat 1')
         assert len(calls('thread/fork'))==1
         assert_right_pane('Side chat 1')

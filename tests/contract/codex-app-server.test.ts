@@ -548,7 +548,7 @@ describe("Codex gateway lifecycle", () => {
     await tick()
     expect(transports).toHaveLength(2)
     expect(await oldRequestOutcome).not.toBe("resolved")
-    expect(events).toContainEqual({ type: "disconnected", message: "Restarting Codex app server" })
+    expect(events).toContainEqual({ type: "disconnected", message: "Restarting Codex app server", reason: "restart" })
     expect(events).toContainEqual({ type: "approval.resolved", id: "number:31" })
     await expect(gateways.approvals.resolveApproval("number:31", "accept")).rejects.toThrow("no longer pending")
 
@@ -556,6 +556,9 @@ describe("Codex gateway lifecycle", () => {
     transports[1]!.receive({ id: 1, result: initializeResult })
     await Promise.all([firstRestart, sameRestart])
     expect(transports[1]!.sent[1]).toEqual({ method: "initialized" })
+    expect(events.filter(event => event.type === "disconnected")).toEqual([
+      { type: "disconnected", message: "Restarting Codex app server", reason: "restart" },
+    ])
 
     const beforeOldEvent = events.length
     transports[0]!.receive({ method: "warning", params: { message: "stale generation" } })

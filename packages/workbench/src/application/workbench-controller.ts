@@ -289,6 +289,8 @@ export class VimexController implements WorkbenchActions {
       case "approval": this.dispatch({ type: "approval.received", approval: event.approval }); break
       case "approval.resolved": this.dispatch({ type: "approval.resolved", approvalId: event.id }); break
       case "disconnected": {
+        // Restart already invalidated the old runtime and owns this connecting state.
+        if (event.reason === "restart" && this.restartPending) break
         this.historyNavigation = undefined
         this.runtimeEpoch++
         this.navigationRevision++

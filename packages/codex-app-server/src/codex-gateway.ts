@@ -49,9 +49,11 @@ export function createCodexGateways(
     if (closed) throw new Error("Codex runtime connection is closed")
     if (restartPromise) return restartPromise
     const operation = (async () => {
-      publish({ type: "disconnected", message: "Restarting Codex app server" })
+      publish({ type: "disconnected", message: "Restarting Codex app server", reason: "restart" })
       for (const event of approvals.invalidatePending()) publish(event)
       const previous = client
+      // Its intentional shutdown must not invalidate the replacement connection.
+      detachClient()
       try { await previous.close() }
       catch (error) { publish({ type: "notice", message: `Failed to close previous Codex app server: ${String(error)}` }) }
       finally { detachClient() }

@@ -12,7 +12,7 @@ export type RuntimeEvent =
   | { type: "metadata"; threadId: ThreadId; patch: Partial<Omit<ThreadSummary, "id">> }
   | { type: "approval"; approval: Approval }
   | { type: "approval.resolved"; id: string }
-  | { type: "disconnected"; message: string }
+  | { type: "disconnected"; message: string; reason?: "restart" }
   | { type: "notice"; message: string }
 
 export interface RuntimeConnection {
