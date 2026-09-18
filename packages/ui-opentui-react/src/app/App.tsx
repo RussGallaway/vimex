@@ -421,7 +421,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   const bindingContext: VimBindingContext = {
     interaction, transcript, composer, controller, countRef, textareaRef, scrollRef,
     toggleComposer: () => { setComposerExpanded(value => !value); controller.dispatchInteraction({ type: "focus.set", surface: "composer" }) },
-    distinctControlI, currentTitle: summary?.title,
+    distinctControlI,
     foldableItemIds: items.filter(item => item.kind !== "assistant" && item.kind !== "user").map(item => item.id),
     submitComposer: intent => composerSubmitRef.current?.(intent),
     countedMotion, dispatchMotion, runComposerKey, beginVisual, openOverlay, scroll, enterVisibleTranscript,
@@ -508,7 +508,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
     <FullscreenShell paneLabel={paneLabel} title={summary?.title} parentTitle={parentTitle} connection={state.connection} working={activity.working} activityLabel={activityLabel} waiting={Boolean(pendingApproval || pendingQuestion)}
       notice={interactive ? <NoticeStrip message={state.error} /> : undefined}
       transcript={<TranscriptViewport items={items} state={transcript} interaction={interaction} syntax={syntax} scrollRef={scrollRef} onManualScroll={onManualScroll} />}
-      commandLine={interactive && !jumpActive && interaction.mode === "command" ? <CommandLine sessionIds={state.threadOrder} currentModel={summary?.model} models={state.availableModels} value={interaction.commandLine} inputRef={commandRef} controller={controller} onSubmit={(line) => {
+      commandLine={interactive && !jumpActive && interaction.mode === "command" ? <CommandLine currentTitle={summary?.title} sessionIds={state.threadOrder} currentModel={summary?.model} models={state.availableModels} value={interaction.commandLine} inputRef={commandRef} controller={controller} onSubmit={(line) => {
         commandHistoryRef.current = recordCommand(commandHistoryRef.current, line)
         controller.executeCommand(line)
       }} /> : undefined}

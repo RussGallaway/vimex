@@ -42,6 +42,25 @@ test("model argument completion uses the discovered catalog", () => {
   expect(commandCompletions(":model model-b", { models: ["model-a", "model-b"] })).toEqual([":model model-b"])
 })
 
+for (const surface of ["composer", "transcript"] as const) {
+  test(`leader rename from ${surface} shows the old title but types a replacement immediately`, async () => {
+    const h = await harness(surface)
+    try {
+      await h.keys(" ")
+      await h.keys("r")
+      const input = h.renderer.root.findDescendantById("command-line") as InputRenderable
+      expect(input.value).toBe("rename ")
+      expect(input.cursorOffset).toBe(7)
+      expect(h.captureCharFrame()).toContain("Current name: Commands")
+      await h.keys("New session")
+      expect(input.value).toBe("rename New session")
+      await act(async () => { h.mockInput.pressKey("RETURN"); await h.flush() })
+      expect(h.executed).toEqual(["rename New session"])
+      expect(h.workspace().composer.text).toBe("Keep my unfinished draft")
+    } finally { await h.close() }
+  })
+}
+
 test("colon autocomplete sits above command bar without changing or moving the draft", async () => {
   const h = await harness()
   try {

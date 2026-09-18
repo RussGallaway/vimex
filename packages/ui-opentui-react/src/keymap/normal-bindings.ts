@@ -16,7 +16,7 @@ export function normalBindings(ctx: VimBindingContext): UiBinding[] {
     { key: "<leader>a", cmd: () => ctx.openOverlay("approvals") },
     { key: "<leader>r", cmd: () => {
       ctx.controller.dispatchInteraction({ type: "mode.command" })
-      ctx.controller.dispatchInteraction({ type: "command.change", value: `rename ${ctx.currentTitle ?? ""}` })
+      ctx.controller.dispatchInteraction({ type: "command.change", value: "rename " })
     } },
     { key: "<leader>s", cmd: () => ctx.openOverlay("sessions") },
     { key: "<leader>q", cmd: () => ctx.openOverlay("questions") },

@@ -16,9 +16,12 @@ export function commandBody(value: string): string {
   return prompt === ":" ? value.replace(/^:/, "") : value.slice(1)
 }
 
-export function CommandLine(props: { value: string; models?: readonly AvailableModel[]; currentModel?: string; sessionIds?: readonly string[]; inputRef: RefObject<InputRenderable | null>; controller: VimexUiController; onSubmit(value: string): void }) {
+export function CommandLine(props: { value: string; currentTitle?: string; models?: readonly AvailableModel[]; currentModel?: string; sessionIds?: readonly string[]; inputRef: RefObject<InputRenderable | null>; controller: VimexUiController; onSubmit(value: string): void }) {
   useEffect(() => { const input = props.inputRef.current; if (input) input.cursorOffset = input.value.length }, [props.inputRef])
   const prompt = commandPrompt(props.value)
+  const parsedCommand = prompt === ":" ? parseCommand(props.value) : undefined
+  const renameHint = parsedCommand?.kind === "command" && parsedCommand.name === "rename" && props.currentTitle
+    ? `Current name: ${props.currentTitle}` : undefined
   const completionOptions = {
     models: props.models?.map(model => model.id),
     modelEfforts: Object.fromEntries(props.models?.map(model => [model.id, model.efforts]) ?? []),
@@ -64,7 +67,7 @@ export function CommandLine(props: { value: string; models?: readonly AvailableM
   }
   return <box id="command-bar" height={1} marginTop={1} flexShrink={0} flexDirection="row" paddingX={2} backgroundColor={emberTide.backgroundRaised}>
     {prompt === ":" ? <CommandCompletionDrawer choices={choices} selected={selected} prefix=":" id="command-completion-drawer"
-      hint={validation.query === props.value ? validation.message : "↑/↓ choose · tab complete · ctrl-p/n history"} /> : null}
+      hint={validation.query === props.value ? validation.message : renameHint ?? "↑/↓ choose · tab complete · ctrl-p/n history"} /> : null}
     <text flexShrink={0} fg={emberTide.ember}>{prompt}</text>
     <input id="command-line" ref={props.inputRef} flexGrow={1} flexShrink={1} minWidth={0} value={commandBody(props.value)} textColor={emberTide.text}
       cursorColor={emberTide.ember} backgroundColor={emberTide.backgroundRaised}

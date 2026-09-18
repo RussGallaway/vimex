@@ -152,7 +152,7 @@ From either pane in Normal mode, `ga` opens the agent picker, `[a` and `]a` cycl
 Up/Down and Ctrl-K/J continue to switch between composer and transcript within the focused pane. Escape retains mode cancellation and turn interruption; it does not close the side pane. Ctrl-O/Ctrl-I continue to navigate visit history.
 
 
-In Normal mode, `Space r` opens `:rename` with the focused session's current title ready to edit. `:rename New title` also renames directly. `t` follows the focused transcript tail from either composer or transcript without changing the draft. Insert mode still types a literal `t`.
+In Normal mode, `Space r` opens `:rename` with an empty name ready to type and the current title shown as a hint. `:rename New title` also renames directly. `t` follows the focused transcript tail from either composer or transcript without changing the draft. Insert mode still types a literal `t`.
 
 Side-pane window shortcuts: `Ctrl-W c` hides the side pane and keeps its agent running; `Ctrl-W q` quits and retires that side session. A later `/side` reopens a hidden side session, or creates a new one after quit.
 

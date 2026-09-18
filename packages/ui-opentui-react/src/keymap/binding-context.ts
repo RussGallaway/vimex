@@ -10,7 +10,6 @@ import type { movePoint } from "../transcript/layout"
 export type Motion = Parameters<typeof movePoint>[2]
 export type UiBinding = { key: string; cmd: () => unknown }
 export interface VimBindingContext {
-  currentTitle?: string
   distinctControlI?: boolean
   interaction: InteractionState
   transcript: TranscriptState
