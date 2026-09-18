@@ -18,6 +18,7 @@ This directory is the design authority for v1.
 - [diff-review.md](./diff-review.md) compares OpenCode diff behavior and the Vimex review direction.
 - [transcript-runtime.md](./transcript-runtime.md) defines compact activity presentation, streaming isolation, and the path to size-independent transcript windowing.
 - [transcript-runtime-research.md](./transcript-runtime-research.md) records the external research and reasoning behind the transcript runtime design.
+- [transcript-runtime-implementation.md](./transcript-runtime-implementation.md) tracks implementation order, exit criteria, measurements, and evidence.
 
 ## Document ownership
 
@@ -29,6 +30,8 @@ When documents overlap, use this precedence:
 4. `topology.md` owns source placement and import direction.
 5. `roadmap.md` owns implementation order.
 6. `decisions.md` records why a choice was made; it does not override the current specification.
+7. Specialized normative design documents refine these authorities for one subsystem without reversing their dependency or ownership rules.
+8. Implementation ledgers record execution status and evidence; they do not define architecture.
 
 ## Working definition
 

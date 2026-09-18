@@ -65,12 +65,50 @@ interface TranscriptFrame {
 
 interface TranscriptRuntime {
   update(input: TranscriptRuntimeInput): TranscriptFrame
+  getSnapshot(): TranscriptFrame
+  subscribe(listener: () => void): () => void
   reportMeasurements(batch: readonly BlockMeasurement[]): void
   resetLayout(reason: LayoutResetReason): void
 }
 ```
 
 Exact APIs may evolve during implementation. The ownership boundary may not.
+
+## Ownership and lifetime
+
+`VimexController` owns canonical conversation and semantic transcript state. Workbench retains one `TranscriptRuntime` for each stable presentation identity, such as the main pane or a side pane. The runtime is implemented in `@vimex/transcript`; ownership does not move its implementation into workbench.
+
+A presentation runtime:
+
+- may outlive a React mount or renderer replacement;
+- is bound to the thread currently displayed by that presentation;
+- performs a guarded full presentation rebuild when that thread identity changes;
+- retains a detached frame while its canonical thread continues to advance;
+- is disposed when the presentation is explicitly retired or the application shuts down.
+
+Two presentations may show the same canonical thread while holding different displayed revisions, follow modes, windows, and geometry caches. They share canonical conversation and semantic per-thread state; they never share mutable presentation frames.
+
+The runtime and its geometry are recoverable caches. Persisted semantic state can restore cursor, selection, folds, and logical anchor, but a process restart does not promise to restore an obsolete detached presentation revision.
+
+## Boundary contracts
+
+Data and commands cross the boundaries in one direction:
+
+```text
+workbench -> TranscriptRuntime.update(input)
+TranscriptRuntime -> cached TranscriptFrame snapshot -> React bridge
+React/OpenTUI -> BlockMeasurement batch -> TranscriptRuntime
+React input -> semantic command -> workbench
+```
+
+- Workbench supplies canonical revisions, semantic transcript state, presentation mode, viewport intent, and known damage.
+- `TranscriptRuntime` publishes referentially stable immutable snapshots. `getSnapshot()` returns the same object until selected frame data changes; `subscribe()` supports a thin external-store bridge.
+- The React bridge owns subscription cleanup, not runtime lifetime. It does not reproduce follow, detachment, damage, or windowing state in component state.
+- OpenTUI translates native layout observations into renderer-neutral `BlockMeasurement` values. The transcript package defines that value contract and never imports React, OpenTUI, or native renderables.
+- Measurement feedback can refine geometry and window planning, but cannot mutate canonical content, semantic positions, or displayed revision identity.
+- Schedulers and clocks used for ingress settlement or activity cadence are injected at their owning boundary so ordering and timing tests remain deterministic.
+
+This feedback path is not an authority cycle: canonical and semantic state flow toward presentation, while measurements update only disposable presentation knowledge.
 
 ## Invariants
 
@@ -138,6 +176,12 @@ packages/ui-opentui-react/src/transcript/
 ```
 
 Do not create a new package, a second store, or `clients/managers/engines/resources` directories. Those terms describe responsibilities, not required filesystem names.
+
+## Migration rule
+
+The current implementation keeps native measurement coordination in `use-transcript-layout.ts`. Stage 2 introduces `TranscriptRuntime` with a pass-through planner while continuing to materialize all blocks. Stage 3 moves native measurement extraction behind `measure-rendered-block.ts` and makes the runtime's block-local geometry the presentation cache.
+
+Move responsibility in tested vertical slices. The legacy hook and the runtime must never both own the same presentation revision, follow state, or geometry cache. Until a responsibility moves, the existing path remains authoritative; after it moves, remove or reduce the old path in the same coherent change.
 
 ## Staged implementation
 

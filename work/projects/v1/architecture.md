@@ -30,7 +30,7 @@ Owns threads, turns, conversation items, streaming lifecycles, parent-child rela
 
 ### Transcript
 
-Projects a conversation into an interactive logical document. It owns nodes, stable logical positions, cursor, selection, URL targets, Markdown source mappings, folds, viewport anchors, and unseen-output state.
+Projects a conversation into an interactive logical document. It owns nodes, stable logical positions, cursor, selection, URL targets, Markdown source mappings, folds, viewport anchors, and unseen-output state. It also defines the renderer-neutral transcript runtime, immutable presentation frames, damage vocabulary, and window-planning contracts.
 
 ### Composer
 
@@ -46,7 +46,7 @@ Owns pending server requests, correlation identifiers, decisions, and presentati
 
 ### Workbench
 
-Combines active-thread and workspace facts into presentation selectors: thread name, model, reasoning effort, context usage, cwd, branch, connection state, approvals, and unseen output.
+Combines active-thread and workspace facts into presentation selectors: thread name, model, reasoning effort, context usage, cwd, branch, connection state, approvals, and unseen output. It settles streaming ingress and retains one transcript-runtime instance for each stable presentation identity.
 
 ## Data flow
 
@@ -57,9 +57,11 @@ Codex notification
   -> wire decoder
   -> versioned wire-to-domain mapper
   -> ConversationEvent or ApprovalRequest
+  -> bounded conversation ingress
   -> domain reducer
-  -> transcript/workbench projector
-  -> application read model
+  -> transcript/workbench projection
+  -> per-presentation TranscriptRuntime
+  -> immutable TranscriptFrame
   -> OpenTUI React renderer
 ```
 
@@ -83,6 +85,8 @@ React components do not interpret Codex notifications and do not call JSON-RPC d
 |---|---|---|
 | Threads, turns, items, active turn | Conversation | Codex canonical; normalized local mirror |
 | Cursor, anchor, selection, folds | Transcript | Per-thread local state |
+| Displayed revision, damage, render window, block estimates | Per-presentation TranscriptRuntime, retained by Workbench | Process-local, recoverable cache |
+| Native cells and renderable measurements | OpenTUI adapter | Process-local, disposable |
 | Draft and pending submission | Composer | Per-thread local persistence |
 | Vim mode and focus | Interaction | Process-local |
 | Pending approval requests | Approvals | Process-local, correlated by request ID |
@@ -159,7 +163,9 @@ Compatibility policy:
 
 `ui-opentui-react` owns React and OpenTUI details. It uses OpenTUI Markdown, diff, textarea, scrollbox, clipboard, and keymap integrations but does not expose those types to domains.
 
-The UI subscribes to narrow selectors. Streaming a message should update the affected transcript node rather than rerendering unrelated history. Viewport culling must not make application state depend on render hooks.
+The UI subscribes to narrow selectors and cached immutable transcript frames. Streaming a message should update the affected render blocks rather than rerendering unrelated history. Viewport culling must not make application state depend on render hooks.
+
+OpenTUI measures native renderables and reports renderer-neutral block measurements to the transcript runtime. Measurement feedback may refine disposable presentation geometry, but it never owns canonical content, semantic positions, follow state, or displayed revision identity.
 
 ## Herdr boundary
 
@@ -180,18 +186,24 @@ Vimex remains runnable outside Herdr, which keeps terminal testing and developme
 V1 uses internal extension points for lifecycle observers, named commands, status segments, transcript renderers, external actions, and themes. A public plugin ABI is deferred until transcript and Vim semantics stabilize.
 
 
-## Transcript geometry and scrolling
+## Transcript runtime, geometry, and scrolling
+
+[Transcript runtime](./transcript-runtime.md) is the specialized normative design for this subsystem. [The implementation ledger](./transcript-runtime-implementation.md) records its staged migration and evidence.
 
 The transcript domain owns logical cursor, selection, and viewport anchors independently. `viewport.anchor` changes the reading anchor without moving the cursor or selection. The workbench forwards this intent without depending on terminal APIs.
 
-The React adapter's `transcript/use-transcript-layout.ts` owns measurement scheduling, thread-specific geometry, explicit tail attachment, and anchor restoration. `rendered-layout.ts` owns native measurement and invalidation. Scroll-only changes reuse immutable logical point maps with a screen translation; content, fold, and width changes invalidate geometry. Cursor movement uses row indexes rather than flattening all text points for each keypress.
+The target architecture retains one renderer-neutral `TranscriptRuntime` per stable presentation identity. The runtime owns displayed revision, follow or detached mode, damage, block-local measurement knowledge, and window planning. Workbench owns each runtime's lifetime; a thin React bridge subscribes to its cached frames. OpenTUI owns native measurement and rendering only.
+
+Before this migration is complete, `transcript/use-transcript-layout.ts` coordinates measurement scheduling, thread-specific geometry, explicit tail attachment, and anchor restoration, while `rendered-layout.ts` owns native measurement and invalidation. This is the current implementation rather than a second target authority. Stage 2 introduces the pass-through runtime; Stage 3 moves measurement extraction behind the OpenTUI adapter and removes or reduces the displaced legacy responsibility in the same vertical slice.
+
+Scroll-only changes reuse immutable block-local geometry with a screen translation; content, fold, and width changes produce explicit damage. Cursor movement uses row indexes rather than flattening all text points for each keypress. Unknown revision relationships fall back to a full presentation rebuild.
 
 Mouse-wheel deltas remain linear and detach native following immediately. Keyboard page jumps remain immediate; neither path introduces an animation timer. Only explicit tail attachment resumes following output. Native scroll state must not override the semantic viewport contract at the bottom edge.
 
-These are in-process feature modules, not new services or package boundaries. Rendering remains renderer-owned; logical navigation remains in the transcript package. Large cold reflows and complete end-to-end latency require separate profiling from warm scroll benchmarks.
+These are in-process feature modules, not new services or package boundaries. Native rendering remains renderer-owned; logical navigation and renderer-neutral presentation policy remain in the transcript package. Large cold reflows and complete end-to-end latency require separate profiling from warm scroll benchmarks.
 
 
 Diff geometry is an OpenTUI adapter concern. Canonical server patches remain in conversation records; native split columns and line-number gutters do not redefine transcript source order. Native layout integration depends on pinned OpenTUI internals and has renderer regression coverage; upgrades must revalidate those assumptions. Large-history initial Markdown settlement remains a known cold-path performance cost even though warm scroll translations reuse geometry.
 
 
-Geometry reuse is per item as well as per viewport. Item-local value fingerprints track semantic projection, fold state, content, wrapping, and local child layout. A fold translates unchanged sibling points into their new positions without mutating prior layouts. The cache uses renderable WeakMap ownership so replaced items can be collected. Whole-viewport scroll translation remains the fastest path. Estimated layout is only a startup fallback once native measurement is available.
+During migration, existing item-local fingerprints continue to track semantic projection, fold state, content, wrapping, and local child layout. The target cache is render-block-local and keyed by stable block identity, content revision, width, style revision, and fold state. A fold or changed live block reuses unaffected geometry without mutating prior frames. Whole-viewport scroll translation remains the fastest path. Estimated layout is a recoverable fallback until native measurement is available.

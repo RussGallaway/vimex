@@ -53,6 +53,8 @@ vimex/
 │   │       │   ├── copy-selection.ts
 │   │       │   ├── toggle-fold.ts
 │   │       │   └── open-url.ts
+│   │       ├── runtime.ts
+│   │       ├── window.ts
 │   │       └── index.ts
 │   │
 │   ├── composer/
@@ -85,6 +87,12 @@ vimex/
 │   │
 │   ├── approvals/
 │   ├── workbench/
+│   │   └── src/
+│   │       └── application/
+│   │           ├── conversation-ingress.ts
+│   │           ├── conversation-projector.ts
+│   │           ├── live-activity.ts
+│   │           └── workbench-controller.ts
 │   │
 │   ├── ui-opentui-react/
 │   │   └── src/
@@ -95,10 +103,14 @@ vimex/
 │   │       ├── transcript/
 │   │       │   ├── TranscriptViewport.tsx
 │   │       │   ├── TranscriptNode.tsx
+│   │       │   ├── TurnActivity.tsx
+│   │       │   ├── AgentActivity.tsx
 │   │       │   ├── MarkdownMessage.tsx
 │   │       │   ├── ToolCall.tsx
 │   │       │   ├── FileChange.tsx
 │   │       │   ├── ReasoningBlock.tsx
+│   │       │   ├── use-transcript-runtime.ts
+│   │       │   ├── measure-rendered-block.ts
 │   │       │   ├── SelectionOverlay.tsx
 │   │       │   └── NewOutputMarker.tsx
 │   │       ├── composer/
@@ -215,6 +227,8 @@ plugins/herdr -> application ports and read models
 6. Each package exports a narrow public surface from `index.ts`.
 7. Cross-package deep imports into another package's `src` are rejected by lint or a boundary script.
 8. Tests may use `testkit`; production packages may not.
+9. `transcript` defines renderer-neutral frame, window, damage, and measurement contracts; it never imports `workbench`, React, or OpenTUI.
+10. `workbench` owns transcript-runtime lifetimes. UI bridges subscribe through public contracts and may report measurements, but they do not own canonical or semantic transcript state.
 
 ## Volatility boundaries
 
@@ -226,6 +240,9 @@ plugins/herdr -> application ports and read models
 | Clipboard and URL behavior by OS or terminal | `platform-node` |
 | Vim grammar and command semantics | `interaction` |
 | Transcript selection and reflow invariants | `transcript` |
+| Transcript presentation revisions, damage, and windowing policy | `transcript` |
+| Streaming settlement and presentation lifetime | `workbench` |
+| Native block measurement and terminal rendering | `ui-opentui-react` |
 | Product presentation | UI themes and components |
 
 ## Package creation rule
@@ -233,9 +250,52 @@ plugins/herdr -> application ports and read models
 The tree describes ownership, not a demand for empty packages. Start with the vertical slice identified in the roadmap. Extract or fill each package as behavior appears, while preserving the dependency direction from the first commit.
 
 
-## Implemented transcript coordination
+## Current transcript coordination
 
-Within `packages/ui-opentui-react/src/transcript`, `use-transcript-layout.ts` coordinates frame measurement and reading-anchor restoration, `rendered-layout.ts` maps native cells, `layout.ts` provides visual-row navigation, and `TranscriptViewport.tsx` owns native scrolling input. `app/App.tsx` composes these capabilities rather than owning their geometry lifecycle. Pure semantic navigation and viewport anchors remain under `packages/transcript/src/application`.
+Before the transcript-runtime migration, `packages/ui-opentui-react/src/transcript/use-transcript-layout.ts` coordinates frame measurement and reading-anchor restoration, `rendered-layout.ts` maps native cells, `layout.ts` provides visual-row navigation, and `TranscriptViewport.tsx` owns native scrolling input. `app/App.tsx` composes these capabilities rather than owning their geometry lifecycle. Pure semantic navigation and viewport anchors remain under `packages/transcript/src/application`.
+
+This describes the current implementation, not the final ownership boundary. It remains valid until Stages 2 and 3 replace it incrementally; it must not become a second geometry or presentation authority alongside `TranscriptRuntime`.
+
+## Transcript runtime target topology
+
+[Transcript runtime](./transcript-runtime.md) is the normative design, [transcript runtime research](./transcript-runtime-research.md) records its evidence, and [the implementation ledger](./transcript-runtime-implementation.md) records delivery status.
+
+The package dependency direction is:
+
+```text
+apps/tui composition root
+  -> workbench
+       -> conversation
+       -> transcript
+  -> ui-opentui-react
+       -> workbench public APIs
+       -> transcript public contracts
+
+codex-app-server
+  -> ConversationEvent boundary
+```
+
+The runtime data and feedback path is:
+
+```text
+Codex notification
+  -> mapper
+  -> bounded workbench ingress
+  -> canonical ConversationState
+  -> semantic TranscriptState
+  -> presentation-owned TranscriptRuntime
+  -> immutable TranscriptFrame
+  -> React bridge
+  -> OpenTUI render
+       |
+       `-> block measurements -> TranscriptRuntime
+```
+
+Workbench owns a `TranscriptRuntime` for each stable presentation identity, such as the main pane or a side pane. A runtime may outlive a React mount and is disposed only when its presentation is retired or the application shuts down. Two presentations of one thread have independent follow mode, displayed revision, window, damage, and disposable geometry while sharing canonical conversation and semantic per-thread state.
+
+The React bridge subscribes to cached frame snapshots, sends semantic commands through workbench, and reports renderer measurements. Measurement feedback may change disposable layout knowledge; it may not mutate canonical conversation data or semantic positions. A thread change within a presentation causes a guarded full presentation rebuild rather than reusing revision relationships across threads.
+
+Migration proceeds by vertical slice: Stage 2 introduces a pass-through runtime and keeps all blocks materialized; Stage 3 moves native measurement behind `measure-rendered-block.ts`. At no point may the legacy layout hook and the runtime both claim authority for the same presentation revision or geometry cache.
 
 
 File-change presentation remains under `packages/ui-opentui-react/src/transcript/`: `FileChange.tsx` renders per-file patches, `diff-summary.ts` owns presentation counts and native language names, and `diff-layout.test.tsx` validates source-to-screen mapping through `rendered-layout.ts`. Server metadata mapping remains in the Codex adapter; no Git or filesystem responsibility is added to transcript rendering.
