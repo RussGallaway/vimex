@@ -13,8 +13,9 @@
     "start": "bun run apps/tui/src/main.tsx",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "check": "bun run typecheck && bun test",
-    "generate:codex": "bun run scripts/generate-codex-types.ts"
+    "check": "bun run typecheck && bun run boundaries && bun test",
+    "generate:codex": "bun run scripts/generate-codex-types.ts",
+    "boundaries": "bun run scripts/verify-boundaries.ts"
   },
   "dependencies": {
     "@opentui/core": "0.5.11",
