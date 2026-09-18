@@ -1,0 +1,202 @@
+import type { ItemId } from "@vimex/conversation"
+import { graphemes } from "../domain/markdown-source-map"
+import type { LogicalPoint, TranscriptSelection, TranscriptState } from "../domain/transcript-document"
+import { selectedText } from "./transcript-operations"
+
+export type NavigationDirection = "forward" | "backward"
+
+/** A half-open logical range. */
+export interface LogicalRange {
+  readonly from: LogicalPoint
+  readonly to: LogicalPoint
+}
+
+export interface SemanticBlock extends LogicalRange {
+  readonly itemId: ItemId
+}
+
+export interface UrlCandidate extends LogicalRange {
+  readonly itemId: ItemId
+  readonly url: string
+  readonly text: string
+}
+
+export type UrlCandidateScope = "all" | "current-item" | "selection"
+
+function orderedPoint(state: TranscriptState, point: LogicalPoint): readonly [number, number] {
+  return [state.order.indexOf(point.itemId), point.graphemeOffset]
+}
+
+function comparePoint(state: TranscriptState, left: LogicalPoint, right: LogicalPoint): number {
+  const [leftItem, leftOffset] = orderedPoint(state, left)
+  const [rightItem, rightOffset] = orderedPoint(state, right)
+  return leftItem === rightItem ? leftOffset - rightOffset : leftItem - rightItem
+}
+
+function orderedSelection(state: TranscriptState, selection: TranscriptSelection): readonly [LogicalPoint, LogicalPoint] {
+  return comparePoint(state, selection.anchor, selection.head) <= 0
+    ? [selection.anchor, selection.head]
+    : [selection.head, selection.anchor]
+}
+
+export function semanticBlocks(state: TranscriptState): readonly SemanticBlock[] {
+  const blocks: SemanticBlock[] = []
+  for (const itemId of state.order) {
+    const projection = state.projectionById[itemId]
+    if (!projection) continue
+    const parts = graphemes(projection.plain)
+    let blockFrom: number | undefined
+    let blockTo = 0
+    let lineFrom = 0
+    for (let cursor = 0; cursor <= parts.length; cursor++) {
+      if (cursor < parts.length && parts[cursor] !== "\n") continue
+      const nonBlank = parts.slice(lineFrom, cursor).some((part) => !/^\s$/u.test(part))
+      if (nonBlank) {
+        blockFrom ??= lineFrom
+        blockTo = cursor
+      } else if (blockFrom !== undefined) {
+        blocks.push({
+          itemId,
+          from: { itemId, graphemeOffset: blockFrom },
+          to: { itemId, graphemeOffset: blockTo },
+        })
+        blockFrom = undefined
+      }
+      lineFrom = cursor + 1
+    }
+    if (blockFrom !== undefined) {
+      blocks.push({
+        itemId,
+        from: { itemId, graphemeOffset: blockFrom },
+        to: { itemId, graphemeOffset: blockTo },
+      })
+    }
+  }
+  return blocks
+}
+
+export function currentSemanticBlock(state: TranscriptState, point = state.cursor): SemanticBlock | undefined {
+  if (!point) return undefined
+  const inItem = semanticBlocks(state).filter((block) => block.itemId === point.itemId)
+  return inItem.find((block) => point.graphemeOffset >= block.from.graphemeOffset && point.graphemeOffset < block.to.graphemeOffset)
+    ?? inItem.findLast((block) => block.from.graphemeOffset <= point.graphemeOffset)
+    ?? inItem[0]
+}
+
+/** Implements Vim's `^` against a logical source line, independent of terminal wrapping. */
+export function firstContentPoint(state: TranscriptState, point = state.cursor): LogicalPoint | undefined {
+  if (!point) return undefined
+  const projection = state.projectionById[point.itemId]
+  if (!projection) return undefined
+  const parts = graphemes(projection.plain)
+  let cursor = Math.min(Math.max(0, point.graphemeOffset), parts.length)
+  while (cursor > 0 && parts[cursor - 1] !== "\n") cursor--
+  while (cursor < parts.length && parts[cursor] !== "\n" && /^[ \t]$/u.test(parts[cursor]!)) cursor++
+  return { itemId: point.itemId, graphemeOffset: cursor }
+}
+
+export function moveBySemanticBlock(
+  state: TranscriptState,
+  direction: NavigationDirection,
+  point = state.cursor,
+  count = 1,
+): LogicalPoint | undefined {
+  if (!point) return undefined
+  const blocks = semanticBlocks(state)
+  if (blocks.length === 0) return undefined
+  let target: SemanticBlock | undefined
+  let origin = point
+  for (let step = 0; step < Math.max(1, count); step++) {
+    target = direction === "forward"
+      ? blocks.find((block) => comparePoint(state, block.from, origin) > 0)
+      : blocks.findLast((block) => comparePoint(state, block.from, origin) < 0)
+    if (!target) return step === 0 ? undefined : origin
+    origin = target.from
+  }
+  return target?.from
+}
+
+export function moveByMessage(
+  state: TranscriptState,
+  direction: NavigationDirection,
+  point = state.cursor,
+  count = 1,
+): LogicalPoint | undefined {
+  if (!point) return undefined
+  const current = state.order.indexOf(point.itemId)
+  if (current < 0) return undefined
+  const delta = direction === "forward" ? Math.max(1, count) : -Math.max(1, count)
+  const target = state.order[current + delta]
+  return target ? { itemId: target, graphemeOffset: 0 } : undefined
+}
+
+function candidateInSelection(state: TranscriptState, candidate: UrlCandidate, selection: TranscriptSelection): boolean {
+  const [start, end] = orderedSelection(state, selection)
+  return comparePoint(state, candidate.to, start) > 0 && comparePoint(state, candidate.from, end) <= 0
+}
+
+export function urlCandidates(state: TranscriptState, scope: UrlCandidateScope = "all"): readonly UrlCandidate[] {
+  const result: UrlCandidate[] = []
+  for (const itemId of state.order) {
+    if (scope === "current-item" && itemId !== state.cursor?.itemId) continue
+    const projection = state.projectionById[itemId]
+    if (!projection) continue
+    const parts = graphemes(projection.plain)
+    for (const link of projection.links) {
+      const candidate: UrlCandidate = {
+        itemId,
+        url: link.url,
+        text: parts.slice(link.from, link.to).join(""),
+        from: { itemId, graphemeOffset: link.from },
+        to: { itemId, graphemeOffset: link.to },
+      }
+      if (scope !== "selection" || (state.selection && candidateInSelection(state, candidate, state.selection))) {
+        result.push(candidate)
+      }
+    }
+  }
+  return result
+}
+
+export function moveByUrl(
+  state: TranscriptState,
+  direction: NavigationDirection,
+  point = state.cursor,
+  options: { readonly count?: number; readonly wrap?: boolean } = {},
+): LogicalPoint | undefined {
+  if (!point) return undefined
+  const candidates = urlCandidates(state)
+  if (candidates.length === 0) return undefined
+  const containing = candidates.findIndex((candidate) => comparePoint(state, candidate.from, point) <= 0 && comparePoint(state, candidate.to, point) > 0)
+  let index = containing >= 0
+    ? containing
+    : direction === "forward"
+      ? (() => {
+          const next = candidates.findIndex((candidate) => comparePoint(state, candidate.from, point) > 0)
+          return next < 0 ? candidates.length - 1 : next - 1
+        })()
+      : candidates.findLastIndex((candidate) => comparePoint(state, candidate.from, point) < 0) + 1
+  const delta = direction === "forward" ? Math.max(1, options.count ?? 1) : -Math.max(1, options.count ?? 1)
+  index += delta
+  if (options.wrap) index = ((index % candidates.length) + candidates.length) % candidates.length
+  const target = candidates[index]
+  return target?.from
+}
+
+/** Text inserted by `r`: an active selection wins, otherwise the cursor's semantic block. */
+export function referenceText(
+  state: TranscriptState,
+  format: "plain" | "source" = "plain",
+): string | undefined {
+  if (state.selection) return selectedText(state, format)
+  const block = currentSemanticBlock(state)
+  if (!block || block.to.graphemeOffset <= block.from.graphemeOffset) return undefined
+  return selectedText({
+    ...state,
+    selection: {
+      anchor: block.from,
+      head: { itemId: block.itemId, graphemeOffset: block.to.graphemeOffset - 1 },
+      shape: "character",
+    },
+  }, format)
+}

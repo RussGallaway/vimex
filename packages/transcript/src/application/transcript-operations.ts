@@ -91,6 +91,7 @@ export function urlAt(state: TranscriptState, point = state.cursor): string | un
 }
 export function reduceTranscript(state: TranscriptState, command: TranscriptCommand): TranscriptState {
   switch (command.type) {
+    case "search.set": return { ...state, search: { query: command.query, direction: command.direction } }
     case "cursor.move": return moveCursor(state, command.point, command.preferredScreenRow)
     case "tail.attach": return attachTail(state)
     case "selection.begin": return beginSelection(state, command.shape)

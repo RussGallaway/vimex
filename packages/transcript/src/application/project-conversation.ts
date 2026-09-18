@@ -1,5 +1,5 @@
 import type { ConversationItem } from "@vimex/conversation"
-import { graphemeCount, projectMarkdown } from "../domain/markdown-source-map"
+import { graphemeCount, projectMarkdown, projectPlainText } from "../domain/markdown-source-map"
 import type { LogicalPoint, TextProjection, TranscriptState } from "../domain/transcript-document"
 function sourceOf(item: ConversationItem): string {
   switch (item.kind) {
@@ -9,14 +9,28 @@ function sourceOf(item: ConversationItem): string {
   }
 }
 export function projectItem(item: ConversationItem, previous?: TextProjection): TextProjection {
-  return { ...projectMarkdown(sourceOf(item)), revision: (previous?.revision ?? 0) + 1 }
+  const project = item.kind === "user" || item.kind === "assistant" || item.kind === "reasoning" ? projectMarkdown : projectPlainText
+  return { ...project(sourceOf(item)), revision: (previous?.revision ?? 0) + 1 }
 }
 export function syncTranscriptItem(state: TranscriptState, item: ConversationItem): TranscriptState {
-  const isNew = !state.projectionById[item.id]
+  const previous = state.projectionById[item.id]
+  const projection = projectItem(item, previous)
+  const isNew = !previous
+  // Markdown delimiters can become invisible when a streamed construct closes.
+  // Preserve the source location rather than the old rendered-text index.
+  const reproject = (point: LogicalPoint): LogicalPoint => {
+    if (!previous || point.itemId !== item.id) return point
+    const sourceOffset = previous.sourceSpans[point.graphemeOffset]?.from ?? previous.source.length
+    const offset = projection.sourceSpans.findIndex(span => span.to > sourceOffset)
+    return { ...point, graphemeOffset: offset < 0 ? projection.sourceSpans.length : offset }
+  }
   return clampTranscript({
     ...state,
     order: isNew ? [...state.order, item.id] : state.order,
-    projectionById: { ...state.projectionById, [item.id]: projectItem(item, state.projectionById[item.id]) },
+    projectionById: { ...state.projectionById, [item.id]: projection },
+    cursor: state.cursor ? reproject(state.cursor) : undefined,
+    selection: state.selection ? { ...state.selection, anchor: reproject(state.selection.anchor), head: reproject(state.selection.head) } : undefined,
+    viewport: state.viewport.kind === "point" ? { ...state.viewport, point: reproject(state.viewport.point) } : state.viewport,
     unseenEntries: state.viewport.kind === "point" && isNew ? state.unseenEntries + 1 : state.unseenEntries,
   })
 }

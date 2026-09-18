@@ -79,3 +79,25 @@ describe("transcript", () => {
    state = moveCursor(state, { itemId: itemId("link"), graphemeOffset: 5 })
    expect(selectedText(state, "source")).toBe("si")
  })
+
+test("streamed Markdown closure keeps a visual selection on the same source content", () => {
+  let state = syncTranscriptItem(initialTranscript(), message("stream", "prefix **bold", "running"))
+  state = moveCursor(state, { itemId: itemId("stream"), graphemeOffset: 9 }, 4)
+  state = beginSelection(state, "character")
+  state = moveCursor(state, { itemId: itemId("stream"), graphemeOffset: 12 }, 4)
+  expect(selectedText(state, "plain")).toBe("bold")
+  state = syncTranscriptItem(state, message("stream", "prefix **bold** and more", "running"))
+  expect(selectedText(state, "plain")).toBe("bold")
+  expect(selectedText(state, "source")).toBe("**bold**")
+  expect(state.cursor?.graphemeOffset).toBe(10)
+  expect(state.viewport).toEqual({ kind: "point", point: { itemId: itemId("stream"), graphemeOffset: 10 }, preferredScreenRow: 4 })
+})
+
+test("tool output preserves literal Markdown and retains bare URL navigation", () => {
+  const detail = "# build\nfile_name_here **literal** [label](https://example.test)"
+  const projection = projectItem({ id: itemId("command"), turnId: turnId("turn"), kind: "command", title: "run", detail, status: "complete" })
+  expect(projection.plain).toBe(`run\n${detail}`)
+  expect(projection.source).toBe(projection.plain)
+  expect(projection.links[0]?.url).toBe("https://example.test")
+  expect(projection.sourceRegions).toEqual([])
+})

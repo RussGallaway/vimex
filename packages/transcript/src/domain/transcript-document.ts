@@ -22,6 +22,7 @@ export interface TranscriptSelection {
   shape: "character" | "line"
 }
 export interface TranscriptState {
+  search?: { query: string; direction: "forward" | "backward" }
   order: readonly ItemId[]
   projectionById: Readonly<Record<string, TextProjection>>
   cursor?: LogicalPoint
@@ -31,6 +32,7 @@ export interface TranscriptState {
   unseenEntries: number
 }
 export type TranscriptCommand =
+  | { type: "search.set"; query: string; direction: "forward" | "backward" }
   | { type: "cursor.move"; point: LogicalPoint; preferredScreenRow?: number }
   | { type: "tail.attach" }
   | { type: "selection.begin"; shape: TranscriptSelection["shape"] }

@@ -24,4 +24,12 @@ describe("interaction", () => {
     const insert = reduceInteraction(initialInteraction(), { type: "mode.insert" })
     expect(reduceInteraction(insert, { type: "mode.normal" })).toMatchObject({ mode: "normal", surface: "composer" })
   })
+
+  test("stores the unnamed register in per-workspace interaction state", () => {
+    const state = reduceInteraction(initialInteraction(), {
+      type: "register.set",
+      register: { text: "two lines", shape: "line" },
+    })
+    expect(state.unnamedRegister).toEqual({ text: "two lines", shape: "line" })
+  })
 })

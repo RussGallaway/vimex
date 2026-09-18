@@ -1,2 +1,2 @@
 export type Surface = "transcript" | "composer"
-export type Overlay = "sessions" | "approvals" | "help" | "models" | "fork" | null
+export type Overlay = "sessions" | "approvals" | "questions" | "fork" | "agents" | "urls" | "help" | "models" | null
