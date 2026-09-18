@@ -12,6 +12,7 @@ This directory is the design authority for v1.
 - [topology.md](./topology.md) defines the repository tree and dependency rules.
 - [roadmap.md](./roadmap.md) defines the implementation sequence and phase exit criteria.
 - [implementation-status.md](./implementation-status.md) tracks verified implementation and remaining acceptance work.
+- [acceptance-matrix.md](./acceptance-matrix.md) maps every numbered release criterion to evidence and remaining verification.
 - [decisions.md](./decisions.md) records settled decisions and open questions.
 
 ## Document ownership

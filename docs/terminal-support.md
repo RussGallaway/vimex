@@ -1,0 +1,27 @@
+# Terminal support
+
+Vimex uses the alternate screen, keyboard escape sequences, terminal selection, and clipboard integration supplied by OpenTUI. The current support baseline is a Unix-like PTY with `TERM=xterm-256color`. Terminal-specific support remains provisional until the live matrix is completed.
+
+## Evidence matrix
+
+| Environment | Status | Evidence |
+| --- | --- | --- |
+| macOS, Unix PTY, `xterm-256color` | Automated locally | The real executable enters/exits the alternate screen, renders Markdown, accepts Vim input, submits through a JSONL fixture, resolves an approval, and restores screen/cursor after normal quit, SIGTERM, and a persistence failure. The server scenario sends a Kitty Shift+Enter sequence, verifies the newline is retained, then verifies plain Enter produces exactly one request. The PTY sets 100×28 cells. |
+| Herdr managed pane on macOS | Manually exercised, partial | A dedicated pane launched the real TUI and reported connection, thread, model, effort, cwd, branch, context, and approval metadata. This does not establish the full clipboard, resize, URL, or streaming-anchor matrix. |
+| macOS GitHub Actions | Configured, result not recorded | CI installs Bun 1.3.6 and Python 3.12, sets `TERM=xterm-256color`, and runs the full check including real-PTY fixtures. The project notes do not yet record an observed hosted run. |
+| Ubuntu GitHub Actions | Configured, result not recorded | Same workflow as macOS. Configuration is not evidence of a passing hosted run. |
+| Small terminals and resize | Unit/UI coverage; live matrix pending | Layout and resize behavior have tests, but real terminal acceptance for resized Markdown selection and copying is still pending. |
+| SSH | Untested | No release support claim yet. |
+| tmux on macOS | Offline smoke test passed | A separate temporary tmux server launches demo mode, renders Markdown, accepts Insert input, preserves a draft, and exits through `:q`. The test never touches existing sessions. Clipboard and modified-key behavior remain unverified. |
+| Ghostty, Kitty, WezTerm, iTerm2, Terminal.app, Alacritty | Untested individually | The automated PTY does not identify or emulate these applications. |
+| Windows native terminals | Untested | The current real-terminal driver depends on a Unix PTY. |
+
+The detailed outstanding live acceptance work is tracked in [live validation](../work/projects/v1/live-validation.md). Do not infer emulator, SSH, tmux, OSC52, or hosted-CI support from the local PTY result.
+
+## Keyboard and clipboard requirements
+
+Plain control keys and Escape must reach the application. Shift+Enter requires a terminal keyboard protocol that distinguishes it from Enter; the automated fixture sends the Kitty keyboard-protocol sequence directly and verifies a multiline prompt is submitted exactly once by the following plain Enter. If the terminal cannot distinguish modified Enter, configure `insertEnter` as `newline`, then press Escape followed by Enter to send from composer Normal mode. Ctrl+Enter is another option when your terminal reports it distinctly.
+
+Copy requests use the best clipboard destination exposed by OpenTUI: host clipboard where available, with terminal clipboard support as an alternative. Clipboard behavior has not yet been certified across SSH, tmux, or individual terminal emulators.
+
+Set `reducedColor: true` or any nonempty `NO_COLOR` value for a reduced-color presentation. This is an application palette choice; it is not a substitute for testing a specific low-color terminal.

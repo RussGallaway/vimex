@@ -11,17 +11,21 @@ This is an implementation checkpoint, not a declaration that v1 acceptance is co
 - Enter sends by default; Shift+Enter inserts a newline. Alt+Enter is not a default shortcut.
 - Application-owned ports and behavior under domain/application owners, feature-owned UI files, and concrete adapters selected in the executable composition root.
 - Herdr pane launch manifest, lifecycle/session/metadata reporting, and configured external URL actions.
-- Unit, integration, adapter contract, renderer, and real-PTY tests. Default terminal tests cover demo navigation, JSONL approvals/streaming, SIGTERM, and persistence failure restoration.
+- Unit, integration, adapter contract, renderer, and real-PTY tests. Default terminal tests cover demo navigation, JSONL approvals/streaming, Enter/Shift+Enter submission, SIGTERM, persistence failure restoration, and an isolated tmux session when tmux is available.
 
 ## Checkpoint validation
 
-The final checkpoint check passed TypeScript, dependency boundaries, and 158 tests with 549 assertions. `bun install --frozen-lockfile` and `git diff --check` also pass.
+The final checkpoint check passed TypeScript, dependency boundaries, and 189 tests with 643 assertions. `bun install --frozen-lockfile` and `git diff --check` also pass.
 
 A formatted Markdown projection that previously took about 5.6 seconds for 58 KB took about 7 ms after replacing repeated Unicode prefix segmentation with indexed boundary lookup. This measures projection only; it is not an end-to-end rendering benchmark.
 
 Real Codex adapter validation completed a read-only tool turn, resumed it, restarted the app-server connection, resumed again, and forked the completed turn. A dedicated Herdr pane launched Vimex and reported its live thread and lifecycle metadata. See [live validation](live-validation.md) for the separate terminal acceptance evidence and outstanding approval.
 
 Runtime/navigation race regressions, long-list keyboard visibility, fatal React cleanup, and draft-save warning repairs are complete and covered by the checkpoint checks.
+
+The follow-up audit repaired Unicode cursor conversion, Visual-mode selection cleanup, explicit open-fold persistence, queued submission after fast turn completion, and stale-event transcript projection. Renderer tests cover Markdown/table mapping after reflow and measurement-cache invalidation. A local 400-line fixture averaged approximately 0.08 ms per warm layout measurement, compared with approximately 31 ms for the previous measurement plus serialization; this is not a whole-application frame benchmark. Native Markdown geometry depends on the pinned OpenTUI version and must be revalidated on upgrades.
+
+See the [acceptance matrix](acceptance-matrix.md) for evidence and gaps against each specification criterion.
 
 ## Remaining acceptance work
 - Exercise the real terminal acceptance matrix, including resized Markdown copying, streaming anchors, thread view restoration, forks, and URLs. The opt-in driver awaits explicit authorization following automatic approval review rejection.

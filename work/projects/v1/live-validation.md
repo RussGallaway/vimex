@@ -29,7 +29,7 @@ Planned assertions cover:
 - A direct read-only adapter resume of the existing source thread succeeded and hydrated 10 events after the stable/experimental capability fix.
 - A dedicated Herdr plugin pane launched the real Vimex TUI and reported `idle`, `connection=connected`, the live Codex thread id, model, reasoning effort, cwd, and pending approvals. The validation pane and temporary plugin link were removed afterward.
 - The live driver parses successfully and does not participate in `bun test`.
-- The complete offline check passes 158 tests with 549 assertions, including four real-PTY scenarios. TypeScript and dependency-boundary checks pass.
+- The complete offline check passes 189 tests with 643 assertions, including four real-PTY scenarios and an isolated tmux smoke test. TypeScript and dependency-boundary checks pass.
 
 ## Outstanding authorization
 
