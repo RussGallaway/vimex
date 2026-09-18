@@ -2,6 +2,7 @@
 import json
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -32,7 +33,10 @@ with tempfile.TemporaryDirectory(prefix="vimex-tmux-") as temporary:
         raise AssertionError(f"Missing {text!r} in tmux frame: {frame!r}")
 
     try:
-        tmux("new-session", "-d", "-s", "vimex-test", "-x", "100", "-y", "28", shutil.which("bun"), "run", "apps/tui/src/main.tsx", "--demo")
+        exit_status = pathlib.Path(temporary) / "exit-status"
+        vimex = " ".join(shlex.quote(part) for part in [shutil.which("bun"), "run", "apps/tui/src/main.tsx", "--demo"])
+        launcher = f'{vimex}; status=$?; printf "%s\\n" "$status" > {shlex.quote(str(exit_status))}; exit "$status"'
+        tmux("new-session", "-d", "-s", "vimex-test", "-x", "100", "-y", "28", "sh", "-lc", launcher)
         wait_for("Welcome to Vimex")
         tmux("send-keys", "-t", "vimex-test", "-l", "i")
         wait_for("INSERT")
@@ -45,14 +49,14 @@ with tempfile.TemporaryDirectory(prefix="vimex-tmux-") as temporary:
         tmux("send-keys", "-t", "vimex-test", "-l", "q")
         tmux("send-keys", "-t", "vimex-test", "Enter")
         deadline = time.monotonic() + 8
-        status = ""
+        pane_dead = ""
         while time.monotonic() < deadline:
-            status = tmux("display-message", "-p", "-t", "vimex-test", "#{pane_dead} #{pane_dead_status}").stdout.strip()
-            fields = status.split()
-            if len(fields) == 2 and fields[0] == "1":
+            pane_dead = tmux("display-message", "-p", "-t", "vimex-test", "#{pane_dead}").stdout.strip()
+            if pane_dead == "1" and exit_status.exists():
                 break
             time.sleep(0.05)
-        assert status == "1 0", f"Vimex did not quit successfully in tmux: {status}"
+        recorded_status = exit_status.read_text().strip() if exit_status.exists() else "missing"
+        assert pane_dead == "1" and recorded_status == "0", f"Vimex did not quit successfully in tmux: pane_dead={pane_dead}, exit={recorded_status}"
         print(json.dumps({"passed": True, "checks": ["isolated-tmux", "markdown", "insert", "draft", "escape", "command-quit"]}))
     finally:
         tmux("kill-server", check=False)
