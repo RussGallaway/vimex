@@ -1,5 +1,64 @@
+# Installed dependencies and package-manager caches
 node_modules/
+.bun/
+.npm/
+.pnpm-store/
+
+# Build output and incremental compiler state
 dist/
+build/
+out/
+*.tsbuildinfo
+
+# Test, coverage, and terminal capture artifacts
 coverage/
-.DS_Store
+.nyc_output/
+test-results/
+playwright-report/
+blob-report/
+*.lcov
+*.profraw
+*.cpuprofile
+*.heapprofile
+*.heapsnapshot
+
+# Tool caches
+.cache/
+.turbo/
+.eslintcache
+
+# Local environment files; keep shareable templates
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.sample
+
+# Vimex local runtime state and temporary files
+.vimex/
+/tmp/
+/temp/
 *.log
+*.pid
+*.pid.lock
+
+# Editor scratch files and machine-specific settings
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+*.swp
+*.swo
+*~
+
+# Operating-system metadata
+.DS_Store
+.AppleDouble
+._*
+Thumbs.db
+Desktop.ini
+
+# Intentionally tracked: bun.lock, protocol generated sources,
+# project documentation, test fixtures, and approved snapshots.
