@@ -55,6 +55,7 @@ with tempfile.TemporaryDirectory(prefix='vimex-side-') as temporary:
         send(b'/side');send(b'\r');wait('Side chat 1')
         assert len(calls('thread/fork'))==1
         assert_right_pane('Side chat 1')
+        assert 'Start a conversation' in view(), 'Inherited parent transcript leaked into the side pane'
         assert len(calls('turn/start'))==1, 'Bare /side unexpectedly submitted a child turn'
         capture('00-bare-slash-side');checks.append('bare-slash-creates-right-pane')
         send(b'i');send(b'How is progress?');send(b'\r');wait('independent')
@@ -64,8 +65,8 @@ with tempfile.TemporaryDirectory(prefix='vimex-side-') as temporary:
         send(b'\x1b');command('side maximize');capture('02-side-maximized')
         assert 'Main agent is working.' not in view()
         command('side reset');wait('Parent progress');checks.append('maximize-and-restore')
-        send(b'\x17h');wait('MAIN · focused');capture('03-parent-focused')
-        send(b'\x17l');wait('SIDE · focused');checks.append('window-focus-bindings')
+        send(b'\x08');wait('MAIN · focused');capture('03-parent-focused')
+        send(b'\x0c');wait('SIDE · focused');checks.append('window-focus-bindings')
         command('side close');pump()
         assert 'Side chat 1' not in view()
         assert not calls('thread/archive')

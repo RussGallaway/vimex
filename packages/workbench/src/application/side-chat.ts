@@ -8,6 +8,8 @@ export interface SideChat {
   maximized: boolean
   status?: "creating" | "quitting"
   contextLabel?: string
+  /** Retained as model context, omitted from the side transcript. */
+  inheritedTurnIds?: readonly string[]
 }
 export type SideChatAction = "open" | "close" | "quit" | "refresh" | "maximize" | "reset" | "parent" | "side" | "cycle" | "quote"
 export function currentSideChat(state: WorkbenchState): SideChat | undefined {
@@ -63,9 +65,10 @@ export class SideChatCoordinator {
           const snapshot = await this.host.fork(active)
           const current = this.host.state().sideChats[active]
           if (!current) return
-          this.host.hydrate(snapshot)
-          const ready = { ...current, threadId: snapshot.summary.id, status: current.status === "quitting" ? "quitting" as const : undefined }
+          const inheritedTurnIds = [...new Set(snapshot.events.flatMap(event => "turnId" in event ? [event.turnId] : "item" in event ? [event.item.turnId] : []))]
+          const ready = { ...current, inheritedTurnIds, threadId: snapshot.summary.id, status: current.status === "quitting" ? "quitting" as const : undefined }
           this.host.update(ready)
+          this.host.hydrate(snapshot)
           if (current.status === "quitting") { await this.retire(ready); return }
           if (current.visible && this.host.state().activeThreadId === active) this.host.focus(snapshot.summary.id)
           for (const text of this.pendingQuestions.get(active) ?? []) this.host.send(snapshot.summary.id, text)

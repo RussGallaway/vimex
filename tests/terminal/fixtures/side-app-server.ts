@@ -37,6 +37,7 @@ for await (const line of createInterface({ input: process.stdin })) {
         break
       }
       const child = create(`side-child-${++counter}`, `Side chat ${counter}`)
+      child.turns = structuredClone(threads.get(request.params.threadId).turns).map((turn: any) => ({ ...turn, status: "completed" }))
       threads.set(child.id, child); result(session(child)); break
     }
     case "thread/goal/clear": result({ cleared: false }); break

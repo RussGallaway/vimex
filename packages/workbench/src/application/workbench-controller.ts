@@ -227,6 +227,12 @@ export class VimexController implements WorkbenchActions {
   private hydrate(snapshot: SessionSnapshot, focus: boolean): void {
     if (this.state.retiredSideThreadIds.includes(snapshot.summary.id)) return
     this.register(snapshot.summary)
+    const side = Object.values(this.state.sideChats).find(side => side.threadId === snapshot.summary.id)
+    const parentTurns = side && this.state.workspaces[side.parentId]?.conversation.turns
+    if (side && side.inheritedTurnIds === undefined && parentTurns && Object.keys(parentTurns).length) {
+      const inheritedTurnIds = [...new Set(snapshot.events.flatMap(event => "turnId" in event ? [event.turnId] : "item" in event ? [event.item.turnId] : []))].filter(id => parentTurns[id])
+      this.setState({ ...this.state, sideChats: { ...this.state.sideChats, [side.parentId]: { ...side, inheritedTurnIds } } })
+    }
     if (this.recoveryViews[snapshot.summary.id] && !this.loaded.has(snapshot.summary.id)) {
       this.setState({ ...this.state, workspaces: { ...this.state.workspaces, [snapshot.summary.id]: createWorkspace(snapshot.summary.id) } })
     }

@@ -33,6 +33,41 @@ function harness(options: { localState?: LocalState; onState?: () => void; prefe
   return { controller, backend, starts, copied, opened, retired, emit: (event: RuntimeEvent) => listener(event) }
 }
 
+test("side transcript hides inherited context through streaming, restart, and persisted recovery", async () => {
+  const h = harness(); await h.controller.initialize("/tmp")
+  const side = threadId("side-clean"), inherited = turnId("inherited"), fresh = turnId("fresh")
+  const oldItem = { id: itemId("old"), turnId: inherited, kind: "assistant" as const, status: "complete" as const, markdown: "Parent context" }
+  const inheritedEvents: ConversationEvent[] = [
+    { type: "turn.started", threadId: side, turnId: inherited },
+    { type: "item.completed", threadId: side, item: oldItem },
+    { type: "turn.completed", threadId: side, turnId: inherited, outcome: "complete" },
+  ]
+  const newEvent: ConversationEvent = { type: "item.completed", threadId: side, item: { ...oldItem, id: itemId("new"), turnId: fresh, markdown: "Side answer" } }
+  h.backend.forkSideThread = async () => ({ summary: summary(side), events: inheritedEvents })
+  h.controller.sideChat("open"); await h.controller.settle()
+  expect(h.controller.getSnapshot().workspaces[side]?.transcript.order).toEqual([])
+  expect(h.controller.getSnapshot().workspaces[side]?.conversation.items[oldItem.id]?.kind).toBe("assistant")
+  h.emit({ type: "conversation", event: { type: "item.completed", threadId: side, item: { ...oldItem, markdown: "Replayed parent" } } })
+  h.emit({ type: "conversation", event: newEvent })
+  expect(h.controller.getSnapshot().workspaces[side]?.transcript.order).toEqual([itemId("new")])
+  h.backend.resumeThread = async id => ({ summary: summary(id), events: id === side ? [...inheritedEvents, newEvent] : [] })
+  h.controller.restart(); await h.controller.settle()
+  expect(h.controller.getSnapshot().workspaces[side]?.transcript.order).toEqual([itemId("new")])
+  const { captureLocalState, emptyLocalState, parseLocalState } = await import("@vimex/workbench")
+  const saved = parseLocalState(JSON.parse(JSON.stringify(captureLocalState(h.controller.getSnapshot(), emptyLocalState()))))
+  const restored = harness({ localState: saved })
+  restored.backend.resumeThread = h.backend.resumeThread
+  await restored.controller.initialize("/tmp", undefined, side)
+  expect(restored.controller.getSnapshot().workspaces[side]?.transcript.order).toEqual([itemId("new")])
+  await restored.controller.close()
+  const legacy = harness({ localState: { ...saved, sideChats: { [a]: { ...saved.sideChats![a]!, inheritedTurnIds: undefined } } } })
+  legacy.backend.resumeThread = async id => ({ summary: summary(id), events: id === side ? [...inheritedEvents, newEvent] : inheritedEvents.map(event => ({ ...event, threadId: a })) })
+  await legacy.controller.initialize("/tmp", undefined, a)
+  legacy.controller.sideChat("open"); await legacy.controller.settle()
+  expect(legacy.controller.getSnapshot().workspaces[side]?.transcript.order).toEqual([itemId("new")])
+  await legacy.controller.close(); await h.controller.close()
+})
+
 test("side chat forks while parent works; close preserves worker, drafts, and reopening", async () => {
   const h = harness(); await h.controller.initialize("/tmp")
   h.controller.changeDraft("main draft", 3)

@@ -1,6 +1,6 @@
 # Side chats
 
-`/side [question]` and `:side [question]` fork the focused parent context into a separate conversation. The parent keeps running. Reusing the command focuses the existing side conversation. Side questions do not inherit an autonomous parent goal: the adapter defers goal continuation during the fork, then clears the child's copied goal before submitting a question.
+`/side [question]` and `:side [question]` fork the focused parent context into a separate conversation. The parent keeps running. Ctrl-H focuses main; Ctrl-L focuses side. The side transcript starts empty even though Codex retains the inherited parent context; only messages created in the side conversation are displayed. Reusing the command focuses the existing side conversation. Side questions do not inherit an autonomous parent goal: the adapter defers goal continuation during the fork, then clears the child's copied goal before submitting a question.
 
 Bare `/side` and `:side` open the pane without submitting a message. An opening placeholder appears while the server creates the fork; failures appear as a notice. Wide terminals use a right sidebar, narrow terminals stack the panes, and very short terminals show one pane at a time.
 

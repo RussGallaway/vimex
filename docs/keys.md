@@ -138,7 +138,8 @@ From either pane in Normal mode, `ga` opens the agent picker, `[a` and `]a` cycl
 
 | Key or command | Action |
 | --- | --- |
-| `Ctrl-w h` / `Ctrl-w l` | Focus the left/right pane. |
+| `Ctrl-h` / `Ctrl-l` | Focus main / side directly. |
+| `Ctrl-w h` / `Ctrl-w l` | Alternate main / side focus keys. |
 | `Ctrl-w w` | Cycle visible panes. |
 | `Ctrl-w \|` | Maximize the focused pane; repeat to restore the split. |
 | `Ctrl-w =` | Restore default pane sizes. |

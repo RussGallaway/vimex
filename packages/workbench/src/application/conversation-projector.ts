@@ -14,7 +14,8 @@ export function applyConversationEvent(state: WorkbenchState, event: Conversatio
     : event.type === "item.delta" ? event.itemId : undefined
   if (changedItemId) {
     const item = conversation.items[changedItemId]
-    if (item && item !== workspace.conversation.items[changedItemId]) transcript = syncTranscriptItem(transcript, item)
+    const inherited = item && Object.values(state.sideChats).some(side => side.threadId === event.threadId && side.inheritedTurnIds?.includes(item.turnId))
+    if (item && !inherited && item !== workspace.conversation.items[changedItemId]) transcript = syncTranscriptItem(transcript, item)
   }
   let composer = workspace.composer
   const effects: WorkbenchEffect[] = []

@@ -17,6 +17,8 @@ export function SideChatLayout(props: VimexAppProps) {
   const overlay = active ? state.workspaces[active]?.interaction.overlay : undefined
   selectTheme(state.preferences?.theme ?? props.settings?.theme ?? "ember-tide", props.settings?.reducedColor ?? false)
   useBindings(() => ({ priority: 190, bindings: side?.visible && !overlay ? [
+    { key: "ctrl+h", cmd: () => controller.sideChat("parent") },
+    { key: "ctrl+l", cmd: () => controller.sideChat("side") },
     { key: "ctrl+wh", cmd: () => controller.sideChat("parent") },
     { key: "ctrl+wl", cmd: () => controller.sideChat("side") },
     { key: "ctrl+ww", cmd: () => controller.sideChat("cycle") },
@@ -51,7 +53,7 @@ export function SideChatLayout(props: VimexAppProps) {
     {side?.visible ? <box height={1} flexShrink={0} backgroundColor={emberTide.backgroundPanel} paddingX={1} flexDirection="row" gap={2}>
       <text flexShrink={0} fg={emberTide.blueBright}><b>{active === side.threadId ? "SIDE" : "MAIN"}{maximized ? " · maximized" : " · focused"}</b></text>
       <text flexGrow={1} minWidth={0} truncate wrapMode="none" fg={emberTide.textMuted}>{side.status === "creating" ? "Opening side chat…" : side.status === "quitting" ? "Quitting side…" : limitedHeight ? `Main: ${parentActivity.label ?? "idle"} · ${side.contextLabel ?? "Side conversation"}` : side.contextLabel ?? "Forked side conversation"}</text>
-      {dimensions.width >= 90 ? <text flexShrink={0} fg={emberTide.textMuted}>^W w focus · ^W | maximize · ^W c close · ^W q quit</text> : null}
+      {dimensions.width >= 90 ? <text flexShrink={0} fg={emberTide.textMuted}>^H/L focus · ^W | maximize · ^W c close · ^W q quit</text> : null}
     </box> : null}
     <box flexDirection={stacked ? "column" : "row"} flexGrow={1} minHeight={0}>
       {pane(side?.parentId ?? active, "MAIN", mainGeometry)}
