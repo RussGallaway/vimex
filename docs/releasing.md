@@ -30,7 +30,7 @@ Start with explicit upgrades and optional, dismissible update notices. Do not re
 
 ## CI and release gates
 
-The existing Checks workflow runs macOS/Linux checks on pushes and pull requests. Extend it with generated-document validation, native packaged smoke tests, and explicit offline PTY drivers. Keep credentials and real conversations out of public CI.
+The Checks workflow runs macOS/Linux checks on application pushes and pull requests. It skips the generated formula-only follow-up commit because the complete release matrix has already passed. Keep credentials and real conversations out of public CI.
 
 A version-tag workflow should validate the source version, run checks, build artifacts, smoke-test them outside the repository with no Bun installation, and validate syntax assets offline. Exercise both a clean install and an upgrade from the preceding release. Check `--help`, `--version`, the demo, terminal cleanup, and the installed manual.
 
