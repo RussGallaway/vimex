@@ -9,6 +9,8 @@ import {
   graphemeCount,
   initialTranscript,
   moveByMessage,
+  moveByWord,
+  selectedText,
   moveBySemanticBlock,
   moveByUrl,
   moveCursor,
@@ -95,5 +97,46 @@ describe("transcript search", () => {
     expect(adjacentSearchMatch(state, matches, "backward")?.from).toEqual(matches.at(-1)!.from)
     expect(adjacentSearchMatch(state, matches, "forward", matches.at(-1)!.from)?.from).toEqual(matches[0]!.from)
     expect(findSearchMatches(state, "👨‍👩‍👧‍👦")[0]?.to.graphemeOffset).toBe(5)
+  })
+})
+
+
+describe("Vim transcript word motions", () => {
+  test("distinguishes words from WORDs with counted punctuation and boundaries", () => {
+    let state = syncTranscriptItem(initialTranscript(), message("a", "one.two  three"))
+    state = moveCursor(state, { itemId: itemId("a"), graphemeOffset: 0 })
+    expect(moveByWord(state, "next")?.graphemeOffset).toBe(3)
+    expect(moveByWord(state, "next", state.cursor, 2)?.graphemeOffset).toBe(4)
+    expect(moveByWord(state, "next", state.cursor, 1, true)?.graphemeOffset).toBe(9)
+    expect(moveByWord(state, "end")?.graphemeOffset).toBe(2)
+    expect(moveByWord(state, "end", state.cursor, 1, true)?.graphemeOffset).toBe(6)
+    expect(moveByWord(state, "next", state.cursor, 100)?.graphemeOffset).toBe(13)
+    expect(moveByWord(state, "previous")?.graphemeOffset).toBe(0)
+    expect(moveByWord(state, "previous", { itemId: itemId("a"), graphemeOffset: 6 })?.graphemeOffset).toBe(4)
+  })
+
+  test("crosses empty items and newlines without splitting Unicode graphemes", () => {
+    let state = syncTranscriptItem(initialTranscript(), message("a", "café 👨‍👩‍👧‍👦\nnext"))
+    state = syncTranscriptItem(state, message("empty", ""))
+    state = syncTranscriptItem(state, message("b", "日本語 last"))
+    state = moveCursor(state, { itemId: itemId("a"), graphemeOffset: 0 })
+    expect(moveByWord(state, "end")?.graphemeOffset).toBe(3)
+    expect(moveByWord(state, "next")?.graphemeOffset).toBe(5)
+    expect(moveByWord(state, "next", state.cursor, 3)).toEqual({ itemId: itemId("b"), graphemeOffset: 0 })
+    expect(moveByWord(state, "previous", { itemId: itemId("b"), graphemeOffset: 0 })).toEqual({ itemId: itemId("a"), graphemeOffset: 7 })
+    expect(moveByWord(state, "end", { itemId: itemId("b"), graphemeOffset: 0 })).toEqual({ itemId: itemId("b"), graphemeOffset: 2 })
+  })
+
+  test("extends a semantic Visual range while canonical Markdown copy stays exact", () => {
+    let state = syncTranscriptItem(initialTranscript(), message("a", "[café](https://example.test) next"))
+    state = moveCursor(state, { itemId: itemId("a"), graphemeOffset: 0 })
+    state = beginSelection(state, "character")
+    state = moveCursor(state, moveByWord(state, "end")!)
+    expect(state.selection?.anchor.graphemeOffset).toBe(0)
+    expect(state.selection?.head.graphemeOffset).toBe(3)
+    expect(selectedText(state, "plain")).toBe("café")
+    expect(selectedText(state, "source")).toBe("[café](https://example.test)")
+    state = moveCursor(state, moveByWord(state, "end")!)
+    expect(selectedText(state, "plain")).toBe("café next")
   })
 })

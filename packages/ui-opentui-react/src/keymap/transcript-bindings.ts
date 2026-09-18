@@ -1,7 +1,7 @@
 import type { UiBinding, VimBindingContext } from "./binding-context"
 
 export function transcriptBindings(ctx: VimBindingContext): UiBinding[] {
-  const semantic = (motion: "block-next" | "block-previous" | "message-next" | "message-previous" | "url-next" | "url-previous" | "first-content") => {
+  const semantic = (motion: "block-next" | "block-previous" | "message-next" | "message-previous" | "url-next" | "url-previous" | "first-content" | "word-next" | "word-previous" | "word-end" | "WORD-next" | "WORD-previous" | "WORD-end") => {
     const count = Number(ctx.countRef.current || "1")
     ctx.countRef.current = ""
     ctx.controller.dispatchInteraction({ type: "count.clear" })
@@ -18,6 +18,8 @@ export function transcriptBindings(ctx: VimBindingContext): UiBinding[] {
     ctx.controller.dispatchInteraction({ type: "command.change", value: prefix })
   }
   return [
+    { key: "w", cmd: () => semantic("word-next") }, { key: "b", cmd: () => semantic("word-previous") }, { key: "e", cmd: () => semantic("word-end") },
+    { key: "shift+w", cmd: () => semantic("WORD-next") }, { key: "shift+b", cmd: () => semantic("WORD-previous") }, { key: "shift+e", cmd: () => semantic("WORD-end") },
     { key: "{", cmd: () => semantic("block-previous") }, { key: "}", cmd: () => semantic("block-next") },
     { key: "[[", cmd: () => semantic("message-previous") }, { key: "]]", cmd: () => semantic("message-next") },
     { key: "[u", cmd: () => semantic("url-previous") }, { key: "]u", cmd: () => semantic("url-next") },

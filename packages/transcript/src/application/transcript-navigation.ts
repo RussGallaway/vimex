@@ -200,3 +200,42 @@ export function referenceText(
     },
   }, format)
 }
+
+/** Vim word motions over rendered graphemes; item boundaries act as whitespace. */
+export function moveByWord(
+  state: TranscriptState,
+  motion: "next" | "previous" | "end",
+  point = state.cursor,
+  count = 1,
+  bigWord = false,
+): LogicalPoint | undefined {
+  if (!point || !state.order.includes(point.itemId)) return undefined
+  const words: { from: LogicalPoint; end: LogicalPoint }[] = []
+  const category = (part: string): number => /^\s+$/u.test(part) ? 0 : bigWord || /^[\p{L}\p{M}\p{N}_]+$/u.test(part) ? 1 : 2
+  for (const itemId of state.order) {
+    const projection = state.projectionById[itemId]
+    if (!projection) continue
+    const parts = graphemes(projection.plain)
+    let offset = 0
+    while (offset < parts.length) {
+      const kind = category(parts[offset]!)
+      if (kind === 0) { offset++; continue }
+      const from = offset++
+      while (offset < parts.length && category(parts[offset]!) === kind) offset++
+      words.push({ from: { itemId, graphemeOffset: from }, end: { itemId, graphemeOffset: offset - 1 } })
+    }
+  }
+  if (words.length === 0) return point
+  let target = point
+  const repeat = Number.isFinite(count) ? Math.max(1, Math.trunc(count)) : 1
+  for (let index = 0; index < repeat; index++) {
+    const next = motion === "previous"
+      ? words.findLast(word => comparePoint(state, word.from, target) < 0)?.from ?? words[0]!.from
+      : motion === "end"
+        ? words.find(word => comparePoint(state, word.end, target) > 0)?.end ?? words.at(-1)!.end
+        : words.find(word => comparePoint(state, word.from, target) > 0)?.from ?? words.at(-1)!.end
+    if (comparePoint(state, next, target) === 0) break
+    target = next
+  }
+  return target
+}

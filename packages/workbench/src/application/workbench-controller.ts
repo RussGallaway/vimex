@@ -1,4 +1,4 @@
-import { adjacentSearchMatch, findSearchMatches, firstContentPoint, moveBySemanticBlock, moveByUrl, referenceText, urlAt, urlCandidates, graphemeCount, type LogicalPoint } from "@vimex/transcript"
+import { adjacentSearchMatch, findSearchMatches, firstContentPoint, moveByWord, moveBySemanticBlock, moveByUrl, referenceText, urlAt, urlCandidates, graphemeCount, type LogicalPoint } from "@vimex/transcript"
 import { isThemeName, themeNames, type PreferenceStore } from "./display-preferences"
 import { parseCommand, type ExCommand } from "@vimex/interaction"
 import { captureLocalState, emptyLocalState, restoreThreadView, type LocalState, type SavedThreadView } from "./local-state"
@@ -322,7 +322,10 @@ export class VimexController implements WorkbenchActions {
         const direction = command.motion.endsWith("previous") ? "backward" : "forward"
         const count = Math.max(1, command.count ?? 1)
         const transcript = workspace.transcript
-        if (command.motion.startsWith("block-")) move(moveBySemanticBlock(transcript, direction, transcript.cursor, count))
+        if (command.motion.startsWith("word-") || command.motion.startsWith("WORD-")) {
+          const motion = command.motion.endsWith("previous") ? "previous" : command.motion.endsWith("end") ? "end" : "next"
+          move(moveByWord(transcript, motion, transcript.cursor, count, command.motion.startsWith("WORD-")))
+        } else if (command.motion.startsWith("block-")) move(moveBySemanticBlock(transcript, direction, transcript.cursor, count))
         else if (command.motion.startsWith("url-")) move(moveByUrl(transcript, direction, transcript.cursor, { count, wrap: true }))
         else if (command.motion === "first-content") move(firstContentPoint(transcript))
         else {

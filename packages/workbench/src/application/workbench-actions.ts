@@ -5,7 +5,7 @@ import type { InteractionCommand } from "@vimex/interaction"
 import type { LogicalPoint } from "@vimex/transcript"
 
 export type TranscriptAction =
-  | { type: "navigate"; motion: "block-next" | "block-previous" | "message-next" | "message-previous" | "url-next" | "url-previous" | "first-content"; count?: number }
+  | { type: "navigate"; motion: "block-next" | "block-previous" | "message-next" | "message-previous" | "url-next" | "url-previous" | "first-content" | "word-next" | "word-previous" | "word-end" | "WORD-next" | "WORD-previous" | "WORD-end"; count?: number }
   | { type: "search"; query: string; direction: "forward" | "backward" }
   | { type: "search.next"; reverse?: boolean; count?: number }
   | { type: "selection.swap" }
