@@ -42,11 +42,11 @@ Assemble a draft release with all archives, checksums, third-party notices, and 
 2. Commit on main, review, and push the intended source. Create and push the matching immutable tag, initially `v0.1.0`.
 3. The Release workflow builds natively on macOS/Linux ARM64/x64, runs checks and packaged CLI/PTY/syntax probes, and uploads archives. `release:manifest` verifies all four archive hashes before publication.
 4. Publication assembles a draft with archives, vimex-release.json, SHA256SUMS, install.sh, and provenance. It publishes only after upload succeeds.
-5. Stable publication generates Formula/vimex.rb on main from the release manifest and pushes a formula-only commit. Prereleases leave the stable formula unchanged.
+5. Stable publication generates Formula/vimex.rb from the release manifest and opens a formula-only pull request. Merge it after its checks pass. Prereleases leave the stable formula unchanged.
 
-Rerunning a failed publication reuses a draft. Published assets are never replaced; a retry downloads the already published manifest before updating the formula. If branch protection rejects the formula push, download that manifest, run `bun run release:formula PATH`, and submit the generated change through the repository's required review process. Do not move the release tag. Formula updates are skipped when the tag is no longer GitHub's latest stable release.
+Rerunning a failed publication reuses a draft. Published assets are never replaced; a retry downloads the already published manifest before proposing the formula update. If pull-request creation fails, download that manifest, run `bun run release:formula PATH`, and submit the generated change through the repository's required review process. Do not move the release tag. Formula updates are skipped when the tag is no longer GitHub's latest stable release.
 
-The workflow needs contents:write for publication/formula updates and id-token:write plus attestations:write for provenance. It does not need another repository's token. Keep publishing tied to trusted tags. A real Homebrew install/upgrade and previous-release upgrade acceptance remain release gates; fixture tests do not establish those results before a first release exists.
+The workflow needs contents:write for publication and formula branches, pull-requests:write for the formula proposal, and id-token:write plus attestations:write for provenance. It does not need another repository's token. Keep publishing tied to trusted tags. A real Homebrew install/upgrade and previous-release upgrade acceptance remain release gates; fixture tests do not establish those results before a first release exists.
 
 Local packaging tests live in tests/install. Native archives include OpenTUI assets, the generated manual, MIT license, and dependency notices. Runtime asset resolution follows the executable's real path so launcher symlinks work. No release operation was performed as part of implementing this pipeline.
 

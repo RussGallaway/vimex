@@ -1,96 +1,109 @@
 # Vimex
 
-A full-screen, Vim-operated terminal interface for the Codex app server, built with OpenTUI React. Vimex owns presentation and interaction; Codex owns execution, permissions, and conversation history.
+Vimex is a full-screen, Vim-operated terminal interface for the Codex app server, built with OpenTUI React. Vimex owns presentation, navigation, drafts, and local preferences; Codex owns execution, permissions, and conversation history.
 
-Vimex is preparing an initial **0.1.0** release and follows Semantic Versioning. The `work/projects/v1` directory names a planning milestone, not a 1.0.0 release commitment. The acceptance criteria and remaining work are in [the v1 project documents](work/projects/v1/README.md).
+The fixed composer stays available while responses stream, so you can read elsewhere in the transcript and prepare the next message without losing your place. Normal, Insert, Visual, and Command modes provide a familiar Vim model for composing, navigating, selecting, folding tool calls, following links, switching sessions, and moving between parent and subagent conversations.
 
-## Documentation
+Vimex is currently an early `0.1.x` project. The default dark theme is **Ember Tide**, with Nord, Gruvbox Material, Kanagawa, Tokyo Night, and Catppuccin Mocha included.
 
-- [Documentation index](docs/README.md)
-- [User manual](docs/manual.md) — available offline with `:manual`
-- [Distribution and release plan](docs/releasing.md)
+## Install
 
-- [Install and run](docs/install.md)
-- [Configuration](docs/configuration.md)
-- [Keyboard reference](docs/keys.md)
-- [Terminal support](docs/terminal-support.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Contributing](CONTRIBUTING.md)
-
-## Run from source
-
-Requires Bun 1.3.6 or later and an installed, authenticated Codex CLI. The adapter currently targets Codex 0.154.0. Run `codex login` separately before launching a live session.
+Live sessions require the Codex CLI to be installed and authenticated:
 
 ```sh
-bun install --frozen-lockfile
-bun run start --cwd /path/to/project
+codex login
 ```
 
-Use `bun run start --demo` for an offline streaming demonstration, `resume --last` for the latest session in this directory, or `resume ID` for an exact thread. `doctor` checks the local setup. See `bun run start --help` for the remaining options. Vimex is currently run from a checkout; there is no published binary or package yet.
+### Homebrew
 
-Build a standalone bundle with `bun run build` and an archive with `bun run package`. The monorepo Homebrew formula, curl installer, and tag-driven release workflow are implemented; see [installation](docs/install.md) for their release status and update behavior.
+Vimex keeps its Homebrew formula in this repository:
 
-The default dark theme is **Ember Tide**: charcoal, warm ivory, muted blue, sage, and amber.
+```sh
+brew tap russgallaway/vimex https://github.com/RussGallaway/vimex.git
+brew install russgallaway/vimex/vimex
+```
 
-## Keyboard basics
+Upgrade later with either command:
 
-- `i` enters Insert mode; `Esc` returns to Normal.
-- In Insert mode, `Enter` submits and `Shift+Enter` adds a newline.
-- `Ctrl-k` and `Ctrl-j` move between transcript and composer from every mode.
-- `Ctrl-e/y` scroll by line; `Ctrl-d/u` scroll by half a viewport.
-- `v` selects transcript text; `y` copies rendered text; `:yank markdown` copies its source.
-- `/` and `?` search; `n`/`N` repeat; `G` or `t` resumes following the response.
-- `za` toggles a fold; `[u`/`]u` move between links; `gx` opens a link.
-- `s` opens Flash; Space leads to `s` sessions, `a` approvals, `q` questions, or `?` help; `:agents` opens agent threads; `:parent` returns.
-- `f` confirms a fork through the selected completed turn.
-- `:approvals` and `:questions` open pending requests for the active session.
-- `:restart` reconnects a failed runtime while keeping local drafts. Uncertain sends require an explicit retry.
-- `:` opens command entry; `:help` lists commands; `:q` quits.
+```sh
+brew upgrade vimex
+vimex upgrade
+```
 
-The composer stays at the bottom while the transcript streams. Reading position and tail attachment are independent of Vim mode.
+### Curl installer
 
-## Configuration and state
+The direct installer uses a user-owned prefix, verifies the release checksum, and does not require `sudo`:
 
-Configuration lives in `$XDG_CONFIG_HOME/vimex/config.json` (default `~/.config/vimex/config.json`). Use `--config PATH` to select another file. Missing fields use defaults; unknown keys are rejected.
+```sh
+curl -fsSL https://github.com/RussGallaway/vimex/releases/latest/download/install.sh | sh
+```
+
+It installs the launcher under `~/.local/bin` by default. Ensure that directory is on `PATH`. Direct installations can be upgraded with `vimex update` or `vimex upgrade`.
+
+See [installation](docs/install.md) for explicit versions, custom install directories, source builds, bundled manual locations, update ownership, and uninstall instructions.
+
+## Use
+
+Open Vimex in the current project:
+
+```sh
+vimex
+```
+
+Useful entry points include:
+
+```sh
+vimex /path/to/project
+vimex resume                 # choose an existing session in this directory
+vimex resume --last          # resume the latest session in this directory
+vimex resume THREAD_ID
+vimex doctor                 # check configuration and local dependencies
+```
+
+Inside Vimex, `i` enters Insert mode and `Esc` returns to Normal mode. `Enter` submits from Insert mode, `:` opens command mode, `/` searches from Normal mode or opens slash commands from the composer, and `Space ?` opens help. Use `:manual` for the complete offline guide.
+
+The transcript supports Vim motion, Visual selection and yanking, Flash-style jumps, marks and jump history, mouse scrolling, collapsible tools, expanded diffs, Markdown, syntax highlighting, sessions, subagents, and side chats. See the [keyboard reference](docs/keys.md) and [user manual](docs/manual.md).
+
+## Configure
+
+Configuration lives at `$XDG_CONFIG_HOME/vimex/config.json`, defaulting to `~/.config/vimex/config.json`:
 
 ```json
 {
   "version": 1,
   "theme": "ember-tide",
   "syntaxTheme": "theme",
-  "reducedColor": false,
   "insertEnter": "submit",
   "busySubmit": "queue",
   "foldTools": true,
   "foldReasoning": true,
   "composerMaxHeight": 0.33,
-  "keybindings": {},
-  "codexExecutable": "codex"
+  "keybindings": {}
 }
 ```
 
-`keybindings` maps key sequences to named commands, such as `{ "ctrl+s": "submit" }`. `:theme nord`, `:theme kanagawa`, and `:syntax theme` change and persist display preferences.
+Use commands such as `:theme nord`, `:syntax theme`, and `:model MODEL EFFORT` for common runtime changes. Unknown configuration keys are rejected. See [configuration](docs/configuration.md), [themes](docs/themes.md), and [terminal support](docs/terminal-support.md) for the complete options and compatibility notes.
 
-The complete option descriptions and override rules are in [configuration](docs/configuration.md). The full command and mode tables are in the [keyboard reference](docs/keys.md).
+Optional Herdr integration adds full-tab launching, reporting, and external URL actions. See the [Herdr plugin](plugins/herdr/README.md).
 
-Local draft and viewport state lives under `$XDG_STATE_HOME/vimex` (default `~/.local/state/vimex`). Codex remains the source of truth for thread history. Herdr reporting activates when launched within a recognized Herdr pane. See the [Herdr plugin instructions](plugins/herdr/README.md) for installation and external URL actions.
+## Develop and contribute
 
-## Development checks
+Source development requires Bun 1.3.6 or later:
+
+```sh
+git clone https://github.com/RussGallaway/vimex.git
+cd vimex
+bun install --frozen-lockfile
+bun run start --demo
+```
+
+The offline demo needs no Codex credentials. Start a live source session with `bun run start`, and run the complete validation suite with:
 
 ```sh
 bun run check
-bun run test:unit
-bun run test:integration
-bun run test:contract
-bun run test:ui
-bun run test:e2e
 ```
 
-`check` runs type checking, dependency-boundary checks, and all tests. Terminal end-to-end tests require Python 3 and a Unix PTY; they launch the actual renderer and a deterministic JSONL server fixture without credentials or network access. Live Codex and Herdr verification are separate from these offline tests.
-
-Generated Codex protocol types stay inside the adapter. Refresh them deliberately with `bun run generate:codex` after installing the intended Codex version, then review schema changes and run contract tests.
-
-Set `reducedColor: true` or a nonempty `NO_COLOR` environment variable to reduce accent colors to the theme’s text and background tones. Status and mode indicators also use text.
+Vimex is a TypeScript monorepo with explicit domain and adapter boundaries. Read [CONTRIBUTING.md](CONTRIBUTING.md) before moving behavior between packages or submitting a pull request. Architecture, topology, release engineering, testing, and project documents are indexed in [docs/README.md](docs/README.md).
 
 ## License
 

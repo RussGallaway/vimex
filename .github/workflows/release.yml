@@ -24,11 +24,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.6
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Verify release tag
@@ -63,10 +63,11 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      pull-requests: write
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
@@ -97,7 +98,7 @@ jobs:
           fi
           gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/vimex-release.json dist/SHA256SUMS install.sh --clobber
           gh release edit "$GITHUB_REF_NAME" --draft=false
-      - name: Update monorepo formula after stable publication
+      - name: Propose monorepo formula update after stable publication
         if: ${{ !contains(github.ref_name, '-') }}
         env:
           RELEASE_VERSION: ${{ github.ref_name }}
@@ -108,11 +109,21 @@ jobs:
             echo "Skipping formula update for superseded release $RELEASE_VERSION"
             exit 0
           fi
-          git checkout main
-          git pull --ff-only origin main
+          branch="release/formula-${RELEASE_VERSION#v}"
+          git fetch origin main
+          git checkout -B "$branch" origin/main
           bun run release:formula dist/vimex-release.json
+          if git diff --quiet -- Formula/vimex.rb; then
+            echo "Formula already matches $RELEASE_VERSION"
+            exit 0
+          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add Formula/vimex.rb
-          git diff --cached --quiet || git commit -m "Update Homebrew formula for ${RELEASE_VERSION}"
-          git push origin HEAD:main
+          git commit -m "Update Homebrew formula for ${RELEASE_VERSION}"
+          git push --force-with-lease origin HEAD:"$branch"
+          if [[ -z "$(gh pr list --state open --head "$branch" --json number --jq '.[0].number // empty')" ]]; then
+            gh pr create --base main --head "$branch" \
+              --title "Update Homebrew formula for ${RELEASE_VERSION}" \
+              --body "Updates the monorepo formula from the verified manifest published with ${RELEASE_VERSION}."
+          fi

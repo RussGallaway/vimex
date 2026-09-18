@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose a focused Vimex capability or UX improvement.
+title: "feature: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Developer workflow
+      description: What are you trying to accomplish, and where does the current interaction break down?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the interaction, including modes or keybindings when relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What do you use today, and what tradeoffs should the design preserve?
