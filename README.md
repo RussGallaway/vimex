@@ -20,10 +20,16 @@ The default dark theme is **Ember Tide**: charcoal, warm ivory, muted blue, sage
 ## Keyboard basics
 
 - `i` enters Insert mode; `Esc` returns to Normal.
-- In Insert mode, `Enter` adds a newline and `Alt+Enter` submits.
+- In Insert mode, `Enter` submits and `Shift+Enter` adds a newline.
 - `Ctrl-w k` and `Ctrl-w j` move between transcript and composer.
 - `Ctrl-e/y` scroll by line; `Ctrl-d/u` scroll by half a viewport.
-- `v` selects transcript text; `y` copies the selection.
+- `v` selects transcript text; `y` copies rendered text; `:yank markdown` copies its source.
+- `/` and `?` search; `n`/`N` repeat; `G` resumes following the response.
+- `za` toggles a fold; `[u`/`]u` move between links; `gx` opens a link.
+- `s` opens sessions; `:agents` opens agent threads; `:parent` returns.
+- `f` confirms a fork through the selected completed turn.
+- `:approvals` and `:questions` open pending requests for the active session.
+- `:restart` reconnects a failed runtime while keeping local drafts. Uncertain sends require an explicit retry.
 - `:` opens command entry; `:help` lists commands; `:q` quits.
 
 The composer stays at the bottom while the transcript streams. Reading position and tail attachment are independent of Vim mode.
@@ -36,16 +42,21 @@ Configuration lives in `$XDG_CONFIG_HOME/vimex/config.json` (default `~/.config/
 {
   "version": 1,
   "theme": "ember-tide",
-  "insertEnter": "newline",
+  "syntaxTheme": "theme",
+  "reducedColor": false,
+  "insertEnter": "submit",
   "busySubmit": "queue",
   "foldTools": true,
   "foldReasoning": true,
   "composerMaxHeight": 0.33,
+  "keybindings": {},
   "codexExecutable": "codex"
 }
 ```
 
-Local draft and viewport state lives under `$XDG_STATE_HOME/vimex` (default `~/.local/state/vimex`). Codex remains the source of truth for thread history. Herdr reporting activates when launched within a recognized Herdr pane.
+`keybindings` maps key sequences to named commands, such as `{ "ctrl+s": "submit" }`. `:theme nord`, `:theme kanagawa`, and `:syntax theme` change and persist display preferences.
+
+Local draft and viewport state lives under `$XDG_STATE_HOME/vimex` (default `~/.local/state/vimex`). Codex remains the source of truth for thread history. Herdr reporting activates when launched within a recognized Herdr pane. See the [Herdr plugin instructions](plugins/herdr/README.md) for installation and external URL actions.
 
 ## Development checks
 
@@ -61,3 +72,5 @@ bun run test:e2e
 `check` runs type checking, dependency-boundary checks, and all tests. Terminal end-to-end tests require Python 3 and a Unix PTY; they launch the actual renderer and a deterministic JSONL server fixture without credentials or network access. Live Codex and Herdr verification are separate from these offline tests.
 
 Generated Codex protocol types stay inside the adapter. Refresh them deliberately with `bun run generate:codex` after installing the intended Codex version, then review schema changes and run contract tests.
+
+Set `reducedColor: true` or a nonempty `NO_COLOR` environment variable to reduce accent colors to the theme’s text and background tones. Status and mode indicators also use text.

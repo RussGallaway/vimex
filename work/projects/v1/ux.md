@@ -83,7 +83,7 @@ Counts apply where their Vim equivalent is meaningful.
 
 Composer Normal mode supports the familiar editing subset: `h/j/k/l`, `w/b/e`, `0/^/$`, `gg/G`, `x`, `dd`, `D`, `C`, `u`, `Ctrl-r`, `p/P`, and `i/a/I/A/o/O`.
 
-Normal-mode `Enter` submits. Insert-mode submission versus newline is configurable because terminal modifier fidelity differs. The default should be documented after a terminal compatibility spike.
+Normal-mode `Enter` submits. Insert-mode submission versus newline is configurable because terminal modifier fidelity differs. Enter submits by default; Shift+Enter inserts a newline. Alt+Enter is not bound because the user’s terminal host opens a new window with that combination.
 
 Each thread owns its draft. An active turn does not disable the composer. Submitting during an active turn presents or applies a clear intent: steer the current turn or queue the next turn.
 
@@ -142,7 +142,7 @@ Folding state is owned per logical item and per thread. Mouse click may toggle a
 
 The session picker is a fuzzy-search overlay grouped by recency. It shows thread name, cwd, branch, model, and running state when space permits.
 
-Forking operates at valid user-message boundaries. The transcript cursor identifies the default boundary; `:fork` opens a small confirmation overlay and then switches to the fork.
+Forking selects the completed turn beginning at a user message and includes that turn’s replies and tool activity, matching Codex’s inclusive turn boundary. The transcript cursor identifies the default boundary; `:fork` opens a small confirmation overlay and then switches to the fork.
 
 Subagent activity appears inline as a foldable item and in a navigable thread relationship. Opening a child thread must preserve the parent's exact view state, and returning must restore it.
 

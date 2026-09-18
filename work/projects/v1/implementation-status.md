@@ -4,27 +4,29 @@ This is an implementation checkpoint, not a declaration that v1 acceptance is co
 
 ## Implemented and under validation
 
-- Full-screen OpenTUI React shell, fixed composer, Markdown rendering, Vim modes, viewport navigation, selection, folds, and dark themes.
-- Codex JSONL transport, versioned schema mapping, pagination, streaming, start/resume/switch/fork, steering, interruption, approval responses, model and reasoning settings.
-- Application-owned conversation and approval gateways, runtime connection and model-catalog ports; concrete adapters selected by the executable composition root.
-- Durable local drafts, recoverable outbox entries, and per-thread reading state. Recovered submissions require explicit retry.
-- Herdr lifecycle/session/metadata reporting with bounded coalescing and connection-aware state.
-- Unit, application integration, adapter contract, renderer, and real-PTY tests. Deterministic terminal tests exercise both offline demonstration and a JSONL approval/streaming flow.
+- Full-screen OpenTUI React shell, fixed composer, Markdown rendering, four Vim modes, anchored navigation, semantic selection and copying, search, URL selection, folds, and responsive diffs.
+- Codex JSONL transport, versioned schema mapping, stable history resume, streaming, start/switch/fork, steering, interruption, approvals, structured questions, model and reasoning settings, and controlled restart.
+- Searchable sessions, confirmed forks through a completed turn, parent/child navigation, per-thread drafts and reading state, and recovered outbox entries requiring explicit retry.
+- Vim composer operators, named command overrides, command history/completion, theme and syntax preferences, and reduced-color configuration.
+- Enter sends by default; Shift+Enter inserts a newline. Alt+Enter is not a default shortcut.
+- Application-owned ports and behavior under domain/application owners, feature-owned UI files, and concrete adapters selected in the executable composition root.
+- Herdr pane launch manifest, lifecycle/session/metadata reporting, and configured external URL actions.
+- Unit, integration, adapter contract, renderer, and real-PTY tests. Default terminal tests cover demo navigation, JSONL approvals/streaming, SIGTERM, and persistence failure restoration.
 
 ## Checkpoint validation
 
-`bun run check` passes: TypeScript, dependency boundaries, and 102 tests with 333 assertions, including both real-PTY scenarios. `bun install --frozen-lockfile` passes. CI is configured for Linux and macOS; those remote jobs have not been observed yet.
+The final checkpoint check passed TypeScript, dependency boundaries, and 158 tests with 549 assertions. `bun install --frozen-lockfile` and `git diff --check` also pass.
+
+A formatted Markdown projection that previously took about 5.6 seconds for 58 KB took about 7 ms after replacing repeated Unicode prefix segmentation with indexed boundary lookup. This measures projection only; it is not an end-to-end rendering benchmark.
+
+Real Codex adapter validation completed a read-only tool turn, resumed it, restarted the app-server connection, resumed again, and forked the completed turn. A dedicated Herdr pane launched Vimex and reported its live thread and lifecycle metadata. See [live validation](live-validation.md) for the separate terminal acceptance evidence and outstanding approval.
+
+Runtime/navigation race regressions, long-list keyboard visibility, fatal React cleanup, and draft-save warning repairs are complete and covered by the checkpoint checks.
 
 ## Remaining acceptance work
-
-- Complete question-response UI and parent/child agent navigation; normalized adapter events alone do not satisfy these workflows.
-- Searchable session selection, confirmed user-message-boundary forks, transcript search and match motions, multiple-link selection, and command history/completion.
-- Validate the complete Vim composer/operator set and configurable key bindings against `ux.md`.
-- Validate rendered coordinate mapping for complex Markdown tables, nested structures, reflow, and streaming selections; extend fixtures where necessary.
-- Responsive split diffs, tool duration, and complete status metadata.
-- Controlled app-server restart while preserving local work.
-- First-class Herdr launch configuration and live pane verification of clipboard, reporting, URLs, and restoration.
-- A real Codex task end to end and the full release acceptance matrix. Offline fixtures cannot substitute for this verification.
+- Exercise the real terminal acceptance matrix, including resized Markdown copying, streaming anchors, thread view restoration, forks, and URLs. The opt-in driver awaits explicit authorization following automatic approval review rejection.
+- Establish live keyboard approval resolution and handled-failure terminal restoration evidence; offline tests alone do not satisfy the specification’s real-app-server acceptance requirement.
+- Observe Linux and macOS CI results; local success does not establish the remote matrix.
 
 ## Structural correction
 
