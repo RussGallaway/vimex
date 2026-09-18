@@ -253,3 +253,67 @@ for (const toolCount of [1, 20]) profileTest(`measures Shift-Tab folding ${toolC
     console.log(`100-message App fold timings (${toolCount} tools):`, samples)
   } finally { await h.close() }
 }, 30_000)
+
+for (const paragraphCount of [60, 1200]) (paragraphCount === 1200 ? profileTest : test)(paragraphCount === 1200
+  ? "profiles Ctrl-E/Y while a long answer changes between frames"
+  : "Ctrl-E/Y preserves detached viewport and composer while active deltas arrive", async () => {
+  const h = await wheelHarness()
+  try {
+    await act(async () => {
+      h.emit({ type: "conversation", event: { type: "item.delta", threadId: thread, itemId: answer,
+        delta: "\n\n" + Array.from({ length: paragraphCount }, (_, index) => `Streaming base ${index} **content** ${"wide ".repeat(8)}`).join("\n\n") } })
+      h.controller.changeDraft("keep composing during output", 5)
+      h.controller.dispatchInteraction({ type: "focus.set", surface: "composer" })
+      await h.flush()
+    })
+    await act(async () => { await h.flush(); await h.renderOnce() })
+    const scrollbox = h.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable
+    const composer = h.renderer.root.findDescendantById("composer") as TextareaRenderable
+    await act(async () => { h.mockInput.pressKey("u", { ctrl: true }); await h.flush(); await h.renderOnce() })
+    await act(async () => { await h.flush(); await h.renderOnce() })
+    const composerCursor = composer.cursorOffset
+    const samples: object[] = []
+    let frameCount = 0
+    let frameCallbacks = 0
+    let streamFrameDurations: number[] = []
+    const originalEmit = h.renderer.emit.bind(h.renderer)
+    h.renderer.emit = (event, ...args) => {
+      if (event !== "frame") return originalEmit(event, ...args)
+      const started = performance.now()
+      const result = originalEmit(event, ...args)
+      const frameDuration = performance.now() - started
+      frameCount++; frameCallbacks += frameDuration; streamFrameDurations.push(Number(frameDuration.toFixed(2)))
+      return result
+    }
+    for (let index = 0; index < (paragraphCount === 1200 ? 12 : 3); index++) {
+      frameCount = 0; frameCallbacks = 0; streamFrameDurations = []; h.reactCommits.length = 0
+      const scrollBefore = scrollbox.scrollTop
+      const deltaStarted = performance.now()
+      await act(async () => {
+        h.emit({ type: "conversation", event: { type: "item.delta", threadId: thread, itemId: answer,
+          delta: `\n\nLive chunk ${index} ${"new streaming markdown ".repeat(8)}` } })
+        await h.flush(); await h.renderOnce()
+      })
+      const deltaSettled = performance.now() - deltaStarted
+      expect(scrollbox.scrollTop).toBe(scrollBefore)
+      const key = index % 2 ? "y" : "e"
+      const started = performance.now()
+      let dispatch = 0
+      await act(async () => {
+        h.mockInput.pressKey(key, { ctrl: true })
+        dispatch = performance.now() - started
+        await h.flush(); await h.renderOnce()
+      })
+      await act(async () => { await h.flush(); await h.renderOnce() })
+      expect(scrollbox.scrollTop).toBe(scrollBefore + (key === "e" ? 1 : -1))
+      expect(h.workspace().composer.text).toBe("keep composing during output")
+      expect(composer.cursorOffset).toBe(composerCursor)
+      expect(h.workspace().interaction.surface).toBe("composer")
+      samples.push({ index, key, deltaSettled: Number(deltaSettled.toFixed(2)), dispatch: Number(dispatch.toFixed(2)),
+        keySettled: Number((performance.now()-started).toFixed(2)), frameCount, frameCallbacks: Number(frameCallbacks.toFixed(2)),
+        frameDurations: streamFrameDurations, reactCommits: h.reactCommits.map(v=>Number(v.toFixed(2))) })
+    }
+    if (paragraphCount === 1200) console.log("streaming Ctrl-E/Y timings:", samples)
+    h.renderer.emit = originalEmit
+  } finally { await h.close() }
+}, 30000)

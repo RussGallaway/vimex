@@ -169,6 +169,34 @@ interface TableLayout { columnOffsets: readonly number[]; rowOffsets: readonly n
 interface TableCell { textBufferView: TextBufferView }
 interface TableRuntime { _layout?: TableLayout; _cells?: readonly (readonly TableCell[])[] }
 
+// OpenTUI emits this event after text replacement, asynchronous highlighting /
+// concealment and resize. Track it for the renderable's lifetime: a late parser
+// result must invalidate geometry even after arbitrarily many unchanged frames.
+interface TextGeometryCache { dirty: boolean; configuration: LayoutFingerprint; fingerprint: LayoutFingerprint; text: string }
+const textGeometryCache = new WeakMap<TextBufferRenderable, TextGeometryCache>()
+function appendTextGeometry(fingerprint: unknown[], view: TextBufferRenderable, includeContent: boolean) {
+  let cached = textGeometryCache.get(view)
+  if (!cached) {
+    cached = { dirty: true, configuration: [], fingerprint: [], text: "" }
+    textGeometryCache.set(view, cached)
+    const tracked = cached
+    view.on("line-info-change", () => { tracked.dirty = true })
+  }
+  const configuration = [view.width, view.height, view.wrapMode, view.truncate, view.scrollX, view.scrollY]
+  if (cached.dirty || !sameFingerprint(cached.configuration, configuration)) {
+    const next: unknown[] = []
+    appendLineInfo(next, view, false)
+    cached.text = view.plainText
+    if (!sameFingerprint(cached.fingerprint, next)) cached.fingerprint = next
+    cached.configuration = configuration
+    cached.dirty = false
+  }
+  fingerprint.push(view, cached.fingerprint)
+  // Outside native Markdown the canonical projection already versions text.
+  // Decorative spinners must not invalidate geometry for same-width animation.
+  if (includeContent) fingerprint.push(cached.text)
+}
+
 function appendLineInfo(fingerprint: unknown[], view: TextBufferRenderable | TextBufferView, includeContent = true) {
   const info = view.lineInfo
   if (includeContent) fingerprint.push(view instanceof TextBufferRenderable ? view.plainText : view.getPlainText())
@@ -189,7 +217,7 @@ function appendNativeFingerprint(fingerprint: unknown[], renderable: Renderable,
   const position = localPosition(renderable, originX, originY)
   if (includePosition) fingerprint.push(position.x, position.y)
   fingerprint.push(renderable.width, renderable.height)
-  if (renderable instanceof TextBufferRenderable) appendLineInfo(fingerprint, renderable, includeContent)
+  if (renderable instanceof TextBufferRenderable) appendTextGeometry(fingerprint, renderable, includeContent)
   if (renderable instanceof MarkdownRenderable) {
     const runtime = renderable as unknown as { _stableBlockCount?: number }
     fingerprint.push(runtime._stableBlockCount, markdownBlocks(renderable).length)
@@ -248,10 +276,9 @@ function translateItemPoints(
   const deltaX = originX + itemX - cached.originX - cached.itemX
   const deltaY = originY + itemY - cached.originY - cached.itemY
   const translated: Record<number, MeasuredPoint> = {}
-  for (const [offset, point] of Object.entries(cached.points)) translated[Number(offset)] = {
-    ...point,
-    screenX: point.screenX + deltaX,
-    screenY: point.screenY + deltaY,
+  for (const offset in cached.points) {
+    const point = cached.points[offset]!
+    translated[Number(offset)] = { ...point, screenX: point.screenX + deltaX, screenY: point.screenY + deltaY }
   }
   return translated
 }
@@ -265,8 +292,7 @@ function cacheItemPoints(
   itemX: number,
   itemY: number,
 ): Record<number, MeasuredPoint> {
-  const stored = Object.fromEntries(Object.entries(points).map(([offset, point]) => [offset, { ...point }]))
-  const cached = { fingerprint, points: stored, originX, originY, itemX, itemY }
+  const cached = { fingerprint, points, originX, originY, itemX, itemY }
   itemGeometryCache.set(item, cached)
   // Line construction below assigns absolute rows. Keep the cached geometry
   // private so rebuilding one item can never mutate a layout already returned
@@ -345,9 +371,9 @@ function measureMarkdown(renderer: CliRenderer, markdown: MarkdownRenderable, it
     const measured = block.renderable instanceof TextTableRenderable
       ? measureTable(block.renderable, itemId, core)
       : measureRaw(renderer, block.renderable, itemId, core)
-    for (const [localOffset, point] of Object.entries(measured)) {
+    for (const localOffset in measured) {
       const graphemeOffset = logicalStart + Number(localOffset)
-      result[graphemeOffset] = { ...point, graphemeOffset }
+      result[graphemeOffset] = { ...measured[localOffset]!, graphemeOffset }
     }
     sourceCursor = start + core.length
     logicalCursor += graphemes(core).length

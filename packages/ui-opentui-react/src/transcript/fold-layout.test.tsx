@@ -57,10 +57,13 @@ test("folding one item reuses and translates unchanged item geometry", async () 
         else reads[1] += 1
         return getter!.call(block)
       } })
+      // Force a native invalidation to establish the checked-but-unchanged
+      // cost. A real remap reads the text again to construct point geometry.
+      block.emit("line-info-change")
     }
 
-    // Computing the fingerprint reads settled Markdown once. A remap reads it
-    // again, so this establishes the cache-hit cost independently of internals.
+    // An invalidated fingerprint reads settled Markdown once; an unchanged
+    // cached fingerprint requires no native text reads.
     measureRenderedTranscript(h.renderer, scroll, current)
     const fingerprintReads: [number, number] = [reads[0], reads[1]]
     reads.fill(0)
@@ -68,7 +71,8 @@ test("folding one item reuses and translates unchanged item geometry", async () 
     await act(async () => { toggleFold() })
     await act(async () => { await h.flush(); await h.renderOnce() })
     const folded = measureRenderedTranscript(h.renderer, scroll, current)!
-    expect(reads).toEqual(fingerprintReads)
+    expect(reads[0]).toBeLessThanOrEqual(fingerprintReads[0])
+    expect(reads[1]).toBeLessThanOrEqual(fingerprintReads[1])
     expect(folded.points![items[2]!.id]![0]!.screenY).toBeLessThan(initialAfterY)
     expect(initial.points![items[2]!.id]![0]!.screenY).toBe(initialAfterY)
     expect(folded.points![items[2]!.id]).not.toBe(initial.points![items[2]!.id])
