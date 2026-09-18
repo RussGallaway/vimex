@@ -41,7 +41,11 @@ test("release generator verifies four archives and emits matching manifest, sums
       expect(source).toContain(`https://github.com/RussGallaway/vimex/releases/download/v${version}/${artifact.name}`)
       expect(source).toContain(`sha256 "${artifact.sha256}"`)
     }
-    expect(source).toContain('libexec.install "vimex", "assets", "share", "LICENSE"')
+    expect(source).toContain('system "gzip", "-n", native_libraries.first')
+    expect(source).toContain('post_install_steps do')
+    expect(source).toContain('if_path_exists native_library do')
+    expect(source).toContain('run "/usr/bin/gzip", args: ["-d", native_library]')
+    expect(source).toContain('libexec.install Dir[(bundle/"*").to_s]')
     expect(source).toContain('bin.install_symlink libexec/"vimex"')
     if (Bun.which("ruby")) {
       const ruby = Bun.spawn(["ruby", "-c", formula], { stdout: "pipe", stderr: "pipe" })

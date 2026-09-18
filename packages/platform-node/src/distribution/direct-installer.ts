@@ -36,15 +36,25 @@ export async function installDirect(release: Release, artifact: ReleaseArtifact,
     if (listing.code !== 0 || details.code !== 0) throw new Error("Cannot inspect release archive")
     const paths = listing.stdout.split("\n").filter(Boolean)
     if (!paths.length || paths.some(path => path.startsWith("/") || path.includes("\\") || path.split("/").includes(".."))) throw new Error("Unsafe path in release archive")
+    const allowedRoots = ["vimex", "LICENSE", "assets", "share"]
+    if (paths.some(path => {
+      const normalized = path.replace(/^\.\//, "").replace(/\/$/, "")
+      return normalized !== "" && !allowedRoots.some(root => normalized === root || normalized.startsWith(`${root}/`))
+    })) throw new Error("Unexpected path in release archive")
     if (details.stdout.split("\n").filter(Boolean).some(line => !/^[d-]/.test(line))) throw new Error("Release archive contains links or special files")
     if (!paths.some(path => path.replace(/^\.\//, "") === "vimex")) throw new Error("Release archive is missing vimex")
-    const extracted = await run("tar", ["-xzf", archive, "--no-same-owner"], { cwd: stage })
+    const extracted = await run("tar", ["-xzf", archive, "--no-same-owner", "--no-same-permissions"], { cwd: stage })
     if (extracted.code !== 0) throw new Error(`Cannot extract release archive: ${extracted.stderr}`)
     await rm(archive)
     const executable = join(stage, "vimex")
     const executableStat = await lstat(executable)
     const actual = await realpath(executable)
     if (!executableStat.isFile() || relative(await realpath(stage), actual).startsWith(`..${sep}`)) throw new Error("Invalid release executable")
+    const [assetsStat, manualStat] = await Promise.all([
+      lstat(join(stage, "assets")),
+      lstat(join(stage, "share", "man", "man1", "vimex.1")),
+    ]).catch(() => { throw new Error("Incomplete release archive") })
+    if (!assetsStat.isDirectory() || assetsStat.isSymbolicLink() || !manualStat.isFile() || manualStat.isSymbolicLink()) throw new Error("Incomplete release archive")
     await chmod(executable, 0o755)
     bundle = join(versions, `${release.version}-${artifact.platform}-${artifact.arch}-${randomUUID().slice(0, 8)}`)
     await rename(stage, bundle)

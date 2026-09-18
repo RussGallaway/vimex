@@ -9,7 +9,7 @@ import { homebrewUpgrade, runProcess } from "./homebrew"
 import { GithubReleases } from "./github-releases"
 import { diagnoseNode } from "./diagnostics"
 
-async function fixture(link = false) {
+async function fixture(link = false, complete = true) {
   const directory = await mkdtemp(join(tmpdir(), "vimex-distribution-")), root = join(directory, "install"), source = join(directory, "bundle")
   await mkdir(join(root, "versions", "old"), { recursive: true }); await mkdir(join(source, "assets"), { recursive: true })
   await writeFile(join(root, "versions", "old", "vimex"), "old binary")
@@ -18,7 +18,11 @@ async function fixture(link = false) {
   await writeFile(join(root, "config.json"), "user configuration")
   await writeFile(join(source, "vimex"), "new binary")
   await writeFile(join(source, "assets", "parser.wasm"), "parser asset")
-  if (link) await symlink("/tmp", join(source, "unsafe"))
+  if (complete) {
+    await mkdir(join(source, "share", "man", "man1"), { recursive: true })
+    await writeFile(join(source, "share", "man", "man1", "vimex.1"), ".TH VIMEX 1\n")
+  }
+  if (link) await symlink("/tmp", join(source, "assets", "unsafe"))
   const archive = join(directory, "release.tar.gz")
   expect((await runProcess("tar", ["-czf", archive, "-C", source, "."])).code).toBe(0)
   const bytes = new Uint8Array(await readFile(archive))
@@ -40,14 +44,16 @@ test("direct upgrade atomically switches a verified executable and assets, prese
   } finally { await f.close() }
 })
 test("checksum failures, interrupted downloads, and unsafe archive links preserve current", async () => {
-  const f = await fixture(), unsafe = await fixture(true)
+  const f = await fixture(), unsafe = await fixture(true), incomplete = await fixture(false, false)
   try {
     await expect(installDirect(f.release, { ...f.artifact, sha256: "0".repeat(64) }, f.root, { download: async () => f.bytes })).rejects.toThrow("checksum")
     await expect(installDirect(f.release, f.artifact, f.root, { download: async () => { throw new Error("download interrupted") } })).rejects.toThrow("interrupted")
     await expect(installDirect(unsafe.release, unsafe.artifact, unsafe.root, { download: async () => unsafe.bytes })).rejects.toThrow("links or special")
+    await expect(installDirect(incomplete.release, incomplete.artifact, incomplete.root, { download: async () => incomplete.bytes })).rejects.toThrow("Incomplete release archive")
     expect(await readlink(join(f.root, "current"))).toBe("versions/old")
     expect(await readlink(join(unsafe.root, "current"))).toBe("versions/old")
-  } finally { await f.close(); await unsafe.close() }
+    expect(await readlink(join(incomplete.root, "current"))).toBe("versions/old")
+  } finally { await f.close(); await unsafe.close(); await incomplete.close() }
 })
 test("ownership checks refuse current bundles outside the installation", async () => {
   const f = await fixture()

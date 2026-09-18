@@ -122,7 +122,12 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add Formula/vimex.rb
           git commit -m "Update Homebrew formula for ${RELEASE_VERSION}"
-          git push --force-with-lease origin HEAD:"$branch"
+          remote_tip=$(git ls-remote --heads origin "$branch" | awk '{print $1}')
+          if [[ -n "$remote_tip" ]]; then
+            git push --force-with-lease="$branch:$remote_tip" origin HEAD:"$branch"
+          else
+            git push origin HEAD:"$branch"
+          fi
           pull_request=$(gh pr list --state open --head "$branch" --json number --jq '.[0].number // empty')
           if [[ -z "$pull_request" ]]; then
             gh pr create --base main --head "$branch" \
