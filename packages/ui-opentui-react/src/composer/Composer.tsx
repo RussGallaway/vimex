@@ -130,6 +130,7 @@ export function Composer(props: {
         backgroundColor={emberTide.backgroundRaised}
         focusedBackgroundColor={emberTide.backgroundRaised}
         cursorColor={emberTide.sage}
+        cursorStyle={{ style: props.mode === "insert" ? "line" : "block", blinking: false }}
         keyBindings={[
           ...(props.insertEnter === "submit" ? [{ name: "return", action: "submit" } as const] : []),
           { name: "return", shift: true, action: "newline" },
