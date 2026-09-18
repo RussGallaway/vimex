@@ -170,6 +170,6 @@ test("invalid recognized Ex arguments show usage and preserve Command input", as
     expect(h.executed).toEqual([])
     expect(h.workspace().interaction.mode).toBe("command")
     expect(h.workspace().interaction.commandLine).toBe("theme ultraviolet")
-    expect(h.captureCharFrame()).toContain("Usage: :theme [ember-tide|nord|kanagawa]")
+    expect(h.captureCharFrame()).toContain("Usage: :theme [name]")
   } finally { await h.close() }
 })

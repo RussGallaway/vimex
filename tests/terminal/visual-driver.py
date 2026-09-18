@@ -6,7 +6,7 @@ from frame_capture import save_frame
 
 root = pathlib.Path(__file__).resolve().parents[2]
 theme = os.environ.get('VIMEX_TEST_THEME', '')
-if theme not in ('', 'ember-tide', 'nord', 'kanagawa'):
+if theme not in ('', 'ember-tide', 'nord', 'kanagawa', 'gruvbox-material', 'tokyo-night', 'catppuccin-mocha'):
     raise ValueError('Unsupported VIMEX_TEST_THEME')
 artifacts = pathlib.Path('/tmp/vimex-visual-e2e' + ('-' + theme if theme else ''))
 screen = pyte.Screen(100, 30)

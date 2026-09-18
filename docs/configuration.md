@@ -21,7 +21,7 @@ Vimex reads JSON from `$XDG_CONFIG_HOME/vimex/config.json`, or `~/.config/vimex/
 | Key | Values | Behavior |
 | --- | --- | --- |
 | `version` | `1` | Configuration schema version. |
-| `theme` | `ember-tide`, `nord`, `kanagawa` | UI palette. `:theme NAME` changes and persists it. |
+| `theme` | `ember-tide`, `nord`, `kanagawa`, `gruvbox-material`, `tokyo-night`, `catppuccin-mocha` | UI palette. `:theme NAME` changes and persists it. |
 | `syntaxTheme` | `theme` or a theme name | Markdown code palette. `theme` follows the UI palette; `:syntax NAME` persists a change. |
 | `reducedColor` | boolean | Reduces accents to foreground/background tones. A nonempty `NO_COLOR` also enables this at runtime. |
 | `insertEnter` | `submit`, `newline` | With `submit`, Enter sends and Shift+Enter inserts a newline. With `newline`, Enter inserts a newline; Escape then Enter sends from Normal mode. Ctrl+Enter also sends when reported distinctly. |

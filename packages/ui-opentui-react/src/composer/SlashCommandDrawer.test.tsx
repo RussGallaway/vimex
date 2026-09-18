@@ -163,7 +163,7 @@ test("invalid recognized slash command shows usage and preserves Insert draft", 
     expect(h.executed).toEqual([])
     expect(h.workspace().composer.text).toBe("/theme ultraviolet")
     expect(h.workspace().interaction.mode).toBe("insert")
-    expect(h.captureCharFrame()).toContain("Usage: /theme [ember-tide|nord|kanagawa]")
+    expect(h.captureCharFrame()).toContain("Usage: /theme [name]")
   } finally { await h.close() }
 })
 
@@ -175,7 +175,7 @@ test("recognized partial argument is not silently replaced by its completion", a
     await act(async () => { h.mockInput.pressKey("RETURN"); await h.flush(); await h.renderOnce() })
     expect(h.executed).toEqual([])
     expect(h.workspace().composer.text).toBe("/theme ka")
-    expect(h.captureCharFrame()).toContain("Usage: /theme [ember-tide|nord|kanagawa]")
+    expect(h.captureCharFrame()).toContain("Usage: /theme [name]")
   } finally { await h.close() }
 })
 

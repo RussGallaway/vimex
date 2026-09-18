@@ -1,12 +1,12 @@
-import { parseCommand } from "@vimex/interaction"
+import { parseCommand, themeNames, type ThemeName } from "@vimex/interaction"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { JsonStore } from "./persistence/json-store"
 
 export interface VimexConfig {
   version: 1
-  theme: "ember-tide" | "nord" | "kanagawa"
-  syntaxTheme: "theme" | "ember-tide" | "nord" | "kanagawa"
+  theme: ThemeName
+  syntaxTheme: "theme" | ThemeName
   reducedColor: boolean
   insertEnter: "newline" | "submit"
   busySubmit: "queue" | "steer"
@@ -27,8 +27,8 @@ export function parseConfig(value: unknown): VimexConfig {
   for (const key of Object.keys(raw)) if (!allowed.has(key)) throw new Error(`Unknown configuration key: ${key}`)
   const result = { ...defaultConfig, ...raw } as VimexConfig
   if (result.version !== 1) throw new Error("Unsupported configuration version")
-  if (!["ember-tide", "nord", "kanagawa"].includes(result.theme)) throw new Error("Unknown theme")
-  if (!["theme", "ember-tide", "nord", "kanagawa"].includes(result.syntaxTheme)) throw new Error("Unknown syntax theme")
+  if (!themeNames.includes(result.theme)) throw new Error("Unknown theme")
+  if (!["theme", ...themeNames].includes(result.syntaxTheme)) throw new Error("Unknown syntax theme")
   if (typeof result.reducedColor !== "boolean") throw new Error("reducedColor must be a boolean")
   if (!["newline", "submit"].includes(result.insertEnter)) throw new Error("insertEnter must be newline or submit")
   if (!["queue", "steer"].includes(result.busySubmit)) throw new Error("busySubmit must be queue or steer")

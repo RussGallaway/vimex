@@ -1,3 +1,4 @@
+import { themeNames } from "./theme-names"
 /** Ex command vocabulary belongs to interaction, independent of renderer and runtime. */
 export const commandNames = ["quit", "sessions", "approvals", "help", "model", "thinking", "cwd", "new", "approve", "reject", "stop", "fork", "fold", "unfold", "yank", "open", "rename", "questions", "agents", "parent", "restart", "theme", "syntax", "submit", "insert", "normal", "visual", "favorite", "follow"] as const
 export type CommandName = typeof commandNames[number]
@@ -27,7 +28,7 @@ export interface CommandDescriptor {
   readonly required?: boolean
   readonly choices?: readonly string[]
 }
-const themes = ["ember-tide", "nord", "kanagawa"] as const
+const themes = themeNames
 const argumentDescriptors: Partial<Record<CommandName, Omit<CommandDescriptor, "description">>> = {
   sessions: { usage: "sessions [thread-id]", arguments: "literal" },
   help: { usage: "help [command]", arguments: "choice", choices: [...commandNames, ...Object.keys(aliases)] },
@@ -38,8 +39,8 @@ const argumentDescriptors: Partial<Record<CommandName, Omit<CommandDescriptor, "
   rename: { usage: "rename <title>", arguments: "literal", required: true },
   open: { usage: "open [url]", arguments: "literal" },
   yank: { usage: "yank [text|markdown]", arguments: "choice", choices: ["text", "markdown"] },
-  theme: { usage: "theme [ember-tide|nord|kanagawa]", arguments: "choice", choices: themes },
-  syntax: { usage: "syntax [theme|ember-tide|nord|kanagawa]", arguments: "choice", choices: ["theme", ...themes] },
+  theme: { usage: "theme [name]", arguments: "choice", choices: themes },
+  syntax: { usage: "syntax [theme|name]", arguments: "choice", choices: ["theme", ...themes] },
   submit: { usage: "submit [queue|steer]", arguments: "choice", choices: ["queue", "steer"] },
   favorite: { usage: "favorite [on|off]", arguments: "choice", choices: ["on", "off"] },
 }

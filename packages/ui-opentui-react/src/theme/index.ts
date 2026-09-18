@@ -1,14 +1,9 @@
 import { SyntaxStyle } from "@opentui/core"
 
-export interface VimexTheme {
-  name: string
-  background: string; backgroundRaised: string; backgroundPanel: string; backgroundHover: string
-  border: string; borderMuted: string; text: string; textSoft: string; textMuted: string
-  blue: string; blueBright: string; sage: string; amber: string; ember: string; red: string
-  selection: string; selectionText: string; diffAdded: string; diffAddedBright: string
-  diffRemoved: string; diffRemovedBright: string; diffContext: string
-  syntax?: { keyword: string; keywordBold: boolean; number: string; function: string; type: string; constant: string; property: string; heading: string; operator: string }
-}
+import type { VimexTheme } from "./types"
+import type { ThemeName } from "@vimex/interaction"
+import { gruvboxMaterial, tokyoNight, catppuccinMocha } from "./additional-palettes"
+export type { VimexTheme } from "./types"
 
 const emberTideBase: VimexTheme = {
   name: "Ember Tide",
@@ -56,9 +51,11 @@ export const kanagawa: VimexTheme = {
   border: "#54546d", borderMuted: "#363646", text: "#dcd7ba", textSoft: "#c8c093", textMuted: "#727169",
   blue: "#7e9cd8", blueBright: "#7fb4ca", sage: "#98bb6c", amber: "#e6c384", ember: "#e46876", red: "#c34043",
   selection: "#2d4f67", selectionText: "#dcd7ba",
+  diffAdded: "#2b3328", diffAddedBright: "#98bb6c", diffRemoved: "#43242b", diffRemovedBright: "#e46876", diffContext: "#252535",
+  syntax: { keyword: "#957fb8", keywordBold: true, number: "#d27e99", function: "#7e9cd8", type: "#7aa89f", constant: "#ffa066", property: "#dcd7ba", heading: "#e6c384", operator: "#c0a36e" },
 }
 
-const themes = { "ember-tide": emberTideBase, nord, kanagawa } as const
+const themes = { "ember-tide": emberTideBase, nord, kanagawa, "gruvbox-material": gruvboxMaterial, "tokyo-night": tokyoNight, "catppuccin-mocha": catppuccinMocha } satisfies Record<ThemeName, VimexTheme>
 let selectedTheme: VimexTheme = emberTideBase
 function reduced(palette: VimexTheme): VimexTheme {
   return {

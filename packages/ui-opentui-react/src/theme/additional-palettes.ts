@@ -1,0 +1,32 @@
+import type { VimexTheme } from "./types"
+
+// Source palettes and deliberate terminal adaptations are documented in docs/themes.md.
+export const gruvboxMaterial: VimexTheme = {
+  name: "Gruvbox Material",
+  background: "#282828", backgroundRaised: "#32302f", backgroundPanel: "#3a3735", backgroundHover: "#45403d",
+  border: "#5a524c", borderMuted: "#45403d", text: "#ddc7a1", textSoft: "#d4be98", textMuted: "#a89984",
+  blue: "#7daea3", blueBright: "#89b482", sage: "#a9b665", amber: "#d8a657", ember: "#e78a4e", red: "#ea6962",
+  selection: "#45403d", selectionText: "#ddc7a1",
+  diffAdded: "#34381b", diffAddedBright: "#a9b665", diffRemoved: "#402120", diffRemovedBright: "#ea6962", diffContext: "#32302f",
+  syntax: { keyword: "#ea6962", keywordBold: false, number: "#d3869b", function: "#a9b665", type: "#d8a657", constant: "#d3869b", property: "#7daea3", heading: "#d8a657", operator: "#e78a4e" },
+}
+
+export const tokyoNight: VimexTheme = {
+  name: "Tokyo Night",
+  background: "#1a1b26", backgroundRaised: "#1f2335", backgroundPanel: "#24283b", backgroundHover: "#292e42",
+  border: "#414868", borderMuted: "#292e42", text: "#c0caf5", textSoft: "#a9b1d6", textMuted: "#8993b5",
+  blue: "#7aa2f7", blueBright: "#7dcfff", sage: "#9ece6a", amber: "#e0af68", ember: "#ff9e64", red: "#f7768e",
+  selection: "#283457", selectionText: "#c0caf5",
+  diffAdded: "#20303b", diffAddedBright: "#9ece6a", diffRemoved: "#37222c", diffRemovedBright: "#f7768e", diffContext: "#1f2335",
+  syntax: { keyword: "#bb9af7", keywordBold: false, number: "#ff9e64", function: "#7aa2f7", type: "#2ac3de", constant: "#ff9e64", property: "#73daca", heading: "#7aa2f7", operator: "#89ddff" },
+}
+
+export const catppuccinMocha: VimexTheme = {
+  name: "Catppuccin Mocha",
+  background: "#1e1e2e", backgroundRaised: "#262637", backgroundPanel: "#313244", backgroundHover: "#45475a",
+  border: "#585b70", borderMuted: "#45475a", text: "#cdd6f4", textSoft: "#bac2de", textMuted: "#a6adc8",
+  blue: "#89b4fa", blueBright: "#89dceb", sage: "#a6e3a1", amber: "#f9e2af", ember: "#fab387", red: "#f38ba8",
+  selection: "#45475a", selectionText: "#cdd6f4",
+  diffAdded: "#2c3a37", diffAddedBright: "#a6e3a1", diffRemoved: "#432c3c", diffRemovedBright: "#f38ba8", diffContext: "#262637",
+  syntax: { keyword: "#cba6f7", keywordBold: false, number: "#fab387", function: "#89b4fa", type: "#f9e2af", constant: "#fab387", property: "#cdd6f4", heading: "#b4befe", operator: "#89dceb" },
+}

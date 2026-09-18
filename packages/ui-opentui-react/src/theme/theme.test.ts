@@ -1,3 +1,5 @@
+import { RGBA } from "@opentui/core"
+import { themeNames } from "@vimex/interaction"
 import { afterEach, describe, expect, test } from "bun:test"
 import { createEmberTideSyntax, emberTide, selectTheme, themePalette } from "."
 
@@ -21,7 +23,7 @@ describe("UI themes", () => {
 })
 
 
-for (const name of ["ember-tide", "nord", "kanagawa"] as const) test(`${name} defines native Markdown and code scopes without code backgrounds`, () => {
+for (const name of themeNames) test(`${name} defines native Markdown and code scopes without code backgrounds`, () => {
   const syntax = createEmberTideSyntax(name)
   const reduced = createEmberTideSyntax(name, true)
   try {
@@ -73,4 +75,24 @@ test("Nord syntax uses Frost functions/types and Aurora purple values with restr
   const ember = createEmberTideSyntax("ember-tide"), kanagawa = createEmberTideSyntax("kanagawa")
   try { expect(ember.getStyle("keyword")!.bold).toBe(true); expect(kanagawa.getStyle("keyword")!.bold).toBe(true) }
   finally { ember.destroy(); kanagawa.destroy() }
+})
+
+for (const [name, keyword, fn, number] of [
+  ["gruvbox-material", "#ea6962", "#a9b665", "#d3869b"],
+  ["kanagawa", "#957fb8", "#7e9cd8", "#d27e99"],
+  ["tokyo-night", "#bb9af7", "#7aa2f7", "#ff9e64"],
+  ["catppuccin-mocha", "#cba6f7", "#89b4fa", "#fab387"],
+] as const) test(`${name} preserves its distinct syntax roles and readable surfaces`, () => {
+  const syntax = createEmberTideSyntax(name)
+  const palette = themePalette(name)
+  try {
+    for (const [scope, hex] of [["keyword", keyword], ["function.call", fn], ["number", number]]) {
+      expect(syntax.getStyle(scope!)!.fg!.toString()).toBe(RGBA.fromHex(hex!).toString())
+    }
+    for (const surface of [palette.background, palette.backgroundPanel, palette.selection, palette.diffAdded, palette.diffRemoved]) {
+      expect(contrast(palette.text, surface)).toBeGreaterThanOrEqual(4.5)
+    }
+    expect(syntax.getStyle("string")!.fg!.toString()).toBe(RGBA.fromHex(palette.sage).toString())
+    expect(syntax.getStyle("comment")!.italic).toBe(true)
+  } finally { syntax.destroy() }
 })

@@ -1,3 +1,4 @@
+import type { ThemeName } from "@vimex/interaction"
 import type { WorkbenchState, WorkbenchActions } from "@vimex/workbench"
 export type { WorkbenchActions as VimexUiController, TranscriptAction as TranscriptUiCommand } from "@vimex/workbench"
 type VimexUiController = WorkbenchActions
@@ -9,8 +10,8 @@ export interface VimexAppProps {
 }
 
 export interface VimexUiSettings {
-  theme: "ember-tide" | "nord" | "kanagawa"
-  syntaxTheme: "theme" | "ember-tide" | "nord" | "kanagawa"
+  theme: ThemeName
+  syntaxTheme: "theme" | ThemeName
   reducedColor: boolean
   insertEnter: "newline" | "submit"
   busySubmit: "queue" | "steer"

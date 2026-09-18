@@ -10,3 +10,6 @@ export type { CommandName, CommandDescriptor, CommandCompletionOptions } from ".
 export { initialCommandHistory, recordCommand, recallCommand, commandCompletions } from "./commands/command-line"
 export type { CommandHistory } from "./commands/command-line"
 export * from "./vim/composer-buffer"
+
+export { themeNames } from "./commands/theme-names"
+export type { ThemeName } from "./commands/theme-names"

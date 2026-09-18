@@ -30,7 +30,7 @@ test("completes thinking from the active model and shared static choices", () =>
   expect(commandCompletions(":thinking ", options)).toEqual([":thinking low", ":thinking medium"])
   expect(commandCompletions(":thinking h", options)).toEqual([])
   expect(commandCompletions(":thinking ", { ...options, currentModel: "deep" })).toEqual([":thinking high"])
-  expect(commandCompletions(":syntax t")).toEqual([":syntax theme"])
+  expect(commandCompletions(":syntax t")).toEqual([":syntax theme", ":syntax tokyo-night"])
   expect(commandCompletions(":submit ")).toEqual([":submit queue", ":submit steer"])
   expect(commandCompletions(":favorite o")).toEqual([":favorite on", ":favorite off"])
   expect(commandCompletions(":help fol")).toEqual([":help fold", ":help follow"])
