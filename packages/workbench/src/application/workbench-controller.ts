@@ -785,9 +785,11 @@ export class VimexController implements WorkbenchActions {
         else this.openThread(threadId(argument))
         break
       }
+      case "manual": this.dispatchInteraction({ type: "overlay.open", overlay: "manual" }); break
       case "help": {
         const name = resolveCommandName(argument)
-        if (name) this.notice(`:${commandDescriptors[name].usage} — ${commandDescriptors[name].description}`)
+        if (name === "manual") this.dispatchInteraction({ type: "overlay.open", overlay: "manual" })
+        else if (name) this.notice(`:${commandDescriptors[name].usage} — ${commandDescriptors[name].description}`)
         else this.dispatchInteraction({ type: "overlay.open", overlay: "help" })
         break
       }

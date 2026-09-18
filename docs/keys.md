@@ -2,7 +2,7 @@
 
 Vimex has four modes: Normal, Insert, Visual, and Command. Transcript/composer focus is independent from the mode. Counts work for transcript motions and the supported composer motions and edits.
 
-Press `:help` for the compact in-app reference.
+Press `:help` for the compact in-app reference, or `:manual` (`:man`, `/manual`, `:help manual`) for the offline user manual.
 
 ## Focus and global actions
 
@@ -78,6 +78,7 @@ In transcript Normal mode, Enter toggles the current foldable block. Shift-Tab t
 | `ga`, `:agents` | Open parent/child agent navigation. |
 | `:questions` | Open pending structured questions. |
 | `:parent` | Return to the parent agent thread. |
+| `:manual` | Read the scrollable offline user manual. |
 | `:help` | Open the scrollable key and command reference. |
 
 Normal mode also provides a Space leader vocabulary: `Space s` opens sessions, `Space a` opens approvals, `Space q` opens questions, and `Space ?` opens help. The second key is a leader token rather than an independent fallback action.

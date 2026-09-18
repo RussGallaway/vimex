@@ -1,6 +1,8 @@
 # Install and run
 
-Vimex is currently distributed as source. The repository does not yet publish a standalone executable or registry package.
+Vimex is currently distributed as source. The repository does not yet publish a standalone executable or registry package. The planned first release is 0.1.0; see [distribution and releases](releasing.md).
+
+Use `:manual` inside Vimex or `man ./docs/man/vimex.1` from the checkout to read the offline manual.
 
 ## Requirements
 

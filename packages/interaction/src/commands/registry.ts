@@ -1,8 +1,8 @@
 import { themeNames } from "./theme-names"
 /** Ex command vocabulary belongs to interaction, independent of renderer and runtime. */
-export const commandNames = ["quit", "sessions", "approvals", "help", "model", "thinking", "cwd", "new", "approve", "reject", "stop", "fork", "fold", "unfold", "yank", "open", "rename", "questions", "agents", "parent", "restart", "theme", "syntax", "submit", "insert", "normal", "visual", "favorite", "follow", "tail", "compact", "side", "goal"] as const
+export const commandNames = ["quit", "sessions", "approvals", "help", "model", "thinking", "cwd", "new", "approve", "reject", "stop", "fork", "fold", "unfold", "yank", "open", "rename", "questions", "agents", "parent", "restart", "theme", "syntax", "submit", "insert", "normal", "visual", "favorite", "follow", "tail", "compact", "side", "manual", "goal"] as const
 export type CommandName = typeof commandNames[number]
-const aliases: Readonly<Record<string, CommandName>> = { q: "quit", models: "model", copy: "yank" }
+const aliases: Readonly<Record<string, CommandName>> = { q: "quit", models: "model", copy: "yank", man: "manual" }
 export function resolveCommandName(value: string): CommandName | undefined {
   return aliases[value] ?? (commandNames.includes(value as CommandName) ? value as CommandName : undefined)
 }
@@ -18,6 +18,7 @@ export const commandDescriptions: Readonly<Record<CommandName, string>> = {
   insert: "Enter Insert mode", normal: "Enter Normal mode", visual: "Select transcript text",
   favorite: "Favorite or unfavorite this session", follow: "Resume following the transcript tail", tail: "Resume following the transcript tail",
   goal: "Set, inspect, pause, resume, complete, or clear a Codex goal",
+  manual: "Read the offline Vimex user manual",
   compact: "Compact the active session context",
   side: "Open a forked side chat; close hides it, quit retires it",
 }

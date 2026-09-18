@@ -2,9 +2,13 @@
 
 A full-screen, Vim-operated terminal interface for the Codex app server, built with OpenTUI React. Vimex owns presentation and interaction; Codex owns execution, permissions, and conversation history.
 
-V1 is under active implementation. The acceptance criteria and remaining work are in [the v1 project documents](work/projects/v1/README.md).
+Vimex is preparing an initial **0.1.0** release and follows Semantic Versioning. The `work/projects/v1` directory names a planning milestone, not a 1.0.0 release commitment. The acceptance criteria and remaining work are in [the v1 project documents](work/projects/v1/README.md).
 
 ## Documentation
+
+- [Documentation index](docs/README.md)
+- [User manual](docs/manual.md) — available offline with `:manual`
+- [Distribution and release plan](docs/releasing.md)
 
 - [Install and run](docs/install.md)
 - [Configuration](docs/configuration.md)
@@ -33,9 +37,9 @@ The default dark theme is **Ember Tide**: charcoal, warm ivory, muted blue, sage
 - `Ctrl-k` and `Ctrl-j` move between transcript and composer from every mode.
 - `Ctrl-e/y` scroll by line; `Ctrl-d/u` scroll by half a viewport.
 - `v` selects transcript text; `y` copies rendered text; `:yank markdown` copies its source.
-- `/` and `?` search; `n`/`N` repeat; `G` resumes following the response.
+- `/` and `?` search; `n`/`N` repeat; `G` or `t` resumes following the response.
 - `za` toggles a fold; `[u`/`]u` move between links; `gx` opens a link.
-- `s` opens sessions; Space leads to `s` sessions, `a` approvals, `q` questions, or `?` help; `:agents` opens agent threads; `:parent` returns.
+- `s` opens Flash; Space leads to `s` sessions, `a` approvals, `q` questions, or `?` help; `:agents` opens agent threads; `:parent` returns.
 - `f` confirms a fork through the selected completed turn.
 - `:approvals` and `:questions` open pending requests for the active session.
 - `:restart` reconnects a failed runtime while keeping local drafts. Uncertain sends require an explicit retry.
@@ -85,3 +89,7 @@ bun run test:e2e
 Generated Codex protocol types stay inside the adapter. Refresh them deliberately with `bun run generate:codex` after installing the intended Codex version, then review schema changes and run contract tests.
 
 Set `reducedColor: true` or a nonempty `NO_COLOR` environment variable to reduce accent colors to the theme’s text and background tones. Status and mode indicators also use text.
+
+## License
+
+[MIT](LICENSE). Bundled third-party assets retain their own licenses and notices.

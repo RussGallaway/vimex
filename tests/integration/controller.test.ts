@@ -979,3 +979,15 @@ test("goal commands use server state, serialize mutations, and preserve draft wi
   expect(h.starts).toEqual([])
   await h.controller.close()
 })
+
+test("manual aliases open the offline guide without changing the draft", async () => {
+  const h = harness(); await h.controller.initialize("/tmp")
+  h.controller.changeDraft("Preserve this", 4)
+  for (const command of ["manual", "man", "help manual"]) {
+    h.controller.executeCommand(command)
+    expect(h.controller.getSnapshot().workspaces[a]?.interaction.overlay).toBe("manual")
+    expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe("Preserve this")
+    h.controller.dispatchInteraction({ type: "overlay.close" })
+  }
+  await h.controller.close()
+})

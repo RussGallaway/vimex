@@ -250,3 +250,7 @@ Cross-session cursor/viewport history belongs to `workbench/src/application/navi
 Side-chat application state lives in `workbench/src/application/side-chat.ts`, separate from thread transport and screen layout. Retirement and retained parent/child associations persist through local state. `ui-opentui-react/src/side-chat/SideChatLayout.tsx` arranges persistent pane Apps; `pane-geometry.tsx` supplies pane-local dimensions and screen origins to Markdown diffs, Flash labels, composers, and overlays. Focus gates input and hardware-cursor ownership, while both transcripts continue receiving events.
 
 `workbench/src/application/goal-command.ts` adapts goal commands to server-owned persisted goal state. `compaction.ts` owns the asynchronous per-thread compaction lifecycle. Their protocol mappings stay in the Codex adapter; neither feature implements a second agent harness or artificial continuation loop.
+
+## Distribution milestone (0.1.0)
+
+The proposed global CLI and distribution context are documented in [CLI architecture](../../../docs/cli-architecture.md). This is an additive proposal; apps/tui remains the current source entry point. The offline guide lives in ui-opentui-react/src/help. scripts/generate-manual.ts derives its embedded content and docs/man/vimex.1 from docs/manual.md; docs:check prevents drift.

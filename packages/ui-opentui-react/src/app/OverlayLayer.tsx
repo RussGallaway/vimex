@@ -17,6 +17,7 @@ import { SessionsOverlay } from "../sessions/SessionsOverlay"
 import type { SessionRow } from "../sessions/session-search"
 import { emberTide } from "../theme"
 import { UrlsOverlay } from "../urls/UrlsOverlay"
+import { ManualOverlay } from "../help/ManualOverlay"
 import { OverlayFrame } from "./OverlayFrame"
 
 function HelpOverlay() {
@@ -36,7 +37,7 @@ function HelpOverlay() {
     ["Jump", "s/Ctrl-g Flash   Ctrl-o/i history   ma mark   `a jump"],
     ["Fold", "Enter/za toggle   Shift-Tab all"], ["Views", "Space s sessions   Space r rename   a approvals   :help"],
     ["Agents", "ga picker   [a/]a family   \\ parent"],
-    ["Side", "Ctrl-W h/l focus   Ctrl-W | maximize   Ctrl-W c close   Ctrl-W q quit"],
+    ["Side", "Ctrl-H/L focus   Ctrl-W | maximize   Ctrl-W c close   Ctrl-W q quit"],
     ["Follow", "t tail (Normal, either pane)"],
     ["Focus", "↑ transcript   ↓ composer   ctrl-w k/j aliases"],
     ["Composer", "h/j/k/l  w/b  0/$  x/dd  u/ctrl-r  i/a/I/A  v select"],
@@ -99,6 +100,7 @@ export function OverlayLayer(props: {
       : props.overlay === "urls" ? <UrlsOverlay choices={props.urls} selected={props.selected} />
       : props.overlay === "models" ? <ModelsOverlay models={props.models} error={props.modelCatalogError} selected={props.selected} picker={props.modelPicker} />
       : props.overlay === "help" ? <HelpOverlay />
+      : props.overlay === "manual" ? <ManualOverlay />
       : <OverlayFrame title={props.overlay} width={72}><text fg={emberTide.textMuted}>This view is not available yet.</text></OverlayFrame>}
   </box>
 }
