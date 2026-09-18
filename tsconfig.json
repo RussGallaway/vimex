@@ -45,7 +45,10 @@
         "./packages/platform-node/src/index.ts"
       ],
       "@vimex/herdr": [
-        "./plugins/herdr/src/index.ts"
+        "./plugins/herdr/src/herdr-plugin.ts"
+      ],
+      "@vimex/testkit": [
+        "./packages/testkit/src/index.ts"
       ]
     },
     "noEmit": true

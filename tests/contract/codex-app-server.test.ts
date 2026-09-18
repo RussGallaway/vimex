@@ -1,0 +1,554 @@
+import { describe, expect, test } from "bun:test"
+import {
+  CodexAppServerClient,
+  StdioTransport,
+  type CodexAdapterEvent,
+  type CodexTransport,
+  type JsonObject,
+  RpcClient,
+  type StdioProcess,
+} from "@vimex/codex-app-server"
+import { itemId, threadId, turnId } from "@vimex/conversation"
+
+class FakeTransport implements CodexTransport {
+  readonly sent: JsonObject[] = []
+  started = false
+  closed = false
+  private readonly messages = new Set<(message: unknown) => void>()
+  private readonly errors = new Set<(error: Error) => void>()
+  private readonly closes = new Set<(error?: Error) => void>()
+
+  async start() { this.started = true }
+  async send(message: JsonObject) { this.sent.push(message) }
+  async close() {
+    this.closed = true
+    for (const listener of this.closes) listener()
+  }
+  onMessage(listener: (message: unknown) => void) { this.messages.add(listener); return () => this.messages.delete(listener) }
+  onError(listener: (error: Error) => void) { this.errors.add(listener); return () => this.errors.delete(listener) }
+  onClose(listener: (error?: Error) => void) { this.closes.add(listener); return () => this.closes.delete(listener) }
+  receive(message: unknown) { for (const listener of this.messages) listener(message) }
+  fail(error: Error) { for (const listener of this.errors) listener(error) }
+  exit(error?: Error) { for (const listener of this.closes) listener(error) }
+}
+
+class FakeProcess implements StdioProcess {
+  readonly writes: string[] = []
+  killed = false
+  ended = false
+  stdout?: (chunk: string | Uint8Array) => void
+  stderr?: (chunk: string | Uint8Array) => void
+  error?: (error: Error) => void
+  exit?: (code: number | null, signal: string | null) => void
+  async write(value: string) { this.writes.push(value) }
+  end() { this.ended = true }
+  kill() { this.killed = true }
+  onStdout(listener: (chunk: string | Uint8Array) => void) { this.stdout = listener }
+  onStderr(listener: (chunk: string | Uint8Array) => void) { this.stderr = listener }
+  onError(listener: (error: Error) => void) { this.error = listener }
+  onExit(listener: (code: number | null, signal: string | null) => void) { this.exit = listener }
+}
+
+const initializeResult = {
+  userAgent: "codex-cli/0.154.0",
+  codexHome: "/tmp/codex",
+  platformFamily: "unix",
+  platformOs: "macos",
+}
+
+const baseThread = {
+  id: "thr-1",
+  environments: null,
+  extra: null,
+  sessionId: "thr-1",
+  forkedFromId: null,
+  parentThreadId: null,
+  preview: "Fix parser",
+  ephemeral: false,
+  section: null,
+  sectionEnteredAt: null,
+  projectId: null,
+  historyMode: "full",
+  modelProvider: "openai",
+  model: "gpt-test",
+  reasoningEffort: "high",
+  createdAt: 1,
+  updatedAt: 2,
+  recencyAt: 2,
+  status: { type: "idle" },
+  path: null,
+  cwd: "/repo",
+  cliVersion: "0.154.0",
+  originator: null,
+  source: "appServer",
+  canAcceptDirectInput: true,
+  threadSource: null,
+  agentNickname: null,
+  agentRole: null,
+  gitInfo: { sha: "abc", branch: "main", originUrl: null },
+  name: "Parser",
+  daybreakEnabled: null,
+  turns: [],
+}
+
+async function connectedClient() {
+  const transport = new FakeTransport()
+  const client = new CodexAppServerClient(transport, {
+    clientInfo: { name: "vimex_test", title: "Vimex Test", version: "1.0.0" },
+  })
+  const connecting = client.connect()
+  await tick()
+  const initialize = transport.sent[0]
+  expect(initialize).toEqual({
+    method: "initialize",
+    id: 1,
+    params: {
+      clientInfo: { name: "vimex_test", title: "Vimex Test", version: "1.0.0" },
+      capabilities: { experimentalApi: false, requestAttestation: false },
+    },
+  })
+  transport.receive({ id: 1, result: initializeResult })
+  await connecting
+  expect(transport.sent[1]).toEqual({ method: "initialized" })
+  return { client, transport }
+}
+
+describe("JSONL stdio transport", () => {
+  test("frames split chunks, reports malformed lines, and writes one message per line", async () => {
+    const process = new FakeProcess()
+    const stderr: string[] = []
+    const transport = new StdioTransport({
+      processFactory: () => process,
+      onStderr: (value) => stderr.push(value),
+    })
+    const messages: unknown[] = []
+    const errors: string[] = []
+    transport.onMessage((message) => messages.push(message))
+    transport.onError((error) => errors.push(error.message))
+
+    await transport.start()
+    process.stdout?.('{"id":1,"res')
+    process.stdout?.('ult":{}}\nnot-json\n{"method":"turn/started","params":{}}\n')
+    process.stderr?.("diagnostic")
+    await transport.send({ method: "initialized" })
+
+    expect(messages).toEqual([{ id: 1, result: {} }, { method: "turn/started", params: {} }])
+    expect(errors[0]).toContain("Invalid JSONL")
+    expect(stderr).toEqual(["diagnostic"])
+    expect(process.writes).toEqual(['{"method":"initialized"}\n'])
+
+    await transport.close()
+    expect(process.ended).toBe(true)
+    expect(process.killed).toBe(true)
+  })
+
+  test("decodes a multibyte JSON string split across byte chunks", async () => {
+    const process = new FakeProcess()
+    const transport = new StdioTransport({ processFactory: () => process })
+    const messages: unknown[] = []
+    transport.onMessage((message) => messages.push(message))
+    await transport.start()
+    const bytes = new TextEncoder().encode('{"method":"notice","params":{"text":"👨"}}\n')
+    const emojiStart = bytes.findIndex((value) => value === 0xf0)
+    process.stdout?.(bytes.slice(0, emojiStart + 2))
+    process.stdout?.(bytes.slice(emojiStart + 2))
+    expect(messages).toEqual([{ method: "notice", params: { text: "👨" } }])
+    await transport.close()
+  })
+})
+
+describe("Codex app-server client", () => {
+  test("initializes before issuing calls and correlates out-of-order responses", async () => {
+    const { client, transport } = await connectedClient()
+    const listed = client.listThreads()
+    const started = client.startThread({ cwd: "/repo" })
+    await tick()
+
+    const listRequest = transport.sent[2]
+    const startRequest = transport.sent[3]
+    expect(listRequest).toMatchObject({
+      method: "thread/list",
+      params: { sortKey: "recency_at", sortDirection: "desc", sourceKinds: [
+        "cli", "vscode", "exec", "appServer", "subAgent", "subAgentReview", "subAgentCompact", "subAgentThreadSpawn", "subAgentOther",
+      ] },
+    })
+    expect(startRequest).toMatchObject({ method: "thread/start", params: { cwd: "/repo" } })
+
+    transport.receive({ id: startRequest!.id, result: sessionResponse(baseThread) })
+    transport.receive({ id: listRequest!.id, result: { data: [baseThread], nextCursor: null, backwardsCursor: "newer" } })
+
+    expect((await started).summary).toMatchObject({ title: "Parser", gitBranch: "main", status: "idle" })
+    expect(await listed).toMatchObject({ nextCursor: null, backwardsCursor: "newer" })
+  })
+
+  test("builds exact turn, steering, interruption, rename, and settings requests", async () => {
+    const { client, transport } = await connectedClient()
+
+    const turn = client.startTurn("thr-1", "hello", { effort: "high" })
+    await respondNext(transport, "turn/start", { turn: { id: "turn-1", items: [], status: "inProgress", error: null } })
+    await turn
+    expect(findSent(transport, "turn/start").params).toEqual({
+      threadId: "thr-1",
+      input: [{ type: "text", text: "hello", text_elements: [] }],
+      effort: "high",
+    })
+
+    const steer = client.steerTurn("thr-1", "turn-1", "focus tests")
+    await respondNext(transport, "turn/steer", { turnId: "turn-1" })
+    await steer
+    expect(findSent(transport, "turn/steer").params).toEqual({
+      threadId: "thr-1",
+      expectedTurnId: "turn-1",
+      input: [{ type: "text", text: "focus tests", text_elements: [] }],
+    })
+
+    const interrupt = client.interruptTurn("thr-1", "turn-1")
+    await respondNext(transport, "turn/interrupt", {})
+    await interrupt
+    const rename = client.renameThread("thr-1", "New name")
+    await respondNext(transport, "thread/name/set", {})
+    await rename
+    const settings = client.updateThreadSettings("thr-1", { model: "gpt-next", effort: "low", cwd: "/next" })
+    await respondNext(transport, "thread/settings/update", {})
+    await settings
+    expect(findSent(transport, "thread/settings/update").params).toEqual({
+      threadId: "thr-1", model: "gpt-next", effort: "low", cwd: "/next",
+    })
+  })
+
+  test("normalizes streamed conversation, status, token metadata, and unknown events", async () => {
+    const { client, transport } = await connectedClient()
+    const events: CodexAdapterEvent[] = []
+    client.onEvent((event) => events.push(event))
+
+    transport.receive({ method: "thread/status/changed", params: {
+      threadId: "thr-1", status: { type: "active", activeFlags: ["waitingOnApproval"] },
+    } })
+    transport.receive({ method: "turn/started", params: {
+      threadId: "thr-1", turn: { id: "turn-1", status: "inProgress", items: [] },
+    } })
+    transport.receive({ method: "item/started", params: {
+      threadId: "thr-1", turnId: "turn-1", startedAtMs: 1,
+      item: { type: "agentMessage", id: "item-1", text: "", phase: "commentary", memoryCitation: null, delivery: null, questions: null },
+    } })
+    transport.receive({ method: "item/agentMessage/delta", params: {
+      threadId: "thr-1", turnId: "turn-1", itemId: "item-1", delta: "hello",
+    } })
+    transport.receive({ method: "thread/tokenUsage/updated", params: {
+      threadId: "thr-1", turnId: "turn-1",
+      tokenUsage: {
+        total: { totalTokens: 4200, inputTokens: 3000, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 1200, reasoningOutputTokens: 200 },
+        last: { totalTokens: 42, inputTokens: 30, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 12, reasoningOutputTokens: 2 },
+        modelContextWindow: 1000,
+      },
+    } })
+    transport.receive({ method: "future/event", params: { value: 1 } })
+
+    expect(events).toContainEqual({ type: "thread.status", threadId: threadId("thr-1"), status: "blocked" })
+    expect(events).toContainEqual({
+      type: "conversation",
+      event: { type: "item.delta", threadId: threadId("thr-1"), itemId: itemId("item-1"), delta: "hello" },
+    })
+    expect(events).toContainEqual(expect.objectContaining({ type: "thread.tokenUsage", used: 42, contextLimit: 1000 }))
+    expect(events).toContainEqual({ type: "unknown", method: "future/event", payload: { value: 1 } })
+  })
+
+  test("preserves numeric approval ids and waits for server resolution", async () => {
+    const { client, transport } = await connectedClient()
+    const events: CodexAdapterEvent[] = []
+    client.onEvent((event) => events.push(event))
+    transport.receive({
+      method: "item/commandExecution/requestApproval",
+      id: 17,
+      params: {
+        kind: "command",
+        threadId: "thr-1",
+        turnId: "turn-1",
+        itemId: "item-1",
+        startedAtMs: 1,
+        environmentId: null,
+        command: "git fetch",
+        cwd: "/repo",
+        availableDecisions: ["accept", "decline"],
+      },
+    })
+
+    expect(events.at(-1)).toMatchObject({
+      type: "approval.requested",
+      requestId: 17,
+      approval: { id: "number:17", kind: "command", title: "git fetch" },
+    })
+    await client.resolveApproval("number:17", "accept")
+    expect(transport.sent.at(-1)).toEqual({ id: 17, result: { decision: "accept" } })
+    await expect(client.resolveApproval(17, "accept")).rejects.toThrow("already answered")
+
+    transport.receive({ method: "serverRequest/resolved", params: { threadId: "thr-1", requestId: 17 } })
+    expect(events.at(-1)).toEqual({ type: "approval.resolved", threadId: threadId("thr-1"), requestId: 17 })
+    await expect(client.resolveApproval(17, "accept")).rejects.toThrow("Unknown or resolved")
+
+    transport.receive({
+      method: "item/commandExecution/requestApproval",
+      id: 19,
+      params: {
+        kind: "command",
+        threadId: "thr-1",
+        turnId: "turn-1",
+        itemId: "item-2",
+        startedAtMs: 1,
+        environmentId: null,
+        command: "git push",
+        cwd: "/repo",
+      },
+    })
+    const fallback = events.at(-1)
+    expect(fallback).toMatchObject({ type: "approval.requested" })
+    if (fallback?.type !== "approval.requested") throw new Error("expected approval")
+    expect(fallback.approval.choices.map((choice) => choice.id)).toEqual(["accept", "decline", "cancel"])
+  })
+
+  test("maps file and permission approvals and returns the requested permission subset", async () => {
+    const { client, transport } = await connectedClient()
+    const events: CodexAdapterEvent[] = []
+    client.onEvent((event) => events.push(event))
+
+    transport.receive({
+      method: "item/fileChange/requestApproval",
+      id: "file-1",
+      params: { threadId: "thr-1", turnId: "turn-1", itemId: "edit-1", startedAtMs: 1, reason: "write" },
+    })
+    expect(events.at(-1)).toMatchObject({ type: "approval.requested", approval: { id: "string:file-1", kind: "file-change" } })
+    await client.resolveApproval("string:file-1", "acceptForSession")
+    expect(transport.sent.at(-1)).toEqual({ id: "file-1", result: { decision: "acceptForSession" } })
+
+    transport.receive({
+      method: "item/permissions/requestApproval",
+      id: 18,
+      params: {
+        threadId: "thr-1",
+        turnId: "turn-1",
+        itemId: "permissions-1",
+        environmentId: null,
+        startedAtMs: 1,
+        cwd: "/repo",
+        reason: "network",
+        permissions: { network: { enabled: true }, fileSystem: null },
+      },
+    })
+    await client.resolveApproval("number:18", "grant-session")
+    expect(transport.sent.at(-1)).toEqual({
+      id: 18,
+      result: { permissions: { network: { enabled: true } }, scope: "session" },
+    })
+  })
+
+  test("forks at a completed turn and normalizes model catalog entries", async () => {
+    const { client, transport } = await connectedClient()
+    const forked = client.forkThread("thr-1", "turn-1", { ephemeral: true })
+    await tick()
+    const forkRequest = findSent(transport, "thread/fork")
+    expect(forkRequest.params).toEqual({ threadId: "thr-1", lastTurnId: "turn-1", ephemeral: true })
+    transport.receive({ id: forkRequest.id, result: sessionResponse({ ...baseThread, id: "thr-fork", forkedFromId: "thr-1" }) })
+    expect((await forked).summary.id).toBe(threadId("thr-fork"))
+
+    const models = client.listModels({ limit: 20 })
+    await tick()
+    const modelsRequest = findSent(transport, "model/list")
+    transport.receive({ id: modelsRequest.id, result: {
+      data: [{
+        id: "gpt-test", model: "gpt-test", displayName: "GPT Test", description: "Test model",
+        supportedReasoningEfforts: [{ reasoningEffort: "low", description: "Fast" }],
+        defaultReasoningEffort: "low", inputModalities: ["text"], isDefault: true,
+      }],
+      nextCursor: null,
+    } })
+    expect((await models).models[0]).toEqual({
+      id: "gpt-test",
+      model: "gpt-test",
+      label: "GPT Test",
+      description: "Test model",
+      supportedReasoningEfforts: [{ effort: "low", description: "Fast" }],
+      defaultReasoningEffort: "low",
+      inputModalities: ["text"],
+      isDefault: true,
+    })
+  })
+
+  test("hydrates stored turns without completing an in-progress turn", async () => {
+    const { client, transport } = await connectedClient()
+    const resumed = client.resumeThread("thr-1")
+    await tick()
+    const request = findSent(transport, "thread/resume")
+    transport.receive({ id: request.id, result: sessionResponse({
+      ...baseThread,
+      turns: [
+        {
+          id: "turn-done",
+          items: [{ type: "agentMessage", id: "item-done", text: "done", phase: "final_answer", memoryCitation: null, delivery: null, questions: null }],
+          itemsView: "full",
+          status: "completed",
+          error: null,
+          startedAt: 1,
+          completedAt: 2,
+          durationMs: 1000,
+        },
+        {
+          id: "turn-live",
+          items: [],
+          itemsView: "full",
+          status: "inProgress",
+          error: null,
+          startedAt: 3,
+          completedAt: null,
+          durationMs: null,
+        },
+      ],
+    }) })
+    const session = await resumed
+    expect(session.events.some((event) => event.type === "turn.completed" && event.turnId === "turn-done")).toBe(true)
+    expect(session.events.some((event) => event.type === "turn.completed" && event.turnId === "turn-live")).toBe(false)
+  })
+
+  test("hydrates paginated turns and missing full items in chronological order", async () => {
+    const { client, transport } = await connectedClient()
+    const resumed = client.resumeThread("thr-1")
+    await tick()
+    const request = findSent(transport, "thread/resume")
+    expect(request.params).toMatchObject({
+      threadId: "thr-1", excludeTurns: true,
+      initialTurnsPage: { limit: 100, sortDirection: "desc", itemsView: "full" },
+    })
+    transport.receive({ id: request.id, result: {
+      ...sessionResponse({ ...baseThread, turns: [] }),
+      initialTurnsPage: { data: [turnFixture("new", 2, "full", [agentItem("new-item", "new")])], nextCursor: "older", backwardsCursor: null },
+      turnsBackwardsCursor: null,
+      itemsBackwardsCursor: null,
+    } })
+    await tick()
+    const older = findSent(transport, "thread/turns/list")
+    expect(older.params).toMatchObject({ threadId: "thr-1", cursor: "older", sortDirection: "desc", itemsView: "full" })
+    transport.receive({ id: older.id, result: { data: [turnFixture("old", 1, "summary", [])], nextCursor: null, backwardsCursor: null } })
+    await tick()
+    const items = findSent(transport, "thread/items/list")
+    expect(items.params).toMatchObject({ threadId: "thr-1", turnId: "old", sortDirection: "asc" })
+    transport.receive({ id: items.id, result: { data: [{ turnId: "old", item: agentItem("old-item", "old") }], nextCursor: null, backwardsCursor: null } })
+    const session = await resumed
+    const starts = session.events.filter((event) => event.type === "turn.started")
+    expect(starts.map((event) => event.turnId)).toEqual([turnId("old"), turnId("new")])
+    expect(session.events.some((event) => event.type === "item.started" && event.item.id === "old-item")).toBe(true)
+  })
+
+  test("normalizes user questions, answers them, and rejects unsupported server requests", async () => {
+    const { client, transport } = await connectedClient()
+    const events: CodexAdapterEvent[] = []
+    client.onEvent((event) => events.push(event))
+    transport.receive({ method: "item/tool/requestUserInput", id: 21, params: {
+      threadId: "thr-1", turnId: "turn-1", itemId: "question-1", isBlocking: true, autoResolutionMs: null,
+      questions: [{ id: "q", header: "Choice", question: "Pick", isOther: true, isSecret: false, options: [{ label: "A", description: "first" }] }],
+    } })
+    expect(events.at(-1)).toMatchObject({ type: "userInput.requested", requestId: 21, isBlocking: true, questions: [{ id: "q", allowOther: true }] })
+    await client.respondToUserInput(21, { q: "A" })
+    expect(transport.sent.at(-1)).toEqual({ id: 21, result: { answers: { q: { answers: ["A"] } } } })
+
+    transport.receive({ method: "item/tool/call", id: 22, params: { threadId: "thr-1" } })
+    await tick()
+    expect(transport.sent.at(-1)).toEqual({ id: 22, error: { code: -32601, message: "Unsupported server request: item/tool/call" } })
+  })
+
+  test("keeps reasoning summary separate, maps live plan and patch updates, and marks interrupted tools", async () => {
+    const { client, transport } = await connectedClient()
+    const events: CodexAdapterEvent[] = []
+    client.onEvent((event) => events.push(event))
+    const common = { threadId: "thr-1", turnId: "turn-1", itemId: "item-1" }
+    transport.receive({ method: "item/reasoning/summaryPartAdded", params: { ...common, summaryIndex: 1 } })
+    transport.receive({ method: "item/reasoning/summaryTextDelta", params: { ...common, summaryIndex: 1, delta: "summary" } })
+    transport.receive({ method: "item/reasoning/textDelta", params: { ...common, contentIndex: 0, delta: "raw reasoning" } })
+    transport.receive({ method: "item/plan/delta", params: { ...common, delta: "plan" } })
+    transport.receive({ method: "item/fileChange/patchUpdated", params: { ...common, changes: [{ path: "a.ts", kind: "update", diff: "+x" }] } })
+    transport.receive({ method: "item/completed", params: { threadId: "thr-1", turnId: "turn-1", item: {
+      type: "collabAgentToolCall", id: "agent-call", tool: "wait", status: "interrupted", senderThreadId: "thr-1", receiverThreadIds: [], prompt: null, model: null, reasoningEffort: null, agentsStates: {},
+    } } })
+    expect(events).toContainEqual(expect.objectContaining({ type: "unknown", method: "item/reasoning/textDelta" }))
+    expect(events).toContainEqual(expect.objectContaining({ type: "conversation", event: expect.objectContaining({ type: "item.delta", delta: "plan" }) }))
+    expect(events).toContainEqual(expect.objectContaining({ type: "conversation", event: expect.objectContaining({ type: "item.completed", item: expect.objectContaining({ kind: "edit", patch: "+x" }) }) }))
+    expect(events).toContainEqual(expect.objectContaining({ type: "conversation", event: expect.objectContaining({ item: expect.objectContaining({ id: "agent-call", status: "interrupted" }) }) }))
+  })
+
+  test("preserves subagent thread and item linkage", async () => {
+    const { client, transport } = await connectedClient()
+    const events: CodexAdapterEvent[] = []
+    client.onEvent((event) => events.push(event))
+    transport.receive({ method: "thread/started", params: { thread: {
+      ...baseThread, id: "child", parentThreadId: "thr-1", source: "appServer", agentNickname: "worker", agentRole: "tester",
+    } } })
+    transport.receive({ method: "item/started", params: { threadId: "thr-1", turnId: "turn-1", item: {
+      type: "subAgentActivity", id: "activity", kind: "started", agentThreadId: "child", agentPath: "/root/worker",
+    } } })
+    expect(events).toContainEqual(expect.objectContaining({ type: "thread.summary", relation: expect.objectContaining({ threadId: "child", parentThreadId: "thr-1", agentNickname: "worker" }) }))
+    expect(events).toContainEqual({ type: "subagent.link", link: { ownerThreadId: threadId("thr-1"), agentThreadId: threadId("child"), itemId: itemId("activity"), relation: "activity", agentPath: "/root/worker" } })
+  })
+
+  test("times out unanswered RPC calls and cancels pending approvals on disconnect", async () => {
+    const raw = new FakeTransport()
+    await raw.start()
+    const rpc = new RpcClient(raw, { requestTimeoutMs: 5 })
+    await expect(rpc.request("never/replies", {})).rejects.toThrow("timed out")
+
+    const { client, transport } = await connectedClient()
+    const events: CodexAdapterEvent[] = []
+    client.onEvent((event) => events.push(event))
+    transport.receive({ method: "item/fileChange/requestApproval", id: 31, params: { threadId: "thr-1", turnId: "turn-1", itemId: "edit", startedAtMs: 1 } })
+    transport.exit(new Error("gone"))
+    expect(events).toContainEqual(expect.objectContaining({ type: "approval.cancelled", requestId: 31, error: "gone" }))
+    await expect(client.resolveApproval(31, "accept")).rejects.toThrow("Unknown or resolved")
+  })
+
+  test("emits connection failure even with no pending request", async () => {
+    const { client, transport } = await connectedClient()
+    const events: CodexAdapterEvent[] = []
+    client.onEvent((event) => events.push(event))
+    transport.exit(new Error("child crashed"))
+    expect(events).toContainEqual({ type: "connection", status: "error", error: "child crashed" })
+  })
+})
+
+function agentItem(id: string, text: string) {
+  return { type: "agentMessage", id, text, phase: "final_answer", memoryCitation: null, delivery: null, questions: null }
+}
+
+function turnFixture(id: string, startedAt: number, itemsView: "full" | "summary", items: unknown[]) {
+  return { id, items, itemsView, status: "completed", error: null, startedAt, completedAt: startedAt + 1, durationMs: 1000 }
+}
+
+function sessionResponse(thread: typeof baseThread | Record<string, unknown>) {
+  return {
+    thread,
+    model: "gpt-test",
+    modelProvider: "openai",
+    serviceTier: null,
+    cwd: "/repo",
+    runtimeWorkspaceRoots: [],
+    instructionSources: [],
+    approvalPolicy: "on-request",
+    approvalsReviewer: "user",
+    sandbox: { type: "workspaceWrite" },
+    activePermissionProfile: null,
+    reasoningEffort: "high",
+    multiAgentMode: "explicitRequestOnly",
+  }
+}
+
+function findSent(transport: FakeTransport, method: string): JsonObject {
+  const message = transport.sent.findLast((candidate) => candidate.method === method)
+  if (!message) throw new Error(`Missing sent method ${method}`)
+  return message
+}
+
+async function respondNext(transport: FakeTransport, method: string, result: unknown) {
+  await tick()
+  const request = findSent(transport, method)
+  transport.receive({ id: request.id, result })
+}
+
+function tick() {
+  return new Promise<void>((resolve) => setTimeout(resolve, 0))
+}

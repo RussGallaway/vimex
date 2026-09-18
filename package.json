@@ -15,7 +15,12 @@
     "test": "bun test",
     "check": "bun run typecheck && bun run boundaries && bun test",
     "generate:codex": "bun run scripts/generate-codex-types.ts",
-    "boundaries": "bun run scripts/verify-boundaries.ts"
+    "boundaries": "bun run scripts/verify-boundaries.ts",
+    "test:unit": "bun test packages/conversation packages/composer packages/interaction packages/transcript packages/approvals packages/workbench packages/platform-node apps/tui/src/cli-options.test.ts apps/tui/src/lifecycle.test.ts",
+    "test:integration": "bun test tests/integration plugins/herdr",
+    "test:contract": "bun test tests/contract",
+    "test:ui": "bun test packages/ui-opentui-react",
+    "test:e2e": "bun test tests/terminal"
   },
   "dependencies": {
     "@opentui/core": "0.5.11",

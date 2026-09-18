@@ -1,0 +1,19 @@
+{
+  "name": "@vimex/ui-opentui-react",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.tsx",
+  "dependencies": {
+    "@opentui/core": "0.5.11",
+    "@opentui/keymap": "0.5.11",
+    "@opentui/react": "0.5.11",
+    "@vimex/approvals": "workspace:*",
+    "@vimex/composer": "workspace:*",
+    "@vimex/conversation": "workspace:*",
+    "@vimex/interaction": "workspace:*",
+    "@vimex/transcript": "workspace:*",
+    "@vimex/workbench": "workspace:*",
+    "react": "19.3.0"
+  }
+}

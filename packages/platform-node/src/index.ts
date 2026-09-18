@@ -1,3 +1,3 @@
 export * from "./config"
 export * from "./persistence/json-store"
-export * from "./url-opener"
+export * from "./urls/url-opener"

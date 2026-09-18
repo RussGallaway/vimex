@@ -1,0 +1,27 @@
+import type { UiBinding, VimBindingContext } from "./binding-context"
+import { countBindings } from "./binding-context"
+import { transcriptBindings } from "./transcript-bindings"
+
+export function visualBindings(ctx: VimBindingContext): UiBinding[] {
+  return [
+    { key: "escape", cmd: () => {
+      if (ctx.interaction.surface === "composer") ctx.runComposerKey("escape")
+      else {
+        ctx.controller.transcript({ type: "selection.clear" })
+        ctx.controller.dispatchInteraction({ type: "mode.normal" })
+        ctx.controller.dispatchInteraction({ type: "focus.set", surface: "transcript" })
+      }
+    } },
+    ...(ctx.interaction.surface === "transcript"
+      ? [...countBindings(ctx), ...transcriptBindings(ctx)]
+      : [
+          ...Array.from({ length: 10 }, (_, digit) => ({ key: `${digit}`, cmd: () => ctx.runComposerKey(`${digit}`) })),
+          ...["h", "j", "k", "l"].map((key) => ({ key, cmd: () => ctx.runComposerKey(key) })),
+        ]),
+    { key: "y", cmd: () => {
+      if (ctx.interaction.surface === "composer") ctx.runComposerKey("y")
+      else ctx.controller.transcript({ type: "copy", format: "plain" })
+    } },
+    { key: "shift+y", cmd: () => ctx.interaction.surface === "transcript" && ctx.controller.transcript({ type: "copy", format: "source" }) },
+  ]
+}

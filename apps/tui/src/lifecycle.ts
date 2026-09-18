@@ -18,3 +18,11 @@ export class Lifecycle {
     if (errors.length) throw new AggregateError(errors, "Vimex shutdown failed")
   }
 }
+
+/** Keep the initiating failure primary while retaining every cleanup failure for diagnostics. */
+export function failureAfterCleanup(primary: unknown, cleanup: unknown): unknown {
+  if (primary === undefined) return cleanup
+  if (cleanup === undefined) return primary
+  const cleanupErrors = cleanup instanceof AggregateError ? cleanup.errors : [cleanup]
+  return new AggregateError([primary, ...cleanupErrors], "Vimex failed and shutdown also failed", { cause: primary })
+}

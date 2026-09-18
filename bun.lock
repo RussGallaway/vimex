@@ -12,22 +12,42 @@
         "zustand": "5.0.15",
       },
       "devDependencies": {
-        "@types/bun": "latest",
-        "@types/react": "latest",
-        "typescript": "latest",
+        "@types/bun": "1.4.2",
+        "@types/react": "19.3.0",
+        "typescript": "7.0.2",
       },
     },
     "apps/tui": {
       "name": "@vimex/tui",
       "version": "0.1.0",
+      "dependencies": {
+        "@opentui/core": "0.5.11",
+        "@opentui/react": "0.5.11",
+        "@vimex/approvals": "workspace:*",
+        "@vimex/codex-app-server": "workspace:*",
+        "@vimex/conversation": "workspace:*",
+        "@vimex/herdr": "workspace:*",
+        "@vimex/platform-node": "workspace:*",
+        "@vimex/ui-opentui-react": "workspace:*",
+        "@vimex/workbench": "workspace:*",
+        "react": "19.3.0",
+      },
     },
     "packages/approvals": {
       "name": "@vimex/approvals",
       "version": "0.1.0",
+      "dependencies": {
+        "@vimex/conversation": "workspace:*",
+      },
     },
     "packages/codex-app-server": {
       "name": "@vimex/codex-app-server",
       "version": "0.1.0",
+      "dependencies": {
+        "@vimex/approvals": "workspace:*",
+        "@vimex/conversation": "workspace:*",
+        "@vimex/workbench": "workspace:*",
+      },
     },
     "packages/composer": {
       "name": "@vimex/composer",
@@ -48,22 +68,50 @@
     "packages/testkit": {
       "name": "@vimex/testkit",
       "version": "0.1.0",
+      "dependencies": {
+        "@vimex/conversation": "workspace:*",
+      },
     },
     "packages/transcript": {
       "name": "@vimex/transcript",
       "version": "0.1.0",
+      "dependencies": {
+        "@vimex/conversation": "workspace:*",
+      },
     },
     "packages/ui-opentui-react": {
       "name": "@vimex/ui-opentui-react",
       "version": "0.1.0",
+      "dependencies": {
+        "@opentui/core": "0.5.11",
+        "@opentui/keymap": "0.5.11",
+        "@opentui/react": "0.5.11",
+        "@vimex/approvals": "workspace:*",
+        "@vimex/composer": "workspace:*",
+        "@vimex/conversation": "workspace:*",
+        "@vimex/interaction": "workspace:*",
+        "@vimex/transcript": "workspace:*",
+        "@vimex/workbench": "workspace:*",
+        "react": "19.3.0",
+      },
     },
     "packages/workbench": {
       "name": "@vimex/workbench",
       "version": "0.1.0",
+      "dependencies": {
+        "@vimex/approvals": "workspace:*",
+        "@vimex/composer": "workspace:*",
+        "@vimex/conversation": "workspace:*",
+        "@vimex/interaction": "workspace:*",
+        "@vimex/transcript": "workspace:*",
+      },
     },
     "plugins/herdr": {
       "name": "@vimex/herdr",
       "version": "0.1.0",
+      "dependencies": {
+        "@vimex/conversation": "workspace:*",
+      },
     },
   },
   "packages": {

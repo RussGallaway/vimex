@@ -23,6 +23,9 @@ blob-report/
 *.heapsnapshot
 
 # Tool caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
 .cache/
 .turbo/
 .eslintcache

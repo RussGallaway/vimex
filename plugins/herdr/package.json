@@ -1,0 +1,10 @@
+{
+  "name": "@vimex/herdr",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/herdr-plugin.ts",
+  "dependencies": {
+    "@vimex/conversation": "workspace:*"
+  }
+}
