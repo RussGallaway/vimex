@@ -33,7 +33,7 @@ Finish preparation with the proposed version, included changes, check results, o
 
 When publication is authorized and the release gates are satisfied, follow the release procedure. Verify that the intended release commit is present on `origin/main`, then verify that the exact `vVERSION` tag matches the root package version and that commit. Push only the intended branch and tag; do not push all local tags.
 
-The tag triggers publication. Monitor that workflow rather than manually duplicating its release uploads or formula changes. Check that the release contains the expected platform archives, manifest, checksums, installer, and provenance. For stable releases, review the generated formula pull request after its checks pass, merge it through the protected branch, and verify that the formula on main references the published version and hashes. Prereleases must leave the stable formula unchanged.
+The tag triggers publication. Monitor that workflow rather than manually duplicating its release uploads or formula changes. Check that the release contains the expected platform archives, manifest, checksums, installer, and provenance. For stable releases, verify that the generated formula pull request passes its protected checks and auto-merges, then verify that the formula on main references the published version and hashes. Prereleases must leave the stable formula unchanged.
 
 Report the release URL, workflow result, formula status, and any remaining installation validation. Do not describe publication as complete if the workflow or formula update failed.
 

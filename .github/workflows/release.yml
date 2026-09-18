@@ -62,6 +62,7 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     permissions:
+      actions: write
       contents: write
       pull-requests: write
       id-token: write
@@ -122,8 +123,14 @@ jobs:
           git add Formula/vimex.rb
           git commit -m "Update Homebrew formula for ${RELEASE_VERSION}"
           git push --force-with-lease origin HEAD:"$branch"
-          if [[ -z "$(gh pr list --state open --head "$branch" --json number --jq '.[0].number // empty')" ]]; then
+          pull_request=$(gh pr list --state open --head "$branch" --json number --jq '.[0].number // empty')
+          if [[ -z "$pull_request" ]]; then
             gh pr create --base main --head "$branch" \
               --title "Update Homebrew formula for ${RELEASE_VERSION}" \
               --body "Updates the monorepo formula from the verified manifest published with ${RELEASE_VERSION}."
+            pull_request=$(gh pr list --state open --head "$branch" --json number --jq '.[0].number')
           fi
+          # GITHUB_TOKEN-authored pull requests do not emit another workflow
+          # event, so attach the required checks to the formula commit directly.
+          gh workflow run check.yml --ref "$branch"
+          gh pr merge "$pull_request" --auto --squash
