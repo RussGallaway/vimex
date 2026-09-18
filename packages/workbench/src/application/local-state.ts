@@ -14,7 +14,7 @@ export interface SavedThreadView {
   /** Unacknowledged text is recoverable, but is never resent without an explicit retry. */
   outbox: readonly SavedOutgoingMessage[]
 }
-export interface LocalState { version: 1; threads: Record<string, SavedThreadView> }
+export interface LocalState { version: 1; favoriteThreadIds?: readonly string[]; threads: Record<string, SavedThreadView> }
 export const emptyLocalState = (): LocalState => ({ version: 1, threads: {} })
 const record = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value)
 const integer = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0
@@ -23,6 +23,7 @@ function validPoint(value: unknown): boolean {
 }
 export function parseLocalState(value: unknown): LocalState {
   if (!record(value) || value.version !== 1 || !record(value.threads)) throw new Error("Invalid Vimex local state")
+  if (value.favoriteThreadIds !== undefined && (!Array.isArray(value.favoriteThreadIds) || value.favoriteThreadIds.some(id => typeof id !== "string" || !id))) throw new Error("Invalid favorite thread IDs")
   for (const [id, view] of Object.entries(value.threads)) {
     if (!id || !record(view) || typeof view.draft !== "string" || !integer(view.cursorOffset) || !record(view.folded) || Object.values(view.folded).some(v => typeof v !== "boolean") || !["transcript", "composer"].includes(String(view.surface))) throw new Error(`Invalid view for thread ${id}`)
     if (view.cursor !== undefined && !validPoint(view.cursor)) throw new Error(`Invalid cursor for thread ${id}`)
@@ -50,7 +51,7 @@ export function captureLocalState(state: WorkbenchState, previous: LocalState): 
       outbox: composer.outbox.map(message => ({ ...message })),
     }
   }
-  return { version: 1, threads }
+  return { version: 1, threads, favoriteThreadIds: state.favoriteThreadIds }
 }
 export function restoreThreadView(workspace: ThreadWorkspace, saved: SavedThreadView): ThreadWorkspace {
   const knownPoint = (point: typeof saved.cursor) => point && workspace.transcript.projectionById[point.itemId] ? point : undefined

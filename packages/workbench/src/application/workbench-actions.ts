@@ -34,6 +34,8 @@ export interface WorkbenchActions {
   cancelFork(): void
   restart(): void
   openThread(threadId: ThreadId): void
+  renameThread(threadId: ThreadId, title: string): void
+  toggleFavorite(threadId: ThreadId): void
   resolveApproval(approvalId: Approval["id"], choiceId: string): void
   executeCommand(line: string): void
   executeNamedCommand(name: string): void

@@ -7,6 +7,7 @@ import { scheduleQueued, submissionEffect } from "./submission-scheduler"
 import { createWorkspace, done, openThread, targetThread, updateWorkspace, type WorkbenchCommand, type WorkbenchEffect, type WorkbenchState, type WorkbenchTransition } from "./workbench-state"
 export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCommand): WorkbenchTransition {
   switch (command.type) {
+    case "thread.favorite.toggle": return done({ ...state, favoriteThreadIds: state.favoriteThreadIds.includes(command.threadId) ? state.favoriteThreadIds.filter(id => id !== command.threadId) : [...state.favoriteThreadIds, command.threadId] })
     case "connection.changed": return done({ ...state, connection: command.connection, error: command.error })
     case "thread.open": return done(openThread(state, command.summary))
     case "thread.register": {

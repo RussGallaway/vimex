@@ -513,3 +513,24 @@ test("rejected stale item events cannot regress the displayed transcript", async
   expect(workspace.transcript.projectionById[item.id]).toBe(before)
   await h.controller.close()
 })
+
+test("favorites restore independently of history and selected-session rename does not switch threads", async () => {
+  const h = harness({ localState: { version: 1, threads: {}, favoriteThreadIds: [b, b] } })
+  const renamed: [string, string][] = []
+  h.backend.renameThread = async (id, title) => { renamed.push([id, title]) }
+  await h.controller.initialize("/tmp")
+  expect(h.controller.getSnapshot().favoriteThreadIds).toEqual([b])
+  h.controller.toggleFavorite(a)
+  h.controller.toggleFavorite(b)
+  expect(h.controller.getSnapshot().favoriteThreadIds).toEqual([a])
+  h.controller.renameThread(b, "  Saved research  ")
+  await h.controller.settle()
+  expect(renamed).toEqual([[b, "Saved research"]])
+  expect(h.controller.getSnapshot().summaries[b]?.title).toBe("Saved research")
+  expect(h.controller.getSnapshot().activeThreadId).toBe(a)
+  h.backend.renameThread = async () => { throw new Error("rename denied") }
+  h.controller.renameThread(b, "Rejected name")
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().summaries[b]?.title).toBe("Saved research")
+  await h.controller.close()
+})

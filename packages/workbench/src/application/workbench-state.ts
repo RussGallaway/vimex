@@ -16,6 +16,7 @@ export interface WorkbenchState {
   pendingFork?: PendingFork
   urlChoices?: readonly UrlCandidate[]
   activeThreadId?: ThreadId
+  favoriteThreadIds: readonly ThreadId[]
   threadOrder: readonly ThreadId[]
   summaries: Readonly<Record<string, ThreadSummary>>
   workspaces: Readonly<Record<string, ThreadWorkspace>>
@@ -42,6 +43,7 @@ export type WorkbenchCommand =
   | { type: "thread.open"; summary: ThreadSummary }
   | { type: "thread.register"; summary: ThreadSummary }
   | { type: "thread.switch"; threadId: ThreadId }
+  | { type: "thread.favorite.toggle"; threadId: ThreadId }
   | { type: "thread.close"; threadId: ThreadId }
   | { type: "thread.fork.request"; threadId: ThreadId; throughTurnId: TurnId }
   | { type: "thread.fork.completed"; sourceThreadId: ThreadId; throughTurnId: TurnId; summary: ThreadSummary }
@@ -65,7 +67,7 @@ export type WorkbenchCommand =
   | { type: "agent.link"; link: AgentRelationship }
 
 export const initialWorkbench = (): WorkbenchState => ({
-  threadOrder: [], summaries: {}, workspaces: {}, approvals: initialApprovals(), questions: {}, agentRelationships: [], connection: "connecting",
+  favoriteThreadIds: [], threadOrder: [], summaries: {}, workspaces: {}, approvals: initialApprovals(), questions: {}, agentRelationships: [], connection: "connecting",
 })
 export function createWorkspace(id: ThreadId): ThreadWorkspace {
   return { conversation: createConversation(id), transcript: initialTranscript(), composer: initialComposer(), interaction: initialInteraction() }

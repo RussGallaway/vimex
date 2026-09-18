@@ -56,6 +56,7 @@ export class VimexController implements WorkbenchActions {
   private signalClosing!: () => void
   private readonly closingSignal = new Promise<void>(resolve => { this.signalClosing = resolve })
   constructor(private readonly ports: ControllerPorts) {
+    this.state = { ...this.state, favoriteThreadIds: [...new Set(ports.localState?.favoriteThreadIds ?? [])].map(threadId) }
     if (ports.preferences) {
       this.desiredPreferences = ports.preferences.initial
       this.state = { ...this.state, preferences: ports.preferences.initial }
@@ -279,6 +280,15 @@ export class VimexController implements WorkbenchActions {
     })
     this.restartBarrier = operation
     void operation?.finally(() => { if (this.restartBarrier === operation) this.restartBarrier = undefined })
+  }
+  toggleFavorite = (id: ThreadId): void => this.dispatch({ type: "thread.favorite.toggle", threadId: id })
+  renameThread = (id: ThreadId, title: string): void => {
+    const name = title.trim()
+    if (!name) { this.notice("A session name cannot be empty"); return }
+    this.launchThreadMutation(id, async epoch => {
+      await this.ports.conversation.renameThread(id, name)
+      if (this.currentRuntime(epoch)) this.dispatch({ type: "thread.summary.patch", threadId: id, patch: { title: name } })
+    })
   }
   openThread = (id: ThreadId): void => {
     const revision = ++this.navigationRevision
@@ -519,10 +529,7 @@ export class VimexController implements WorkbenchActions {
       }
       case "rename": {
         const id = this.state.activeThreadId
-        if (id && argument) this.launchThreadMutation(id, async epoch => {
-          await this.ports.conversation.renameThread(id, argument)
-          if (this.currentRuntime(epoch)) this.dispatch({ type: "thread.summary.patch", threadId: id, patch: { title: argument } })
-        })
+        if (id && argument) this.renameThread(id, argument)
         break
       }
       default: { const unreachable: never = command; throw new Error(`Unhandled command: ${String(unreachable)}`) }

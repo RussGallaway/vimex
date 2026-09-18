@@ -45,6 +45,8 @@ export const inertController: VimexUiController = {
   cancelFork() {},
   restart() {},
   openThread() {},
+  renameThread() {},
+  toggleFavorite() {},
   resolveApproval() {},
   executeCommand() {},
   executeNamedCommand() {},

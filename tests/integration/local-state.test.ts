@@ -62,3 +62,12 @@ test("explicitly unfolded items survive serialization and history restoration", 
   expect(restored.transcript.folded).toEqual({ message: false })
   expect(() => parseLocalState({ version: 1, threads: { thread: { ...saved, folded: { message: "false" } } } })).toThrow()
 })
+
+test("favorites persist even for unloaded threads and older state remains valid", () => {
+  const state = { ...initialWorkbench(), favoriteThreadIds: [id] }
+  const captured = parseLocalState(JSON.parse(JSON.stringify(captureLocalState(state, emptyLocalState()))))
+  expect(captured.favoriteThreadIds).toEqual([id])
+  expect(captured.threads).toEqual({})
+  expect(parseLocalState({ version: 1, threads: {} }).favoriteThreadIds).toBeUndefined()
+  expect(() => parseLocalState({ version: 1, threads: {}, favoriteThreadIds: [123] })).toThrow()
+})
