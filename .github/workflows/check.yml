@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+    # Formula-only release PRs are created by github-actions[bot]. GitHub
+    # otherwise holds their duplicate pull_request run for maintainer approval;
+    # release.yml dispatches this workflow explicitly for the same head commit.
+    paths-ignore:
+      - Formula/vimex.rb
 permissions:
   contents: read
 jobs:
