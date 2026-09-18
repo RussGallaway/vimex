@@ -13,13 +13,13 @@ export function mapThreadItem(item: ThreadItem, ownerTurnId: string, completed: 
     case "agentMessage": return { id, turnId: owner, kind: "assistant", markdown: item.text, status: fallbackStatus }
     case "plan": return { id, turnId: owner, kind: "assistant", markdown: item.text, status: fallbackStatus }
     case "reasoning": return { id, turnId: owner, kind: "reasoning", markdown: item.summary.join("\n\n") || item.content.join("\n\n"), status: fallbackStatus }
-    case "commandExecution": return { id, turnId: owner, kind: "command", title: item.command, detail: item.aggregatedOutput ?? "", status: mapItemStatus(item.status) }
+    case "commandExecution": return { id, turnId: owner, kind: "command", title: item.command, detail: item.aggregatedOutput ?? "", durationMs: item.durationMs ?? undefined, status: mapItemStatus(item.status) }
     case "fileChange": return {
       id, turnId: owner, kind: "edit", title: item.changes.map(change => change.path).join(", ") || "File changes",
       patch: item.changes.map(change => change.diff).filter(Boolean).join("\n"), status: mapItemStatus(item.status),
     }
-    case "mcpToolCall": return toolItem(id, owner, `${item.server} · ${item.tool}`, item.result ?? item.error ?? item.arguments, mapItemStatus(item.status))
-    case "dynamicToolCall": return toolItem(id, owner, [item.namespace, item.tool].filter(Boolean).join(" · "), item.contentItems ?? item.arguments, mapItemStatus(item.status))
+    case "mcpToolCall": return toolItem(id, owner, `${item.server} · ${item.tool}`, item.result ?? item.error ?? item.arguments, mapItemStatus(item.status), item.durationMs)
+    case "dynamicToolCall": return toolItem(id, owner, [item.namespace, item.tool].filter(Boolean).join(" · "), item.contentItems ?? item.arguments, mapItemStatus(item.status), item.durationMs)
     case "collabAgentToolCall": return toolItem(id, owner, `Agent · ${safeStringify(item.tool)}`, { prompt: item.prompt, agents: item.agentsStates }, mapItemStatus(item.status))
     case "functionCallOutput": return toolItem(id, owner, [item.namespace, item.name].filter(Boolean).join(" · "), item.output, fallbackStatus)
     case "webSearch": return toolItem(id, owner, "Web search", item, fallbackStatus)
@@ -75,8 +75,8 @@ function mapItemStatus(status: unknown): ItemStatus {
     default: return "running"
   }
 }
-function toolItem(id: ReturnType<typeof itemId>, owner: ReturnType<typeof turnId>, title: string, detail: unknown, status: ItemStatus): ConversationItem {
-  return { id, turnId: owner, kind: "tool", title, detail: typeof detail === "string" ? detail : safeStringify(detail), status }
+function toolItem(id: ReturnType<typeof itemId>, owner: ReturnType<typeof turnId>, title: string, detail: unknown, status: ItemStatus, durationMs?: number | null): ConversationItem {
+  return { id, turnId: owner, kind: "tool", title, detail: typeof detail === "string" ? detail : safeStringify(detail), status, ...(durationMs == null ? {} : { durationMs }) }
 }
 function inputText(content: readonly UserInput[]): string {
   return content.filter((input): input is Extract<UserInput, { type: "text" }> => input.type === "text").map(input => input.text).join("\n")

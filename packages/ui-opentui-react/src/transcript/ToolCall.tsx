@@ -6,7 +6,7 @@ export function ToolCall(props: { item: Extract<ConversationItem, { kind: "comma
   return <box backgroundColor={emberTide.backgroundRaised} paddingX={1} paddingY={1}>
     <box height={1} flexDirection="row" gap={1}>
       <text fg={props.item.status === "error" ? emberTide.red : emberTide.sage}>{itemStatusGlyph[props.item.status]}</text>
-      <text fg={emberTide.text}>{props.item.title}</text><text fg={emberTide.textMuted}>{props.folded ? "[closed]" : "[open]"}</text>
+      <text fg={emberTide.text}>{props.item.title}</text>{props.item.durationMs !== undefined ? <text fg={emberTide.textMuted}>{props.item.durationMs < 1000 ? `${props.item.durationMs}ms` : `${(props.item.durationMs / 1000).toFixed(1)}s`}</text> : null}<text fg={emberTide.textMuted}>{props.folded ? "[closed]" : "[open]"}</text>
     </box>
     {!props.folded && props.item.detail ? <text fg={emberTide.textMuted}>{props.item.detail}</text> : null}
   </box>

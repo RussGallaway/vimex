@@ -20,8 +20,8 @@ export interface VimBindingContext {
   dispatchMotion(motion: Motion): void
   runComposerKey(key: string): void
   beginVisual(shape: "character" | "line"): void
-  openOverlay(overlay: "sessions" | "approvals" | "help"): void
-  scroll(direction: "up" | "down", amount: "line" | "half-page"): void
+  openOverlay(overlay: "sessions" | "approvals" | "questions" | "fork" | "agents" | "urls" | "help"): void
+  scroll(direction: "up" | "down", amount: "line" | "half-page" | "page"): void
 }
 
 export function countBindings(ctx: VimBindingContext): UiBinding[] {

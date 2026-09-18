@@ -10,6 +10,8 @@ export interface VimexAppProps {
 
 export interface VimexUiSettings {
   theme: "ember-tide" | "nord" | "kanagawa"
+  syntaxTheme: "theme" | "ember-tide" | "nord" | "kanagawa"
+  reducedColor: boolean
   insertEnter: "newline" | "submit"
   busySubmit: "queue" | "steer"
   foldTools: boolean
@@ -20,7 +22,9 @@ export interface VimexUiSettings {
 
 export const defaultVimexUiSettings: VimexUiSettings = {
   theme: "ember-tide",
-  insertEnter: "newline",
+  syntaxTheme: "theme",
+  reducedColor: false,
+  insertEnter: "submit",
   busySubmit: "queue",
   foldTools: false,
   foldReasoning: false,
@@ -33,9 +37,17 @@ export const inertController: VimexUiController = {
   changeDraft() {},
   submit() {},
   transcript() {},
+  answerQuestions() {},
+  openChildThread() {},
+  returnToParent() {},
+  requestFork() {},
+  confirmFork() {},
+  cancelFork() {},
+  restart() {},
   openThread() {},
   resolveApproval() {},
   executeCommand() {},
+  executeNamedCommand() {},
   interrupt() {},
   retryOutgoing() {},
   copyText() {},

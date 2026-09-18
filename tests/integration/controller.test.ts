@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test"
 import { VimexController } from "@vimex/workbench"
-import type { RuntimeEvent, RuntimeConnection, ModelCatalog } from "@vimex/workbench"
+import type { RuntimeEvent, RuntimeConnection, ModelCatalog, PreferenceStore } from "@vimex/workbench"
 import type { SessionSnapshot, ConversationGateway } from "@vimex/conversation"
 import type { ApprovalGateway } from "@vimex/approvals"
 import { resolve } from "node:path"
@@ -10,14 +10,14 @@ import type { LocalState } from "@vimex/workbench"
 
 const a = threadId("a"), b = threadId("b")
 const summary = (id = a): ThreadSummary => ({ id, title: id, cwd: "/tmp", model: "test", reasoningEffort: "high", status: "idle" })
-function harness(options: { localState?: LocalState; onState?: () => void } = {}) {
+function harness(options: { localState?: LocalState; onState?: () => void; preferences?: PreferenceStore } = {}) {
   let listener: (event: RuntimeEvent) => void = () => {}
   const starts: string[] = []
   const copied: string[] = []
   const opened: string[] = []
   let turnCounter = 0
   const backend: TestRuntime = {
-    connect: async () => {}, subscribe: fn => { listener = fn; return () => { listener = () => {} } },
+    restart: async () => {}, connect: async () => {}, subscribe: fn => { listener = fn; return () => { listener = () => {} } },
     listThreads: async () => [summary(a), summary(b)], startThread: async () => ({ summary: summary(), events: [] }),
     resumeThread: async id => ({ summary: summary(id), events: [] }),
     forkThread: async () => ({ summary: summary(threadId("fork")), events: [] }),
@@ -25,7 +25,7 @@ function harness(options: { localState?: LocalState; onState?: () => void } = {}
     listModels: async () => [{ id: "test", label: "Test", efforts: ["low", "high"] }], updateSettings: async () => {},
     steerTurn: async () => {}, interruptTurn: async () => {}, resolveApproval: async () => {}, renameThread: async () => {}, close: async () => {},
   }
-  const controller = new VimexController({ conversation: backend, approvals: backend, connection: backend, models: backend, resolveDirectory: resolve, localState: options.localState, onState: options.onState, clipboard: { writeText: async text => { copied.push(text) } }, openUrl: async url => { opened.push(url) }, quit() {} })
+  const controller = new VimexController({ conversation: backend, approvals: backend, connection: backend, models: backend, resolveDirectory: resolve, localState: options.localState, onState: options.onState, preferences: options.preferences, clipboard: { writeText: async text => { copied.push(text) } }, openUrl: async url => { opened.push(url) }, quit() {} })
   return { controller, backend, starts, copied, opened, emit: (event: RuntimeEvent) => listener(event) }
 }
 
@@ -205,4 +205,276 @@ test("runtime questions and child relationships reach owned state and requests e
   h.emit({ type: "disconnected", message: "closed" })
   expect(h.controller.getSnapshot().questions).toEqual({})
   expect(h.controller.getSnapshot().agentRelationships).toEqual([link])
+})
+
+test("fork requires explicit confirmation and resolves assistant cursor to its user-message boundary", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const turn = turnId("completed"), user = itemId("question"), answer = itemId("answer")
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
+  for (const [id, kind, markdown] of [[user, "user", "Original prompt"], [answer, "assistant", "Original response"]] as const) h.emit({ type: "conversation", event: { type: "item.completed", threadId: a, item: { id, turnId: turn, kind, markdown, status: "complete" } } })
+  h.emit({ type: "conversation", event: { type: "turn.completed", threadId: a, turnId: turn, outcome: "complete" } })
+  let forks = 0
+  h.backend.forkThread = async (id, through) => { expect(id).toBe(a); expect(through).toBe(turn); forks++; return { summary: summary(threadId("fork")), events: [] } }
+  h.controller.requestFork(answer)
+  expect(h.controller.getSnapshot().pendingFork?.itemId).toBe(user)
+  expect(h.controller.getSnapshot().workspaces[a]?.interaction.overlay).toBe("fork")
+  expect(forks).toBe(0)
+  h.controller.cancelFork()
+  expect(h.controller.getSnapshot().pendingFork).toBeUndefined()
+  h.controller.requestFork(answer)
+  h.controller.confirmFork()
+  await h.controller.settle()
+  expect(forks).toBe(1)
+  expect(h.controller.getSnapshot().activeThreadId).toBe(threadId("fork"))
+})
+
+test("agent navigation returns to the exact parent draft and transcript state", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  h.controller.changeDraft("Parent draft", 5)
+  const parent = h.controller.getSnapshot().workspaces[a]!
+  h.emit({ type: "subagent.link", link: { parentId: a, childId: b, itemId: itemId("agent"), relation: "spawned" } })
+  h.controller.openChildThread(b)
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().activeThreadId).toBe(b)
+  h.controller.changeDraft("Child draft", 4)
+  h.controller.returnToParent()
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().activeThreadId).toBe(a)
+  expect(h.controller.getSnapshot().workspaces[a]?.composer).toEqual(parent.composer)
+  expect(h.controller.getSnapshot().workspaces[a]?.transcript).toEqual(parent.transcript)
+  expect(h.controller.getSnapshot().workspaces[b]?.composer.text).toBe("Child draft")
+})
+
+test("question answers validate options, retain failed requests, and clear only after success", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const request = { id: "request", threadId: a, turnId: turnId("turn"), questions: [{ id: "q", header: "Choice", question: "Pick one", allowOther: false, secret: false, options: [{ label: "Yes", description: "Proceed" }] }] }
+  h.emit({ type: "question.requested", request })
+  let calls = 0, fail = true
+  h.backend.respondToQuestions = async (_, answers) => { calls++; expect(answers).toEqual({ q: "Yes" }); if (fail) throw new Error("Disconnected") }
+  h.controller.answerQuestions(request.id, { q: "invalid" })
+  await h.controller.settle()
+  expect(calls).toBe(0)
+  h.controller.answerQuestions(request.id, { q: "Yes" })
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().questions.request).toEqual(request)
+  fail = false
+  h.controller.answerQuestions(request.id, { q: "Yes" })
+  await h.controller.settle()
+  expect(calls).toBe(2)
+  expect(h.controller.getSnapshot().questions).toEqual({})
+})
+
+test("controlled restart rehydrates the active thread and preserves drafts without sending", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  h.controller.changeDraft("Keep this draft", 4)
+  let restarts = 0
+  h.backend.restart = async () => { restarts++ }
+  h.emit({ type: "disconnected", message: "Server exited" })
+  h.controller.restart()
+  h.controller.restart()
+  await h.controller.settle()
+  expect(restarts).toBe(1)
+  expect(h.controller.getSnapshot().connection).toBe("connected")
+  expect(h.controller.getSnapshot().activeThreadId).toBe(a)
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe("Keep this draft")
+  expect(h.starts).toEqual([])
+})
+
+test("semantic search unfolds its target, URL choice resolves through the port, and reference preserves draft", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const id = itemId("rich"), turn = turnId("rich-turn")
+  h.emit({ type: "conversation", event: { type: "item.completed", threadId: a, item: { id, turnId: turn, kind: "assistant", status: "complete", markdown: "First paragraph\n\nneedle [one](https://one.test) and [two](https://two.test)\n\nLast paragraph" } } })
+  h.controller.transcript({ type: "cursor.move", target: { itemId: id, graphemeOffset: 0 }, preferredScreenRow: 2, extend: false })
+  h.controller.transcript({ type: "fold.set", itemId: id, folded: true })
+  h.controller.executeCommand("/needle")
+  let transcript = h.controller.getSnapshot().workspaces[a]!.transcript
+  expect(transcript.search).toEqual({ query: "needle", direction: "forward" })
+  expect(transcript.cursor?.graphemeOffset).toBe(17)
+  expect(transcript.folded[id]).toBeUndefined()
+  h.controller.transcript({ type: "url.open" })
+  expect(h.controller.getSnapshot().urlChoices?.map(candidate => candidate.url)).toEqual(["https://one.test", "https://two.test"])
+  h.controller.transcript({ type: "url.open", url: "https://two.test" })
+  await h.controller.settle()
+  expect(h.opened).toEqual(["https://two.test"])
+  h.controller.changeDraft("My note", 7)
+  h.controller.transcript({ type: "reference" })
+  expect(h.controller.getSnapshot().workspaces[a]!.composer.text).toContain("My note\n\n> needle [one](https://one.test)")
+  expect(h.controller.getSnapshot().workspaces[a]!.interaction.mode).toBe("insert")
+})
+
+test("restart quarantines stale turn and resume responses and keeps uncertain text retryable", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  let finishTurn!: (events: ConversationEvent[]) => void
+  h.backend.startTurn = () => new Promise(resolve => { finishTurn = resolve })
+  h.controller.changeDraft("uncertain", 9)
+  h.controller.submit("next-turn")
+
+  const staleItem = itemId("stale-item"), staleTurn = turnId("stale-turn")
+  let finishResume!: (snapshot: SessionSnapshot) => void
+  h.backend.resumeThread = id => id === b
+    ? new Promise(resolve => { finishResume = resolve })
+    : Promise.resolve({ summary: summary(id), events: [] })
+  h.controller.openThread(b)
+  h.emit({ type: "disconnected", message: "old runtime exited" })
+  h.controller.restart()
+  finishResume({ summary: summary(b), events: [
+    { type: "turn.started", threadId: b, turnId: staleTurn },
+    { type: "item.completed", threadId: b, item: { id: staleItem, turnId: staleTurn, kind: "assistant", markdown: "stale", status: "complete" } },
+  ] })
+  finishTurn([
+    { type: "turn.started", threadId: a, turnId: staleTurn },
+    { type: "item.completed", threadId: a, item: { id: staleItem, turnId: staleTurn, kind: "assistant", markdown: "stale", status: "complete" } },
+  ])
+  await h.controller.settle()
+
+  expect(h.controller.getSnapshot().workspaces[a]?.conversation.items[staleItem]).toBeUndefined()
+  expect(h.controller.getSnapshot().workspaces[b]?.conversation.items[staleItem]).toBeUndefined()
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.outbox[0]).toMatchObject({ text: "uncertain", status: "failed" })
+})
+
+test("a stale question completion cannot delete a same-id request from the restarted runtime", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  let finish!: () => void
+  h.backend.respondToQuestions = () => new Promise(resolve => { finish = resolve })
+  const old = { id: "same", threadId: a, turnId: turnId("old"), questions: [{ id: "q", header: "Old", question: "Old?", allowOther: true, secret: false }] }
+  h.emit({ type: "question.requested", request: old })
+  h.controller.answerQuestions(old.id, { q: "yes" })
+  h.emit({ type: "disconnected", message: "restart" })
+  h.controller.restart()
+  const current = { ...old, turnId: turnId("new"), questions: [{ ...old.questions[0]!, header: "New" }] }
+  h.emit({ type: "question.requested", request: current })
+  finish()
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().questions.same).toEqual(current)
+})
+
+test("approval commands are active-session scoped and successful RPC acknowledgement clears state", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const resolved: string[] = []
+  h.backend.resolveApproval = async id => { resolved.push(id) }
+  h.emit({ type: "approval", approval: { id: "background", threadId: b, kind: "command", title: "B", detail: "B", choices: [{ id: "accept", label: "Accept" }], status: "pending" } })
+  h.emit({ type: "approval", approval: { id: "active", threadId: a, kind: "command", title: "A", detail: "A", choices: [{ id: "accept", label: "Accept" }], status: "pending" } })
+  h.controller.executeCommand(":approve")
+  await h.controller.settle()
+  expect(resolved).toEqual(["active"])
+  expect(h.controller.getSnapshot().approvals.byId.active).toBeUndefined()
+  expect(h.controller.getSnapshot().approvals.byId.background?.status).toBe("pending")
+  h.controller.resolveApproval("background", "accept")
+  await h.controller.settle()
+  expect(resolved).toEqual(["active"])
+})
+
+test("a queued steer waits for turn.started when start RPC acknowledges without events", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const steers: string[] = []
+  h.backend.startTurn = async (_id, text) => { h.starts.push(text); return [] }
+  h.backend.steerTurn = async (_id, _turn, text) => { steers.push(text) }
+  h.controller.changeDraft("start", 5)
+  h.controller.submit("next-turn")
+  h.controller.changeDraft("steer", 5)
+  h.controller.submit("steer")
+  await h.controller.settle()
+  expect(h.starts).toEqual(["start"])
+  expect(steers).toEqual([])
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.outbox[0]).toMatchObject({ text: "steer", status: "queued" })
+
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turnId("real") } })
+  await h.controller.settle()
+  expect(steers).toEqual(["steer"])
+})
+
+test("RPC replay admits unseen items after a live turn start without regressing live items", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const turn = turnId("raced"), live = itemId("live"), returned = itemId("returned")
+  h.backend.startTurn = async () => {
+    h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
+    h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id: live, turnId: turn, kind: "assistant", markdown: "live newer", status: "running" } } })
+    return [
+      { type: "turn.started", threadId: a, turnId: turn },
+      { type: "item.started", threadId: a, item: { id: live, turnId: turn, kind: "assistant", markdown: "old", status: "running" } },
+      { type: "item.completed", threadId: a, item: { id: returned, turnId: turn, kind: "user", markdown: "prompt", status: "complete" } },
+    ]
+  }
+  h.controller.changeDraft("go", 2)
+  h.controller.submit("next-turn")
+  await h.controller.settle()
+  const conversation = h.controller.getSnapshot().workspaces[a]!.conversation
+  expect(conversation.items[returned]).toMatchObject({ markdown: "prompt", status: "complete" })
+  expect(conversation.items[live]).toMatchObject({ markdown: "live newer", status: "running" })
+})
+
+test("preference and thread-setting mutations preserve command order", async () => {
+  let releasePreference!: () => void
+  const preferenceGate = new Promise<void>(resolve => { releasePreference = resolve })
+  const saved: Array<{ theme: string; syntaxTheme: string }> = []
+  const h = harness({ preferences: {
+    initial: { theme: "ember-tide", syntaxTheme: "theme" },
+    async save(value) { saved.push(value); if (saved.length === 1) await preferenceGate },
+  } })
+  await h.controller.initialize("/tmp")
+  h.controller.executeCommand(":theme nord")
+  h.controller.executeCommand(":syntax kanagawa")
+  await Promise.resolve(); await Promise.resolve()
+  expect(saved).toEqual([{ theme: "nord", syntaxTheme: "theme" }])
+  releasePreference()
+  await h.controller.settle()
+  expect(saved).toEqual([
+    { theme: "nord", syntaxTheme: "theme" },
+    { theme: "nord", syntaxTheme: "kanagawa" },
+  ])
+  expect(h.controller.getSnapshot().preferences).toEqual({ theme: "nord", syntaxTheme: "kanagawa" })
+
+  let releaseModel!: () => void
+  let markModelStarted!: () => void
+  const modelGate = new Promise<void>(resolve => { releaseModel = resolve })
+  const modelStarted = new Promise<void>(resolve => { markModelStarted = resolve })
+  const updates: unknown[] = []
+  h.backend.listModels = async () => [
+    { id: "test", label: "Test", efforts: ["low"] },
+    { id: "next", label: "Next", efforts: ["medium"] },
+  ]
+  h.backend.updateSettings = async (_id, settings) => { updates.push(settings); if (updates.length === 1) { markModelStarted(); await modelGate } }
+  h.controller.executeCommand(":model next")
+  h.controller.executeCommand(":thinking medium")
+  await modelStarted
+  expect(updates).toEqual([{ model: "next" }])
+  releaseModel()
+  await h.controller.settle()
+  expect(updates).toEqual([{ model: "next" }, { effort: "medium" }])
+  expect(h.controller.getSnapshot().summaries[a]).toMatchObject({ model: "next", reasoningEffort: "medium" })
+})
+
+test("late fork cannot steal focus and stale URL picker choices cannot open after a session switch", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const turn = turnId("forkable"), user = itemId("fork-user"), rich = itemId("links")
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
+  h.emit({ type: "conversation", event: { type: "item.completed", threadId: a, item: { id: user, turnId: turn, kind: "user", markdown: "fork me", status: "complete" } } })
+  h.emit({ type: "conversation", event: { type: "item.completed", threadId: a, item: { id: rich, turnId: turn, kind: "assistant", markdown: "[one](https://one.test) [two](https://two.test)", status: "complete" } } })
+  h.emit({ type: "conversation", event: { type: "turn.completed", threadId: a, turnId: turn, outcome: "complete" } })
+  let finishFork!: (snapshot: SessionSnapshot) => void
+  h.backend.forkThread = () => new Promise(resolve => { finishFork = resolve })
+  h.controller.requestFork(user)
+  h.controller.confirmFork()
+  h.controller.transcript({ type: "cursor.move", target: { itemId: rich, graphemeOffset: 3 }, preferredScreenRow: 0, extend: false })
+  h.controller.transcript({ type: "url.open" })
+  expect(h.controller.getSnapshot().urlChoices).toHaveLength(2)
+  h.controller.openThread(b)
+  await Promise.resolve(); await Promise.resolve()
+  expect(h.controller.getSnapshot().urlChoices).toBeUndefined()
+  h.controller.transcript({ type: "url.open", url: "https://one.test" })
+  finishFork({ summary: summary(threadId("fork")), events: [] })
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().activeThreadId).toBe(b)
+  expect(h.opened).toEqual([])
 })

@@ -5,10 +5,11 @@ import type { CodexAdapterEvent } from "./mapping/map-notification"
 
 /** Owns request-id correlation for application approval and question ports. */
 export class CodexApprovalGateway implements ApprovalGateway {
+  private generation = 0
   private readonly questionIds = new Map<string, string | number>()
   private readonly approvalIds = new Map<string, string | number>()
 
-  constructor(private readonly client: CodexAppServerClient) {}
+  constructor(private readonly client: () => CodexAppServerClient) {}
 
   handle(event: CodexAdapterEvent): RuntimeEvent[] | undefined {
     switch (event.type) {
@@ -42,14 +43,27 @@ export class CodexApprovalGateway implements ApprovalGateway {
   async respondToQuestions(id: string, answers: Readonly<Record<string, string | readonly string[]>>): Promise<void> {
     const original = this.questionIds.get(id)
     if (original === undefined) throw new Error("This question is no longer pending")
-    await this.client.respondToUserInput(original, answers)
-    this.questionIds.delete(id)
+    const generation = this.generation
+    await this.client().respondToUserInput(original, answers)
+    if (generation === this.generation) this.questionIds.delete(id)
   }
 
   async resolveApproval(id: string, choice: string): Promise<void> {
     const original = this.approvalIds.get(id)
     if (original === undefined) throw new Error("This approval is no longer pending")
-    await this.client.resolveApproval(original, choice)
+    await this.client().resolveApproval(original, choice)
+  }
+
+  /** Invalidates connection-scoped requests before a new app-server generation starts. */
+  invalidatePending(): RuntimeEvent[] {
+    this.generation++
+    const events: RuntimeEvent[] = [
+      ...this.approvalIds.keys().map(id => ({ type: "approval.resolved" as const, id })),
+      ...this.questionIds.keys().map(id => ({ type: "question.resolved" as const, id })),
+    ]
+    this.approvalIds.clear()
+    this.questionIds.clear()
+    return events
   }
 
   private approvalId(requestId: string | number): string | undefined {

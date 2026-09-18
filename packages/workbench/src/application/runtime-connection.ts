@@ -16,6 +16,7 @@ export type RuntimeEvent =
 
 export interface RuntimeConnection {
   connect(): Promise<void>
+  restart(): Promise<void>
   subscribe(listener: (event: RuntimeEvent) => void): () => void
   close(): Promise<void>
 }

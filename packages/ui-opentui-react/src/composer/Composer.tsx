@@ -49,7 +49,6 @@ export function Composer(props: {
         focusedBackgroundColor={emberTide.backgroundRaised}
         cursorColor={emberTide.sage}
         keyBindings={[
-          { name: "return", meta: true, action: "submit" },
           ...(props.insertEnter === "submit" ? [{ name: "return", action: "submit" } as const] : []),
           { name: "return", shift: true, action: "newline" },
         ]}
@@ -65,7 +64,7 @@ export function Composer(props: {
       />
       <box height={1} flexDirection="row" justifyContent="space-between" marginTop={1}>
         <box flexDirection="row" gap={1}>
-          <text fg={emberTide.textMuted}>{props.insertEnter === "submit" ? "enter send · shift↵ newline" : "alt↵ send"}</text>
+          <text fg={emberTide.textMuted}>{props.insertEnter === "submit" ? "enter send · shift↵ newline" : "enter newline · ctrl↵ send"}</text>
           {props.activeTurn ? <text fg={emberTide.amber}>ctrl↵ steer</text> : null}
           {queued > 0 ? <text fg={emberTide.blueBright}>{queued} queued</text> : null}
         </box>

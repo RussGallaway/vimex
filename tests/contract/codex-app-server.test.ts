@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   CodexAppServerClient,
+  createCodexGateways,
   StdioTransport,
   type CodexAdapterEvent,
   type CodexTransport,
@@ -91,10 +92,11 @@ const baseThread = {
   turns: [],
 }
 
-async function connectedClient() {
+async function connectedClient(experimentalApi = false) {
   const transport = new FakeTransport()
   const client = new CodexAppServerClient(transport, {
     clientInfo: { name: "vimex_test", title: "Vimex Test", version: "1.0.0" },
+    experimentalApi,
   })
   const connecting = client.connect()
   await tick()
@@ -104,7 +106,7 @@ async function connectedClient() {
     id: 1,
     params: {
       clientInfo: { name: "vimex_test", title: "Vimex Test", version: "1.0.0" },
-      capabilities: { experimentalApi: false, requestAttestation: false },
+      capabilities: { experimentalApi, requestAttestation: false },
     },
   })
   transport.receive({ id: 1, result: initializeResult })
@@ -177,7 +179,7 @@ describe("Codex app-server client", () => {
     transport.receive({ id: startRequest!.id, result: sessionResponse(baseThread) })
     transport.receive({ id: listRequest!.id, result: { data: [baseThread], nextCursor: null, backwardsCursor: "newer" } })
 
-    expect((await started).summary).toMatchObject({ title: "Parser", gitBranch: "main", status: "idle" })
+    expect((await started).summary).toMatchObject({ title: "Parser", gitBranch: "main", status: "idle", updatedAt: 2_000 })
     expect(await listed).toMatchObject({ nextCursor: null, backwardsCursor: "newer" })
   })
 
@@ -378,6 +380,7 @@ describe("Codex app-server client", () => {
     const resumed = client.resumeThread("thr-1")
     await tick()
     const request = findSent(transport, "thread/resume")
+    expect(request.params).toEqual({ threadId: "thr-1" })
     transport.receive({ id: request.id, result: sessionResponse({
       ...baseThread,
       turns: [
@@ -409,7 +412,7 @@ describe("Codex app-server client", () => {
   })
 
   test("hydrates paginated turns and missing full items in chronological order", async () => {
-    const { client, transport } = await connectedClient()
+    const { client, transport } = await connectedClient(true)
     const resumed = client.resumeThread("thr-1")
     await tick()
     const request = findSent(transport, "thread/resume")
@@ -508,6 +511,77 @@ describe("Codex app-server client", () => {
     client.onEvent((event) => events.push(event))
     transport.exit(new Error("child crashed"))
     expect(events).toContainEqual({ type: "connection", status: "error", error: "child crashed" })
+  })
+})
+
+describe("Codex gateway lifecycle", () => {
+  test("restarts through a new handshake, invalidates connection state, and keeps subscribers attached", async () => {
+    const transports: FakeTransport[] = []
+    const gateways = createCodexGateways("/repo", "codex", () => {
+      const transport = new FakeTransport()
+      transports.push(transport)
+      return new CodexAppServerClient(transport, {
+        clientInfo: { name: "vimex_test", title: "Vimex Test", version: "1.0.0" },
+      })
+    })
+    const events: Array<{ type: string; [key: string]: unknown }> = []
+    gateways.connection.subscribe((event) => events.push(event))
+
+    const connecting = gateways.connection.connect()
+    await tick()
+    transports[0]!.receive({ id: 1, result: initializeResult })
+    await connecting
+
+    transports[0]!.receive({
+      method: "item/fileChange/requestApproval",
+      id: 31,
+      params: { threadId: "thr-1", turnId: "turn-1", itemId: "edit", startedAtMs: 1 },
+    })
+    const oldRequest = gateways.conversation.listThreads()
+    const oldRequestOutcome = oldRequest.then(
+      () => "resolved",
+      (error: unknown) => error instanceof Error ? error.message : String(error),
+    )
+
+    const firstRestart = gateways.connection.restart()
+    const sameRestart = gateways.connection.restart()
+    await tick()
+    expect(transports).toHaveLength(2)
+    expect(await oldRequestOutcome).not.toBe("resolved")
+    expect(events).toContainEqual({ type: "disconnected", message: "Restarting Codex app server" })
+    expect(events).toContainEqual({ type: "approval.resolved", id: "number:31" })
+    await expect(gateways.approvals.resolveApproval("number:31", "accept")).rejects.toThrow("no longer pending")
+
+    expect(transports[1]!.sent[0]).toMatchObject({ method: "initialize", id: 1 })
+    transports[1]!.receive({ id: 1, result: initializeResult })
+    await Promise.all([firstRestart, sameRestart])
+    expect(transports[1]!.sent[1]).toEqual({ method: "initialized" })
+
+    const beforeOldEvent = events.length
+    transports[0]!.receive({ method: "warning", params: { message: "stale generation" } })
+    expect(events).toHaveLength(beforeOldEvent)
+    transports[1]!.receive({ method: "warning", params: { message: "new generation" } })
+    expect(events.at(-1)).toEqual({ type: "notice", message: "new generation" })
+
+    const child = gateways.conversation.startThread("/repo")
+    await tick()
+    const start = findSent(transports[1]!, "thread/start")
+    transports[1]!.receive({ id: start.id, result: sessionResponse({
+      ...baseThread, id: "child", parentThreadId: "thr-1", recencyAt: 9,
+    }) })
+    expect((await child).summary.updatedAt).toBe(9_000)
+    expect(events).toContainEqual({
+      type: "subagent.link",
+      link: {
+        parentId: threadId("thr-1"),
+        childId: threadId("child"),
+        itemId: itemId("thread:child"),
+        relation: "spawned",
+      },
+    })
+
+    await gateways.connection.close()
+    await expect(gateways.connection.restart()).rejects.toThrow("closed")
   })
 })
 

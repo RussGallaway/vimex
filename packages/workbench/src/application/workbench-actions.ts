@@ -5,10 +5,15 @@ import type { InteractionCommand } from "@vimex/interaction"
 import type { LogicalPoint } from "@vimex/transcript"
 
 export type TranscriptAction =
+  | { type: "navigate"; motion: "block-next" | "block-previous" | "message-next" | "message-previous" | "url-next" | "url-previous" | "first-content"; count?: number }
+  | { type: "search"; query: string; direction: "forward" | "backward" }
+  | { type: "search.next"; reverse?: boolean; count?: number }
+  | { type: "selection.swap" }
+  | { type: "reference" }
   | { type: "cursor.move"; target: LogicalPoint; preferredScreenRow: number; extend: boolean }
   | { type: "selection.begin"; shape: "character" | "line" }
   | { type: "selection.clear" }
-  | { type: "viewport.scroll"; direction: "up" | "down"; amount: "line" | "half-page" }
+  | { type: "viewport.scroll"; direction: "up" | "down"; amount: "line" | "half-page" | "page" }
   | { type: "viewport.tail" }
   | { type: "fold.set"; itemId: ItemId; folded: boolean }
   | { type: "fold.all"; folded: boolean }
@@ -21,9 +26,17 @@ export interface WorkbenchActions {
   changeDraft(text: string, cursorOffset: number): void
   submit(intent: SubmissionIntent): void
   transcript(command: TranscriptAction): void
+  answerQuestions(id: string, answers: Readonly<Record<string, string | readonly string[]>>): void
+  openChildThread(id: ThreadId): void
+  returnToParent(): void
+  requestFork(itemId?: ItemId): void
+  confirmFork(): void
+  cancelFork(): void
+  restart(): void
   openThread(threadId: ThreadId): void
   resolveApproval(approvalId: Approval["id"], choiceId: string): void
   executeCommand(line: string): void
+  executeNamedCommand(name: string): void
   interrupt(): void
   retryOutgoing(id: string): void
   copyText(text: string): void

@@ -1,0 +1,26 @@
+id = "vimex"
+name = "Vimex"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Launch Vimex and connect its Codex lifecycle to Herdr"
+platforms = ["linux", "macos"]
+
+[[build]]
+command = ["bun", "install", "--cwd=../..", "--frozen-lockfile"]
+
+[[panes]]
+id = "vimex"
+title = "Vimex"
+placement = "tab"
+command = ["bun", "-e", "await import(process.env.HERDR_PLUGIN_ROOT + '/src/launch-vimex.ts')"]
+
+[[actions]]
+id = "open-url"
+title = "Open URL from Vimex"
+command = ["bun", "run", "src/open-url-action.ts"]
+
+[[link_handlers]]
+id = "vimex-url"
+title = "Open URL from Vimex"
+pattern = "^https?://"
+action = "open-url"

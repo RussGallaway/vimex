@@ -16,7 +16,7 @@ export function FullscreenShell(props: {
   return <box id="vimex-app" width="100%" height="100%" flexDirection="column" backgroundColor={emberTide.background}>
     <box height={2} flexShrink={0} flexDirection="row" alignItems="center" justifyContent="space-between" paddingX={2}>
       <box flexDirection="row" gap={1}><text fg={emberTide.amber}><b>VIMEX</b></text><text fg={emberTide.textMuted}>/</text><text fg={emberTide.text}>{props.title ?? "new session"}</text></box>
-      <box flexDirection="row" gap={1}>{props.working ? <text fg={emberTide.blueBright}>◌ working</text> : null}<text fg={dot}>●</text></box>
+      <box flexDirection="row" gap={1}>{props.working ? <text fg={emberTide.blueBright}>◌ working</text> : null}<text fg={dot}>● {props.connection}</text></box>
     </box>
     {props.transcript}{props.commandLine}{props.composer}{props.statusline}{props.overlay}
   </box>

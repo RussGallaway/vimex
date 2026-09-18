@@ -1,3 +1,4 @@
+import { parseCommand } from "@vimex/interaction"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { JsonStore } from "./persistence/json-store"
@@ -5,6 +6,8 @@ import { JsonStore } from "./persistence/json-store"
 export interface VimexConfig {
   version: 1
   theme: "ember-tide" | "nord" | "kanagawa"
+  syntaxTheme: "theme" | "ember-tide" | "nord" | "kanagawa"
+  reducedColor: boolean
   insertEnter: "newline" | "submit"
   busySubmit: "queue" | "steer"
   foldTools: boolean
@@ -14,7 +17,7 @@ export interface VimexConfig {
   codexExecutable: string
 }
 export const defaultConfig: VimexConfig = {
-  version: 1, theme: "ember-tide", insertEnter: "newline", busySubmit: "queue",
+  version: 1, theme: "ember-tide", syntaxTheme: "theme", reducedColor: false, insertEnter: "submit", busySubmit: "queue",
   foldTools: true, foldReasoning: true, composerMaxHeight: 0.33, keybindings: {}, codexExecutable: "codex",
 }
 export function parseConfig(value: unknown): VimexConfig {
@@ -25,11 +28,14 @@ export function parseConfig(value: unknown): VimexConfig {
   const result = { ...defaultConfig, ...raw } as VimexConfig
   if (result.version !== 1) throw new Error("Unsupported configuration version")
   if (!["ember-tide", "nord", "kanagawa"].includes(result.theme)) throw new Error("Unknown theme")
+  if (!["theme", "ember-tide", "nord", "kanagawa"].includes(result.syntaxTheme)) throw new Error("Unknown syntax theme")
+  if (typeof result.reducedColor !== "boolean") throw new Error("reducedColor must be a boolean")
   if (!["newline", "submit"].includes(result.insertEnter)) throw new Error("insertEnter must be newline or submit")
   if (!["queue", "steer"].includes(result.busySubmit)) throw new Error("busySubmit must be queue or steer")
   if (typeof result.foldTools !== "boolean" || typeof result.foldReasoning !== "boolean") throw new Error("Fold settings must be booleans")
   if (typeof result.composerMaxHeight !== "number" || !Number.isFinite(result.composerMaxHeight) || result.composerMaxHeight < 0.1 || result.composerMaxHeight > 0.6) throw new Error("composerMaxHeight must be between 0.1 and 0.6")
   if (!result.keybindings || typeof result.keybindings !== "object" || Array.isArray(result.keybindings) || Object.values(result.keybindings).some(v => typeof v !== "string")) throw new Error("keybindings must map keys to command names")
+  if (Object.values(result.keybindings).some(value => parseCommand(value).kind !== "command")) throw new Error("Keybindings must name a known command")
   if (typeof result.codexExecutable !== "string" || !result.codexExecutable.trim()) throw new Error("codexExecutable must be a nonempty executable path")
   return result
 }

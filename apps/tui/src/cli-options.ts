@@ -40,5 +40,5 @@ Usage: vimex [options]
   -V, --version    Show version
 
 Normal: i compose · Ctrl-w k/j focus · Ctrl-u/d scroll · v select · :help commands
-Insert: Enter newline · Alt+Enter send · Esc Normal
+Insert: Enter send · Shift+Enter newline · Esc Normal
 `

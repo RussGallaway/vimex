@@ -64,6 +64,9 @@
     "packages/platform-node": {
       "name": "@vimex/platform-node",
       "version": "0.1.0",
+      "dependencies": {
+        "@vimex/interaction": "workspace:*",
+      },
     },
     "packages/testkit": {
       "name": "@vimex/testkit",

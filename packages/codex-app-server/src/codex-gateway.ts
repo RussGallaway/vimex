@@ -1,35 +1,82 @@
-import { createCodexAppServerClient } from "./capabilities/codex-app-server-client"
+import { createCodexAppServerClient, type CodexAppServerClient } from "./capabilities/codex-app-server-client"
 import { CodexApprovalGateway } from "./codex-approval-gateway"
 import { hydrateTurns } from "./mapping/map-item"
-import type { ConversationGateway } from "@vimex/conversation"
+import { itemId, type ConversationGateway } from "@vimex/conversation"
 import type { RuntimeEvent, RuntimeConnection, ModelCatalog } from "@vimex/workbench"
 
 /** Adapts one Codex connection to the application-owned capability ports. */
-export function createCodexGateways(cwd: string, executable = "codex") {
-  const client = createCodexAppServerClient({ cwd, command: executable })
-  const approvals = new CodexApprovalGateway(client)
+export function createCodexGateways(
+  cwd: string,
+  executable = "codex",
+  createClient: () => CodexAppServerClient = () => createCodexAppServerClient({ cwd, command: executable }),
+) {
+  let client = createClient()
+  let detachClient = () => {}
+  let closed = false
+  let restartPromise: Promise<void> | undefined
+  const listeners = new Set<(event: RuntimeEvent) => void>()
+  const publish = (event: RuntimeEvent) => { for (const listener of listeners) listener(event) }
+  const approvals = new CodexApprovalGateway(() => client)
+
+  const receive = (event: Parameters<Parameters<CodexAppServerClient["onEvent"]>[0]>[0]) => {
+    const approvalEvents = approvals.handle(event)
+    if (approvalEvents) { for (const normalized of approvalEvents) publish(normalized); return }
+    let normalized: RuntimeEvent | undefined
+    switch (event.type) {
+      case "subagent.link": normalized = { type: "subagent.link", link: { parentId: event.link.ownerThreadId, childId: event.link.agentThreadId, itemId: event.link.itemId, relation: event.link.relation, agentPath: event.link.agentPath } }; break
+      case "conversation": normalized = event; break
+      case "thread.summary": normalized = { type: "summary", summary: event.summary }; break
+      case "thread.status": normalized = { type: "metadata", threadId: event.threadId, patch: { status: event.status } }; break
+      case "thread.tokenUsage": normalized = { type: "metadata", threadId: event.threadId, patch: { contextUsed: event.used, contextLimit: event.contextLimit } }; break
+      case "warning": case "error": normalized = { type: "notice", message: event.message }; break
+      case "connection": if (event.status !== "connected") normalized = { type: "disconnected", message: event.error ?? "Codex app server disconnected" }; break
+      case "unknown": break
+      case "approval.requested": case "approval.resolved": case "approval.cancelled": case "userInput.requested": break
+    }
+    if (normalized) publish(normalized)
+  }
+  const attach = () => { detachClient(); detachClient = client.onEvent(receive) }
+  attach()
+
+  const restart = async () => {
+    if (closed) throw new Error("Codex runtime connection is closed")
+    if (restartPromise) return restartPromise
+    const operation = (async () => {
+      publish({ type: "disconnected", message: "Restarting Codex app server" })
+      for (const event of approvals.invalidatePending()) publish(event)
+      const previous = client
+      try { await previous.close() }
+      catch (error) { publish({ type: "notice", message: `Failed to close previous Codex app server: ${String(error)}` }) }
+      finally { detachClient() }
+      client = createClient()
+      attach()
+      await client.connect()
+    })()
+    const tracked = operation.finally(() => { if (restartPromise === tracked) restartPromise = undefined })
+    restartPromise = tracked
+    return tracked
+  }
+
   const connection: RuntimeConnection = {
-    connect: async () => { await client.connect() },
+    connect: async () => { if (closed) throw new Error("Codex runtime connection is closed"); await client.connect() },
+    restart,
     subscribe(listener) {
-      return client.onEvent(event => {
-        const approvalEvents = approvals.handle(event)
-        if (approvalEvents) { for (const normalized of approvalEvents) listener(normalized); return }
-        let normalized: RuntimeEvent | undefined
-        switch (event.type) {
-          case "subagent.link": normalized = { type: "subagent.link", link: { parentId: event.link.ownerThreadId, childId: event.link.agentThreadId, itemId: event.link.itemId, relation: event.link.relation, agentPath: event.link.agentPath } }; break
-          case "conversation": normalized = event; break
-          case "thread.summary": normalized = { type: "summary", summary: event.summary }; break
-          case "thread.status": normalized = { type: "metadata", threadId: event.threadId, patch: { status: event.status } }; break
-          case "thread.tokenUsage": normalized = { type: "metadata", threadId: event.threadId, patch: { contextUsed: event.used, contextLimit: event.contextLimit } }; break
-          case "warning": case "error": normalized = { type: "notice", message: event.message }; break
-          case "connection": if (event.status !== "connected") normalized = { type: "disconnected", message: event.error ?? "Codex app server disconnected" }; break
-          case "unknown": break
-          case "approval.requested": case "approval.resolved": case "approval.cancelled": case "userInput.requested": break
-        }
-        if (normalized) listener(normalized)
-      })
+      listeners.add(listener)
+      return () => listeners.delete(listener)
     },
-    close: () => client.close(),
+    async close() {
+      if (closed) return
+      closed = true
+      await restartPromise?.catch(() => {})
+      try { await client.close() } finally { detachClient(); listeners.clear() }
+    },
+  }
+  const observeSession = <T extends Awaited<ReturnType<CodexAppServerClient["resumeThread"]>>>(session: T): T => {
+    if (session.relation.parentThreadId) publish({
+      type: "subagent.link",
+      link: { parentId: session.relation.parentThreadId, childId: session.relation.threadId, itemId: itemId(`thread:${session.relation.threadId}`), relation: "spawned" },
+    })
+    return session
   }
   const conversation: ConversationGateway = {
     async listThreads() {
@@ -42,9 +89,9 @@ export function createCodexGateways(cwd: string, executable = "codex") {
       } while (cursor)
       return all
     },
-    startThread: (cwd, model) => client.startThread({ cwd, ...(model ? { model } : {}) }),
-    resumeThread: id => client.resumeThread(id),
-    forkThread: (id, through) => client.forkThread(id, through),
+    async startThread(cwd, model) { return observeSession(await client.startThread({ cwd, ...(model ? { model } : {}) })) },
+    async resumeThread(id) { return observeSession(await client.resumeThread(id)) },
+    async forkThread(id, through) { return observeSession(await client.forkThread(id, through)) },
     async startTurn(id, text, clientMessageId) {
       const response = await client.startTurn(id, text, { clientUserMessageId: clientMessageId })
       return hydrateTurns([response.turn], id)

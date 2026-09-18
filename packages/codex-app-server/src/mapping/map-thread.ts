@@ -21,6 +21,7 @@ export function mapThreadSummary(thread: Thread): ThreadSummary {
     cwd: thread.cwd,
     ...(thread.gitInfo?.branch ? { gitBranch: thread.gitInfo.branch } : {}),
     status: mapThreadStatus(thread.status),
+    updatedAt: (thread.recencyAt ?? thread.updatedAt) * 1_000,
   }
 }
 

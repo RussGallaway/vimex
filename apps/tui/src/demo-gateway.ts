@@ -17,7 +17,7 @@ export function createDemoGateway(): ConversationGateway & ApprovalGateway & Run
   history.push({ type: "item.completed", threadId: summary.id, item: { id: itemId("welcome-message"), turnId: welcome, kind: "assistant", status: "complete", markdown: "# Welcome to Vimex\n\nA quiet workspace for **Codex**, with Vim at your fingertips.\n\n- Press `i` to compose a message.\n- Press `Esc` to return to Normal mode.\n- Use `Ctrl-u` / `Ctrl-d` to explore the transcript.\n- Press `v` to select, then `y` to copy.\n\nVisit [OpenTUI](https://opentui.com) with `gx`.\n\n```typescript\nconst focus = \"one thing at a time\"\n```" } })
   history.push({ type: "turn.completed", threadId: summary.id, turnId: welcome, outcome: "complete" })
   return {
-    connect: async () => {}, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener) },
+    restart: async () => {}, connect: async () => {}, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener) },
     listThreads: async () => [summary], startThread: async () => snapshot(), resumeThread: async () => snapshot(),
     forkThread: async () => { throw new Error("Forking requires a live Codex thread") },
     async startTurn(id, text) {

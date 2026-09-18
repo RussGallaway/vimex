@@ -2,7 +2,7 @@ import { CliRenderEvents, type InputRenderable, type Renderable, type ScrollBoxR
 import { useBindings } from "@opentui/keymap/react"
 import { useRenderer, useTerminalDimensions } from "@opentui/react"
 import { initialComposer } from "@vimex/composer"
-import { initialInteraction, resolveComposerKey, type ComposerVimAction, type InteractionState } from "@vimex/interaction"
+import { applyComposerVimAction, commandCompletions, initialCommandHistory, initialInteraction, recallCommand, recordCommand, resolveComposerKey, type ComposerVimAction, type InteractionState } from "@vimex/interaction"
 import { graphemeCount, initialTranscript, selectedText, type TranscriptState } from "@vimex/transcript"
 import { activeWorkspace } from "@vimex/workbench"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -21,7 +21,9 @@ import { commandBindings } from "../keymap/command-bindings"
 import type { VimBindingContext } from "../keymap/binding-context"
 import { OverlayLayer } from "./OverlayLayer"
 import { FullscreenShell } from "./FullscreenShell"
-import { CommandLine } from "../composer/CommandLine"
+import { commandBody, commandPrompt, CommandLine } from "../composer/CommandLine"
+import { searchSessions } from "../sessions/session-search"
+import { agentNavigationRows } from "../agents/AgentsOverlay"
 
 const blankTranscript = initialTranscript()
 const blankComposer = initialComposer()
@@ -46,8 +48,8 @@ function selectableAt(renderable: Renderable, x: number, y: number): Renderable 
 
 export function VimexApp({ state, controller, settings: settingsInput }: VimexAppProps) {
   const renderer = useRenderer()
-  const settings = { ...defaultVimexUiSettings, ...settingsInput }
-  selectTheme(settings.theme)
+  const settings = { ...defaultVimexUiSettings, ...settingsInput, ...state.preferences }
+  selectTheme(settings.theme, settings.reducedColor)
   const dimensions = useTerminalDimensions()
   const workspace = activeWorkspace(state)
   const transcript = workspace?.transcript ?? blankTranscript
@@ -58,11 +60,18 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
     const item = workspace?.conversation.items[id]
     return item ? [item] : []
   })
-  const syntax = useMemo(() => createEmberTideSyntax(), [settings.theme])
+  const syntax = useMemo(() => createEmberTideSyntax(settings.syntaxTheme === "theme" ? settings.theme : settings.syntaxTheme, settings.reducedColor), [settings.reducedColor, settings.syntaxTheme, settings.theme])
   const scrollRef = useRef<ScrollBoxRenderable>(null)
   const textareaRef = useRef<TextareaRenderable>(null)
   const commandRef = useRef<InputRenderable>(null)
+  const sessionSearchRef = useRef<InputRenderable>(null)
+  const questionInputRef = useRef<InputRenderable>(null)
+  const commandHistoryRef = useRef(initialCommandHistory())
+  const composerSelectionRef = useRef<{ anchor: number; head: number } | undefined>(undefined)
   const [overlayIndex, setOverlayIndex] = useState(0)
+  const [sessionQuery, setSessionQuery] = useState("")
+  const [questionIndex, setQuestionIndex] = useState(0)
+  const [questionAnswers, setQuestionAnswers] = useState<Record<string, string | readonly string[]>>({})
   const [renderedLayout, setRenderedLayout] = useState<TranscriptLayout>()
   const layoutSignature = useRef("")
   const pendingScrollAnchor = useRef(false)
@@ -77,8 +86,17 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
   const busy = activeTurn(interaction, workspace?.conversation.activeTurnId)
   const pendingApproval = state.approvals.order
     .map((id) => state.approvals.byId[id])
-    .find((approval) => approval?.status === "pending" || approval?.status === "failed")
+    .find((approval) => approval !== undefined && approval.threadId === state.activeThreadId && (approval.status === "pending" || approval.status === "failed"))
+  const pendingQuestion = Object.values(state.questions).find((question) => question.threadId === state.activeThreadId)
+  const sessionRows = useMemo(() => searchSessions(state.threadOrder, state.summaries, sessionQuery), [sessionQuery, state.summaries, state.threadOrder])
+  const agentRows = useMemo(() => agentNavigationRows(state.activeThreadId, state.agentRelationships), [state.activeThreadId, state.agentRelationships])
   const selectionCount = selectedText(transcript, "plain")
+  const overlayLength = interaction.overlay === "sessions" ? sessionRows.length
+    : interaction.overlay === "approvals" ? (pendingApproval?.choices.length ?? 0)
+      : interaction.overlay === "questions" ? (pendingQuestion?.questions[questionIndex]?.options?.length ?? 1)
+        : interaction.overlay === "agents" ? agentRows.length
+          : interaction.overlay === "urls" ? (state.urlChoices?.length ?? 0)
+            : 1
 
   useEffect(() => () => syntax.destroy(), [syntax])
   useEffect(() => { countRef.current = interaction.count }, [interaction.count])
@@ -131,11 +149,25 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
   useEffect(() => {
     if (transcript.viewport.kind === "point") pendingRestore.current = true
   }, [geometryRevision])
-  useEffect(() => setOverlayIndex(0), [interaction.overlay])
+  useEffect(() => {
+    setOverlayIndex(0)
+    if (interaction.overlay !== "sessions") setSessionQuery("")
+  }, [interaction.overlay])
+  useEffect(() => { setQuestionIndex(0); setQuestionAnswers({}) }, [pendingQuestion?.id])
+  useEffect(() => {
+    if (state.pendingFork && interaction.overlay !== "fork") controller.dispatchInteraction({ type: "overlay.open", overlay: "fork" })
+    else if (!state.pendingFork && pendingQuestion && !interaction.overlay) controller.dispatchInteraction({ type: "overlay.open", overlay: "questions" })
+  }, [controller, interaction.overlay, pendingQuestion, state.pendingFork])
   useEffect(() => {
     if (interaction.overlay) {
       textareaRef.current?.blur()
       commandRef.current?.blur()
+      if (interaction.overlay === "sessions") sessionSearchRef.current?.focus()
+      else if (interaction.overlay === "questions") {
+        if (questionInputRef.current) questionInputRef.current.focus()
+        else scrollRef.current?.focus()
+      }
+      else scrollRef.current?.focus()
     } else if (interaction.mode === "insert") {
       textareaRef.current?.focus()
     } else if (interaction.mode === "command") {
@@ -201,46 +233,34 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
   const applyComposerAction = useCallback((action: ComposerVimAction) => {
     const textarea = textareaRef.current
     if (!textarea) return
-    if (action.type === "motion") {
-      for (let index = 0; index < action.count; index += 1) {
-        const select = action.select ? { select: true } : undefined
-        switch (action.motion) {
-          case "left": textarea.moveCursorLeft(select); break
-          case "right": textarea.moveCursorRight(select); break
-          case "up": textarea.moveCursorUp(select); break
-          case "down": textarea.moveCursorDown(select); break
-          case "word-forward": textarea.moveWordForward(select); break
-          case "word-backward": textarea.moveWordBackward(select); break
-          case "line-start": textarea.gotoVisualLineHome(select); break
-          case "line-end": textarea.gotoVisualLineEnd(select); break
-        }
-      }
-      controller.changeDraft(textarea.plainText, textarea.cursorOffset)
-    } else if (action.type === "edit") {
-      for (let index = 0; index < action.count; index += 1) {
-        if (action.operator === "delete-char") textarea.deleteChar()
-        if (action.operator === "delete-line") textarea.deleteLine()
-        if (action.operator === "undo") textarea.undo()
-        if (action.operator === "redo") textarea.redo()
-      }
-      controller.changeDraft(textarea.plainText, textarea.cursorOffset)
-    } else if (action.type === "enter-insert") {
-      if (action.placement === "after") textarea.moveCursorRight()
-      if (action.placement === "line-start") textarea.gotoLineHome()
-      if (action.placement === "line-end") textarea.gotoLineEnd()
-    } else if (action.type === "begin-visual") {
-      textarea.setSelectionInclusive(textarea.cursorOffset, textarea.cursorOffset)
-    } else if (action.type === "clear-selection") {
-      textarea.clearSelection()
-    } else if (action.type === "yank") {
-      const text = textarea.getSelectedText()
-      if (text) controller.copyText(text)
-      textarea.clearSelection()
-    } else if (action.type === "retry") {
+    const nativeSelection = textarea.getSelection()
+    const result = applyComposerVimAction({
+      text: textarea.plainText,
+      cursorOffset: textarea.cursorOffset,
+      selection: composerSelectionRef.current ?? (nativeSelection ? { anchor: nativeSelection.start, head: Math.max(nativeSelection.start, nativeSelection.end - 1) } : undefined),
+    }, action, composerInteractionRef.current.unnamedRegister)
+    if (result.effect?.type === "history") {
+      if (result.effect.direction === "undo") textarea.undo()
+      else textarea.redo()
+    } else {
+      if (textarea.plainText !== result.buffer.text) textarea.replaceText(result.buffer.text)
+      textarea.cursorOffset = result.buffer.cursorOffset
+      if (result.buffer.selection) textarea.setSelectionInclusive(result.buffer.selection.anchor, result.buffer.selection.head)
+      else textarea.clearSelection()
+    }
+    composerSelectionRef.current = result.buffer.selection
+    controller.changeDraft(textarea.plainText, textarea.cursorOffset)
+    const previous = composerInteractionRef.current.unnamedRegister
+    if (previous.text !== result.register.text || previous.shape !== result.register.shape) {
+      controller.dispatchInteraction({ type: "register.set", register: result.register })
+    }
+    if (result.effect?.type === "copy") controller.copyText(result.effect.text)
+    if (result.effect?.type === "submit") controller.submit(busy && settings.busySubmit === "steer" ? "steer" : "next-turn")
+    if (result.effect?.type === "retry") {
       const failed = composer.outbox.find((message) => message.status === "failed")
       if (failed) controller.retryOutgoing(failed.id)
     }
-  }, [composer.outbox, controller])
+  }, [busy, composer.outbox, controller, settings.busySubmit])
   const runComposerKey = useCallback((key: string) => {
     const resolution = resolveComposerKey(composerInteractionRef.current, key)
     composerInteractionRef.current = resolution.state
@@ -248,9 +268,9 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
     for (const command of resolution.commands) controller.dispatchInteraction(command)
   }, [applyComposerAction, controller])
 
-  const scroll = useCallback((direction: "up" | "down", amount: "line" | "half-page") => {
+  const scroll = useCallback((direction: "up" | "down", amount: "line" | "half-page" | "page") => {
     const delta = direction === "down" ? 1 : -1
-    scrollRef.current?.scrollBy(delta * (amount === "line" ? 1 : 0.5), amount === "line" ? "step" : "viewport")
+    scrollRef.current?.scrollBy(delta * (amount === "line" ? 1 : amount === "half-page" ? 0.5 : 1), amount === "line" ? "step" : "viewport")
     pendingScrollAnchor.current = true
     controller.transcript({ type: "viewport.scroll", direction, amount })
   }, [controller])
@@ -262,14 +282,60 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
   }, [controller, dispatchMotion, transcript.cursor])
 
   const closeOverlay = useCallback(() => controller.dispatchInteraction({ type: "overlay.close" }), [controller])
-  const openOverlay = useCallback((overlay: "sessions" | "approvals" | "help") => {
+  const openOverlay = useCallback((overlay: "sessions" | "approvals" | "questions" | "fork" | "agents" | "urls" | "help") => {
     controller.dispatchInteraction({ type: "overlay.open", overlay })
   }, [controller])
+
+  const activateOverlay = useCallback(() => {
+    if (interaction.overlay === "sessions") {
+      const id = sessionRows[Math.min(overlayIndex, Math.max(0, sessionRows.length - 1))]?.id
+      if (id) controller.openThread(id)
+    } else if (interaction.overlay === "approvals" && pendingApproval) {
+      const choice = pendingApproval.choices[Math.min(overlayIndex, Math.max(0, pendingApproval.choices.length - 1))]
+      if (choice) controller.resolveApproval(pendingApproval.id, choice.id)
+    } else if (interaction.overlay === "questions" && pendingQuestion) {
+      const question = pendingQuestion.questions[Math.min(questionIndex, pendingQuestion.questions.length - 1)]
+      if (!question) return
+      const liveValue = questionInputRef.current?.value
+      const typed = liveValue?.length ? liveValue : questionAnswers[question.id]
+      const option = question.options?.[Math.min(overlayIndex, Math.max(0, (question.options?.length ?? 1) - 1))]
+      const answer = typeof typed === "string" && typed.length ? typed : option?.label
+      if (!answer) return
+      const answers = { ...questionAnswers, [question.id]: answer }
+      setQuestionAnswers(answers)
+      if (questionIndex < pendingQuestion.questions.length - 1) { setQuestionIndex((value) => value + 1); setOverlayIndex(0); return }
+      controller.answerQuestions(pendingQuestion.id, answers)
+    } else if (interaction.overlay === "fork" && state.pendingFork) {
+      controller.confirmFork()
+    } else if (interaction.overlay === "agents") {
+      const row = agentRows[Math.min(overlayIndex, Math.max(0, agentRows.length - 1))]
+      if (row?.direction === "parent") controller.returnToParent()
+      if (row?.direction === "child") controller.openChildThread(row.threadId)
+    } else if (interaction.overlay === "urls") {
+      const choice = state.urlChoices?.[Math.min(overlayIndex, Math.max(0, (state.urlChoices?.length ?? 1) - 1))]
+      if (choice) controller.transcript({ type: "url.open", url: choice.url })
+    }
+    closeOverlay()
+  }, [agentRows, closeOverlay, controller, interaction.overlay, overlayIndex, pendingApproval, pendingQuestion, questionAnswers, questionIndex, sessionRows, state.pendingFork, state.urlChoices])
 
   const bindingContext: VimBindingContext = {
     interaction, transcript, composer, controller, countRef, textareaRef, scrollRef,
     countedMotion, dispatchMotion, runComposerKey, beginVisual, openOverlay, scroll,
   }
+  const changeCommandLine = useCallback((value: string) => {
+    commandRef.current?.setText(commandBody(value))
+    controller.dispatchInteraction({ type: "command.change", value })
+  }, [controller])
+  const recallCommandLine = useCallback((direction: -1 | 1) => {
+    const recalled = recallCommand(commandHistoryRef.current, interaction.commandLine, direction)
+    commandHistoryRef.current = recalled.history
+    changeCommandLine(recalled.value)
+  }, [changeCommandLine, interaction.commandLine])
+  const completeCommandLine = useCallback(() => {
+    if (commandPrompt(interaction.commandLine) !== ":") return
+    const match = commandCompletions(interaction.commandLine)[0]
+    if (match) changeCommandLine(match)
+  }, [changeCommandLine, interaction.commandLine])
   useBindings(() => ({
     priority: 100,
     bindings: interaction.overlay ? [] : [
@@ -278,39 +344,50 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
       ...(interaction.mode === "visual" ? visualBindings(bindingContext) : []),
       ...(interaction.mode === "insert" ? insertBindings(bindingContext) : []),
       ...(interaction.mode === "command" ? commandBindings(bindingContext) : []),
-      ...Object.entries(settings.keybindings).map(([key, command]) => ({ key, cmd: () => controller.executeCommand(command) })),
     ],
   }), [bindingContext, settings.keybindings])
+  useBindings(() => ({
+    priority: 150,
+    bindings: interaction.overlay ? [] : Object.entries(settings.keybindings)
+      .map(([key, command]) => ({ key, cmd: () => controller.executeNamedCommand(command) })),
+  }), [controller, interaction.overlay, settings.keybindings])
+  useBindings(() => ({
+    priority: 175,
+    bindings: interaction.overlay || interaction.mode !== "command" ? [] : [
+      { key: "up", cmd: () => recallCommandLine(-1) },
+      { key: "down", cmd: () => recallCommandLine(1) },
+      { key: "tab", cmd: completeCommandLine },
+    ],
+  }), [completeCommandLine, interaction.mode, interaction.overlay, recallCommandLine])
 
   useBindings(() => ({
     priority: 200,
     bindings: !interaction.overlay ? [] : [
-      { key: "escape", cmd: closeOverlay },
-      { key: "?", cmd: closeOverlay },
-      { key: "j", cmd: () => setOverlayIndex((value) => value + 1) },
-      { key: "k", cmd: () => setOverlayIndex((value) => Math.max(0, value - 1)) },
-      { key: "return", cmd: () => {
-        if (interaction.overlay === "sessions") {
-          const id = state.threadOrder[Math.min(overlayIndex, Math.max(0, state.threadOrder.length - 1))]
-          if (id) controller.openThread(id)
-        } else if (interaction.overlay === "approvals" && pendingApproval) {
-          const choice = pendingApproval.choices[Math.min(overlayIndex, Math.max(0, pendingApproval.choices.length - 1))]
-          if (choice) controller.resolveApproval(pendingApproval.id, choice.id)
-        }
+      { key: "escape", cmd: () => {
+        if (interaction.overlay === "fork") controller.cancelFork()
         closeOverlay()
       } },
-      ...Array.from({ length: 9 }, (_, index) => ({ key: `${index + 1}`, cmd: () => {
-        if (interaction.overlay !== "approvals" || !pendingApproval) return
+      { key: "?", cmd: closeOverlay },
+      ...(["down", "ctrl+n", ...(interaction.overlay === "sessions" || interaction.overlay === "questions" ? [] : ["j"])]
+        .map((key) => ({ key, cmd: () => setOverlayIndex((value) => Math.min(Math.max(0, overlayLength - 1), value + 1)) }))),
+      ...(["up", "ctrl+p", ...(interaction.overlay === "sessions" || interaction.overlay === "questions" ? [] : ["k"])]
+        .map((key) => ({ key, cmd: () => setOverlayIndex((value) => Math.max(0, value - 1)) }))),
+      { key: "return", cmd: activateOverlay },
+      ...(interaction.overlay === "approvals" ? Array.from({ length: 9 }, (_, index) => ({ key: `${index + 1}`, cmd: () => {
+        if (!pendingApproval) return
         const choice = pendingApproval.choices[index]
         if (choice) controller.resolveApproval(pendingApproval.id, choice.id)
-      } })),
+      } })) : []),
     ],
-  }), [interaction.overlay, closeOverlay, controller, overlayIndex, pendingApproval, state.threadOrder])
+  }), [activateOverlay, interaction.overlay, closeOverlay, controller, overlayLength, pendingApproval])
 
   return (
     <FullscreenShell title={summary?.title} connection={state.connection} working={summary?.status === "working"}
       transcript={<TranscriptViewport items={items} state={transcript} interaction={interaction} syntax={syntax} scrollRef={scrollRef} />}
-      commandLine={interaction.mode === "command" ? <CommandLine value={interaction.commandLine} inputRef={commandRef} controller={controller} /> : undefined}
+      commandLine={interaction.mode === "command" ? <CommandLine value={interaction.commandLine} inputRef={commandRef} controller={controller} onSubmit={(line) => {
+        commandHistoryRef.current = recordCommand(commandHistoryRef.current, line)
+        controller.executeCommand(line)
+      }} /> : undefined}
       composer={<Composer
         state={composer}
         mode={interaction.mode}
@@ -330,14 +407,30 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
         unseenEntries={transcript.unseenEntries}
         selectionCount={selectionCount ? graphemeCount(selectionCount) : undefined}
         pendingApprovals={state.approvals.order.length}
+        pendingQuestions={Object.keys(state.questions).length}
         activeTurn={busy}
       />}
       overlay={<OverlayLayer
         overlay={interaction.overlay}
-        threads={state.threadOrder}
+        sessions={sessionRows}
+        sessionQuery={sessionQuery}
+        sessionSearchRef={sessionSearchRef}
+        onSessionQuery={(value) => { setSessionQuery(value); setOverlayIndex(0) }}
         summaries={state.summaries}
         activeThreadId={state.activeThreadId}
         approval={pendingApproval}
+        question={pendingQuestion}
+        questionIndex={questionIndex}
+        answers={questionAnswers}
+        questionInputRef={questionInputRef}
+        onQuestionInput={(value) => {
+          const question = pendingQuestion?.questions[questionIndex]
+          if (question) setQuestionAnswers((answers) => ({ ...answers, [question.id]: value }))
+        }}
+        onActivate={activateOverlay}
+        pendingFork={state.pendingFork}
+        agents={agentRows}
+        urls={state.urlChoices ?? []}
         selected={overlayIndex}
       />}
     />

@@ -26,6 +26,7 @@ test("reports optional connection and per-thread approval state, then releases i
   expect(commands[0]).toContain("blocked")
   expect(commands[0]).toContain("thread-one")
   expect(commands[2]).toContain("approvals=1")
+  expect(commands[2]).toContain("thread=thread-one")
   expect(commands[3]).toContain("unknown")
   expect(commands[5]).toContain("connection=error")
   expect(commands[6]).not.toContain("--agent-session-id")

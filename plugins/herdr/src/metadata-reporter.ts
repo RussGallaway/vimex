@@ -12,7 +12,8 @@ export function metadataCommand(paneId: string, sequence: number, metadata: Herd
   return [
     "pane", "report-metadata", paneId, "--source", "vimex", "--agent", "codex", "--seq", String(sequence),
     "--display-agent", "Vimex", "--title", summary?.title ?? "Vimex",
-    "--token", `connection=${metadata.connection}`, "--token", `model=${summary?.model ?? ""}`,
+    "--token", `connection=${metadata.connection}`, "--token", `thread=${summary?.id ?? ""}`,
+    "--token", `model=${summary?.model ?? ""}`,
     "--token", `thinking=${summary?.reasoningEffort ?? ""}`, "--token", `cwd=${summary?.cwd ?? ""}`,
     "--token", `branch=${summary?.gitBranch ?? ""}`, "--token", `context_used=${summary?.contextUsed ?? ""}`,
     "--token", `context_limit=${summary?.contextLimit ?? ""}`, "--token", `approvals=${metadata.pendingApprovals}`,

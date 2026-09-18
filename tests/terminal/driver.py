@@ -21,7 +21,7 @@ trace = os.path.join(temporary.name, "trace.jsonl")
 config = os.path.join(temporary.name, "config.json")
 with open(config, "w") as file:
     json.dump({"codexExecutable": os.path.join(root, "tests/terminal/fixtures/app-server.ts")}, file)
-arguments = ["--demo"] if scenario == "demo" else ["--config", config, "--cwd", temporary.name]
+arguments = ["--demo"] if scenario in ("demo", "signal") else ["--config", config, "--cwd", temporary.name]
 master, slave = pty.openpty()
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 28, 100, 0, 0))
 process = subprocess.Popen([shutil.which("bun"), "run", "apps/tui/src/main.tsx", *arguments], cwd=root,
@@ -59,13 +59,19 @@ def send(value):
 try:
     wait_for(b"NORMAL")
     assert b"\x1b[?1049h" in output, "alternate screen not entered"
-    wait_for(b"Welcome to Vimex" if scenario == "demo" else b"Terminal contract")
+    wait_for(b"Welcome to Vimex" if scenario in ("demo", "signal") else b"Terminal contract")
+    if scenario == "save-failure":
+        state_path = os.path.join(temporary.name, "vimex")
+        if os.path.isdir(state_path):
+            os.rename(state_path, state_path + "-saved")
+        with open(state_path, "w") as file:
+            file.write("Deliberate fixture: state directory became a regular file")
     offset = send(b"i")
     wait_for(b"INSERT", offset)
     offset = send(b"terminal integration draft")
     wait_for(b"terminal integration draft", offset)
     if scenario == "server":
-        send(b"\x1b\r")
+        send(b"\r")
         wait_for(b"approval")
     offset = send(b"\x1b")
     wait_for(b"NORMAL", offset)
@@ -76,11 +82,14 @@ try:
         time.sleep(0.1)
         send(b"\r")
         wait_for(b"Verified")
-    offset = send(b":")
-    wait_for(b"COMMAND", offset)
-    send(b"q")
-    time.sleep(0.1)
-    send(b"\r")
+    if scenario == "signal":
+        process.send_signal(signal.SIGTERM)
+    else:
+        offset = send(b":")
+        wait_for(b"COMMAND", offset)
+        send(b"q")
+        time.sleep(0.1)
+        send(b"\r")
     end = time.monotonic() + 8
     while process.poll() is None and time.monotonic() < end:
         pump()
@@ -89,7 +98,8 @@ try:
     while pump(0):
         if not select.select([master], [], [], 0)[0]:
             break
-    assert process.returncode == 0, f"exit code {process.returncode}"
+    expected_exit = 1 if scenario == "save-failure" else 0
+    assert process.returncode == expected_exit, f"exit code {process.returncode}, expected {expected_exit}"
     assert b"\x1b[?1049l" in output, "alternate screen not restored"
     assert b"\x1b[?25h" in output, "cursor not restored"
     if scenario == "server":

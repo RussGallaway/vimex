@@ -55,24 +55,37 @@ export const kanagawa: VimexTheme = {
 
 const themes = { "ember-tide": emberTideBase, nord, kanagawa } as const
 let selectedTheme: VimexTheme = emberTideBase
+function reduced(palette: VimexTheme): VimexTheme {
+  return {
+    ...palette,
+    blue: palette.textSoft, blueBright: palette.text, sage: palette.textSoft,
+    amber: palette.text, ember: palette.textSoft, red: palette.text,
+    selection: palette.backgroundHover, selectionText: palette.text,
+    diffAdded: palette.backgroundPanel, diffAddedBright: palette.text,
+    diffRemoved: palette.backgroundPanel, diffRemovedBright: palette.text,
+  }
+}
 /** Live singleton palette; Vimex owns one terminal renderer per process. */
 export const emberTide = new Proxy({} as VimexTheme, { get: (_target, key: keyof VimexTheme) => selectedTheme[key] })
-export function selectTheme(name: keyof typeof themes): VimexTheme { selectedTheme = themes[name]; return selectedTheme }
+export function selectTheme(name: keyof typeof themes, reducedColor = false): VimexTheme { selectedTheme = reducedColor ? reduced(themes[name]) : themes[name]; return selectedTheme }
+export function themePalette(name: keyof typeof themes): VimexTheme { return themes[name] }
 
 export type EmberTideTheme = VimexTheme
 
-export function createEmberTideSyntax(): SyntaxStyle {
+export function createEmberTideSyntax(name?: keyof typeof themes, reducedColor = false): SyntaxStyle {
+  const base = name ? themes[name] : selectedTheme
+  const palette = reducedColor ? reduced(base) : base
   return SyntaxStyle.fromStyles({
-    default: { fg: emberTide.text },
-    keyword: { fg: emberTide.blueBright, bold: true },
-    string: { fg: emberTide.sage },
-    number: { fg: emberTide.amber },
-    comment: { fg: emberTide.textMuted, italic: true },
-    function: { fg: emberTide.blue },
-    type: { fg: emberTide.amber },
-    variable: { fg: emberTide.textSoft },
-    "markup.heading": { fg: emberTide.amber, bold: true },
-    "markup.link": { fg: emberTide.blueBright, underline: true },
-    "markup.raw": { fg: emberTide.sage },
+    default: { fg: palette.text },
+    keyword: { fg: palette.blueBright, bold: true },
+    string: { fg: palette.sage },
+    number: { fg: palette.amber },
+    comment: { fg: palette.textMuted, italic: true },
+    function: { fg: palette.blue },
+    type: { fg: palette.amber },
+    variable: { fg: palette.textSoft },
+    "markup.heading": { fg: palette.amber, bold: true },
+    "markup.link": { fg: palette.blueBright, underline: true },
+    "markup.raw": { fg: palette.sage },
   })
 }

@@ -18,7 +18,9 @@ export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCom
         workspaces: { ...state.workspaces, [command.summary.id]: state.workspaces[command.summary.id] ?? createWorkspace(command.summary.id) },
       })
     }
-    case "thread.switch": return state.workspaces[command.threadId] ? done({ ...state, activeThreadId: command.threadId }) : done(state)
+    case "thread.switch": return state.workspaces[command.threadId]
+      ? done({ ...state, activeThreadId: command.threadId, pendingFork: undefined, urlChoices: undefined })
+      : done(state)
     case "thread.close": {
       if (!state.workspaces[command.threadId]) return done(state)
       const workspaces = { ...state.workspaces }; delete workspaces[command.threadId]
@@ -103,10 +105,18 @@ export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCom
     case "composer.fail": {
       const workspace = state.workspaces[command.threadId]
       if (!workspace) return done(state)
+      const outgoing = workspace.composer.outbox.find(message => message.id === command.clientMessageId)
       const settled = command.type === "composer.ack"
         ? acknowledgeOutgoing(workspace.composer, command.clientMessageId)
         : failOutgoing(workspace.composer, command.clientMessageId, command.reason)
-      const scheduled = scheduleQueued(settled, command.threadId, workspace.conversation.activeTurnId)
+      // A start-turn acknowledgement may precede turn.started. Keep queued
+      // steering serialized until the runtime has supplied the real turn id.
+      const waitForStartedTurn = command.type === "composer.ack"
+        && outgoing?.intent === "next-turn"
+        && !workspace.conversation.activeTurnId
+      const scheduled = waitForStartedTurn
+        ? { composer: settled }
+        : scheduleQueued(settled, command.threadId, workspace.conversation.activeTurnId)
       const next = updateWorkspace(state, command.threadId, (current) => ({ ...current, composer: scheduled.composer }))
       return scheduled.effect ? done(next, scheduled.effect) : done(next)
     }

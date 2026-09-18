@@ -1,5 +1,6 @@
-import { createConversation, type AgentRelationship, type ConversationEvent, type ConversationState, type ThreadId, type ThreadSummary, type TurnId } from "@vimex/conversation"
-import { initialTranscript, type TranscriptCommand, type TranscriptState, type ViewportAnchor } from "@vimex/transcript"
+import type { DisplayPreferences } from "./display-preferences"
+import { createConversation, type AgentRelationship, type ConversationEvent, type ConversationState, type ItemId, type ThreadId, type ThreadSummary, type TurnId } from "@vimex/conversation"
+import { initialTranscript, type UrlCandidate, type TranscriptCommand, type TranscriptState, type ViewportAnchor } from "@vimex/transcript"
 import { initialComposer, type ComposerState, type SubmissionIntent } from "@vimex/composer"
 import { initialInteraction, type InteractionCommand, type InteractionState } from "@vimex/interaction"
 import { initialApprovals, type Approval, type ApprovalsState, type UserQuestionRequest } from "@vimex/approvals"
@@ -9,7 +10,11 @@ export interface ThreadWorkspace {
   composer: ComposerState
   interaction: InteractionState
 }
+export interface PendingFork { threadId: ThreadId; itemId: ItemId; turnId: TurnId; preview: string }
 export interface WorkbenchState {
+  preferences?: DisplayPreferences
+  pendingFork?: PendingFork
+  urlChoices?: readonly UrlCandidate[]
   activeThreadId?: ThreadId
   threadOrder: readonly ThreadId[]
   summaries: Readonly<Record<string, ThreadSummary>>

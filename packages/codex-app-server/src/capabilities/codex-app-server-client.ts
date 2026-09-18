@@ -212,13 +212,18 @@ export class CodexAppServerClient {
   }
 
   async resumeThread(thread: string, overrides: Omit<ThreadResumeParams, "threadId"> = {}): Promise<ThreadSession> {
-    const raw = await this.rpc.request<ThreadResumeResponse>("thread/resume", {
-      threadId: thread,
-      excludeTurns: true,
-      initialTurnsPage: { limit: 100, sortDirection: "desc", itemsView: "full" },
-      ...overrides,
-    })
-    return session(raw, await this.loadResumeTurns(raw))
+    if (this.options.experimentalApi) {
+      const raw = await this.rpc.request<ThreadResumeResponse>("thread/resume", {
+        threadId: thread,
+        excludeTurns: true,
+        initialTurnsPage: { limit: 100, sortDirection: "desc", itemsView: "full" },
+        ...overrides,
+      })
+      return session(raw, await this.loadResumeTurns(raw))
+    }
+    const { excludeTurns: _excludeTurns, initialTurnsPage: _initialTurnsPage, ...stableOverrides } = overrides
+    const raw = await this.rpc.request<ThreadResumeResponse>("thread/resume", { threadId: thread, ...stableOverrides })
+    return session(raw, raw.thread.turns)
   }
 
   listTurns(params: ThreadTurnsListParams): Promise<ThreadTurnsListResponse> {

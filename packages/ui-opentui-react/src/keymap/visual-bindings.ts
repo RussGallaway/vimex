@@ -4,6 +4,9 @@ import { transcriptBindings } from "./transcript-bindings"
 
 export function visualBindings(ctx: VimBindingContext): UiBinding[] {
   return [
+    { key: ":", cmd: () => ctx.controller.dispatchInteraction({ type: "mode.command" }) },
+    { key: "o", cmd: () => ctx.interaction.surface === "transcript" && ctx.controller.transcript({ type: "selection.swap" }) },
+    ...(ctx.interaction.surface === "transcript" ? [{ key: "gx", cmd: () => ctx.controller.transcript({ type: "url.open" }) }] : []),
     { key: "escape", cmd: () => {
       if (ctx.interaction.surface === "composer") ctx.runComposerKey("escape")
       else {
@@ -16,7 +19,7 @@ export function visualBindings(ctx: VimBindingContext): UiBinding[] {
       ? [...countBindings(ctx), ...transcriptBindings(ctx)]
       : [
           ...Array.from({ length: 10 }, (_, digit) => ({ key: `${digit}`, cmd: () => ctx.runComposerKey(`${digit}`) })),
-          ...["h", "j", "k", "l"].map((key) => ({ key, cmd: () => ctx.runComposerKey(key) })),
+          ...["h", "j", "k", "l", "w", "b", "e", "0", "^", "$", "g", "shift+g"].map((key) => ({ key, cmd: () => ctx.runComposerKey(key) })),
         ]),
     { key: "y", cmd: () => {
       if (ctx.interaction.surface === "composer") ctx.runComposerKey("y")

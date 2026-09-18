@@ -21,6 +21,7 @@ export function mountVimex(renderer: CliRenderer, props: VimexAppProps) {
 }
 
 export { VimexApp } from "./app/App"
+export { FatalBoundary } from "./app/FatalBoundary"
 export * from "./contracts"
 export * from "./theme"
 export * from "./transcript/layout"
