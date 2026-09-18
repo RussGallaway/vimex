@@ -32,7 +32,7 @@ function HelpOverlay() {
   ] }), [])
   const groups = [
     ["Modes", "i insert   v visual   : command   esc normal"], ["Move", "h/j/k/l cursor   0/$ line   gg/G transcript"],
-    ["Scroll", "ctrl-y/e line   ctrl-u/d half page   ctrl-b/f page"], ["Act", "y copy   gx open URL   f fork   ctrl-c interrupt"],
+    ["Scroll", "ctrl-y/e line   ctrl-u/d half page   ctrl-b/f page"], ["Act", "y copy   gx open URL   f fork   Esc (Normal)/ctrl-c interrupt"],
     ["Fold", "za toggle   zo open   zc close   zR/zM all"], ["Views", "s sessions   a approvals   :help"],
     ["Focus", "↑ transcript   ↓ composer   ctrl-w k/j aliases"],
     ["Composer", "h/j/k/l  w/b  0/$  x/dd  u/ctrl-r  i/a/I/A  v select"],

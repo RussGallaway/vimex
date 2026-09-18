@@ -12,7 +12,10 @@ export function normalBindings(ctx: VimBindingContext): UiBinding[] {
     ...(ctx.interaction.surface === "transcript"
       ? [...countBindings(ctx), ...transcriptBindings(ctx)]
       : Array.from({ length: 10 }, (_, digit) => ({ key: `${digit}`, cmd: () => ctx.runComposerKey(`${digit}`) }))),
-    { key: "escape", cmd: () => ctx.controller.dispatchInteraction({ type: "focus.set", surface: "transcript" }) },
+    { key: "escape", cmd: () => {
+      ctx.controller.interrupt()
+      ctx.controller.dispatchInteraction({ type: "focus.set", surface: "transcript" })
+    } },
     { key: "i", cmd: () => ctx.interaction.surface === "composer" ? ctx.runComposerKey("i") : ctx.controller.dispatchInteraction({ type: "mode.insert" }) },
     { key: "v", cmd: () => {
       if (ctx.interaction.surface === "composer") ctx.runComposerKey("v")

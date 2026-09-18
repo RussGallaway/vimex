@@ -14,12 +14,13 @@ const answer = itemId("visual-answer")
 async function visualHarness() {
   let emit: (event: RuntimeEvent) => void = () => {}
   const copied: string[] = []
+  const interrupted: { thread: string; turn: string }[] = []
   const summary = { id: thread, title: "Visual interaction", cwd: "/work", model: "test", reasoningEffort: "high", status: "idle" as const }
   const runtime: ConversationGateway & ApprovalGateway & RuntimeConnection & ModelCatalog = {
     connect: async () => {}, restart: async () => {}, close: async () => {},
     subscribe(listener) { emit = listener; return () => { emit = () => {} } },
     listThreads: async () => [summary], startThread: async () => ({ summary, events: [] }), resumeThread: async () => ({ summary, events: [] }),
-    forkThread: async () => ({ summary, events: [] }), startTurn: async () => [], steerTurn: async () => {}, interruptTurn: async () => {},
+    forkThread: async () => ({ summary, events: [] }), startTurn: async () => [], steerTurn: async () => {}, interruptTurn: async (thread, turn) => { interrupted.push({ thread, turn }) },
     updateSettings: async () => {}, renameThread: async () => {}, resolveApproval: async () => {}, listModels: async () => [],
   }
   const controller = new VimexController({ conversation: runtime, approvals: runtime, connection: runtime, models: runtime,
@@ -45,7 +46,7 @@ async function visualHarness() {
     await act(async () => { await setup.flush(); await setup.renderOnce() })
   }
   const close = async () => { await act(async () => setup.renderer.destroy()); await controller.close() }
-  return { ...setup, controller, copied, emit: (event: RuntimeEvent) => emit(event), workspace, keys, close }
+  return { ...setup, controller, copied, interrupted, emit: (event: RuntimeEvent) => emit(event), workspace, keys, close }
 }
 
 test("Visual transcript selection survives streaming and resize, then yanks semantic text", async () => {
@@ -307,3 +308,52 @@ for (const [encoding, previous, next] of [["literal braces", "{", "}"], ["shifte
     } finally { await h.close() }
   })
 }
+
+
+test("Escape interrupts active turns in Normal mode after dismissing editing modes and overlays", async () => {
+  const h = await visualHarness()
+  const escape = async () => {
+    await act(async () => { h.mockInput.pressKey("ESCAPE"); await Bun.sleep(30); await h.flush() })
+    await h.controller.settle()
+  }
+  const start = async () => {
+    await act(async () => {
+      h.emit({ type: "conversation", event: { type: "turn.started", threadId: thread, turnId: turnId("stop-turn") } })
+      await h.flush()
+    })
+  }
+  try {
+    await escape()
+    expect(h.interrupted).toEqual([])
+    await start()
+    await h.keys("i")
+    await h.keys("Keep my draft")
+    await escape()
+    expect(h.workspace().interaction.mode).toBe("normal")
+    expect(h.interrupted).toEqual([])
+    await escape()
+    expect(h.interrupted).toEqual([{ thread, turn: "stop-turn" }])
+    expect(h.workspace().composer.text).toBe("Keep my draft")
+
+    await h.keys("v")
+    await escape()
+    expect(h.workspace().interaction.mode).toBe("normal")
+    expect(h.interrupted).toHaveLength(1)
+    await h.keys(":")
+    await escape()
+    expect(h.interrupted).toHaveLength(1)
+    await h.keys("s")
+    expect(h.workspace().interaction.overlay).toBe("sessions")
+    await escape()
+    expect(h.workspace().interaction.overlay).toBeNull()
+    expect(h.interrupted).toHaveLength(1)
+    await escape()
+    expect(h.interrupted).toHaveLength(2)
+    await act(async () => {
+      h.emit({ type: "conversation", event: { type: "turn.completed", threadId: thread, turnId: turnId("stop-turn"), outcome: "interrupted" } })
+      await h.flush()
+    })
+    await escape()
+    expect(h.interrupted).toHaveLength(2)
+  } finally { await h.close() }
+})

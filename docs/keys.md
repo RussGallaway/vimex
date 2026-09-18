@@ -11,7 +11,7 @@ Press `:help` for the compact in-app reference.
 | `↑` / `Ctrl-k` (also `Ctrl-w k`) | Focus transcript. Available in every mode; leaving Insert, Visual, or Command for the transcript returns to Normal mode. |
 | `↓` / `Ctrl-j` (also `Ctrl-w j`) | Focus composer. Available in every mode; leaving Visual or Command returns to Normal mode. |
 | `Ctrl-c` | Interrupt the active Codex turn. |
-| `Esc` | Return to Normal mode; from Normal mode, focus the transcript. |
+| `Esc` | Dismiss the active overlay or return to Normal mode; from Normal mode, interrupt the active Codex turn and focus the transcript. Drafts are preserved. |
 | `:` | Enter Command mode. |
 
 ## Transcript in Normal or Visual mode
