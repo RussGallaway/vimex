@@ -7,6 +7,7 @@ export interface VimexTheme {
   blue: string; blueBright: string; sage: string; amber: string; ember: string; red: string
   selection: string; selectionText: string; diffAdded: string; diffAddedBright: string
   diffRemoved: string; diffRemovedBright: string; diffContext: string
+  syntax?: { keyword: string; keywordBold: boolean; number: string; function: string; type: string; constant: string; property: string; heading: string; operator: string }
 }
 
 const emberTideBase: VimexTheme = {
@@ -39,9 +40,13 @@ export const nord: VimexTheme = {
   ...emberTideBase,
   name: "Nord",
   background: "#2e3440", backgroundRaised: "#343b49", backgroundPanel: "#3b4252", backgroundHover: "#434c5e",
-  border: "#4c566a", borderMuted: "#3b4252", text: "#eceff4", textSoft: "#d8dee9", textMuted: "#7f8da6",
+  border: "#4c566a", borderMuted: "#3b4252", text: "#eceff4", textSoft: "#d8dee9", textMuted: "#a3b0c5",
   blue: "#81a1c1", blueBright: "#88c0d0", sage: "#a3be8c", amber: "#ebcb8b", ember: "#d08770", red: "#bf616a",
-  selection: "#4c566a", selectionText: "#eceff4",
+  selection: "#434c5e", selectionText: "#eceff4",
+  // Polar Night bases tinted with Aurora; never inherit the warmer Ember diff surfaces.
+  diffAdded: "#354441", diffAddedBright: "#a3be8c",
+  diffRemoved: "#453b48", diffRemovedBright: "#d08790", diffContext: "#343b49",
+  syntax: { keyword: "#81a1c1", keywordBold: false, number: "#b48ead", function: "#88c0d0", type: "#8fbcbb", constant: "#b48ead", property: "#d8dee9", heading: "#88c0d0", operator: "#81a1c1" },
 }
 
 export const kanagawa: VimexTheme = {
@@ -58,6 +63,7 @@ let selectedTheme: VimexTheme = emberTideBase
 function reduced(palette: VimexTheme): VimexTheme {
   return {
     ...palette,
+    ...(palette.syntax ? { syntax: { keyword: palette.text, keywordBold: palette.syntax.keywordBold, number: palette.text, function: palette.textSoft, type: palette.text, constant: palette.text, property: palette.textSoft, heading: palette.text, operator: palette.text } } : {}),
     blue: palette.textSoft, blueBright: palette.text, sage: palette.textSoft,
     amber: palette.text, ember: palette.textSoft, red: palette.text,
     selection: palette.backgroundHover, selectionText: palette.text,
@@ -77,15 +83,60 @@ export function createEmberTideSyntax(name?: keyof typeof themes, reducedColor =
   const palette = reducedColor ? reduced(base) : base
   return SyntaxStyle.fromStyles({
     default: { fg: palette.text },
-    keyword: { fg: palette.blueBright, bold: true },
+    keyword: { fg: palette.syntax?.keyword ?? palette.blueBright, bold: palette.syntax?.keywordBold ?? true },
     string: { fg: palette.sage },
-    number: { fg: palette.amber },
+    number: { fg: palette.syntax?.number ?? palette.amber },
     comment: { fg: palette.textMuted, italic: true },
-    function: { fg: palette.blue },
-    type: { fg: palette.amber },
+    function: { fg: palette.syntax?.function ?? palette.blue },
+    type: { fg: palette.syntax?.type ?? palette.amber },
     variable: { fg: palette.textSoft },
-    "markup.heading": { fg: palette.amber, bold: true },
+    "variable.builtin": { fg: palette.ember },
+    "variable.parameter": { fg: palette.textSoft },
+    property: { fg: palette.syntax?.property ?? palette.blue },
+    "function.call": { fg: palette.syntax?.function ?? palette.blue },
+    "function.method": { fg: palette.syntax?.function ?? palette.blue },
+    "function.method.call": { fg: palette.syntax?.function ?? palette.blue },
+    "function.builtin": { fg: palette.syntax?.function ?? palette.blueBright },
+    constructor: { fg: palette.syntax?.type ?? palette.amber },
+    "type.builtin": { fg: palette.syntax?.type ?? palette.amber },
+    constant: { fg: palette.syntax?.constant ?? palette.amber },
+    "constant.builtin": { fg: palette.syntax?.constant ?? palette.ember },
+    boolean: { fg: palette.syntax?.constant ?? palette.ember },
+    operator: { fg: palette.syntax?.operator ?? palette.blueBright },
+    "keyword.operator": { fg: palette.syntax?.operator ?? palette.blueBright },
+    punctuation: { fg: palette.textSoft },
+    "punctuation.bracket": { fg: palette.textSoft },
+    "punctuation.delimiter": { fg: palette.textSoft },
+    "punctuation.special": { fg: palette.blueBright },
+    "string.special": { fg: palette.sage },
+    "string.escape": { fg: palette.ember },
+    "comment.documentation": { fg: palette.textMuted, italic: true },
+    attribute: { fg: palette.amber },
+    module: { fg: palette.blue },
+    tag: { fg: palette.blueBright },
+    "markup.heading": { fg: palette.syntax?.heading ?? palette.amber, bold: true },
+    "markup.heading.1": { fg: palette.syntax?.heading ?? palette.amber, bold: true, underline: true },
+    "markup.heading.2": { fg: palette.syntax?.heading ?? palette.amber, bold: true },
+    "markup.heading.3": { fg: palette.blueBright, bold: true },
+    "markup.heading.4": { fg: palette.blueBright, bold: true },
+    "markup.heading.5": { fg: palette.text, bold: true },
+    "markup.heading.6": { fg: palette.text, bold: true },
+    "markup.strong": { fg: palette.text, bold: true },
+    "markup.bold": { fg: palette.text, bold: true },
+    "markup.italic": { fg: palette.textSoft, italic: true },
+    // SyntaxStyle does not expose a strike attribute; preserve a muted semantic distinction.
+    "markup.strikethrough": { fg: palette.textMuted },
+    "markup.list": { fg: palette.blueBright },
+    "markup.list.checked": { fg: palette.sage },
+    "markup.list.unchecked": { fg: palette.textMuted },
+    "markup.quote": { fg: palette.textSoft, italic: true },
+    "markup.link.label": { fg: palette.blueBright, underline: true },
+    "markup.link.url": { fg: palette.blue, underline: true },
     "markup.link": { fg: palette.blueBright, underline: true },
+    // Native inline chunks and fenced injection scopes share markup.raw.
+    // Foreground-only styling keeps entire code blocks from acquiring inline backgrounds.
     "markup.raw": { fg: palette.sage },
+    "markup.raw.inline": { fg: palette.sage },
+    "markup.raw.block": { fg: palette.textSoft },
   })
 }

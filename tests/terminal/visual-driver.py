@@ -5,7 +5,10 @@ import pyte
 from frame_capture import save_frame
 
 root = pathlib.Path(__file__).resolve().parents[2]
-artifacts = pathlib.Path('/tmp/vimex-visual-e2e')
+theme = os.environ.get('VIMEX_TEST_THEME', '')
+if theme not in ('', 'ember-tide', 'nord', 'kanagawa'):
+    raise ValueError('Unsupported VIMEX_TEST_THEME')
+artifacts = pathlib.Path('/tmp/vimex-visual-e2e' + ('-' + theme if theme else ''))
 screen = pyte.Screen(100, 30)
 stream = pyte.Stream(screen)
 decoder = codecs.getincrementaldecoder('utf-8')('replace')
@@ -36,7 +39,10 @@ with tempfile.TemporaryDirectory(prefix='vimex-visual-') as temporary:
         pump();save_frame(screen,artifacts,stage)
     checks=[]
     try:
-        wait('NORMAL');capture('01-demo')
+        wait('NORMAL')
+        if theme:
+            send(b':theme ' + theme.encode() + b'\r');wait('NORMAL')
+        capture('01-demo')
         send(b'\x1b[B');send(b'i');wait('INSERT')
         send(b'Draft stays separate from status');capture('02-draft')
         send(b'\x1b');wait('NORMAL')

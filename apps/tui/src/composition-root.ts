@@ -2,7 +2,7 @@ import { join, resolve } from "node:path"
 import { captureLocalState, emptyLocalState, parseLocalState } from "@vimex/workbench"
 import { createCliRenderer, createClipboard, createHostClipboard, createRendererClipboardAdapter } from "@opentui/core"
 import { createRoot } from "@opentui/react"
-import { FatalBoundary, VimexRoot } from "@vimex/ui-opentui-react"
+import { FatalBoundary, VimexRoot, registerSyntaxParsers } from "@vimex/ui-opentui-react"
 import { JsonStore, stateDirectory, configDirectory, loadConfig, parseConfig, openUrl } from "@vimex/platform-node"
 import { createHerdrExternalActions, detectHerdr, HerdrReporter } from "@vimex/herdr"
 import { createElement, useSyncExternalStore } from "react"
@@ -49,6 +49,7 @@ export async function runApplication(options: CliOptions) {
   let root: ReturnType<typeof createRoot> | undefined
   let detachHandlers = () => {}
   try {
+    registerSyntaxParsers()
     renderer = await createCliRenderer({ screenMode: "alternate-screen", exitOnCtrlC: false, exitSignals: [], targetFps: 60 })
     const clipboard = createClipboard({ host: createHostClipboard(), terminal: createRendererClipboardAdapter(renderer) })
     lifecycle.add(() => clipboard.dispose())

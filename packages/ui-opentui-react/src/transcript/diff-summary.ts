@@ -20,5 +20,8 @@ export function diffFiletype(path: string): string {
   if (extension === "jsx") return "javascriptreact"
   if (["md", "markdown"].includes(extension ?? "")) return "markdown"
   if (["zig", "zon"].includes(extension ?? "")) return "zig"
+  if (["py", "pyw"].includes(extension ?? "")) return "python"
+  if (["sh", "bash"].includes(extension ?? "")) return "bash"
+  if (extension === "json") return "json"
   return "text"
 }

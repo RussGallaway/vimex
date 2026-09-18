@@ -15,7 +15,7 @@ This is an implementation checkpoint, not a declaration that v1 acceptance is co
 
 ## Checkpoint validation
 
-The latest completed full checkpoint passed TypeScript, dependency boundaries, and 364 tests with 1,992 assertions and four frame snapshots. Four diagnostic timing tests are opt-in; the two Shift-Tab cases pass when explicitly enabled, alongside the prior scrolling diagnostics. The eight-check offline real-PTY driver also passes. See [review rounds](review-rounds.md) for the separate commits, scrolling measurements, and remaining initial-history settlement cost. `git diff --check` passes; the prior frozen-lockfile installation check remains applicable because dependencies did not change.
+The latest completed full checkpoint passed TypeScript, dependency boundaries, and 374 tests with 2,192 assertions and four frame snapshots. Four diagnostic timing tests are opt-in; the two Shift-Tab cases pass when explicitly enabled, alongside the prior scrolling diagnostics. The eight-check offline real-PTY driver also passes. See [review rounds](review-rounds.md) for the separate commits, scrolling measurements, and remaining initial-history settlement cost. `git diff --check` passes; the prior frozen-lockfile installation check remains applicable because dependencies did not change.
 
 A formatted Markdown projection that previously took about 5.6 seconds for 58 KB took about 7 ms after replacing repeated Unicode prefix segmentation with indexed boundary lookup. This measures projection only; it is not an end-to-end rendering benchmark.
 
@@ -51,3 +51,5 @@ Do not change the specification to make unfinished implementation appear complet
 
 
 Command UX checkpoint: shared descriptors now drive usage, validation, and slash/Ex argument completion; model/thinking/session choices use runtime data. Favorite/follow/exact-session commands, explicit queue/steer submission, current-block copying, and command-driven Visual selection are covered by controller tests. Invalid input stays editable, and `//` escapes a literal slash-leading prompt. Sent user messages use brighter text and inset spacing without a role label; cursor/source copying passes narrow reflow tests. The eight-check offline terminal driver also passes. Structured `/skills` support and the dedicated diff-review screen remain follow-ups.
+
+Markdown/theme checkpoint: richer native Markdown spans, pinned offline Python/Bash/JSON grammars, refined Nord syntax and diff colors, and a repaired live theme-switch background cache. Full checks pass (374 tests, four snapshots; four opt-in diagnostic skips), plus all eight offline terminal checks under Nord. Reconstructed screenshots inspected; see [Markdown and themes](markdown-and-themes.md).
