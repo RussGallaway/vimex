@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createConversation, forkConversation, itemId, reduceConversation, threadId, turnId } from "./index"
+import { createConversation, effectiveItemStatus, forkConversation, itemId, reduceConversation, threadId, turnId } from "./index"
 
 describe("conversation", () => {
   test("streams deltas without duplicating items and forks through a completed turn", () => {
@@ -36,4 +36,32 @@ describe("conversation", () => {
     expect(state.turnIds).toEqual([turn])
     expect(state.turns[turn]?.itemIds).toEqual([item])
   })
+
+  test("turn completion settles presentation while preserving a late authoritative item payload", () => {
+    const thread = threadId("interrupt"), turn = turnId("turn"), item = itemId("reasoning")
+    let state = reduceConversation(createConversation(thread), { type: "turn.started", threadId: thread, turnId: turn })
+    state = reduceConversation(state, { type: "item.started", threadId: thread, item: { id: item, turnId: turn, kind: "reasoning", markdown: "partial", status: "running" } })
+    state = reduceConversation(state, { type: "turn.completed", threadId: thread, turnId: turn, outcome: "interrupted" })
+    expect(state.activeTurnId).toBeUndefined()
+    expect(state.items[item]?.status).toBe("running")
+    expect(effectiveItemStatus(state, state.items[item]!)).toBe("interrupted")
+
+    state = reduceConversation(state, { type: "item.completed", threadId: thread, item: { id: item, turnId: turn, kind: "reasoning", markdown: "authoritative final text", status: "interrupted" } })
+    expect(state.items[item]).toMatchObject({ markdown: "authoritative final text", status: "interrupted" })
+
+    const late = itemId("late")
+    state = reduceConversation(state, { type: "item.started", threadId: thread, item: { id: late, turnId: turn, kind: "reasoning", markdown: "late", status: "running" } })
+    expect(effectiveItemStatus(state, state.items[late]!)).toBe("interrupted")
+  })
 })
+
+for (const [outcome, expected] of [["complete", "complete"], ["failed", "error"], ["interrupted", "interrupted"]] as const) {
+  test(`effective item status settles ${outcome} turns without overriding completed items`, () => {
+    const thread = threadId("status"), turn = turnId("turn"), id = itemId("item")
+    const state = reduceConversation(createConversation(thread), { type: "turn.completed", threadId: thread, turnId: turn, outcome })
+    const item = { id, turnId: turn, kind: "assistant" as const, markdown: "Final text", status: "running" as const }
+    expect(effectiveItemStatus(state, item)).toBe(expected)
+    expect(effectiveItemStatus(state, { ...item, status: "complete" })).toBe("complete")
+    expect(item.status).toBe("running")
+  })
+}

@@ -3,10 +3,11 @@ import { CliRenderEvents, type InputRenderable, type Renderable, type ScrollBoxR
 import { useBindings } from "@opentui/keymap/react"
 import { flushSync, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { initialComposer, type SubmissionIntent } from "@vimex/composer"
+import { effectiveItemStatus } from "@vimex/conversation"
 import { applyComposerVimAction, codeUnitOffsetToGraphemeOffset, commandCompletions, graphemeOffsetToCodeUnitOffset, initialCommandHistory, initialInteraction, recallCommand, recordCommand, resolveComposerKey, type ComposerVimAction, type InteractionState } from "@vimex/interaction"
 import { graphemeCount, initialTranscript, selectedText, type TranscriptState } from "@vimex/transcript"
-import { activeWorkspace } from "@vimex/workbench"
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { activeWorkspace, liveActivity } from "@vimex/workbench"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { Composer } from "../composer/Composer"
 import { SlashCommandDrawer } from "../composer/SlashCommandDrawer"
 import { useSlashCommands } from "../composer/use-slash-commands"
@@ -52,6 +53,10 @@ function selectableAt(renderable: Renderable, x: number, y: number): Renderable 
 
 export function VimexApp({ state, controller, settings: settingsInput }: VimexAppProps) {
   const renderer = useRenderer()
+  const distinctControlI = useSyncExternalStore(useCallback((notify: () => void) => {
+    renderer.on(CliRenderEvents.CAPABILITIES, notify)
+    return () => { renderer.off(CliRenderEvents.CAPABILITIES, notify) }
+  }, [renderer]), () => Boolean(renderer.capabilities?.kitty_keyboard))
   const settings = { ...defaultVimexUiSettings, ...settingsInput, ...state.preferences }
   selectTheme(settings.theme, settings.reducedColor)
   const dimensions = useTerminalDimensions()
@@ -59,11 +64,15 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
   const transcript = workspace?.transcript ?? blankTranscript
   const composer = workspace?.composer ?? blankComposer
   const interaction = workspace?.interaction ?? blankInteraction
+  const parentLink = state.agentRelationships.find(link => link.childId === state.activeThreadId)
+  const parentTitle = parentLink ? state.summaries[parentLink.parentId]?.title || parentLink.parentId : undefined
   const summary = state.activeThreadId ? state.summaries[state.activeThreadId] : undefined
   const items = useMemo(() => transcript.order.flatMap((id) => {
     const item = workspace?.conversation.items[id]
-    return item ? [item] : []
-  }), [transcript.order, workspace?.conversation.items])
+    if (!item || !workspace) return []
+    const status = effectiveItemStatus(workspace.conversation, item)
+    return [status === item.status ? item : { ...item, status }]
+  }), [transcript.order, workspace?.conversation.items, workspace?.conversation.turns])
   const syntax = useMemo(() => createEmberTideSyntax(settings.syntaxTheme === "theme" ? settings.theme : settings.syntaxTheme, settings.reducedColor), [settings.reducedColor, settings.syntaxTheme, settings.theme])
   const scrollRef = useRef<ScrollBoxRenderable>(null)
   const textareaRef = useRef<TextareaRenderable>(null)
@@ -94,11 +103,9 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
     .map((id) => state.approvals.byId[id])
     .find((approval) => approval !== undefined && approval.threadId === state.activeThreadId && (approval.status === "pending" || approval.status === "failed"))
   const pendingQuestion = Object.values(state.questions).find((question) => question.threadId === state.activeThreadId)
-  const runningItem = items.findLast(item => item.status === "running" && item.kind !== "user")
+  const activity = liveActivity(state)
   const activityLabel = pendingApproval ? "Approval needed" : pendingQuestion ? "Answer needed"
-    : runningItem?.kind === "reasoning" ? "Thinking" : runningItem?.kind === "assistant" ? "Responding"
-      : runningItem?.kind === "command" || runningItem?.kind === "tool" ? "Running tool"
-        : runningItem?.kind === "edit" ? "Editing" : "Waiting for Codex"
+    : activity.label
   const sessionRows = useMemo(() => searchSessions(state.threadOrder, state.summaries, sessionQuery, state.favoriteThreadIds), [sessionQuery, state.summaries, state.threadOrder, state.favoriteThreadIds])
   const agentRows = useMemo(() => agentNavigationRows(state.activeThreadId, state.agentRelationships), [state.activeThreadId, state.agentRelationships])
   const selectionCount = useMemo(() => selectedText(transcript, "plain"), [transcript.selection, transcript.order, transcript.projectionById])
@@ -202,8 +209,8 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
     }
   }, [jumpActive, interaction.mode, interaction.overlay, interaction.surface, layout, renderer, transcript.cursor, transcript.selection])
   useEffect(() => {
-    if (interaction.surface !== "transcript") {
-      renderer.clearSelection()
+    if (jumpActive || interaction.surface !== "transcript" || !transcript.selection) {
+      if (renderer.getSelection()) renderer.clearSelection()
       return
     }
     const anchorPoint = transcript.selection?.anchor ?? transcript.cursor
@@ -219,7 +226,7 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
     if (!anchorTarget || !headTarget) return
     renderer.startSelection(anchorTarget, anchor.screenX, anchor.screenY, transcript.selection?.shape === "line" ? "line" : "cell")
     renderer.updateSelection(headTarget, head.screenX, head.screenY, { finishDragging: true })
-  }, [interaction.surface, layout, renderer, transcript.cursor, transcript.selection])
+  }, [jumpActive, interaction.surface, layout, renderer, transcript.cursor, transcript.selection])
   useEffect(() => {
     if (interaction.surface !== "transcript" || transcript.viewport.kind === "tail" || !transcript.cursor) return
     const scrollbox = scrollRef.current
@@ -305,6 +312,12 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
     }
   }, [busy, composer.outbox, controller, settings.busySubmit])
   const runComposerKey = useCallback((key: string) => {
+    if (key === "a" && composerInteractionRef.current.mode === "normal" && composerInteractionRef.current.pendingKeys === "g") {
+      composerInteractionRef.current = { ...composerInteractionRef.current, pendingKeys: "" }
+      controller.dispatchInteraction({ type: "keys.pending", value: "" })
+      controller.dispatchInteraction({ type: "overlay.open", overlay: "agents" })
+      return
+    }
     const resolution = resolveComposerKey(composerInteractionRef.current, key)
     composerInteractionRef.current = resolution.state
     if (resolution.action) applyComposerAction(resolution.action)
@@ -394,7 +407,7 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
 
   const bindingContext: VimBindingContext = {
     interaction, transcript, composer, controller, countRef, textareaRef, scrollRef,
-    distinctControlI: Boolean(renderer.capabilities?.kitty_keyboard),
+    distinctControlI,
     foldableItemIds: items.filter(item => item.kind !== "assistant" && item.kind !== "user").map(item => item.id),
     submitComposer: intent => composerSubmitRef.current?.(intent),
     countedMotion, dispatchMotion, runComposerKey, beginVisual, openOverlay, scroll, enterVisibleTranscript,
@@ -417,7 +430,7 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
     priority: 100,
     bindings: interaction.overlay || jumpActive ? [] : [
       { key: "ctrl+g", cmd: () => setJumpOpen(true) },
-      ...(interaction.surface === "transcript" && (interaction.mode === "normal" || interaction.mode === "visual") ? [{ key: "s", cmd: () => setJumpOpen(true) }] : []),
+      ...((interaction.mode === "normal" || (interaction.surface === "transcript" && interaction.mode === "visual")) ? [{ key: "s", cmd: () => setJumpOpen(true) }] : []),
       ...commonBindings(bindingContext),
       ...(interaction.mode === "normal" ? normalBindings(bindingContext) : []),
       ...(interaction.mode === "visual" ? visualBindings(bindingContext) : []),
@@ -478,7 +491,7 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
   }), [activateOverlay, interaction.overlay, closeOverlay, controller, modelPicker, overlayLength, pendingApproval, questionOwnsReturn, state.availableModels])
 
   return (
-    <FullscreenShell title={summary?.title} connection={state.connection} working={Boolean(workspace?.conversation.activeTurnId) || summary?.status === "working"} activityLabel={activityLabel} waiting={Boolean(pendingApproval || pendingQuestion)}
+    <FullscreenShell title={summary?.title} parentTitle={parentTitle} connection={state.connection} working={activity.working} activityLabel={activityLabel} waiting={Boolean(pendingApproval || pendingQuestion)}
       transcript={<TranscriptViewport items={items} state={transcript} interaction={interaction} syntax={syntax} scrollRef={scrollRef} onManualScroll={onManualScroll} />}
       commandLine={!jumpActive && interaction.mode === "command" ? <CommandLine sessionIds={state.threadOrder} currentModel={summary?.model} models={state.availableModels} value={interaction.commandLine} inputRef={commandRef} controller={controller} onSubmit={(line) => {
         commandHistoryRef.current = recordCommand(commandHistoryRef.current, line)

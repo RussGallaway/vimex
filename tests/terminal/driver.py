@@ -59,7 +59,10 @@ def send(value):
 try:
     wait_for(b"NORMAL")
     assert b"\x1b[?1049h" in output, "alternate screen not entered"
-    wait_for(b"Welcome to Vimex" if scenario in ("demo", "signal") else b"Terminal contract")
+    # The header title is drawn over an earlier title; differential writes may
+    # reuse its unchanged cells. The model first appears in a blank field and
+    # identifies readiness of the fixture session without assuming a full redraw.
+    wait_for(b"Welcome to Vimex" if scenario in ("demo", "signal") else b"fixture-model")
     if scenario == "save-failure":
         state_path = os.path.join(temporary.name, "vimex")
         if os.path.isdir(state_path):

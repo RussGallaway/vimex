@@ -5,6 +5,9 @@ import { transcriptBindings } from "./transcript-bindings"
 
 export function normalBindings(ctx: VimBindingContext): UiBinding[] {
   return [
+    { key: "\\", cmd: () => ctx.controller.returnToParent() },
+    { key: "[a", cmd: () => ctx.controller.cycleAgent("previous") },
+    { key: "]a", cmd: () => ctx.controller.cycleAgent("next") },
     { key: "<leader>a", cmd: () => ctx.openOverlay("approvals") },
     { key: "<leader>s", cmd: () => ctx.openOverlay("sessions") },
     { key: "<leader>q", cmd: () => ctx.openOverlay("questions") },

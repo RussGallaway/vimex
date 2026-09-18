@@ -119,9 +119,13 @@ Mouse-wheel scrolling moves the transcript by precise terminal rows, preserves c
 
 ## Flash jumps, jumplist, and marks
 
-- `s` in transcript Normal/Visual mode opens Flash; `Ctrl-g` opens it from either pane, including composer Insert mode. Type visible text, then a highlighted label. Labels never consume a valid continuation of the query. Enter chooses the first labeled match; Tab cycles label pages. Escape cancels and restores focus/mode without changing drafts. Resize or session changes cancel the prompt.
+- `s` in either pane’s Normal mode (and transcript Visual mode) opens Flash; `Ctrl-g` opens it from either pane, including composer Insert mode. Type visible text, then a highlighted label. Labels never consume a valid continuation of the query. Enter chooses the first labeled match; Tab cycles label pages. Escape cancels and restores focus/mode without changing drafts. Resize or session changes cancel the prompt.
 - Matching is literal and case-insensitive unless the query contains uppercase. Targets are visible rendered text, excluding hidden folded content. A Visual transcript jump extends selection. Source text is not modified by labels.
-- `Ctrl-o` goes backward through significant jumps; `Ctrl-i` goes forward. On terminals advertising Kitty keyboard support they are distinct from Tab. Legacy terminals encode Ctrl-I as Tab, so Tab is accepted as a fallback outside command/slash completion. Enter toggles the current fold; Shift-Tab still toggles all.
+- `Ctrl-o` (letter O) goes backward through significant jumps and session/agent visits; `Ctrl-i` (letter I) goes forward. Each visit restores its cursor and reading viewport without replacing drafts. Cross-session history lasts for the current application run; session-local marks and jumps remain persisted. On terminals advertising Kitty keyboard support they are distinct from Tab. Legacy terminals encode Ctrl-I as Tab, so Tab is accepted as a fallback outside command/slash completion. Enter toggles the current fold; Shift-Tab still toggles all.
 - `ma` through `mz` set session-local named marks at the transcript cursor. Backtick+a or apostrophe+a returns to mark a's exact text position. Both forms currently use exact positions (apostrophe is not linewise). Marks and the bounded jumplist survive session resume; unavailable targets are discarded.
 
 Inspired by [flash.nvim](https://github.com/folke/flash.nvim)'s labeled search. This implements transcript jumps, not Neovim Treesitter selection or operator-pending remote actions.
+
+## Agent navigation
+
+From either pane in Normal mode, `ga` opens the agent picker, `[a` and `]a` cycle the immediate parent and its children, and `\` returns to the immediate parent. Root sessions cycle their direct children. Existing `[[`/`]]` message motions remain available. Subagent sessions show a SUBAGENT badge and a parent breadcrumb; Ctrl-O/Ctrl-I revisit parent, sibling, and local transcript locations in chronological order.

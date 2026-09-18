@@ -41,6 +41,7 @@ export const inertController: VimexUiController = {
   answerQuestions() {},
   openChildThread() {},
   returnToParent() {},
+  cycleAgent() {},
   requestFork() {},
   confirmFork() {},
   cancelFork() {},

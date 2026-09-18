@@ -217,3 +217,32 @@ for (const mode of ["normal", "insert"] as const) {
     } finally { await act(async () => setup.renderer.destroy()) }
   })
 }
+
+for (const surface of ["composer", "transcript"] as const) {
+  test(`agent shortcuts work in ${surface} Normal mode without modifying the draft`, async () => {
+    let initial = transitionWorkbench(fixture(), { type: "interaction.command", command: { type: "focus.set", surface } }).state
+    initial = transitionWorkbench(initial, { type: "composer.change", text: "keep this draft", cursorOffset: 4 }).state
+    let observed = initial
+    const visits: string[] = []
+    function Harness() {
+      const [state, setState] = useState(initial)
+      observed = state
+      const controller = useMemo<VimexUiController>(() => ({ ...inertController,
+        returnToParent() { visits.push("parent") }, cycleAgent(direction) { visits.push(direction) },
+        dispatchInteraction(command) { setState(current => transitionWorkbench(current, { type: "interaction.command", command }).state) },
+        changeDraft(text, cursorOffset) { setState(current => transitionWorkbench(current, { type: "composer.change", text, cursorOffset }).state) },
+      }), [])
+      return <VimexRoot state={state} controller={controller} />
+    }
+    const setup = await testRender(<Harness />, { width: 80, height: 24 })
+    try {
+      await act(async () => setup.flush())
+      for (const key of ["\\", "[", "a", "]", "a", "ga"]) {
+        await act(async () => { await setup.mockInput.typeText(key); await setup.flush() })
+      }
+      expect(visits).toEqual(["parent", "previous", "next"])
+      expect(observed.workspaces[threadId("keys")]?.interaction.overlay).toBe("agents")
+      expect(observed.workspaces[threadId("keys")]?.composer.text).toBe("keep this draft")
+    } finally { await act(async () => setup.renderer.destroy()) }
+  })
+}

@@ -1,11 +1,34 @@
 import { describe, expect, test } from "bun:test"
 import { itemId, threadId, turnId, type ThreadSummary } from "@vimex/conversation"
-import { activeWorkspace, initialWorkbench, transitionWorkbench, type WorkbenchState } from "./index"
+import { activeWorkspace, initialWorkbench, liveActivity, transitionWorkbench, type WorkbenchState } from "./index"
 
 const summary = (id: string): ThreadSummary => ({ id: threadId(id), title: id, model: "gpt", reasoningEffort: "high", cwd: "/tmp", status: "idle" })
 const run = (state: WorkbenchState, command: Parameters<typeof transitionWorkbench>[1]) => transitionWorkbench(state, command)
 
 describe("workbench", () => {
+  test("tracks interruption until the authoritative terminal event and ignores stale summary activity", () => {
+    const thread = threadId("a"), turn = turnId("turn"), item = itemId("thinking")
+    let state = run(initialWorkbench(), { type: "thread.open", summary: { ...summary("a"), status: "working" } }).state
+    state = run(state, { type: "conversation.event", event: { type: "turn.started", threadId: thread, turnId: turn } }).state
+    state = run(state, { type: "conversation.event", event: { type: "item.started", threadId: thread, item: { id: item, turnId: turn, kind: "reasoning", markdown: "thinking", status: "running" } } }).state
+    expect(liveActivity(state)).toEqual({ working: true, label: "Thinking" })
+    state = run(state, { type: "turn.interrupt.requested", threadId: thread, turnId: turn }).state
+    expect(liveActivity(state)).toEqual({ working: true, label: "Stopping" })
+    state = run(state, { type: "conversation.event", event: { type: "turn.completed", threadId: thread, turnId: turn, outcome: "interrupted" } }).state
+    expect(liveActivity(state)).toEqual({ working: false })
+    expect(state.interruptingTurns[thread]).toBeUndefined()
+    expect(state.summaries[thread]?.status).toBe("working")
+  })
+
+  test("failed interrupt requests clear stopping state so retry remains possible", () => {
+    const thread = threadId("a"), turn = turnId("turn")
+    let state = run(initialWorkbench(), { type: "thread.open", summary: summary("a") }).state
+    state = run(state, { type: "conversation.event", event: { type: "turn.started", threadId: thread, turnId: turn } }).state
+    state = run(state, { type: "turn.interrupt.requested", threadId: thread, turnId: turn }).state
+    state = run(state, { type: "turn.interrupt.failed", threadId: thread, turnId: turn }).state
+    expect(state.interruptingTurns[thread]).toBeUndefined()
+    expect(liveActivity(state).working).toBe(true)
+  })
   test("registers background threads without changing the active thread", () => {
     let state = run(initialWorkbench(), { type: "thread.open", summary: summary("active") }).state
     state = run(state, { type: "thread.register", summary: summary("background") }).state
@@ -165,4 +188,17 @@ describe("workbench", () => {
     state = run(state, { type: "question.resolved", id: "question" }).state
     expect(state.questions).toEqual({})
   })
+})
+
+test("late interruption events cannot clear a newer turn's stopping state", () => {
+  const thread = threadId("a"), old = turnId("old"), next = turnId("next")
+  let state = run(initialWorkbench(), { type: "thread.open", summary: summary("a") }).state
+  for (const turn of [old, next]) {
+    state = run(state, { type: "conversation.event", event: { type: "turn.started", threadId: thread, turnId: turn } }).state
+    state = run(state, { type: "turn.interrupt.requested", threadId: thread, turnId: turn }).state
+  }
+  state = run(state, { type: "turn.interrupt.failed", threadId: thread, turnId: old }).state
+  state = run(state, { type: "conversation.event", event: { type: "turn.completed", threadId: thread, turnId: old, outcome: "interrupted" } }).state
+  expect(state.interruptingTurns[thread]).toBe(next)
+  expect(liveActivity(state)).toEqual({ working: true, label: "Stopping" })
 })

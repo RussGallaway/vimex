@@ -243,3 +243,5 @@ File-change presentation remains under `packages/ui-opentui-react/src/transcript
 Syntax grammar registration belongs to `packages/ui-opentui-react/src/syntax/`; pinned grammar binaries, highlight queries, licenses, and provenance belong to its `assets/parsers/` directory. The executable composition root calls the UI adapter’s registration entry point for these local assets before native Markdown or diff renderables are created. Grammars load lazily; domain packages remain independent of highlighting technology.
 
 Flash presentation and visible-cell target indexing live under `ui-opentui-react/src/transcript/` (`FlashJump.tsx`, `flash-targets.ts`). Label overlays never alter canonical transcript text. Jump history and named marks belong to transcript state/operations; workbench local-state stores source offsets for resume and owns focus transitions. Terminal key disambiguation stays in the UI keymap.
+
+Cross-session cursor/viewport history belongs to `workbench/src/application/navigation-history.ts`; it stores bounded semantic locations, leaving native geometry in the renderer and per-thread drafts in their workspaces.

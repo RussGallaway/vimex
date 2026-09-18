@@ -13,6 +13,7 @@ import type { WorkbenchActions, TranscriptAction } from "./workbench-actions"
 import { validateAnswers } from "@vimex/approvals"
 import type { DisplayPreferences } from "./display-preferences"
 import { createRpcEventReplay } from "./rpc-event-replay"
+import { NavigationHistory, navigationLocation, restoreNavigationLocation, hasRecordedJump, type NavigationLocation } from "./navigation-history"
 import { invalidateRuntimeState } from "./runtime-recovery"
 
 export interface ControllerPorts {
@@ -38,6 +39,9 @@ export class VimexController implements WorkbenchActions {
   private readonly resumes = new Map<ThreadId, Promise<SessionSnapshot>>()
   private unsubscribe?: () => void
   private catalogRequest?: { epoch: number; promise: Promise<readonly AvailableModel[]> }
+  private readonly navigationHistory = new NavigationHistory()
+  private restoringNavigation = false
+  private historyNavigation?: { queue: ("back" | "forward")[] }
   private navigationRevision = 0
   private initialization?: Promise<void>
   private restartPending = false
@@ -75,7 +79,21 @@ export class VimexController implements WorkbenchActions {
   }
   dispatch(command: WorkbenchCommand): void {
     if (this.closing) return
-    const result = transitionWorkbench(this.state, command)
+    const before = this.state
+    const result = transitionWorkbench(before, command)
+    if (command.type === "conversation.event") this.navigationHistory.reproject(before, result.state, command.event.threadId)
+    const localJump = command.type === "transcript.command" && (command.command.type === "jump.to" || command.command.type === "mark.jump")
+      && hasRecordedJump(before, result.state)
+    const switched = before.activeThreadId !== result.state.activeThreadId
+    if (!this.restoringNavigation && (localJump || switched)) {
+      this.navigationHistory.seed(before)
+      const origin = navigationLocation(before)
+      if (origin) {
+        const explicit = command.type === "transcript.command" && "origin" in command.command ? command.command.origin : undefined
+        this.navigationHistory.record(explicit ? { ...origin, cursor: explicit.point, viewport: { kind: "point", ...explicit } } : origin)
+      }
+      if (localJump) { this.navigationRevision++; this.historyNavigation = undefined }
+    }
     this.setState(result.state)
     for (const effect of result.effects) this.launch(() => this.effect(effect))
   }
@@ -159,6 +177,7 @@ export class VimexController implements WorkbenchActions {
       case "approval": this.dispatch({ type: "approval.received", approval: event.approval }); break
       case "approval.resolved": this.dispatch({ type: "approval.resolved", approvalId: event.id }); break
       case "disconnected": {
+        this.historyNavigation = undefined
         this.runtimeEpoch++
         this.navigationRevision++
         const result = transitionWorkbench(this.state, { type: "connection.changed", connection: "disconnected", error: event.message })
@@ -264,6 +283,16 @@ export class VimexController implements WorkbenchActions {
     this.dispatchInteraction({ type: "overlay.close" })
     this.openThread(parent)
   }
+  cycleAgent = (direction: "previous" | "next"): void => {
+    const active = this.state.activeThreadId
+    if (!active) return
+    const parent = this.parentReturns.get(active) ?? this.state.agentRelationships.find(link => link.childId === active)?.parentId ?? active
+    const family = [...new Set([parent, ...this.state.agentRelationships.filter(link => link.parentId === parent).map(link => link.childId)])]
+    if (family.length < 2) { this.notice("No other agents in this session family"); return }
+    const index = family.indexOf(active)
+    const target = family[(index + (direction === "next" ? 1 : family.length - 1)) % family.length]
+    if (target) this.openThread(target)
+  }
   private clearNavigationIntent(): void {
     if (this.state.pendingFork || this.state.urlChoices) {
       this.setState({ ...this.state, pendingFork: undefined, urlChoices: undefined })
@@ -272,6 +301,7 @@ export class VimexController implements WorkbenchActions {
   restart = (): void => {
     if (this.restartPending || this.closing) return
     this.restartPending = true
+    this.historyNavigation = undefined
     const epoch = ++this.runtimeEpoch
     const id = this.state.activeThreadId
     this.recoveryViews = captureLocalState(this.state, emptyLocalState()).threads
@@ -314,12 +344,29 @@ export class VimexController implements WorkbenchActions {
       if (this.currentRuntime(epoch)) this.dispatch({ type: "thread.summary.patch", threadId: id, patch: { title: name } })
     })
   }
-  openThread = (id: ThreadId): void => {
+  openThread = (id: ThreadId): void => { this.historyNavigation = undefined; this.navigateThread(id) }
+  private navigateHistory(direction: "back" | "forward"): void {
+    if (this.historyNavigation) { if (this.historyNavigation.queue.length < 100) this.historyNavigation.queue.push(direction); return }
+    this.navigationHistory.seed(this.state)
+    const target = this.navigationHistory.peek(direction)
+    if (!target) return
+    const pending = !this.loaded.has(target.threadId) || Boolean(this.restartBarrier)
+    const request = { queue: [] as ("back" | "forward")[] }
+    if (pending) this.historyNavigation = request
+    const operation = this.navigateThread(target.threadId, { direction, target })
+    if (pending) void operation?.finally(() => {
+      if (this.historyNavigation !== request) return
+      this.historyNavigation = undefined
+      if (this.state.activeThreadId !== target.threadId) return
+      for (const next of request.queue) this.navigateHistory(next)
+    })
+  }
+  private navigateThread(id: ThreadId, restore?: { direction: "back" | "forward"; target: NavigationLocation }): Promise<void> | undefined {
     const revision = ++this.navigationRevision
     const epoch = this.runtimeEpoch
     this.clearNavigationIntent()
     this.dispatchInteraction({ type: "overlay.close" })
-    this.launch(async () => {
+    return this.launch(async () => {
       if (this.restartBarrier) await this.restartBarrier
       if (!this.currentRuntime(epoch) || this.state.connection !== "connected") return
       if (!this.loaded.has(id)) {
@@ -336,12 +383,29 @@ export class VimexController implements WorkbenchActions {
           if (!this.loaded.has(id)) this.hydrate(snapshot, false)
         } finally { if (this.resumes.get(id) === pending) this.resumes.delete(id) }
       }
-      if (this.currentRuntime(epoch) && revision === this.navigationRevision) this.dispatch({ type: "thread.switch", threadId: id })
+      if (this.currentRuntime(epoch) && revision === this.navigationRevision) {
+        const origin = navigationLocation(this.state)
+        if (restore && (!origin || !this.navigationHistory.commit(restore.direction, restore.target, origin))) return
+        this.restoringNavigation = Boolean(restore)
+        try { this.dispatch({ type: "thread.switch", threadId: id }) }
+        finally { this.restoringNavigation = false }
+        if (restore) this.setState(restoreNavigationLocation(this.state, restore.target))
+      }
     })
   }
   interrupt = (): void => {
     const workspace = activeWorkspace(this.state)
-    if (workspace?.conversation.activeTurnId) this.launch(() => this.ports.conversation.interruptTurn(workspace.conversation.threadId, workspace.conversation.activeTurnId!))
+    const turn = workspace?.conversation.activeTurnId
+    if (!workspace || !turn || this.state.interruptingTurns[workspace.conversation.threadId] === turn) return
+    const thread = workspace.conversation.threadId
+    this.dispatch({ type: "turn.interrupt.requested", threadId: thread, turnId: turn })
+    this.launch(async () => {
+      try { await this.ports.conversation.interruptTurn(thread, turn) }
+      catch (error) {
+        this.dispatch({ type: "turn.interrupt.failed", threadId: thread, turnId: turn })
+        throw error
+      }
+    })
   }
   transcript = (command: TranscriptAction): void => {
     const workspace = activeWorkspace(this.state)
@@ -427,9 +491,7 @@ export class VimexController implements WorkbenchActions {
         break
       }
       case "jump.back": case "jump.forward": {
-        const before = activeWorkspace(this.state)?.transcript
-        this.dispatch({ type: "transcript.command", command: { ...command, origin: navigationOrigin() } })
-        if (before && !sameDisplayedLocation(before, activeWorkspace(this.state)?.transcript)) focusJump()
+        this.navigateHistory(command.type === "jump.back" ? "back" : "forward")
         break
       }
       case "mark.set": {

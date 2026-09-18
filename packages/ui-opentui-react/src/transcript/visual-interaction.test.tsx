@@ -320,13 +320,15 @@ test("Escape interrupts active turns in Normal mode after dismissing editing mod
   const start = async () => {
     await act(async () => {
       h.emit({ type: "conversation", event: { type: "turn.started", threadId: thread, turnId: turnId("stop-turn") } })
-      await h.flush()
+      h.emit({ type: "conversation", event: { type: "item.started", threadId: thread, item: { id: itemId("stop-reasoning"), turnId: turnId("stop-turn"), kind: "reasoning", markdown: "Working", status: "running" } } })
+      await h.flush(); await h.renderOnce()
     })
   }
   try {
     await escape()
     expect(h.interrupted).toEqual([])
     await start()
+    expect(h.captureCharFrame()).toContain("Thinking")
     await h.keys("i")
     await h.keys("Keep my draft")
     await escape()
@@ -334,6 +336,8 @@ test("Escape interrupts active turns in Normal mode after dismissing editing mod
     expect(h.interrupted).toEqual([])
     await escape()
     expect(h.interrupted).toEqual([{ thread, turn: "stop-turn" }])
+    await act(async () => { await h.flush(); await h.renderOnce() })
+    expect(h.captureCharFrame()).toContain("Stopping")
     expect(h.workspace().composer.text).toBe("Keep my draft")
 
     await h.keys("v")
@@ -349,13 +353,17 @@ test("Escape interrupts active turns in Normal mode after dismissing editing mod
     expect(h.workspace().interaction.overlay).toBeNull()
     expect(h.interrupted).toHaveLength(1)
     await escape()
-    expect(h.interrupted).toHaveLength(2)
+    expect(h.interrupted).toHaveLength(1)
     await act(async () => {
       h.emit({ type: "conversation", event: { type: "turn.completed", threadId: thread, turnId: turnId("stop-turn"), outcome: "interrupted" } })
       await h.flush()
     })
     await escape()
-    expect(h.interrupted).toHaveLength(2)
+    await act(async () => { await h.flush(); await h.renderOnce() })
+    expect(h.captureCharFrame()).not.toContain("Stopping")
+    expect(h.captureCharFrame()).not.toContain("Thinking")
+    expect(h.captureCharFrame()).toContain("Reasoning")
+    expect(h.interrupted).toHaveLength(1)
   } finally { await h.close() }
 })
 
@@ -502,5 +510,52 @@ test("Flash stays isolated during streaming and cancels cleanly on narrow resize
     expect(h.captureCharFrame()).toContain("Jump / bold")
     await flashKey(h, "ESCAPE")
     expect(h.workspace().composer.text).toBe("/theme")
+  } finally { await h.close() }
+})
+
+
+test("Normal streaming and scrolling use the hardware cursor without rebuilding native selections", async () => {
+  const h = await visualHarness()
+  const original = h.renderer.startSelection.bind(h.renderer)
+  let selections = 0
+  h.renderer.startSelection = (...args) => { selections++; return original(...args) }
+  try {
+    await h.keys("gg")
+    for (let i = 0; i < 5; i++) await act(async () => {
+      h.emit({ type: "conversation", event: { type: "item.delta", threadId: thread, itemId: answer, delta: "\n\nStreaming paragraph " + i } })
+      h.mockInput.pressKey(i % 2 ? "y" : "e", { ctrl: true })
+      await h.flush(); await h.renderOnce()
+    })
+    expect(selections).toBe(0)
+    expect(h.renderer.getSelection()).toBeNull()
+    await h.keys("gg")
+    expect(h.renderer.getCursorState().visible).toBe(true)
+    await h.keys("vll")
+    expect(selections).toBeGreaterThan(0)
+    expect(h.renderer.getSelection()?.getSelectedText()).toBe("Alp")
+  } finally { await h.close() }
+})
+
+
+test("s launches Flash from composer Normal while Insert s stays literal", async () => {
+  const h = await visualHarness()
+  try {
+    await h.keys("i")
+    await h.keys("saved draft")
+    expect(h.renderer.root.findDescendantById("flash-query")).toBeUndefined()
+    await flashKey(h, "ESCAPE")
+    await flashKey(h, "ARROW_DOWN")
+    expect(h.workspace().interaction).toMatchObject({ mode: "normal", surface: "composer" })
+    const cursor = h.workspace().composer.cursorOffset
+    await h.keys("s")
+    expect(h.captureCharFrame()).toContain("Jump /")
+    await flashKey(h, "ESCAPE")
+    expect(h.workspace().interaction).toMatchObject({ mode: "normal", surface: "composer" })
+    expect(h.workspace().composer.cursorOffset).toBe(cursor)
+    await h.keys("s")
+    await h.keys("bold")
+    await flashKey(h, "RETURN")
+    expect(h.workspace().transcript.cursor).toEqual({ itemId: answer, graphemeOffset: 6 })
+    expect(h.workspace().composer.text).toBe("saved draft")
   } finally { await h.close() }
 })

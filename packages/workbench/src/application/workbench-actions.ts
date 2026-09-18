@@ -35,6 +35,7 @@ export interface WorkbenchActions {
   answerQuestions(id: string, answers: Readonly<Record<string, string | readonly string[]>>): void
   openChildThread(id: ThreadId): void
   returnToParent(): void
+  cycleAgent(direction: "previous" | "next"): void
   requestFork(itemId?: ItemId): void
   confirmFork(): void
   cancelFork(): void

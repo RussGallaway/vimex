@@ -182,3 +182,5 @@ Skill discovery and path-qualified skill insertion remain pending; a textual `$n
 Composer-focused Ctrl-E/Y scroll the transcript by one line and Ctrl-D/U by half a page in Normal, Insert, and Visual modes, preserving the composer cursor and selection. Transcript block navigation supports both literal braces and explicit Shift-bracket terminal events.
 
 Tool headers use server-provided action descriptions when available. Expanded command blocks separate the exact execution command from unchanged output, with both represented in the semantic transcript for selection and copying.
+
+Agent navigation: Normal `ga` opens the picker from either pane, `[a`/`]a` cycle an immediate parent and its children, and `\` returns to the immediate parent. A SUBAGENT badge and parent breadcrumb distinguish child views. Ctrl-O/Ctrl-I visit chronological locations across agents and ordinary sessions while restoring the cursor and reading viewport independently and preserving drafts. `s` starts Flash from either pane in Normal mode; transcript Visual also supports it. Ctrl-G remains available while composing in Insert mode.

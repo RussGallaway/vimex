@@ -35,6 +35,7 @@ function HelpOverlay() {
     ["Scroll", "ctrl-y/e line   ctrl-u/d half page   ctrl-b/f page"], ["Act", "y copy   gx open URL   f fork   Esc (Normal)/ctrl-c interrupt"],
     ["Jump", "s/Ctrl-g Flash   Ctrl-o/i history   ma mark   `a jump"],
     ["Fold", "Enter/za toggle   Shift-Tab all"], ["Views", "Space s sessions   a approvals   :help"],
+    ["Agents", "ga picker   [a/]a family   \\ parent"],
     ["Focus", "↑ transcript   ↓ composer   ctrl-w k/j aliases"],
     ["Composer", "h/j/k/l  w/b  0/$  x/dd  u/ctrl-r  i/a/I/A  v select"],
     ["Menus", "j/k choose   i search   esc normal/close"],

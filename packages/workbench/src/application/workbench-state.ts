@@ -13,6 +13,7 @@ export interface ThreadWorkspace {
 }
 export interface PendingFork { threadId: ThreadId; itemId: ItemId; turnId: TurnId; preview: string }
 export interface WorkbenchState {
+  interruptingTurns: Readonly<Record<string, TurnId>>
   availableModels?: readonly AvailableModel[]
   modelCatalogError?: string
   preferences?: DisplayPreferences
@@ -42,6 +43,8 @@ export type WorkbenchEffect =
 export interface WorkbenchTransition { state: WorkbenchState; effects: readonly WorkbenchEffect[] }
 
 export type WorkbenchCommand =
+  | { type: "turn.interrupt.requested"; threadId: ThreadId; turnId: TurnId }
+  | { type: "turn.interrupt.failed"; threadId: ThreadId; turnId: TurnId }
   | { type: "connection.changed"; connection: WorkbenchState["connection"]; error?: string }
   | { type: "thread.open"; summary: ThreadSummary }
   | { type: "thread.register"; summary: ThreadSummary }
@@ -70,7 +73,7 @@ export type WorkbenchCommand =
   | { type: "agent.link"; link: AgentRelationship }
 
 export const initialWorkbench = (): WorkbenchState => ({
-  favoriteThreadIds: [], threadOrder: [], summaries: {}, workspaces: {}, approvals: initialApprovals(), questions: {}, agentRelationships: [], connection: "connecting",
+  interruptingTurns: {}, favoriteThreadIds: [], threadOrder: [], summaries: {}, workspaces: {}, approvals: initialApprovals(), questions: {}, agentRelationships: [], connection: "connecting",
 })
 export function createWorkspace(id: ThreadId): ThreadWorkspace {
   return { conversation: createConversation(id), transcript: initialTranscript(), composer: initialComposer(), interaction: initialInteraction() }

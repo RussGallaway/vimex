@@ -7,6 +7,16 @@ import { scheduleQueued, submissionEffect } from "./submission-scheduler"
 import { createWorkspace, done, openThread, targetThread, updateWorkspace, type WorkbenchCommand, type WorkbenchEffect, type WorkbenchState, type WorkbenchTransition } from "./workbench-state"
 export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCommand): WorkbenchTransition {
   switch (command.type) {
+    case "turn.interrupt.requested":
+      return state.workspaces[command.threadId]?.conversation.activeTurnId === command.turnId
+        ? done({ ...state, interruptingTurns: { ...state.interruptingTurns, [command.threadId]: command.turnId } })
+        : done(state)
+    case "turn.interrupt.failed": {
+      if (state.interruptingTurns[command.threadId] !== command.turnId) return done(state)
+      const interruptingTurns = { ...state.interruptingTurns }
+      delete interruptingTurns[command.threadId]
+      return done({ ...state, interruptingTurns })
+    }
     case "thread.favorite.toggle": return done({ ...state, favoriteThreadIds: state.favoriteThreadIds.includes(command.threadId) ? state.favoriteThreadIds.filter(id => id !== command.threadId) : [...state.favoriteThreadIds, command.threadId] })
     case "connection.changed": return done({ ...state, connection: command.connection, error: command.error })
     case "thread.open": return done(openThread(state, command.summary))
@@ -52,7 +62,13 @@ export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCom
         workspaces: { ...state.workspaces, [command.summary.id]: workspace },
       })
     }
-    case "conversation.event": return applyConversationEvent(state, command.event)
+    case "conversation.event": {
+      const result = applyConversationEvent(state, command.event)
+      if (command.event.type !== "turn.completed" || result.state.interruptingTurns[command.event.threadId] !== command.event.turnId) return result
+      const interruptingTurns = { ...result.state.interruptingTurns }
+      delete interruptingTurns[command.event.threadId]
+      return { ...result, state: { ...result.state, interruptingTurns } }
+    }
     case "interaction.command": {
       const id = targetThread(state, command.threadId)
       return id ? done(updateWorkspace(state, id, (workspace) => ({ ...workspace, interaction: reduceInteraction(workspace.interaction, command.command) }))) : done(state)
