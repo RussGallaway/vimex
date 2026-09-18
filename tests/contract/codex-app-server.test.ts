@@ -683,7 +683,7 @@ test("goal capability uses pinned get/set/clear RPC contracts and omits unreques
 })
 
 test("side fork defers inherited goal, clears it, and retirement archives exact child", async () => {
-  const { client, transport } = await connectedClient()
+  const { client, transport } = await connectedClient(true)
   const gateway = createCodexGateways("/repo", "codex", () => client)
   try {
     const fork = gateway.conversation.forkSideThread!(threadId("thr-1"))

@@ -14,6 +14,8 @@ Each conversation retains its own draft, cursor, folds, viewport, and mode. Clos
 
 ## Server lifetime
 
+Vimex negotiates `experimentalApi: true` when connecting and reconnecting. The pinned server requires this capability for `thread/fork.deferGoalContinuation`; omitting it rejects side creation. The offline side fixture enforces this requirement too.
+
 Vimex uses the pinned Codex 0.154 app-server archive operation, not unsubscribe, for retirement. In the [pinned archive implementation](https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/app-server/src/request_processors/thread_processor.rs#L1572), archiving prepares the target and its spawned descendants for removal. The [removal implementation](https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/app-server/src/request_processors/thread_processor.rs#L989) removes the loaded thread, requests shutdown, and tears down its listeners. The server may proceed with archival after a shutdown timeout; the RPC does not expose a stronger termination acknowledgment. Stored history is archived, not deleted.
 
 Vimex's retirement record prevents reopening in this client; it does not prevent another Codex client from explicitly restoring an archived thread.

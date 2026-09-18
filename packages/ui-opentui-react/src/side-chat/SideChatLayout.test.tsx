@@ -84,7 +84,7 @@ test("side split shows both transcripts, routes input to focused composer, and m
   } finally { await h.close() }
 })
 
-test("narrow side layout stacks panes and rename leader preloads focused title", async () => {
+test("narrow side layout stacks panes and rename leader hints focused title", async () => {
   const h = await harness(80, 32)
   try {
     const main = h.renderer.root.findDescendantById("main-pane")!
@@ -93,8 +93,8 @@ test("narrow side layout stacks panes and rename leader preloads focused title",
     expect(side.width).toBe(80)
     expect(h.renderer.root.findDescendantById("inactive-composer")).toBeUndefined()
     await act(async () => { await h.mockInput.typeText(" r"); await h.flush(); await h.renderOnce() })
-    expect(h.state().workspaces[child]!.interaction.commandLine).toBe("rename Side questions")
-    expect(h.captureCharFrame()).toContain("rename Side questions")
+    expect(h.state().workspaces[child]!.interaction.commandLine).toBe("rename ")
+    expect(h.captureCharFrame()).toContain("Current name: Side questions")
     expect(h.state().workspaces[parent]!.interaction.mode).toBe("normal")
   } finally { await h.close() }
 })

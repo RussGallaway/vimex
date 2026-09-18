@@ -10,6 +10,7 @@ const create = (id: string, title: string) => ({ id, name: title, preview: "", m
 const main = create("side-main", "Main implementation")
 threads.set(main.id, main)
 const session = (thread: any) => ({ thread, model: thread.model, modelProvider: "fixture", reasoningEffort: "high", cwd: thread.cwd })
+let experimentalApi = false
 let counter = 0, updates = 0
 const timer = setInterval(() => {
   const turn = main.turns.at(-1) as any
@@ -24,12 +25,17 @@ for await (const line of createInterface({ input: process.stdin })) {
   if (trace) appendFileSync(trace, line + "\n")
   const result = (value: unknown) => send({ id: request.id, result: value })
   switch (request.method) {
-    case "initialize": result({ userAgent: "vimex-side-fixture", codexHome: process.cwd(), platformFamily: "unix", platformOs: "test" }); break
+    case "initialize": experimentalApi = request.params.capabilities?.experimentalApi === true; result({ userAgent: "vimex-side-fixture", codexHome: process.cwd(), platformFamily: "unix", platformOs: "test" }); break
     case "initialized": break
     case "thread/list": result({ data: [...threads.values()], nextCursor: null, backwardsCursor: null }); break
     case "thread/start": result(session(main)); break
     case "thread/resume": result(session(threads.get(request.params.threadId))); break
+    case "thread/turns/list": result({ data: [...threads.get(request.params.threadId).turns].reverse().map(turn => ({ ...turn, itemsView: "full" })), nextCursor: null }); break
     case "thread/fork": {
+      if (request.params.deferGoalContinuation && !experimentalApi) {
+        send({ id: request.id, error: { code: -32600, message: "thread/fork.deferGoalContinuation requires experimentalApi capability" } })
+        break
+      }
       const child = create(`side-child-${++counter}`, `Side chat ${counter}`)
       threads.set(child.id, child); result(session(child)); break
     }

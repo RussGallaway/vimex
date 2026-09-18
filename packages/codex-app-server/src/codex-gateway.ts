@@ -4,11 +4,13 @@ import { hydrateTurns } from "./mapping/map-item"
 import { itemId, type ConversationGateway } from "@vimex/conversation"
 import type { RuntimeEvent, RuntimeConnection, ModelCatalog } from "@vimex/workbench"
 
-/** Adapts one Codex connection to the application-owned capability ports. */
+/** Adapts one Codex connection to the application-owned capability ports.
+ * Side forks require experimental deferGoalContinuation to avoid running the parent goal.
+ */
 export function createCodexGateways(
   cwd: string,
   executable = "codex",
-  createClient: () => CodexAppServerClient = () => createCodexAppServerClient({ cwd, command: executable }),
+  createClient: () => CodexAppServerClient = () => createCodexAppServerClient({ cwd, command: executable }, { experimentalApi: true }),
 ) {
   let client = createClient()
   let detachClient = () => {}
