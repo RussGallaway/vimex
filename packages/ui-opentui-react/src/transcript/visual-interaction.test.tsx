@@ -1,3 +1,4 @@
+import { measureRenderedTranscript, measuredPoint } from "./rendered-layout"
 import { expect, test } from "bun:test"
 import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
 import { testRender } from "@opentui/react/test-utils"
@@ -355,5 +356,49 @@ test("Escape interrupts active turns in Normal mode after dismissing editing mod
     })
     await escape()
     expect(h.interrupted).toHaveLength(2)
+  } finally { await h.close() }
+})
+
+
+for (const key of ["ctrl-k", "up"] as const) test(`${key} enters the bottom visible transcript row after scrolling from the composer`, async () => {
+  const h = await visualHarness()
+  try {
+    await act(async () => {
+      h.emit({ type: "conversation", event: { type: "item.delta", threadId: thread, itemId: answer, delta: "\n\n" + Array.from({ length: 70 }, (_, i) => `Visible row ${i}`).join("\n\n") } })
+      await h.flush(); await h.renderOnce()
+    })
+    await h.keys("G")
+    await act(async () => {
+      h.controller.changeDraft("preserve draft", 5)
+      h.mockInput.pressKey("ARROW_DOWN")
+      await h.flush(); await h.renderOnce()
+    })
+    await h.keys("i")
+    const scrollbox = h.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable
+    for (let i = 0; i < 3; i++) await act(async () => {
+      h.mockInput.pressKey("u", { ctrl: true }); await h.flush(); await h.renderOnce()
+    })
+    const before = scrollbox.scrollTop
+    const oldCursor = h.workspace().transcript.cursor
+    const measured = measureRenderedTranscript(h.renderer, scrollbox, h.workspace().transcript)!
+    const rows = Object.values(measured.points!).flatMap(item => Object.values(item)).map(point => measuredPoint(measured, point)!)
+      .filter(point => point.screenY >= scrollbox.viewport.screenY && point.screenY < scrollbox.viewport.screenY + scrollbox.viewport.height)
+    const bottom = Math.max(...rows.map(point => point.screenY))
+    await act(async () => {
+      if (key === "ctrl-k") h.mockInput.pressKey("k", { ctrl: true })
+      else h.mockInput.pressKey("ARROW_UP")
+      await h.flush(); await h.renderOnce()
+    })
+    expect(h.workspace().interaction).toMatchObject({ mode: "normal", surface: "transcript" })
+    expect(h.workspace().composer.text).toBe("preserve draft")
+    expect(h.workspace().transcript.cursor).not.toEqual(oldCursor)
+    expect(scrollbox.scrollTop).toBe(before)
+    const after = measureRenderedTranscript(h.renderer, scrollbox, h.workspace().transcript)!
+    expect(measuredPoint(after, h.workspace().transcript.cursor)!.screenY).toBe(bottom)
+    // Refocusing an already focused transcript must not reposition its cursor.
+    await h.keys("k")
+    const moved = h.workspace().transcript.cursor
+    await act(async () => { h.mockInput.pressKey("ARROW_UP"); await h.flush(); await h.renderOnce() })
+    expect(h.workspace().transcript.cursor).toEqual(moved)
   } finally { await h.close() }
 })

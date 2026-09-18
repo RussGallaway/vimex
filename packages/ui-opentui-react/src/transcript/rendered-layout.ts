@@ -564,7 +564,7 @@ export function measuredPoint(layout: TranscriptLayout, point: LogicalPoint | un
 }
 
 const visibleRowIndex = new WeakMap<object, readonly MeasuredPoint[]>()
-export function topVisiblePoint(layout: TranscriptLayout, scrollbox: ScrollBoxRenderable): MeasuredPoint | undefined {
+function viewportEdgePoint(layout: TranscriptLayout, scrollbox: ScrollBoxRenderable, edge: "top" | "bottom"): MeasuredPoint | undefined {
   const points = layout.points
   if (!points) return undefined
   let rows = visibleRowIndex.get(points)
@@ -584,5 +584,23 @@ export function topVisiblePoint(layout: TranscriptLayout, scrollbox: ScrollBoxRe
     if (rows[middle]!.screenY < top) low = middle + 1
     else high = middle
   }
-  return translatedPoint(layout, rows[low])
+  if (edge === "top") return translatedPoint(layout, rows[low])
+  const bottom = top + scrollbox.viewport.height
+  let end = rows.length
+  while (low < end) {
+    const middle = (low + end) >>> 1
+    if (rows[middle]!.screenY < bottom) low = middle + 1
+    else end = middle
+  }
+  const point = rows[low - 1]
+  return point && point.screenY >= top ? translatedPoint(layout, point) : undefined
+}
+
+export function topVisiblePoint(layout: TranscriptLayout, scrollbox: ScrollBoxRenderable): MeasuredPoint | undefined {
+  return viewportEdgePoint(layout, scrollbox, "top")
+}
+
+/** First text cell on the lowest visible content row, excluding decorative padding. */
+export function bottomVisiblePoint(layout: TranscriptLayout, scrollbox: ScrollBoxRenderable): MeasuredPoint | undefined {
+  return viewportEdgePoint(layout, scrollbox, "bottom")
 }

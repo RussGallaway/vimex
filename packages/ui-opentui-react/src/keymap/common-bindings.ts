@@ -12,6 +12,7 @@ export function commonBindings(ctx: VimBindingContext): UiBinding[] {
     } else if (ctx.interaction.mode === "command") {
       ctx.controller.dispatchInteraction({ type: "mode.normal" })
     }
+    if (surface === "transcript" && ctx.interaction.surface === "composer") ctx.enterVisibleTranscript()
     ctx.controller.dispatchInteraction({ type: "focus.set", surface })
   }
   const slashEditing = ctx.interaction.mode === "insert" && ctx.composer.text.startsWith("/") && !ctx.composer.text.includes("\n")

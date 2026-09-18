@@ -18,6 +18,7 @@ export interface VimBindingContext {
   countRef: MutableRefObject<string>
   textareaRef: RefObject<TextareaRenderable | null>
   scrollRef: RefObject<ScrollBoxRenderable | null>
+  enterVisibleTranscript(): void
   submitComposer(intent: SubmissionIntent): void
   countedMotion(motion: Motion): void
   dispatchMotion(motion: Motion): void

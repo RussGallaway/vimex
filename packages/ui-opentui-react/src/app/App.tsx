@@ -84,7 +84,7 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
   const composerThreadRef = useRef(state.activeThreadId)
   composerInteractionRef.current = interaction
   const initializedFolds = useRef(new Set<string>())
-  const { layout, measuredLayout, onManualScroll } = useTranscriptLayout({ threadId: state.activeThreadId, transcript, width: dimensions.width, height: dimensions.height, scrollRef, controller })
+  const { layout, measuredLayout, onManualScroll, enterVisibleTranscript } = useTranscriptLayout({ threadId: state.activeThreadId, transcript, width: dimensions.width, height: dimensions.height, scrollRef, controller })
   const busy = activeTurn(interaction, workspace?.conversation.activeTurnId)
   const pendingApproval = state.approvals.order
     .map((id) => state.approvals.byId[id])
@@ -386,7 +386,7 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
     interaction, transcript, composer, controller, countRef, textareaRef, scrollRef,
     foldableItemIds: items.filter(item => item.kind !== "assistant" && item.kind !== "user").map(item => item.id),
     submitComposer: intent => composerSubmitRef.current?.(intent),
-    countedMotion, dispatchMotion, runComposerKey, beginVisual, openOverlay, scroll,
+    countedMotion, dispatchMotion, runComposerKey, beginVisual, openOverlay, scroll, enterVisibleTranscript,
   }
   const changeCommandLine = useCallback((value: string) => {
     commandRef.current?.setText(commandBody(value))

@@ -5,7 +5,7 @@ import type { TranscriptState } from "@vimex/transcript"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react"
 import type { VimexUiController } from "../contracts"
 import { buildTranscriptLayout, type TranscriptLayout } from "./layout"
-import { measureRenderedTranscript, measuredPoint, topVisiblePoint } from "./rendered-layout"
+import { measureRenderedTranscript, measuredPoint, topVisiblePoint, bottomVisiblePoint } from "./rendered-layout"
 
 /** Owns the volatile bridge between semantic anchors and terminal geometry. */
 export function useTranscriptLayout(options: {
@@ -87,5 +87,19 @@ export function useTranscriptLayout(options: {
     renderer.requestRender()
     return () => { renderer.off(CliRenderEvents.FRAME, measure) }
   }, [controller, renderer, scrollRef])
-  return { layout: hasMeasuredLayout ? rendered!.layout : estimated!, measuredLayout, onManualScroll }
+  const enterVisibleTranscript = useCallback(() => {
+    const scrollbox = scrollRef.current
+    if (!scrollbox) return
+    // Measure at key time: scrolling may have occurred since the last frame.
+    const current = latest.current
+    const next = measureRenderedTranscript(renderer, scrollbox, current.transcript)
+    if (!next) return
+    const point = bottomVisiblePoint(next, scrollbox)
+    if (!point) return
+    measuredLayout.current = next
+    pendingAnchor.current = false
+    pendingRestore.current = false
+    controller.transcript({ type: "cursor.move", target: { itemId: point.itemId, graphemeOffset: point.graphemeOffset }, preferredScreenRow: point.screenY - scrollbox.viewport.screenY, extend: false })
+  }, [controller, renderer, scrollRef])
+  return { enterVisibleTranscript, layout: hasMeasuredLayout ? rendered!.layout : estimated!, measuredLayout, onManualScroll }
 }
