@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { itemId } from "@vimex/conversation"
 import { initialTranscript, projectMarkdown, type TranscriptState } from "@vimex/transcript"
-import { buildTranscriptLayout, movePoint, selectedRangeForItem } from "./layout"
+import { buildTranscriptLayout, graphemeCellWidth, movePoint, selectedRangeForItem } from "./layout"
 
 const first = itemId("first")
 const second = itemId("second")
@@ -55,4 +55,45 @@ describe("transcript visual layout", () => {
     }
     expect(selectedRangeForItem(line, first)).toEqual({ from: 4, to: 7 })
   })
+})
+
+
+test("combining marks do not erase the terminal width of their base grapheme", () => {
+  expect(graphemeCellWidth("é")).toBe(1)
+  expect(graphemeCellWidth("界́")).toBe(2)
+  expect(graphemeCellWidth("́")).toBe(0)
+  expect(buildTranscriptLayout(stateFor("éabc"), 2).lines).toEqual([
+    { itemId: first, from: 0, to: 2, row: 0 },
+    { itemId: first, from: 2, to: 4, row: 1 },
+  ])
+})
+
+test("measured row navigation stays column-aware and builds a fresh index after reflow", () => {
+  const make = (column: number) => ({ ...buildTranscriptLayout(stateFor("abcd"), 2), points: {
+    [first]: {
+      0: { itemId: first, graphemeOffset: 0, row: 0, column: 0, screenX: 0, screenY: 0 },
+      1: { itemId: first, graphemeOffset: 1, row: 0, column: 1, screenX: 1, screenY: 0 },
+      2: { itemId: first, graphemeOffset: 2, row: 1, column, screenX: column, screenY: 1 },
+      3: { itemId: first, graphemeOffset: 3, row: 1, column: 1, screenX: 1, screenY: 1 },
+    },
+  } })
+  const firstLayout = make(0)
+  expect(movePoint(firstLayout, { itemId: first, graphemeOffset: 0 }, "down")?.point.graphemeOffset).toBe(2)
+  expect(movePoint(firstLayout, { itemId: first, graphemeOffset: 1 }, "down")?.point.graphemeOffset).toBe(3)
+  expect(movePoint(make(4), { itemId: first, graphemeOffset: 0 }, "down")?.point.graphemeOffset).toBe(3)
+})
+
+
+test("measured inclusive row endpoints retain their own row for horizontal motions", () => {
+  const layout = { ...buildTranscriptLayout(stateFor("abcd"), 2), lines: [
+    { itemId: first, from: 0, to: 1, row: 0 },
+    { itemId: first, from: 2, to: 3, row: 1 },
+  ], points: { [first]: {
+    1: { itemId: first, graphemeOffset: 1, row: 0, column: 1, screenX: 1, screenY: 0 },
+  } } }
+  layout.linesByItem = { [first]: layout.lines }
+  const point = { itemId: first, graphemeOffset: 1 }
+  expect(movePoint(layout, point, "left")?.point.graphemeOffset).toBe(0)
+  expect(movePoint(layout, point, "line-start")?.point.graphemeOffset).toBe(0)
+  expect(movePoint(layout, point, "line-end")?.point.graphemeOffset).toBe(1)
 })

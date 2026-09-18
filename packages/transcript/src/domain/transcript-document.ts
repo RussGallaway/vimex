@@ -3,6 +3,8 @@ import type { ItemId } from "@vimex/conversation"
 export interface LinkTarget { from: number; to: number; url: string }
 export interface SourceSpan { from: number; to: number }
 export interface TextProjection {
+  /** Semantic node class used by message-wise navigation. */
+  nodeKind?: "message" | "reasoning" | "tool" | "edit" | "unknown"
   plain: string
   source: string
   /** One exact source span for each rendered grapheme. */
@@ -36,6 +38,7 @@ export interface TranscriptState {
 export type TranscriptCommand =
   | { type: "search.set"; query: string; direction: "forward" | "backward" }
   | { type: "cursor.move"; point: LogicalPoint; preferredScreenRow?: number }
+  | { type: "viewport.anchor"; point: LogicalPoint; preferredScreenRow: number }
   | { type: "tail.attach" }
   | { type: "selection.begin"; shape: TranscriptSelection["shape"] }
   | { type: "selection.swap" }

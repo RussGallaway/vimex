@@ -178,3 +178,14 @@ Vimex remains runnable outside Herdr, which keeps terminal testing and developme
 ## Extension policy
 
 V1 uses internal extension points for lifecycle observers, named commands, status segments, transcript renderers, external actions, and themes. A public plugin ABI is deferred until transcript and Vim semantics stabilize.
+
+
+## Transcript geometry and scrolling
+
+The transcript domain owns logical cursor, selection, and viewport anchors independently. `viewport.anchor` changes the reading anchor without moving the cursor or selection. The workbench forwards this intent without depending on terminal APIs.
+
+The React adapter's `transcript/use-transcript-layout.ts` owns measurement scheduling, thread-specific geometry, explicit tail attachment, and anchor restoration. `rendered-layout.ts` owns native measurement and invalidation. Scroll-only changes reuse immutable logical point maps with a screen translation; content, fold, and width changes invalidate geometry. Cursor movement uses row indexes rather than flattening all text points for each keypress.
+
+Mouse-wheel deltas remain linear and detach native following immediately. Keyboard page jumps remain immediate; neither path introduces an animation timer. Only explicit tail attachment resumes following output. Native scroll state must not override the semantic viewport contract at the bottom edge.
+
+These are in-process feature modules, not new services or package boundaries. Rendering remains renderer-owned; logical navigation remains in the transcript package. Large cold reflows and complete end-to-end latency require separate profiling from warm scroll benchmarks.

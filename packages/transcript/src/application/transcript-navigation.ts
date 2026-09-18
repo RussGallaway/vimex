@@ -123,11 +123,16 @@ export function moveByMessage(
   count = 1,
 ): LogicalPoint | undefined {
   if (!point) return undefined
-  const current = state.order.indexOf(point.itemId)
-  if (current < 0) return undefined
-  const delta = direction === "forward" ? Math.max(1, count) : -Math.max(1, count)
-  const target = state.order[current + delta]
-  return target ? { itemId: target, graphemeOffset: 0 } : undefined
+  const currentOrder = state.order.indexOf(point.itemId)
+  if (currentOrder < 0) return undefined
+  let remaining = Number.isFinite(count) ? Math.max(1, Math.trunc(count)) : 1
+  const delta = direction === "forward" ? 1 : -1
+  for (let index = currentOrder + delta; index >= 0 && index < state.order.length; index += delta) {
+    const itemId = state.order[index]!
+    if (state.projectionById[itemId]?.nodeKind !== "message") continue
+    if (--remaining === 0) return { itemId, graphemeOffset: 0 }
+  }
+  return undefined
 }
 
 function candidateInSelection(state: TranscriptState, candidate: UrlCandidate, selection: TranscriptSelection): boolean {
@@ -210,11 +215,14 @@ export function moveByWord(
   bigWord = false,
 ): LogicalPoint | undefined {
   if (!point || !state.order.includes(point.itemId)) return undefined
-  const words: { from: LogicalPoint; end: LogicalPoint }[] = []
   const category = (part: string): number => /^\s+$/u.test(part) ? 0 : bigWord || /^[\p{L}\p{M}\p{N}_]+$/u.test(part) ? 1 : 2
-  for (const itemId of state.order) {
+  const cache = new Map<ItemId, { from: LogicalPoint; end: LogicalPoint }[]>()
+  const wordsIn = (itemId: ItemId) => {
+    const cached = cache.get(itemId)
+    if (cached) return cached
+    const words: { from: LogicalPoint; end: LogicalPoint }[] = []
     const projection = state.projectionById[itemId]
-    if (!projection) continue
+    if (!projection) { cache.set(itemId, words); return words }
     const parts = graphemes(projection.plain)
     let offset = 0
     while (offset < parts.length) {
@@ -224,16 +232,42 @@ export function moveByWord(
       while (offset < parts.length && category(parts[offset]!) === kind) offset++
       words.push({ from: { itemId, graphemeOffset: from }, end: { itemId, graphemeOffset: offset - 1 } })
     }
+    cache.set(itemId, words)
+    return words
   }
-  if (words.length === 0) return point
+  const order = new Map(state.order.map((itemId, index) => [itemId, index]))
+  const firstWord = () => {
+    for (const itemId of state.order) { const word = wordsIn(itemId)[0]; if (word) return word }
+  }
+  const lastWord = () => {
+    for (let index = state.order.length - 1; index >= 0; index--) { const word = wordsIn(state.order[index]!).at(-1); if (word) return word }
+  }
+  const candidate = (origin: LogicalPoint) => {
+    const itemIndex = order.get(origin.itemId)!
+    if (motion === "previous") {
+      for (let index = itemIndex; index >= 0; index--) {
+        const words = wordsIn(state.order[index]!)
+        const word = index === itemIndex ? words.findLast(entry => entry.from.graphemeOffset < origin.graphemeOffset) : words.at(-1)
+        if (word) return word.from
+      }
+      return firstWord()?.from
+    }
+    for (let index = itemIndex; index < state.order.length; index++) {
+      const words = wordsIn(state.order[index]!)
+      const word = index === itemIndex
+        ? motion === "end"
+          ? words.find(entry => entry.end.graphemeOffset > origin.graphemeOffset)
+          : words.find(entry => entry.from.graphemeOffset > origin.graphemeOffset)
+        : words[0]
+      if (word) return motion === "end" ? word.end : word.from
+    }
+    return lastWord()?.end
+  }
   let target = point
   const repeat = Number.isFinite(count) ? Math.max(1, Math.trunc(count)) : 1
   for (let index = 0; index < repeat; index++) {
-    const next = motion === "previous"
-      ? words.findLast(word => comparePoint(state, word.from, target) < 0)?.from ?? words[0]!.from
-      : motion === "end"
-        ? words.find(word => comparePoint(state, word.end, target) > 0)?.end ?? words.at(-1)!.end
-        : words.find(word => comparePoint(state, word.from, target) > 0)?.from ?? words.at(-1)!.end
+    const next = candidate(target)
+    if (!next) return point
     if (comparePoint(state, next, target) === 0) break
     target = next
   }

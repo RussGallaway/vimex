@@ -11,7 +11,8 @@ function sourceOf(item: ConversationItem): string {
 }
 export function projectItem(item: ConversationItem, previous?: TextProjection): TextProjection {
   const project = item.kind === "user" || item.kind === "assistant" || item.kind === "reasoning" ? projectMarkdown : projectPlainText
-  return { ...project(sourceOf(item)), revision: (previous?.revision ?? 0) + 1 }
+  const nodeKind = item.kind === "user" || item.kind === "assistant" ? "message" : item.kind === "command" ? "tool" : item.kind
+  return { ...project(sourceOf(item)), nodeKind, revision: (previous?.revision ?? 0) + 1 }
 }
 export function syncTranscriptItem(state: TranscriptState, item: ConversationItem): TranscriptState {
   const previous = state.projectionById[item.id]

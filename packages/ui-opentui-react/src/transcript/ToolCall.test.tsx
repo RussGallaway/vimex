@@ -105,3 +105,20 @@ for (const folded of [false, true]) test(`truncated long tool title keeps every 
     }
   } finally { await act(async () => h.renderer.destroy()) }
 })
+
+test("native tool output cursor positions count combining graphemes without losing columns", async () => {
+  const thread = threadId("combining-tool")
+  const item = { ...command, title: "Output sample", executionCommand: undefined, detail: "éZ界́Q" }
+  let state = transitionWorkbench(initialWorkbench(), { type: "thread.open", summary: { id: thread, title: "Tools", cwd: "/work", model: "test", reasoningEffort: "high", status: "idle" } }).state
+  state = transitionWorkbench(state, { type: "conversation.event", event: { type: "item.started", threadId: thread, item } }).state
+  const h = await testRender(<VimexRoot state={state} controller={inertController} />, { width: 60, height: 24 })
+  try {
+    await act(async () => { await h.flush(); await h.renderOnce() })
+    const transcript = state.workspaces[thread]!.transcript
+    const layout = measureRenderedTranscript(h.renderer, h.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable, transcript)!
+    const points = layout.points![item.id]!
+    const start = graphemes(`${item.title}\n`).length
+    const origin = points[start]!.screenX
+    expect([0, 1, 2, 3].map(offset => points[start + offset]!.screenX - origin)).toEqual([0, 1, 2, 4])
+  } finally { await act(async () => h.renderer.destroy()) }
+})

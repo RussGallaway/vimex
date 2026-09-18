@@ -1,8 +1,8 @@
-import type { ScrollBoxRenderable, SyntaxStyle } from "@opentui/core"
+import { LinearScrollAccel, type ScrollBoxRenderable, type SyntaxStyle } from "@opentui/core"
 import type { ConversationItem } from "@vimex/conversation"
 import type { InteractionState } from "@vimex/interaction"
 import type { TranscriptState } from "@vimex/transcript"
-import type { RefObject } from "react"
+import { useMemo, type RefObject } from "react"
 import { selectedRangeForItem } from "./layout"
 import { emberTide } from "../theme"
 import { TranscriptNode } from "./TranscriptNode"
@@ -13,7 +13,11 @@ export function TranscriptViewport(props: {
   interaction: InteractionState
   syntax: SyntaxStyle
   scrollRef: RefObject<ScrollBoxRenderable | null>
+  onManualScroll?: () => void
 }) {
+  // Terminal wheel events already encode movement; deterministic deltas avoid
+  // accelerating trackpad bursts into large, unexpected viewport jumps.
+  const scrollAcceleration = useMemo(() => new LinearScrollAccel(), [])
   const cursorId = props.state.cursor?.itemId
   return (
     <scrollbox
@@ -21,7 +25,17 @@ export function TranscriptViewport(props: {
       ref={props.scrollRef}
       flexGrow={1}
       minHeight={0}
-      stickyScroll
+      stickyScroll={props.state.viewport.kind === "tail"}
+      scrollAcceleration={scrollAcceleration}
+      onMouseScroll={(event) => {
+        if (event.scroll?.direction !== "up" && event.scroll?.direction !== "down") return
+        if (event.modifiers.shift) return
+        // Disable native edge reattachment immediately, including a wheel-down
+        // at the bottom. Only an explicit follow action may attach the tail.
+        if (props.scrollRef.current) props.scrollRef.current.stickyScroll = false
+        props.onManualScroll?.()
+        event.stopPropagation()
+      }}
       stickyStart="bottom"
       viewportCulling
       contentOptions={{ paddingX: 2, paddingY: 1 }}

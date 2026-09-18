@@ -12,6 +12,8 @@ export interface TranscriptLayout {
   width: number
   lines: readonly VisualLine[]
   linesByItem: Readonly<Record<string, readonly VisualLine[]>>
+  /** Translation from cached native coordinates; use measuredPoint for screen positions. */
+  screenOffset?: { readonly x: number; readonly y: number }
   points?: Readonly<Record<string, Readonly<Record<number, MeasuredPoint>>>>
 }
 
@@ -24,7 +26,7 @@ export interface MeasuredPoint {
   screenY: number
 }
 
-const mark = /\p{Mark}/u
+const mark = /^\p{Mark}+$/u
 const wide = /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]|\p{Extended_Pictographic}/u
 
 export function graphemeCellWidth(value: string): number {
@@ -78,7 +80,27 @@ export function buildTranscriptLayout(state: TranscriptState, width: number): Tr
 function lineForPoint(layout: TranscriptLayout, point: LogicalPoint): VisualLine | undefined {
   const lines = layout.linesByItem[point.itemId]
   if (!lines?.length) return undefined
+  const measured = layout.points?.[point.itemId]?.[point.graphemeOffset]
+  if (measured) return lines.find(line => line.row === measured.row)
   return lines.find((line, index) => point.graphemeOffset < line.to || (index === lines.length - 1 && point.graphemeOffset <= line.to))
+}
+
+// Published layouts are immutable; index measured rows once per reflow so a
+// cursor step does not flatten and sort an entire long transcript.
+const measuredRows = new WeakMap<object, Map<number, MeasuredPoint[]>>()
+function pointsOnRow(layout: TranscriptLayout, row: number): readonly MeasuredPoint[] {
+  const key = layout.points ?? layout
+  let rows = measuredRows.get(key)
+  if (!rows) {
+    rows = new Map()
+    for (const item of Object.values(layout.points ?? {})) for (const point of Object.values(item)) {
+      const existing = rows.get(point.row)
+      if (existing) existing.push(point)
+      else rows.set(point.row, [point])
+    }
+    measuredRows.set(key, rows)
+  }
+  return rows.get(row) ?? []
 }
 
 export function movePoint(
@@ -90,8 +112,10 @@ export function movePoint(
   const measured = point ? layout.points?.[point.itemId]?.[point.graphemeOffset] : undefined
   if (measured && (motion === "up" || motion === "down")) {
     const targetRow = measured.row + (motion === "down" ? 1 : -1)
-    const candidates = Object.values(layout.points ?? {}).flatMap((points) => Object.values(points)).filter((candidate) => candidate.row === targetRow)
-    const target = candidates.sort((a, b) => Math.abs(a.column - measured.column) - Math.abs(b.column - measured.column))[0]
+    let target: MeasuredPoint | undefined
+    for (const candidate of pointsOnRow(layout, targetRow)) {
+      if (!target || Math.abs(candidate.column - measured.column) < Math.abs(target.column - measured.column)) target = candidate
+    }
     if (target) return { point: { itemId: target.itemId, graphemeOffset: target.graphemeOffset }, preferredScreenRow: target.row }
   }
   const current = point ? lineForPoint(layout, point) : undefined

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { itemId } from "@vimex/conversation"
+import { itemId, turnId } from "@vimex/conversation"
 import { assistantMessage as message } from "@vimex/testkit"
 import {
   adjacentSearchMatch,
@@ -40,6 +40,16 @@ describe("logical transcript navigation", () => {
     expect(moveBySemanticBlock(state, "backward")).toEqual({ itemId: itemId("a"), graphemeOffset: 0 })
     expect(moveByMessage(state, "forward")).toEqual({ itemId: itemId("b"), graphemeOffset: 0 })
     expect(moveByMessage(state, "backward")).toBeUndefined()
+  })
+
+  test("message motions skip reasoning and tool nodes", () => {
+    let state = syncTranscriptItem(initialTranscript(), message("first", "first"))
+    state = syncTranscriptItem(state, { id: itemId("reasoning"), turnId: turnId("turn"), kind: "reasoning", markdown: "thinking", status: "complete" })
+    state = syncTranscriptItem(state, { id: itemId("tool"), turnId: turnId("turn"), kind: "command", title: "Run", detail: "output", status: "complete" })
+    state = syncTranscriptItem(state, message("second", "second"))
+    expect(moveByMessage(state, "forward", { itemId: itemId("first"), graphemeOffset: 0 })).toEqual({ itemId: itemId("second"), graphemeOffset: 0 })
+    expect(moveByMessage(state, "backward", { itemId: itemId("tool"), graphemeOffset: 0 })).toEqual({ itemId: itemId("first"), graphemeOffset: 0 })
+    expect(moveByMessage(state, "forward", { itemId: itemId("tool"), graphemeOffset: 0 })).toEqual({ itemId: itemId("second"), graphemeOffset: 0 })
   })
 
   test("references a selection first and otherwise the current semantic block", () => {
@@ -98,6 +108,16 @@ describe("transcript search", () => {
     expect(adjacentSearchMatch(state, matches, "forward", matches.at(-1)!.from)?.from).toEqual(matches[0]!.from)
     expect(findSearchMatches(state, "👨‍👩‍👧‍👦")[0]?.to.graphemeOffset).toBe(5)
   })
+
+  test("finds the adjacent match without scanning every match against the full item order", () => {
+    let state = initialTranscript()
+    for (let index = 0; index < 300; index++) state = syncTranscriptItem(state, message(`search-${index}`, "a ".repeat(40)))
+    const matches = findSearchMatches(state, "a")
+    const point = { itemId: itemId("search-150"), graphemeOffset: 20 }
+    const start = performance.now()
+    for (let index = 0; index < 100; index++) adjacentSearchMatch(state, matches, "forward", point)
+    expect(performance.now() - start).toBeLessThan(100)
+  })
 })
 
 
@@ -113,6 +133,15 @@ describe("Vim transcript word motions", () => {
     expect(moveByWord(state, "next", state.cursor, 100)?.graphemeOffset).toBe(13)
     expect(moveByWord(state, "previous")?.graphemeOffset).toBe(0)
     expect(moveByWord(state, "previous", { itemId: itemId("a"), graphemeOffset: 6 })?.graphemeOffset).toBe(4)
+  })
+
+  test("short motions do not segment unrelated large transcript items", () => {
+    let state = initialTranscript()
+    for (let index = 0; index < 100; index++) state = syncTranscriptItem(state, message(`word-${index}`, "alpha beta gamma delta https://example.test\n".repeat(100)))
+    const start = performance.now()
+    const target = moveByWord(state, "next", { itemId: itemId("word-0"), graphemeOffset: 0 })
+    expect(target).toEqual({ itemId: itemId("word-0"), graphemeOffset: 6 })
+    expect(performance.now() - start).toBeLessThan(50)
   })
 
   test("crosses empty items and newlines without splitting Unicode graphemes", () => {

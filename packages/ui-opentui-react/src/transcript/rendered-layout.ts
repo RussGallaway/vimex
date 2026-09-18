@@ -7,7 +7,7 @@ import { graphemeCellWidth } from "./layout"
 interface ScreenCell { char: string; x: number; y: number }
 const blockProjectionCache = new WeakMap<object, { raw: string; plain: string }>()
 type LayoutFingerprint = readonly unknown[]
-const renderedLayoutCache = new WeakMap<ScrollBoxRenderable, { fingerprint: LayoutFingerprint; layout: TranscriptLayout }>()
+const renderedLayoutCache = new WeakMap<ScrollBoxRenderable, { fingerprint: LayoutFingerprint; layout: TranscriptLayout; originX: number; originY: number }>()
 
 function cellsIn(renderer: CliRenderer, renderable: Renderable): ScreenCell[] {
   const measured: ScreenCell[] = []
@@ -166,17 +166,17 @@ function appendLineInfo(fingerprint: unknown[], view: TextBufferRenderable | Tex
   fingerprint.push(info.lineSources.length, ...info.lineSources, info.lineStartCols.length, ...info.lineStartCols)
 }
 
-function appendNativeFingerprint(fingerprint: unknown[], renderable: Renderable, seen: Set<Renderable>, includeContent = false) {
+function appendNativeFingerprint(fingerprint: unknown[], renderable: Renderable, seen: Set<Renderable>, originX: number, originY: number, includeContent = false) {
   if (seen.has(renderable)) return
   seen.add(renderable)
-  fingerprint.push(renderable, renderable.screenX, renderable.screenY, renderable.width, renderable.height)
+  fingerprint.push(renderable, renderable.screenX - originX, renderable.screenY - originY, renderable.width, renderable.height)
   if (renderable instanceof TextBufferRenderable) appendLineInfo(fingerprint, renderable, includeContent)
   if (renderable instanceof MarkdownRenderable) {
     const runtime = renderable as unknown as { _parseState?: object | null; _stableBlockCount?: number }
     fingerprint.push(runtime._parseState, runtime._stableBlockCount, markdownBlocks(renderable).length)
     for (const block of markdownBlocks(renderable)) {
       fingerprint.push(block, block.tokenRaw)
-      appendNativeFingerprint(fingerprint, block.renderable, seen, true)
+      appendNativeFingerprint(fingerprint, block.renderable, seen, originX, originY, true)
     }
   }
   if (renderable instanceof TextTableRenderable) {
@@ -185,7 +185,7 @@ function appendNativeFingerprint(fingerprint: unknown[], renderable: Renderable,
     if (runtime._layout) fingerprint.push(...runtime._layout.columnOffsets, ...runtime._layout.rowOffsets)
     for (const row of runtime._cells ?? []) for (const cell of row) appendLineInfo(fingerprint, cell.textBufferView)
   }
-  for (const child of renderable.getChildren()) if ("screenX" in child) appendNativeFingerprint(fingerprint, child as Renderable, seen, includeContent)
+  for (const child of renderable.getChildren()) if ("screenX" in child) appendNativeFingerprint(fingerprint, child as Renderable, seen, originX, originY, includeContent)
 }
 
 function layoutFingerprint(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, state: TranscriptState): LayoutFingerprint {
@@ -196,8 +196,6 @@ function layoutFingerprint(renderer: CliRenderer, scrollbox: ScrollBoxRenderable
     scrollbox.viewport.screenY,
     scrollbox.viewport.width,
     scrollbox.viewport.height,
-    scrollbox.scrollTop,
-    scrollbox.scrollLeft,
     state.order,
     state.projectionById,
     state.folded,
@@ -207,7 +205,7 @@ function layoutFingerprint(renderer: CliRenderer, scrollbox: ScrollBoxRenderable
     const projection = state.projectionById[itemId]
     fingerprint.push(itemId, projection, projection?.revision, state.folded[itemId])
     const item = scrollbox.getRenderable(`transcript-item:${itemId}`)
-    if (item) appendNativeFingerprint(fingerprint, item, seen)
+    if (item) appendNativeFingerprint(fingerprint, item, seen, scrollbox.viewport.screenX - scrollbox.scrollLeft, scrollbox.viewport.screenY - scrollbox.scrollTop)
   }
   return fingerprint
 }
@@ -310,7 +308,15 @@ export function measureRenderedTranscript(
 ): TranscriptLayout | undefined {
   const fingerprint = layoutFingerprint(renderer, scrollbox, state)
   const cached = renderedLayoutCache.get(scrollbox)
-  if (cached && sameFingerprint(cached.fingerprint, fingerprint)) return cached.layout
+  const originX = scrollbox.viewport.screenX - scrollbox.scrollLeft
+  const originY = scrollbox.viewport.screenY - scrollbox.scrollTop
+  if (cached && sameFingerprint(cached.fingerprint, fingerprint)) {
+    const offset = { x: originX - cached.originX, y: originY - cached.originY }
+    if (offset.x === (cached.layout.screenOffset?.x ?? 0) && offset.y === (cached.layout.screenOffset?.y ?? 0)) return cached.layout
+    const translated = { ...cached.layout, screenOffset: offset }
+    renderedLayoutCache.set(scrollbox, { ...cached, layout: translated })
+    return translated
+  }
   const points: Record<string, Record<number, MeasuredPoint>> = {}
   const lines: VisualLine[] = []
   const linesByItem: Record<string, VisualLine[]> = {}
@@ -348,17 +354,39 @@ export function measureRenderedTranscript(
   }
   if (!lines.length) return undefined
   const layout = { width: scrollbox.viewport.width, lines, linesByItem, points }
-  renderedLayoutCache.set(scrollbox, { fingerprint, layout })
+  renderedLayoutCache.set(scrollbox, { fingerprint, layout, originX, originY })
   return layout
 }
 
-export function measuredPoint(layout: TranscriptLayout, point: LogicalPoint | undefined): MeasuredPoint | undefined {
-  return point ? layout.points?.[point.itemId]?.[point.graphemeOffset] : undefined
+function translatedPoint(layout: TranscriptLayout, point: MeasuredPoint | undefined): MeasuredPoint | undefined {
+  if (!point || !layout.screenOffset || (!layout.screenOffset.x && !layout.screenOffset.y)) return point
+  return { ...point, screenX: point.screenX + layout.screenOffset.x, screenY: point.screenY + layout.screenOffset.y }
 }
 
+export function measuredPoint(layout: TranscriptLayout, point: LogicalPoint | undefined): MeasuredPoint | undefined {
+  return translatedPoint(layout, point ? layout.points?.[point.itemId]?.[point.graphemeOffset] : undefined)
+}
+
+const visibleRowIndex = new WeakMap<object, readonly MeasuredPoint[]>()
 export function topVisiblePoint(layout: TranscriptLayout, scrollbox: ScrollBoxRenderable): MeasuredPoint | undefined {
-  const top = scrollbox.viewport.screenY
-  return Object.values(layout.points ?? {}).flatMap((points) => Object.values(points))
-    .filter((point) => point.screenY >= top)
-    .sort((a, b) => a.screenY - b.screenY || a.screenX - b.screenX)[0]
+  const points = layout.points
+  if (!points) return undefined
+  let rows = visibleRowIndex.get(points)
+  if (!rows) {
+    const firstByRow = new Map<number, MeasuredPoint>()
+    for (const item of Object.values(points)) for (const point of Object.values(item)) {
+      const first = firstByRow.get(point.screenY)
+      if (!first || point.screenX < first.screenX) firstByRow.set(point.screenY, point)
+    }
+    rows = [...firstByRow.values()].sort((a, b) => a.screenY - b.screenY)
+    visibleRowIndex.set(points, rows)
+  }
+  const top = scrollbox.viewport.screenY - (layout.screenOffset?.y ?? 0)
+  let low = 0, high = rows.length
+  while (low < high) {
+    const middle = (low + high) >>> 1
+    if (rows[middle]!.screenY < top) low = middle + 1
+    else high = middle
+  }
+  return translatedPoint(layout, rows[low])
 }

@@ -108,3 +108,5 @@ Enter `:` to open command completion above the bottom command bar. Up/Down selec
 | `:theme NAME` | Select and persist a UI theme. |
 | `:syntax NAME` | Select and persist a syntax theme; `theme` follows the UI palette. |
 | `:submit`, `:insert`, `:normal`, `:visual` | Invoke the corresponding action or mode. |
+
+Mouse-wheel scrolling moves the transcript by precise terminal rows, preserves composer focus and both text cursors, and detaches from the streaming tail. Reaching the bottom with the wheel keeps the viewport detached; use the explicit follow command to resume following.

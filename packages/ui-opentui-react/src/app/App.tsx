@@ -10,10 +10,11 @@ import { Composer } from "../composer/Composer"
 import { SlashCommandDrawer } from "../composer/SlashCommandDrawer"
 import { useSlashCommands } from "../composer/use-slash-commands"
 import { Statusline } from "../statusline/Statusline"
+import { useTranscriptLayout } from "../transcript/use-transcript-layout"
 import { TranscriptViewport } from "../transcript/TranscriptViewport"
 import { defaultVimexUiSettings, type VimexAppProps } from "../contracts"
-import { buildTranscriptLayout, movePoint, type TranscriptLayout } from "../transcript/layout"
-import { measureRenderedTranscript, measuredPoint, topVisiblePoint } from "../transcript/rendered-layout"
+import { movePoint } from "../transcript/layout"
+import { measuredPoint } from "../transcript/rendered-layout"
 import { createEmberTideSyntax, selectTheme } from "../theme"
 import { commonBindings } from "../keymap/common-bindings"
 import { normalBindings } from "../keymap/normal-bindings"
@@ -58,10 +59,10 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
   const composer = workspace?.composer ?? blankComposer
   const interaction = workspace?.interaction ?? blankInteraction
   const summary = state.activeThreadId ? state.summaries[state.activeThreadId] : undefined
-  const items = transcript.order.flatMap((id) => {
+  const items = useMemo(() => transcript.order.flatMap((id) => {
     const item = workspace?.conversation.items[id]
     return item ? [item] : []
-  })
+  }), [transcript.order, workspace?.conversation.items])
   const syntax = useMemo(() => createEmberTideSyntax(settings.syntaxTheme === "theme" ? settings.theme : settings.syntaxTheme, settings.reducedColor), [settings.reducedColor, settings.syntaxTheme, settings.theme])
   const scrollRef = useRef<ScrollBoxRenderable>(null)
   const textareaRef = useRef<TextareaRenderable>(null)
@@ -78,19 +79,12 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
   const [questionIndex, setQuestionIndex] = useState(0)
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, string | readonly string[]>>({})
   const [modelPicker, setModelPicker] = useState<{ stage: "models" } | { stage: "efforts"; modelId: string }>({ stage: "models" })
-  const [renderedLayout, setRenderedLayout] = useState<TranscriptLayout>()
-  const measuredLayout = useRef<TranscriptLayout | undefined>(undefined)
-  const layoutSignature = useRef("")
-  const pendingScrollAnchor = useRef(false)
-  const pendingRestore = useRef(false)
   const countRef = useRef(interaction.count)
   const composerInteractionRef = useRef(interaction)
   const composerThreadRef = useRef(state.activeThreadId)
   composerInteractionRef.current = interaction
   const initializedFolds = useRef(new Set<string>())
-  const transcriptWidth = Math.max(8, dimensions.width - 7)
-  const estimatedLayout = useMemo(() => buildTranscriptLayout(transcript, transcriptWidth), [transcript, transcriptWidth])
-  const layout = renderedLayout ?? estimatedLayout
+  const { layout, measuredLayout, onManualScroll } = useTranscriptLayout({ threadId: state.activeThreadId, transcript, width: dimensions.width, height: dimensions.height, scrollRef, controller })
   const busy = activeTurn(interaction, workspace?.conversation.activeTurnId)
   const pendingApproval = state.approvals.order
     .map((id) => state.approvals.byId[id])
@@ -103,7 +97,7 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
         : runningItem?.kind === "edit" ? "Editing" : "Waiting for Codex"
   const sessionRows = useMemo(() => searchSessions(state.threadOrder, state.summaries, sessionQuery, state.favoriteThreadIds), [sessionQuery, state.summaries, state.threadOrder, state.favoriteThreadIds])
   const agentRows = useMemo(() => agentNavigationRows(state.activeThreadId, state.agentRelationships), [state.activeThreadId, state.agentRelationships])
-  const selectionCount = selectedText(transcript, "plain")
+  const selectionCount = useMemo(() => selectedText(transcript, "plain"), [transcript.selection, transcript.order, transcript.projectionById])
   const selectedPickerModel = modelPicker.stage === "efforts" ? state.availableModels?.find(model => model.id === modelPicker.modelId) : undefined
   const overlayLength = interaction.overlay === "models" ? (modelPicker.stage === "efforts" ? (selectedPickerModel?.efforts.length ?? 0) : (state.availableModels?.length ?? 0))
     : interaction.overlay === "sessions" ? sessionRows.length
@@ -138,49 +132,6 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
       }
     }
   }, [controller, items, settings.foldReasoning, settings.foldTools, state.activeThreadId, transcript.folded])
-  useEffect(() => {
-    const measure = () => {
-      const scrollbox = scrollRef.current
-      if (!scrollbox) return
-      const next = measureRenderedTranscript(renderer, scrollbox, transcript)
-      if (!next) return
-      if (next !== measuredLayout.current) {
-        measuredLayout.current = next
-        const signature = JSON.stringify(next.points)
-        if (signature !== layoutSignature.current) {
-          layoutSignature.current = signature
-          setRenderedLayout(next)
-        }
-      }
-      if (pendingScrollAnchor.current) {
-        pendingScrollAnchor.current = false
-        const anchor = topVisiblePoint(next, scrollbox)
-        if (anchor) controller.transcript({
-          type: "cursor.move",
-          target: { itemId: anchor.itemId, graphemeOffset: anchor.graphemeOffset },
-          preferredScreenRow: 0,
-          extend: false,
-        })
-      }
-      if (pendingRestore.current && transcript.viewport.kind === "point") {
-        const anchor = measuredPoint(next, transcript.viewport.point)
-        if (anchor) {
-          pendingRestore.current = false
-          const delta = anchor.screenY - scrollbox.viewport.screenY - transcript.viewport.preferredScreenRow
-          if (delta) scrollbox.scrollBy(delta, "step")
-        } else {
-          scrollbox.scrollChildIntoView(`transcript-item:${transcript.viewport.point.itemId}`)
-        }
-      }
-    }
-    renderer.on(CliRenderEvents.FRAME, measure)
-    renderer.requestRender()
-    return () => { renderer.off(CliRenderEvents.FRAME, measure) }
-  }, [controller, renderer, transcript])
-  const geometryRevision = `${dimensions.width}:${dimensions.height}:${Object.entries(transcript.folded).map(([id, folded]) => `${id}:${folded}`).join(",")}:${transcript.order.map((id) => transcript.projectionById[id]?.revision ?? 0).join(",")}`
-  useEffect(() => {
-    if (transcript.viewport.kind === "point") pendingRestore.current = true
-  }, [geometryRevision])
   useLayoutEffect(() => {
     overlayIndexRef.current = 0
     setOverlayIndex(0)
@@ -257,7 +208,7 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
     renderer.updateSelection(headTarget, head.screenX, head.screenY, { finishDragging: true })
   }, [interaction.surface, layout, renderer, transcript.cursor, transcript.selection])
   useEffect(() => {
-    if (interaction.surface === "transcript" && transcript.cursor) {
+    if (interaction.surface === "transcript" && transcript.cursor && transcript.viewport.kind !== "tail") {
       scrollRef.current?.scrollChildIntoView(`transcript-item:${transcript.cursor.itemId}`)
     }
   }, [interaction.surface, transcript.cursor?.itemId, transcript.cursor?.graphemeOffset])
@@ -346,11 +297,11 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
     const effectiveAmount = explicitCount && amount === "half-page" ? "line" : amount
     const repeat = explicitCount ?? 1
     scrollRef.current?.scrollBy(delta * repeat * (effectiveAmount === "line" ? 1 : effectiveAmount === "half-page" ? 0.5 : 1), effectiveAmount === "line" ? "step" : "viewport")
-    pendingScrollAnchor.current = true
-    for (let index = 0; index < repeat; index += 1) controller.transcript({ type: "viewport.scroll", direction, amount: effectiveAmount })
+    onManualScroll()
+    controller.transcript({ type: "viewport.scroll", direction, amount: effectiveAmount })
     countRef.current = ""
     controller.dispatchInteraction({ type: "count.clear" })
-  }, [controller])
+  }, [controller, onManualScroll])
 
   const beginVisual = useCallback((shape: "character" | "line") => {
     if (!transcript.cursor) dispatchMotion("last")
@@ -505,7 +456,7 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
 
   return (
     <FullscreenShell title={summary?.title} connection={state.connection} working={Boolean(workspace?.conversation.activeTurnId) || summary?.status === "working"} activityLabel={activityLabel} waiting={Boolean(pendingApproval || pendingQuestion)}
-      transcript={<TranscriptViewport items={items} state={transcript} interaction={interaction} syntax={syntax} scrollRef={scrollRef} />}
+      transcript={<TranscriptViewport items={items} state={transcript} interaction={interaction} syntax={syntax} scrollRef={scrollRef} onManualScroll={onManualScroll} />}
       commandLine={interaction.mode === "command" ? <CommandLine models={state.availableModels} value={interaction.commandLine} inputRef={commandRef} controller={controller} onSubmit={(line) => {
         commandHistoryRef.current = recordCommand(commandHistoryRef.current, line)
         controller.executeCommand(line)

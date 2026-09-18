@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { itemId, turnId, type ConversationItem } from "@vimex/conversation"
-import { attachTail, beginSelection, initialTranscript, moveCursor, projectItem, selectedText, setFold, syncTranscriptItem, urlAt } from "./index"
+import { attachTail, beginSelection, graphemeCount, initialTranscript, moveCursor, projectItem, reduceTranscript, selectedText, setFold, syncTranscriptItem, urlAt } from "./index"
 
 import { assistantMessage as message } from "@vimex/testkit"
 
@@ -76,6 +76,20 @@ describe("transcript", () => {
     state = setFold(state, itemId("a"), false)
     expect(Object.hasOwn(state.folded, itemId("a"))).toBe(true)
     expect(state.folded[itemId("a")]).toBe(false)
+  })
+
+  test("anchors the viewport without moving the cursor or changing a visual selection", () => {
+    let state = syncTranscriptItem(initialTranscript(), message("a", "first line\nsecond line"))
+    state = moveCursor(state, { itemId: itemId("a"), graphemeOffset: 2 })
+    state = beginSelection(state, "character")
+    state = moveCursor(state, { itemId: itemId("a"), graphemeOffset: 5 })
+    const cursor = state.cursor
+    const selection = state.selection
+    state = reduceTranscript(state, { type: "viewport.anchor", point: { itemId: itemId("a"), graphemeOffset: 999 }, preferredScreenRow: 3 })
+    expect(state.cursor).toEqual(cursor)
+    expect(state.selection).toEqual(selection)
+    expect(state.viewport).toEqual({ kind: "point", point: { itemId: itemId("a"), graphemeOffset: graphemeCount("first line\nsecond line") }, preferredScreenRow: 3 })
+    expect(reduceTranscript(state, { type: "viewport.anchor", point: state.viewport.kind === "point" ? state.viewport.point : cursor!, preferredScreenRow: 3 })).toBe(state)
   })
 })
 

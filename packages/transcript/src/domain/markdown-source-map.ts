@@ -405,7 +405,7 @@ function multilineCodeParagraphEnd(source: string, lines: readonly SourceLine[],
 }
 
 /** Deterministic CommonMark-oriented projection with an exact rendered-grapheme to source map. */
-export function projectMarkdown(source: string): Omit<TextProjection, "revision"> {
+export function projectMarkdown(source: string): Omit<TextProjection, "revision" | "nodeKind"> {
   const builder: ProjectionBuilder = { plain: "", charSpans: [], links: [], regions: [] }
   const lines = linesOf(source)
   const references = referenceDefinitions(lines)
@@ -515,7 +515,7 @@ export function projectMarkdown(source: string): Omit<TextProjection, "revision"
 }
 
 /** Tool output and patches are literal text, even when they contain Markdown syntax. */
-export function projectPlainText(source: string): Omit<TextProjection, "revision"> {
+export function projectPlainText(source: string): Omit<TextProjection, "revision" | "nodeKind"> {
   const sourceSpans: SourceSpan[] = []
   for (const part of segmenter.segment(source)) {
     sourceSpans.push({ from: part.index, to: part.index + part.segment.length })

@@ -397,10 +397,11 @@ export class VimexController implements WorkbenchActions {
       case "cursor.move": this.dispatch({ type: "transcript.command", command: { type: "cursor.move", point: command.target, preferredScreenRow: command.preferredScreenRow } }); break
       case "selection.begin": this.dispatch({ type: "transcript.command", command }); break
       case "selection.clear": this.dispatch({ type: "transcript.command", command }); break
+      case "viewport.anchor": this.dispatch({ type: "transcript.command", command }); break
       case "viewport.tail": this.dispatch({ type: "transcript.command", command: { type: "tail.attach" } }); break
       case "viewport.scroll": {
         const point = workspace.transcript.cursor
-        if (point) this.dispatch({ type: "transcript.command", command: { type: "cursor.move", point } })
+        if (point) this.dispatch({ type: "transcript.command", command: { type: "viewport.anchor", point, preferredScreenRow: 0 } })
         break
       }
       case "fold.set": case "fold.all": this.dispatch({ type: "transcript.command", command }); break

@@ -231,3 +231,8 @@ plugins/herdr -> application ports and read models
 ## Package creation rule
 
 The tree describes ownership, not a demand for empty packages. Start with the vertical slice identified in the roadmap. Extract or fill each package as behavior appears, while preserving the dependency direction from the first commit.
+
+
+## Implemented transcript coordination
+
+Within `packages/ui-opentui-react/src/transcript`, `use-transcript-layout.ts` coordinates frame measurement and reading-anchor restoration, `rendered-layout.ts` maps native cells, `layout.ts` provides visual-row navigation, and `TranscriptViewport.tsx` owns native scrolling input. `app/App.tsx` composes these capabilities rather than owning their geometry lifecycle. Pure semantic navigation and viewport anchors remain under `packages/transcript/src/application`.

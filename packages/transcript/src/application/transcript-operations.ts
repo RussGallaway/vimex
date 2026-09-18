@@ -9,6 +9,17 @@ export function moveCursor(state: TranscriptState, point: LogicalPoint, preferre
     viewport: { kind: "point", point, preferredScreenRow },
   })
 }
+export function anchorViewport(state: TranscriptState, point: LogicalPoint, preferredScreenRow: number): TranscriptState {
+  const projection = state.projectionById[point.itemId]
+  const anchored = projection
+    ? { ...point, graphemeOffset: Math.max(0, Math.min(point.graphemeOffset, projection.sourceSpans.length)) }
+    : point
+  if (state.viewport.kind === "point"
+    && state.viewport.point.itemId === anchored.itemId
+    && state.viewport.point.graphemeOffset === anchored.graphemeOffset
+    && state.viewport.preferredScreenRow === preferredScreenRow) return state
+  return { ...state, viewport: { kind: "point", point: anchored, preferredScreenRow } }
+}
 export function attachTail(state: TranscriptState): TranscriptState {
   const last = state.order.at(-1)
   const projection = last ? state.projectionById[last] : undefined
@@ -90,6 +101,7 @@ export function reduceTranscript(state: TranscriptState, command: TranscriptComm
   switch (command.type) {
     case "search.set": return { ...state, search: { query: command.query, direction: command.direction } }
     case "cursor.move": return moveCursor(state, command.point, command.preferredScreenRow)
+    case "viewport.anchor": return anchorViewport(state, command.point, command.preferredScreenRow)
     case "tail.attach": return attachTail(state)
     case "selection.begin": return beginSelection(state, command.shape)
     case "selection.swap": return swapSelection(state)

@@ -380,13 +380,16 @@ describe("Vimex OpenTUI shell", () => {
         await setup.renderOnce()
       })
       expect(transcriptCommands).toContainEqual({ type: "viewport.scroll", direction: "down", amount: "line" })
-      expect(transcriptCommands.some((command) => command.type === "cursor.move" && command.preferredScreenRow === 0)).toBe(true)
+      const anchor = transcriptCommands.find((command) => command.type === "viewport.anchor")
+      expect(anchor?.type).toBe("viewport.anchor")
+      if (anchor?.type === "viewport.anchor") expect(anchor.preferredScreenRow).toBeGreaterThanOrEqual(0)
+      expect(transcriptCommands.some(command => command.type === "cursor.move")).toBe(false)
     } finally {
       await act(async () => setup.renderer.destroy())
     }
   })
 
-  test("consumes scroll counts and applies them to each viewport step", async () => {
+  test("consumes scroll counts without repeated domain transactions", async () => {
     const transcriptCommands: TranscriptUiCommand[] = []
     const interactionCommands: Parameters<VimexUiController["dispatchInteraction"]>[0][] = []
     const controller: VimexUiController = {
@@ -401,8 +404,6 @@ describe("Vimex OpenTUI shell", () => {
       setup.mockInput.pressKey("e", { ctrl: true })
       await act(async () => setup.flush())
       expect(transcriptCommands.filter((command) => command.type === "viewport.scroll")).toEqual([
-        { type: "viewport.scroll", direction: "down", amount: "line" },
-        { type: "viewport.scroll", direction: "down", amount: "line" },
         { type: "viewport.scroll", direction: "down", amount: "line" },
       ])
       expect(interactionCommands.at(-1)).toEqual({ type: "count.clear" })
