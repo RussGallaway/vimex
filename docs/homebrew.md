@@ -1,6 +1,6 @@
 # Publishing Vimex through Homebrew
 
-Status: Formula/vimex.rb is implemented in this repository. It is HEAD-only until the first stable release is published; the release workflow then generates its versioned URLs and checksums. No release has been published or live Homebrew installation validated yet.
+Status: Formula/vimex.rb is published from this repository. Stable releases generate its versioned URLs and checksums from the verified release manifest and merge the update after protected checks pass.
 
 ## Vocabulary
 

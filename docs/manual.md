@@ -24,7 +24,7 @@ vimex --demo
 
 vimex --help | --version
 
-From a source checkout, use bun run start followed by these arguments. Packaging and installation commands are implemented; the first public release is still pending.
+From a source checkout, use bun run start followed by these arguments. Published releases provide native bundles and the same command surface.
 
 ## DESCRIPTION
 

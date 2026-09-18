@@ -1,6 +1,6 @@
 # Install and run
 
-The CLI, native packaging, Homebrew formula, and curl installer are implemented. The first public release, 0.1.0, has not been published yet. Source execution and local bundles are available now; release installation commands below require published assets. See [distribution and releases](releasing.md).
+The CLI, native packaging, Homebrew formula, and curl installer are published for macOS and Linux on ARM64 and x64. Source execution and local bundles remain available for development. See [distribution and releases](releasing.md).
 
 Use `:manual` inside Vimex or `man ./docs/man/vimex.1` from the checkout to read the offline manual.
 
@@ -78,7 +78,7 @@ brew tap russgallaway/vimex https://github.com/RussGallaway/vimex.git
 brew install --HEAD russgallaway/vimex/vimex
 ```
 
-After the first stable release, omit --HEAD to install its prebuilt bundle. Use `brew upgrade vimex`, `vimex update`, or `vimex upgrade` for Homebrew-owned updates. The formula installs `man vimex`. See [Homebrew details](homebrew.md).
+Omit --HEAD to install the current stable prebuilt bundle. Use `brew upgrade vimex`, `vimex update`, or `vimex upgrade` for Homebrew-owned updates. The formula installs `man vimex`. See [Homebrew details](homebrew.md).
 
 ## Direct installation
 

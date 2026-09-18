@@ -6,7 +6,7 @@ export const manualSections = [
   },
   {
     "title": "SYNOPSIS",
-    "body": "vimex [PATH] [--cwd PATH] [--thread ID] [--model NAME] [--config PATH]\n\nvimex resume [ID] [--cwd PATH]\n\nvimex resume --last [--cwd PATH]\n\nvimex doctor [--config PATH]\n\nvimex upgrade [--version VERSION]\n\nvimex update [--version VERSION]\n\nvimex --demo\n\nvimex --help | --version\n\nFrom a source checkout, use bun run start followed by these arguments. Packaging and installation commands are implemented; the first public release is still pending."
+    "body": "vimex [PATH] [--cwd PATH] [--thread ID] [--model NAME] [--config PATH]\n\nvimex resume [ID] [--cwd PATH]\n\nvimex resume --last [--cwd PATH]\n\nvimex doctor [--config PATH]\n\nvimex upgrade [--version VERSION]\n\nvimex update [--version VERSION]\n\nvimex --demo\n\nvimex --help | --version\n\nFrom a source checkout, use bun run start followed by these arguments. Published releases provide native bundles and the same command surface."
   },
   {
     "title": "DESCRIPTION",
