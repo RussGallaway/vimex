@@ -174,3 +174,19 @@ test("status-only item updates preserve projection identity but changed text and
   expect(reasoning.projectionById[item.id]!.nodeKind).toBe("reasoning")
   expect(reasoning.projectionById[item.id]!.revision).toBe(2)
 })
+
+
+test("all folds affect foldable blocks only and repeated commands preserve identity", () => {
+  const messageId = itemId("regular-message"), toolId = itemId("foldable-tool")
+  let state = syncTranscriptItem(initialTranscript(), message(messageId, "Visible Markdown"))
+  state = syncTranscriptItem(state, { id: toolId, turnId: turnId("turn"), kind: "command", title: "Read file", detail: "output", status: "complete" })
+  const folded = reduceTranscript(state, { type: "fold.all", folded: true })
+  expect(folded.folded).toEqual({ [toolId]: true })
+  expect(reduceTranscript(setFold(folded, messageId, true), { type: "fold.all", folded: true }).folded).toEqual({ [toolId]: true })
+  expect(reduceTranscript(folded, { type: "fold.all", folded: true })).toBe(folded)
+  expect(setFold(folded, toolId, true)).toBe(folded)
+  const open = reduceTranscript(folded, { type: "fold.all", folded: false })
+  expect(open.folded).toEqual({ [toolId]: false })
+  expect(open.projectionById).toBe(state.projectionById)
+  expect(open.viewport).toBe(state.viewport)
+})

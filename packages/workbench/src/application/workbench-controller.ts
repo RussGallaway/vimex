@@ -345,7 +345,7 @@ export class VimexController implements WorkbenchActions {
     if (!workspace) return
     const move = (point?: LogicalPoint) => {
       if (!point) return
-      this.dispatch({ type: "transcript.command", command: { type: "fold.set", itemId: point.itemId, folded: false } })
+      if (workspace.transcript.folded[point.itemId]) this.dispatch({ type: "transcript.command", command: { type: "fold.set", itemId: point.itemId, folded: false } })
       this.dispatch({ type: "transcript.command", command: { type: "cursor.move", point, preferredScreenRow: 2 } })
     }
     switch (command.type) {

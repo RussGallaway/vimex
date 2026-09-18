@@ -15,7 +15,7 @@ This is an implementation checkpoint, not a declaration that v1 acceptance is co
 
 ## Checkpoint validation
 
-The latest completed full checkpoint passed TypeScript, dependency boundaries, and 336 tests with 1,797 assertions and four frame snapshots. Two diagnostic timing tests are opt-in and pass when explicitly enabled. The eight-check offline real-PTY driver also passes. See [review rounds](review-rounds.md) for the separate commits, scrolling measurements, and remaining initial-history settlement cost. `git diff --check` passes; the prior frozen-lockfile installation check remains applicable because dependencies did not change.
+The latest completed full checkpoint passed TypeScript, dependency boundaries, and 343 tests with 1,844 assertions and four frame snapshots. Four diagnostic timing tests are opt-in; the two Shift-Tab cases pass when explicitly enabled, alongside the prior scrolling diagnostics. The eight-check offline real-PTY driver also passes. See [review rounds](review-rounds.md) for the separate commits, scrolling measurements, and remaining initial-history settlement cost. `git diff --check` passes; the prior frozen-lockfile installation check remains applicable because dependencies did not change.
 
 A formatted Markdown projection that previously took about 5.6 seconds for 58 KB took about 7 ms after replacing repeated Unicode prefix segmentation with indexed boundary lookup. This measures projection only; it is not an end-to-end rendering benchmark.
 

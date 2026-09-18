@@ -192,3 +192,6 @@ These are in-process feature modules, not new services or package boundaries. Re
 
 
 Diff geometry is an OpenTUI adapter concern. Canonical server patches remain in conversation records; native split columns and line-number gutters do not redefine transcript source order. Native layout integration depends on pinned OpenTUI internals and has renderer regression coverage; upgrades must revalidate those assumptions. Large-history initial Markdown settlement remains a known cold-path performance cost even though warm scroll translations reuse geometry.
+
+
+Geometry reuse is per item as well as per viewport. Item-local value fingerprints track semantic projection, fold state, content, wrapping, and local child layout. A fold translates unchanged sibling points into their new positions without mutating prior layouts. The cache uses renderable WeakMap ownership so replaced items can be collected. Whole-viewport scroll translation remains the fastest path. Estimated layout is only a startup fallback once native measurement is available.

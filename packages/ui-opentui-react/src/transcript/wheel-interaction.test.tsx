@@ -225,3 +225,31 @@ profileTest("measures full App scrolling with many historical Markdown items and
     expect(h.workspace().interaction).toMatchObject({ mode: "insert", surface: "composer" })
   } finally { await h.close() }
 })
+
+for (const toolCount of [1, 20]) profileTest(`measures Shift-Tab folding ${toolCount} tools among 100 settled historical answers`, async () => {
+  const h = await wheelHarness()
+  const tool = itemId("fold-profile-tool")
+  try {
+    await act(async () => {
+      for (let index = 0; index < 100; index++) h.emit({ type: "conversation", event: { type: "item.started", threadId: thread, item: {
+        id: itemId(`fold-history-${index}`), turnId: turnId(`fold-turn-${index}`), kind: "assistant", status: "complete",
+        markdown: `## Historical answer ${index}\n\n${"Historical **Markdown** with a [reference](https://example.com).\n\n".repeat(8)}`,
+      } } })
+      for (let index = 0; index < toolCount; index++) h.emit({ type: "conversation", event: { type: "item.started", threadId: thread, item: {
+        id: index === 0 ? tool : itemId(`fold-profile-tool-${index}`), turnId: turnId("fold-turn"), kind: "command", status: "complete", title: "Read source",
+        detail: Array.from({ length: 100 }, (_, index) => `${index}: result source line`).join("\n"),
+      } } })
+      await h.flush()
+    })
+    for (let frame = 0; frame < 8; frame++) await act(async () => { await h.flush(); await h.renderOnce() })
+    const samples: object[] = []
+    for (const folded of [false, true, false, true]) {
+      const started = performance.now()
+      await act(async () => { h.mockInput.pressKey("TAB", { shift: true }); await h.flush(); await h.renderOnce() })
+      await act(async () => { await h.flush(); await h.renderOnce() })
+      samples.push({ folded, milliseconds: Number((performance.now() - started).toFixed(2)) })
+      expect(h.workspace().transcript.folded[tool]).toBe(folded)
+    }
+    console.log(`100-message App fold timings (${toolCount} tools):`, samples)
+  } finally { await h.close() }
+}, 30_000)

@@ -8,6 +8,15 @@ interface ScreenCell { char: string; x: number; y: number }
 const blockProjectionCache = new WeakMap<object, { raw: string; plain: string }>()
 type LayoutFingerprint = readonly unknown[]
 const renderedLayoutCache = new WeakMap<ScrollBoxRenderable, { fingerprint: LayoutFingerprint; layout: TranscriptLayout; originX: number; originY: number }>()
+interface ItemGeometryCache {
+  fingerprint: LayoutFingerprint
+  points: Readonly<Record<number, MeasuredPoint>>
+  originX: number
+  originY: number
+  itemX: number
+  itemY: number
+}
+const itemGeometryCache = new WeakMap<Renderable, ItemGeometryCache>()
 
 function cellsIn(renderer: CliRenderer, renderable: Renderable): ScreenCell[] {
   const measured: ScreenCell[] = []
@@ -166,33 +175,38 @@ function appendLineInfo(fingerprint: unknown[], view: TextBufferRenderable | Tex
   fingerprint.push(info.lineSources.length, ...info.lineSources, info.lineStartCols.length, ...info.lineStartCols)
 }
 
-function appendNativeFingerprint(fingerprint: unknown[], renderable: Renderable, seen: Set<Renderable>, originX: number, originY: number, includeContent = false) {
+function localPosition(renderable: Renderable, originX: number, originY: number): { x: number; y: number } {
+  const native = renderable as Renderable & { _x?: number; _y?: number }
+  return { x: native._x ?? renderable.screenX - originX, y: native._y ?? renderable.screenY - originY }
+}
+
+function appendNativeFingerprint(fingerprint: unknown[], renderable: Renderable, seen: Set<Renderable>, originX: number, originY: number, includeContent = false, includePosition = true) {
   if (seen.has(renderable)) return
   seen.add(renderable)
-  const native = renderable as Renderable & { _x?: number; _y?: number }
   // Viewport culling may freeze offscreen screen coordinates while the scroll
   // origin moves. Yoga-local coordinates describe actual content geometry and
   // remain stable across a pure scroll translation.
-  fingerprint.push(renderable, native._x ?? renderable.screenX - originX, native._y ?? renderable.screenY - originY, renderable.width, renderable.height)
+  const position = localPosition(renderable, originX, originY)
+  if (includePosition) fingerprint.push(position.x, position.y)
+  fingerprint.push(renderable.width, renderable.height)
   if (renderable instanceof TextBufferRenderable) appendLineInfo(fingerprint, renderable, includeContent)
   if (renderable instanceof MarkdownRenderable) {
-    const runtime = renderable as unknown as { _parseState?: object | null; _stableBlockCount?: number }
-    fingerprint.push(runtime._parseState, runtime._stableBlockCount, markdownBlocks(renderable).length)
+    const runtime = renderable as unknown as { _stableBlockCount?: number }
+    fingerprint.push(runtime._stableBlockCount, markdownBlocks(renderable).length)
     for (const block of markdownBlocks(renderable)) {
-      fingerprint.push(block, block.tokenRaw)
+      fingerprint.push(block.tokenRaw)
       appendNativeFingerprint(fingerprint, block.renderable, seen, renderable.screenX, renderable.screenY, true)
     }
   }
   if (renderable instanceof TextTableRenderable) {
     const runtime = renderable as unknown as TableRuntime
-    fingerprint.push(runtime._layout)
     if (runtime._layout) fingerprint.push(...runtime._layout.columnOffsets, ...runtime._layout.rowOffsets)
     for (const row of runtime._cells ?? []) for (const cell of row) appendLineInfo(fingerprint, cell.textBufferView)
   }
   for (const child of renderable.getChildren()) if ("screenX" in child) appendNativeFingerprint(fingerprint, child as Renderable, seen, renderable.screenX, renderable.screenY, includeContent)
 }
 
-function layoutFingerprint(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, state: TranscriptState): LayoutFingerprint {
+function layoutFingerprint(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, state: TranscriptState, itemFingerprints: Map<ItemId, LayoutFingerprint>): LayoutFingerprint {
   const fingerprint: unknown[] = [
     renderer.currentRenderBuffer.width,
     renderer.currentRenderBuffer.height,
@@ -204,18 +218,60 @@ function layoutFingerprint(renderer: CliRenderer, scrollbox: ScrollBoxRenderable
     state.projectionById,
     state.folded,
   ]
-  const seen = new Set<Renderable>()
   for (const itemId of state.order) {
     const projection = state.projectionById[itemId]
     fingerprint.push(itemId, projection, projection?.revision, state.folded[itemId])
     const item = scrollbox.getRenderable(`transcript-item:${itemId}`)
-    if (item) appendNativeFingerprint(fingerprint, item, seen, scrollbox.viewport.screenX - scrollbox.scrollLeft, scrollbox.viewport.screenY - scrollbox.scrollTop)
+    if (item) {
+      const position = localPosition(item, scrollbox.viewport.screenX - scrollbox.scrollLeft, scrollbox.viewport.screenY - scrollbox.scrollTop)
+      fingerprint.push(position.x, position.y)
+      const itemFingerprint: unknown[] = [projection, projection?.revision, state.folded[itemId]]
+      appendNativeFingerprint(itemFingerprint, item, new Set(), scrollbox.viewport.screenX - scrollbox.scrollLeft, scrollbox.viewport.screenY - scrollbox.scrollTop, false, false)
+      itemFingerprints.set(itemId, itemFingerprint)
+      fingerprint.push(itemFingerprint.length, ...itemFingerprint)
+    }
   }
   return fingerprint
 }
 
 function sameFingerprint(left: LayoutFingerprint, right: LayoutFingerprint): boolean {
   return left.length === right.length && left.every((value, index) => Object.is(value, right[index]))
+}
+
+function translateItemPoints(
+  cached: ItemGeometryCache,
+  originX: number,
+  originY: number,
+  itemX: number,
+  itemY: number,
+): Record<number, MeasuredPoint> {
+  const deltaX = originX + itemX - cached.originX - cached.itemX
+  const deltaY = originY + itemY - cached.originY - cached.itemY
+  const translated: Record<number, MeasuredPoint> = {}
+  for (const [offset, point] of Object.entries(cached.points)) translated[Number(offset)] = {
+    ...point,
+    screenX: point.screenX + deltaX,
+    screenY: point.screenY + deltaY,
+  }
+  return translated
+}
+
+function cacheItemPoints(
+  item: Renderable,
+  fingerprint: LayoutFingerprint,
+  points: Record<number, MeasuredPoint>,
+  originX: number,
+  originY: number,
+  itemX: number,
+  itemY: number,
+): Record<number, MeasuredPoint> {
+  const stored = Object.fromEntries(Object.entries(points).map(([offset, point]) => [offset, { ...point }]))
+  const cached = { fingerprint, points: stored, originX, originY, itemX, itemY }
+  itemGeometryCache.set(item, cached)
+  // Line construction below assigns absolute rows. Keep the cached geometry
+  // private so rebuilding one item can never mutate a layout already returned
+  // to the viewport.
+  return translateItemPoints(cached, originX, originY, itemX, itemY)
 }
 
 function cellPoint(view: TextBufferView, originX: number, originY: number, sourceOffset: number): { x: number; y: number } {
@@ -435,7 +491,8 @@ export function measureRenderedTranscript(
   scrollbox: ScrollBoxRenderable,
   state: TranscriptState,
 ): TranscriptLayout | undefined {
-  const fingerprint = layoutFingerprint(renderer, scrollbox, state)
+  const itemFingerprints = new Map<ItemId, LayoutFingerprint>()
+  const fingerprint = layoutFingerprint(renderer, scrollbox, state, itemFingerprints)
   const cached = renderedLayoutCache.get(scrollbox)
   const originX = scrollbox.viewport.screenX - scrollbox.scrollLeft
   const originY = scrollbox.viewport.screenY - scrollbox.scrollTop
@@ -454,15 +511,25 @@ export function measureRenderedTranscript(
     const item = scrollbox.getRenderable(`transcript-item:${itemId}`)
     const projection = state.projectionById[itemId]
     if (!item || !projection) continue
-    const itemPoints = measureItem(renderer, item, itemId, projection.plain)
-    if (state.folded[itemId]) {
-      const visible = Object.values(itemPoints).sort((a, b) => a.graphemeOffset - b.graphemeOffset)
-      const fallback = visible[0]
-      if (fallback) {
-        for (let offset = 0; offset <= graphemes(projection.plain).length; offset += 1) {
-          itemPoints[offset] ??= { ...fallback, graphemeOffset: offset }
+    const itemPosition = localPosition(item, originX, originY)
+    const itemFingerprint = itemFingerprints.get(itemId)!
+    const cachedItem = itemGeometryCache.get(item)
+    let itemPoints: Record<number, MeasuredPoint>
+    if (cachedItem && sameFingerprint(cachedItem.fingerprint, itemFingerprint)) {
+      itemPoints = translateItemPoints(cachedItem, originX, originY, itemPosition.x, itemPosition.y)
+    } else {
+      const measured = measureItem(renderer, item, itemId, projection.plain)
+      if (state.folded[itemId]) {
+        const visible = Object.values(measured).sort((a, b) => a.graphemeOffset - b.graphemeOffset)
+        const fallback = visible[0]
+        if (fallback) {
+          const length = graphemes(projection.plain).length
+          for (let offset = 0; offset <= length; offset += 1) {
+            measured[offset] ??= { ...fallback, graphemeOffset: offset }
+          }
         }
       }
+      itemPoints = cacheItemPoints(item, itemFingerprint, measured, originX, originY, itemPosition.x, itemPosition.y)
     }
     points[itemId] = itemPoints
     const byRow = new Map<number, MeasuredPoint[]>()

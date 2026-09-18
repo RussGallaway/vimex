@@ -133,3 +133,14 @@ Features that do not exercise this path should not delay validation of the trans
 - Shared slash and Ex actions, bottom-bar completion, and direct model arguments.
 - `/skills`: discover current-directory skills via the app-server catalog, handle catalog invalidation, and present a keyboard picker.
 - Preserve path-qualified skill references in drafts, queued messages, retries, and steering; send structured skill inputs through the adapter rather than relying on ambiguous name text.
+
+
+## UX improvements identified during fold review
+
+These are follow-up candidates, not completed features or changes to v1 acceptance gates:
+
+- Collapsed tool summaries: show output line counts and preserve visible failure/status information so users can decide what to expand.
+- Code-block actions: keyboard copy for a complete fenced block, with clear confirmation; investigate independent fenced-block folding (currently folds apply to transcript tool/reasoning/edit items).
+- Dedicated `/diff` and `:diff` review: source-labeled file/hunk navigation as described in `diff-review.md`.
+- Fold-aware semantic navigation: clarify whether word motions traverse hidden content or skip closed blocks. Current semantic navigation may reveal a closed target; avoid changing that behavior silently while repairing performance.
+- Large-history cold loading: keep the composer responsive while native Markdown geometry settles. Warm navigation improvements do not eliminate initial settlement work.

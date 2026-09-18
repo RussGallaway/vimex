@@ -1,3 +1,4 @@
+import { vimFoldBindings } from "./fold-bindings"
 import type { UiBinding, VimBindingContext } from "./binding-context"
 import { countBindings } from "./binding-context"
 import { transcriptBindings } from "./transcript-bindings"
@@ -16,7 +17,7 @@ export function visualBindings(ctx: VimBindingContext): UiBinding[] {
       }
     } },
     ...(ctx.interaction.surface === "transcript"
-      ? [...countBindings(ctx), ...transcriptBindings(ctx)]
+      ? [...countBindings(ctx), ...transcriptBindings(ctx), ...vimFoldBindings(ctx)]
       : [
           ...Array.from({ length: 10 }, (_, digit) => ({ key: `${digit}`, cmd: () => ctx.runComposerKey(`${digit}`) })),
           ...["h", "j", "k", "l", "w", "b", "e", "0", "^", "$", "g", "shift+g", "d", "x", "c"].map((key) => ({ key, cmd: () => ctx.runComposerKey(key) })),

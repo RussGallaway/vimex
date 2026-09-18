@@ -24,8 +24,11 @@ export function useTranscriptLayout(options: {
   const [rendered, setRendered] = useState<{ threadId?: ThreadId; layout: TranscriptLayout }>()
   const pendingAnchor = useRef(false)
   const pendingRestore = useRef(false)
-  const estimated = useMemo(() => buildTranscriptLayout(transcript, Math.max(8, width - 7)),
-    [transcript.order, transcript.projectionById, transcript.folded, width])
+  const hasMeasuredLayout = rendered !== undefined && rendered.threadId === threadId
+  // Estimated wrapping is only a startup fallback. Rewrapping the whole history
+  // on each fold wastes work once native geometry is available.
+  const estimated = useMemo(() => hasMeasuredLayout ? undefined : buildTranscriptLayout(transcript, Math.max(8, width - 7)),
+    [hasMeasuredLayout, transcript.order, transcript.projectionById, transcript.folded, width])
   useLayoutEffect(() => {
     measuredLayout.current = undefined
     pendingAnchor.current = false
@@ -84,5 +87,5 @@ export function useTranscriptLayout(options: {
     renderer.requestRender()
     return () => { renderer.off(CliRenderEvents.FRAME, measure) }
   }, [controller, renderer, scrollRef])
-  return { layout: rendered && rendered.threadId === threadId ? rendered.layout : estimated, measuredLayout, onManualScroll }
+  return { layout: hasMeasuredLayout ? rendered!.layout : estimated!, measuredLayout, onManualScroll }
 }

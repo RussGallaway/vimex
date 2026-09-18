@@ -1,3 +1,4 @@
+import { vimFoldBindings } from "./fold-bindings"
 import type { UiBinding, VimBindingContext } from "./binding-context"
 import { countBindings } from "./binding-context"
 import { transcriptBindings } from "./transcript-bindings"
@@ -26,11 +27,7 @@ export function normalBindings(ctx: VimBindingContext): UiBinding[] {
       { key: "gx", cmd: () => ctx.controller.transcript({ type: "url.open" }) },
     ] satisfies UiBinding[] : []),
     { key: "f", cmd: () => ctx.controller.requestFork(ctx.transcript.cursor?.itemId) },
-    { key: "za", cmd: () => ctx.transcript.cursor && ctx.controller.transcript({ type: "fold.set", itemId: ctx.transcript.cursor.itemId, folded: !ctx.transcript.folded[ctx.transcript.cursor.itemId] }) },
-    { key: "zo", cmd: () => ctx.transcript.cursor && ctx.controller.transcript({ type: "fold.set", itemId: ctx.transcript.cursor.itemId, folded: false }) },
-    { key: "zc", cmd: () => ctx.transcript.cursor && ctx.controller.transcript({ type: "fold.set", itemId: ctx.transcript.cursor.itemId, folded: true }) },
-    { key: "zshift+r", cmd: () => ctx.controller.transcript({ type: "fold.all", folded: false }) },
-    { key: "zshift+m", cmd: () => ctx.controller.transcript({ type: "fold.all", folded: true }) },
+    ...vimFoldBindings(ctx),
     ...(ctx.interaction.surface === "composer" ? [
       ...["h", "j", "k", "l", "w", "b", "e", "^", "$", "g", "d", "shift+g", "x", "u", "ctrl+r", "shift+r", "shift+d", "shift+c", "p", "shift+p", "o", "shift+o", "shift+i", "shift+a", "return"]
         .map((key) => ({ key, cmd: () => ctx.runComposerKey(key) })),

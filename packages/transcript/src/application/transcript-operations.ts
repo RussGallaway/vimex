@@ -41,10 +41,13 @@ export function swapSelection(state: TranscriptState): TranscriptState {
 }
 export function clearSelection(state: TranscriptState): TranscriptState { return { ...state, selection: undefined } }
 export function setFold(state: TranscriptState, id: ItemId, folded: boolean): TranscriptState {
+  if (Object.hasOwn(state.folded, id) && state.folded[id] === folded) return state
   return { ...state, folded: { ...state.folded, [id]: folded } }
 }
 export function setAllFolds(state: TranscriptState, folded: boolean): TranscriptState {
-  return { ...state, folded: Object.fromEntries(state.order.map((id) => [id, folded])) }
+  const ids = state.order.filter(id => state.projectionById[id]?.nodeKind !== "message")
+  if (Object.keys(state.folded).length === ids.length && ids.every(id => state.folded[id] === folded)) return state
+  return { ...state, folded: Object.fromEntries(ids.map(id => [id, folded])) }
 }
 function comparePoint(state: TranscriptState, a: LogicalPoint, b: LogicalPoint): number {
   const ai = state.order.indexOf(a.itemId)
