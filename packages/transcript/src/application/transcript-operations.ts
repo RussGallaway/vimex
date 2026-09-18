@@ -11,9 +11,11 @@ export function moveCursor(state: TranscriptState, point: LogicalPoint, preferre
 }
 export function anchorViewport(state: TranscriptState, point: LogicalPoint, preferredScreenRow: number): TranscriptState {
   const projection = state.projectionById[point.itemId]
-  const anchored = projection
-    ? { ...point, graphemeOffset: Math.max(0, Math.min(point.graphemeOffset, projection.sourceSpans.length)) }
-    : point
+  // Ignore stale renderer anchors after a session/item change. Invalid numeric
+  // positions cannot name a semantic grapheme and must not detach the viewport.
+  if (!projection || !state.order.includes(point.itemId) || !Number.isFinite(point.graphemeOffset) || !Number.isFinite(preferredScreenRow)) return state
+  const anchored = { ...point, graphemeOffset: Math.max(0, Math.min(Math.trunc(point.graphemeOffset), projection.sourceSpans.length)) }
+  preferredScreenRow = Math.trunc(preferredScreenRow)
   if (state.viewport.kind === "point"
     && state.viewport.point.itemId === anchored.itemId
     && state.viewport.point.graphemeOffset === anchored.graphemeOffset

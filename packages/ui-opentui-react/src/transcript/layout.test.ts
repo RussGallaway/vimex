@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { itemId } from "@vimex/conversation"
-import { initialTranscript, projectMarkdown, type TranscriptState } from "@vimex/transcript"
+import { graphemeCount, initialTranscript, projectMarkdown, type TranscriptState } from "@vimex/transcript"
 import { buildTranscriptLayout, graphemeCellWidth, movePoint, selectedRangeForItem } from "./layout"
 
 const first = itemId("first")
@@ -21,7 +21,7 @@ describe("transcript visual layout", () => {
   test("maps vertical motions to exact grapheme offsets across wrapped rows", () => {
     const layout = buildTranscriptLayout(stateFor("abcdEFGH"), 4)
     expect(layout.lines).toEqual([
-      { itemId: first, from: 0, to: 4, row: 0 },
+      { itemId: first, from: 0, to: 3, row: 0 },
       { itemId: first, from: 4, to: 8, row: 1 },
     ])
     expect(movePoint(layout, { itemId: first, graphemeOffset: 2 }, "down")).toEqual({
@@ -30,13 +30,24 @@ describe("transcript visual layout", () => {
     expect(movePoint(layout, { itemId: first, graphemeOffset: 6 }, "up")).toEqual({
       point: { itemId: first, graphemeOffset: 2 }, preferredScreenRow: 0,
     })
+    expect(movePoint(layout, { itemId: first, graphemeOffset: 2 }, "line-end")?.point.graphemeOffset).toBe(3)
+    expect(movePoint(layout, { itemId: first, graphemeOffset: 3 }, "right")?.point.graphemeOffset).toBe(4)
   })
 
   test("counts emoji as one logical point while respecting its terminal width", () => {
     const layout = buildTranscriptLayout(stateFor("a🙂bc"), 3)
     expect(layout.lines).toEqual([
-      { itemId: first, from: 0, to: 2, row: 0 },
+      { itemId: first, from: 0, to: 1, row: 0 },
       { itemId: first, from: 2, to: 4, row: 1 },
+    ])
+    expect(movePoint(layout, { itemId: first, graphemeOffset: 1 }, "right")?.point.graphemeOffset).toBe(2)
+  })
+
+  test("assigns newline cursor positions to the following logical row", () => {
+    const layout = buildTranscriptLayout(stateFor("ab\ncd"), 20)
+    expect(layout.lines).toEqual([
+      { itemId: first, from: 0, to: 1, row: 0 },
+      { itemId: first, from: 2, to: 5, row: 1 },
     ])
     expect(movePoint(layout, { itemId: first, graphemeOffset: 1 }, "right")?.point.graphemeOffset).toBe(2)
   })
@@ -63,8 +74,22 @@ test("combining marks do not erase the terminal width of their base grapheme", (
   expect(graphemeCellWidth("界́")).toBe(2)
   expect(graphemeCellWidth("́")).toBe(0)
   expect(buildTranscriptLayout(stateFor("éabc"), 2).lines).toEqual([
-    { itemId: first, from: 0, to: 2, row: 0 },
+    { itemId: first, from: 0, to: 1, row: 0 },
     { itemId: first, from: 2, to: 4, row: 1 },
+  ])
+})
+
+test("uses terminal cell widths for flags, keycaps, and supplementary CJK", () => {
+  expect(graphemeCellWidth("🇺🇸")).toBe(2)
+  expect(graphemeCellWidth("1️⃣")).toBe(2)
+  expect(graphemeCellWidth("𠀀")).toBe(2)
+})
+
+test("estimated geometry keeps folded content on one visual row", () => {
+  const state = stateFor("one two three four")
+  const folded = { ...state, folded: { [first]: true } }
+  expect(buildTranscriptLayout(folded, 4).lines).toEqual([
+    { itemId: first, from: 0, to: graphemeCount("one two three four"), row: 0 },
   ])
 })
 

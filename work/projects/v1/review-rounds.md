@@ -23,4 +23,19 @@ Validation: full check passed 317 tests, 1,685 assertions, four snapshots, TypeS
 
 ## Round 2
 
-Pending the verified round-1 commit. Reviewers will rotate ownership and examine the committed result for correctness, cache invalidation, lifecycle, and design regressions.
+Baseline: `7cb7c4e` (round 1 committed before review 2). Three parallel reviewers rotated responsibility across geometry, full-App rendering, and pure transcript behavior; the final diff review extended the second round.
+
+Findings and repairs:
+
+- Culled offscreen Markdown retained old screen coordinates, invalidating the entire geometry cache on scroll. Fingerprints now use native parent-local coordinates; scroll translation reuses logical geometry.
+- Real asynchronous Markdown/table reflow now reapplies detached reading anchors. Focus changes alone do not reveal an offscreen cursor or move the reading position.
+- Cursor movement within very large messages reveals the measured cell, rather than attempting to reveal the whole message.
+- Stable transcript rows are memoized; status-only item updates reuse text projections. Invalid/stale anchors and nonfinite navigation counts are normalized or rejected at the semantic boundary.
+- Estimated row endpoints, folded rows, and Unicode terminal-cell widths now agree more closely with native geometry.
+- Tool calls start collapsed; file-change diffs start expanded. Explicit fold choices are preserved.
+- File-change metadata retains per-file paths, actions, rename targets, and exact patches. Cards show accurate hunk counts, use native syntax-language identifiers, and explain absent textual patches. See [OpenCode diff review](diff-review.md) for inspected source and the separate review-screen direction.
+- Split diffs require dedicated canonical-source-to-column mapping, rather than scanning interleaved screen text. Regression coverage includes native diff geometry.
+
+Performance evidence: the reproducible 135,389-character single-item benchmark measured warm geometry 0.120 ms, anchor lookup 0.216 ms, and native frame 0.139 ms. The opt-in full-App benchmark with 100 historical Markdown items measured warm Ctrl-U/D settling at 23–25 ms, versus roughly 610 ms before the culling repair. First input immediately after injecting an unsettled 100-item history still took about 1.3 seconds in the synthetic benchmark. Initial native content settlement remains an optimization target; these results do not establish cold-load instant scrolling. Changed Markdown still requires full projection parsing (54.6 KB with one-character deltas averaged about 8.5 ms in a separate pure projection diagnostic).
+
+Validation: eight offline real-PTY interaction checks pass, with reconstructed terminal screenshots in `/tmp/vimex-visual-e2e`. Timing fixtures are opt-in (`VIMEX_PROFILE_TUI=1`), not machine-dependent CI gates. Final full-suite counts are recorded in `implementation-status.md`.

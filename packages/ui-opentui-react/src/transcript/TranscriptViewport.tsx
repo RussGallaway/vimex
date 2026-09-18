@@ -2,7 +2,7 @@ import { LinearScrollAccel, type ScrollBoxRenderable, type SyntaxStyle } from "@
 import type { ConversationItem } from "@vimex/conversation"
 import type { InteractionState } from "@vimex/interaction"
 import type { TranscriptState } from "@vimex/transcript"
-import { useMemo, type RefObject } from "react"
+import { memo, useMemo, type RefObject } from "react"
 import { selectedRangeForItem } from "./layout"
 import { emberTide } from "../theme"
 import { TranscriptNode } from "./TranscriptNode"
@@ -54,20 +54,23 @@ export function TranscriptViewport(props: {
         const current = cursorId === item.id && props.interaction.surface === "transcript"
         const selected = Boolean(selectedRangeForItem(props.state, item.id))
         return (
-          <box
-            id={`transcript-item:${item.id}`}
-            key={item.id}
-            flexShrink={0}
-            marginBottom={1}
-            border={["left"]}
-            borderColor={selected ? emberTide.amber : current ? emberTide.blueBright : emberTide.borderMuted}
-            paddingLeft={2}
-            backgroundColor={item.kind === "user" ? emberTide.backgroundPanel : emberTide.background}
-          >
-            <TranscriptNode item={item} folded={folded} syntax={props.syntax} />
-          </box>
+          <TranscriptRow key={item.id} item={item} folded={folded} current={current} selected={selected} syntax={props.syntax} />
         )
       })}
     </scrollbox>
   )
 }
+
+
+// Stable historical rows skip Markdown reconciliation during typing and scrolling.
+const TranscriptRow = memo(function TranscriptRow(props: {
+  item: ConversationItem; folded: boolean; current: boolean; selected: boolean; syntax: SyntaxStyle
+}) {
+  return (
+    <box id={`transcript-item:${props.item.id}`} flexShrink={0} marginBottom={1}
+      border={["left"]} borderColor={props.selected ? emberTide.amber : props.current ? emberTide.blueBright : emberTide.borderMuted}
+      paddingLeft={2} backgroundColor={props.item.kind === "user" ? emberTide.backgroundPanel : emberTide.background}>
+      <TranscriptNode item={props.item} folded={props.folded} syntax={props.syntax} />
+    </box>
+  )
+})

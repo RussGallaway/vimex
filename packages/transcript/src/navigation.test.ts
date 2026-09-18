@@ -114,9 +114,18 @@ describe("transcript search", () => {
     for (let index = 0; index < 300; index++) state = syncTranscriptItem(state, message(`search-${index}`, "a ".repeat(40)))
     const matches = findSearchMatches(state, "a")
     const point = { itemId: itemId("search-150"), graphemeOffset: 20 }
-    const start = performance.now()
-    for (let index = 0; index < 100; index++) adjacentSearchMatch(state, matches, "forward", point)
-    expect(performance.now() - start).toBeLessThan(100)
+    let matchReads = 0, orderReads = 0
+    const observedMatches = new Proxy(matches, { get(target, key, receiver) {
+      if (typeof key === "string" && /^\d+$/.test(key)) matchReads++
+      return Reflect.get(target, key, receiver)
+    } })
+    const observedOrder = new Proxy(state.order, { get(target, key, receiver) {
+      if (typeof key === "string" && /^\d+$/.test(key)) orderReads++
+      return Reflect.get(target, key, receiver)
+    } })
+    expect(adjacentSearchMatch({ ...state, order: observedOrder }, observedMatches, "forward", point)?.from).toEqual({ ...point, graphemeOffset: 22 })
+    expect(matchReads).toBeLessThanOrEqual(Math.ceil(Math.log2(matches.length)) + 2)
+    expect(orderReads).toBeLessThanOrEqual(state.order.length)
   })
 })
 
@@ -138,10 +147,13 @@ describe("Vim transcript word motions", () => {
   test("short motions do not segment unrelated large transcript items", () => {
     let state = initialTranscript()
     for (let index = 0; index < 100; index++) state = syncTranscriptItem(state, message(`word-${index}`, "alpha beta gamma delta https://example.test\n".repeat(100)))
-    const start = performance.now()
+    const accessed: string[] = []
+    state = { ...state, projectionById: Object.fromEntries(Object.entries(state.projectionById).map(([id, projection]) => [id, {
+      ...projection, get plain() { accessed.push(id); return projection.plain },
+    }])) }
     const target = moveByWord(state, "next", { itemId: itemId("word-0"), graphemeOffset: 0 })
     expect(target).toEqual({ itemId: itemId("word-0"), graphemeOffset: 6 })
-    expect(performance.now() - start).toBeLessThan(50)
+    expect(accessed).toEqual(["word-0"])
   })
 
   test("crosses empty items and newlines without splitting Unicode graphemes", () => {
@@ -168,4 +180,16 @@ describe("Vim transcript word motions", () => {
     state = moveCursor(state, moveByWord(state, "end")!)
     expect(selectedText(state, "plain")).toBe("café next")
   })
+})
+
+
+test("URL and block motions normalize counts consistently with search and word motions", () => {
+  const state = syncTranscriptItem(initialTranscript(), message("a", "intro\n\n[one](https://one.test)\n\n[two](https://two.test)"))
+  const origin = { itemId: itemId("a"), graphemeOffset: 0 }
+  for (const count of [NaN, Infinity, -Infinity, 0, -3, 1.9]) {
+    expect(moveByUrl(state, "forward", origin, { count })).toEqual(urlCandidates(state)[0]!.from)
+    expect(moveBySemanticBlock(state, "forward", origin, count)).toEqual(semanticBlocks(state)[1]!.from)
+  }
+  expect(moveByUrl(state, "forward", origin, { count: 3, wrap: true })).toEqual(urlCandidates(state)[0]!.from)
+  expect(moveByUrl(state, "forward", origin, { count: 3, wrap: false })).toBeUndefined()
 })

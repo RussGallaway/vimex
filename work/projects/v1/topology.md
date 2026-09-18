@@ -236,3 +236,6 @@ The tree describes ownership, not a demand for empty packages. Start with the ve
 ## Implemented transcript coordination
 
 Within `packages/ui-opentui-react/src/transcript`, `use-transcript-layout.ts` coordinates frame measurement and reading-anchor restoration, `rendered-layout.ts` maps native cells, `layout.ts` provides visual-row navigation, and `TranscriptViewport.tsx` owns native scrolling input. `app/App.tsx` composes these capabilities rather than owning their geometry lifecycle. Pure semantic navigation and viewport anchors remain under `packages/transcript/src/application`.
+
+
+File-change presentation remains under `packages/ui-opentui-react/src/transcript/`: `FileChange.tsx` renders per-file patches, `diff-summary.ts` owns presentation counts and native language names, and `diff-layout.test.tsx` validates source-to-screen mapping through `rendered-layout.ts`. Server metadata mapping remains in the Codex adapter; no Git or filesystem responsibility is added to transcript rendering.

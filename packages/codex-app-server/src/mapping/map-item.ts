@@ -17,6 +17,7 @@ export function mapThreadItem(item: ThreadItem, ownerTurnId: string, completed: 
     case "commandExecution": return { id, turnId: owner, kind: "command", title: commandTitle(item.command, item.commandActions ?? []), executionCommand: item.command, detail: item.aggregatedOutput ?? "", durationMs: item.durationMs ?? undefined, status: mapItemStatus(item.status) }
     case "fileChange": return {
       id, turnId: owner, kind: "edit", title: item.changes.map(change => change.path).join(", ") || "File changes",
+      changes: item.changes.map(change => ({ path: change.path, action: change.kind.type, ...(change.kind.type === "update" && change.kind.move_path ? { movePath: change.kind.move_path } : {}), patch: change.diff })),
       patch: item.changes.map(change => change.diff).filter(Boolean).join("\n"), status: mapItemStatus(item.status),
     }
     case "mcpToolCall": return toolItem(id, owner, `${item.server} · ${item.tool}`, item.result ?? item.error ?? item.arguments, mapItemStatus(item.status), item.durationMs)

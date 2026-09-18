@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
 import { testRender } from "@opentui/react/test-utils"
-import { act, useSyncExternalStore } from "react"
+import { act, Profiler, useSyncExternalStore } from "react"
 import { itemId, threadId, turnId, type ConversationGateway } from "@vimex/conversation"
 import type { ApprovalGateway } from "@vimex/approvals"
 import { VimexController, type ModelCatalog, type RuntimeConnection, type RuntimeEvent } from "@vimex/workbench"
@@ -9,6 +9,9 @@ import { VimexRoot } from "../index"
 
 const thread = threadId("wheel-thread")
 const answer = itemId("wheel-answer")
+// Opt-in end-to-end profiling (includes native frames and React commits):
+// VIMEX_PROFILE_TUI=1 bun test packages/ui-opentui-react/src/transcript/wheel-interaction.test.tsx -t 'full App'
+const profileTest = process.env.VIMEX_PROFILE_TUI === "1" ? test : test.skip
 
 async function wheelHarness() {
   let emit: (event: RuntimeEvent) => void = () => {}
@@ -27,9 +30,13 @@ async function wheelHarness() {
   emit({ type: "conversation", event: { type: "item.started", threadId: thread, item: {
     id: answer, turnId: turnId("wheel-turn"), kind: "assistant", markdown: Array.from({ length: 60 }, (_, index) => `Line ${index} readable output`).join("\n\n"), status: "running",
   } } })
+  const reactCommits: number[] = []
   function Harness() {
     const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
-    return <VimexRoot state={state} controller={controller} />
+    const root = <VimexRoot state={state} controller={controller} />
+    return process.env.VIMEX_PROFILE_TUI === "1"
+      ? <Profiler id="app" onRender={(_id, _phase, duration) => reactCommits.push(duration)}>{root}</Profiler>
+      : root
   }
   let setup!: Awaited<ReturnType<typeof testRender>>
   await act(async () => { setup = await testRender(<Harness />, { width: 80, height: 24 }); await setup.flush() })
@@ -43,7 +50,7 @@ async function wheelHarness() {
     await act(async () => { await setup.flush(); await setup.renderOnce() })
   }
   const close = async () => { await act(async () => setup.renderer.destroy()); await controller.close() }
-  return { ...setup, controller, emit: (event: RuntimeEvent) => emit(event), workspace, keys, close }
+  return { ...setup, reactCommits, controller, emit: (event: RuntimeEvent) => emit(event), workspace, keys, close }
 }
 
 
@@ -130,5 +137,91 @@ test("wheel preserves transcript Visual selection and only explicit follow reatt
     expect(scrollbox.scrollTop).toBe(bottom)
     expect(scrollbox.stickyScroll).toBe(false)
     expect(h.workspace().transcript.viewport.kind).toBe("point")
+  } finally { await h.close() }
+})
+
+
+profileTest("full App half-page scrolling stays bounded on a large streamed answer", async () => {
+  const h = await wheelHarness()
+  try {
+    await act(async () => {
+      h.emit({ type: "conversation", event: { type: "item.delta", threadId: thread, itemId: answer,
+        delta: "\n\n" + Array.from({ length: 1500 }, (_, index) => `Paragraph ${index} **readable output** ${"wide content ".repeat(5)}`).join("\n\n") } })
+      h.controller.dispatchInteraction({ type: "focus.set", surface: "composer" })
+      await h.flush()
+    })
+    await act(async () => { await h.flush(); await h.renderOnce() })
+    let transactions = 0
+    const unsubscribe = h.controller.subscribe(() => transactions++)
+    const samples: number[] = []
+    const transactionCounts: number[] = []
+    for (const key of ["u", "d", "u", "d", "u", "d"]) {
+      transactions = 0
+      const started = performance.now()
+      await act(async () => { h.mockInput.pressKey(key, { ctrl: true }); await h.flush(); await h.renderOnce() })
+      await act(async () => { await h.flush(); await h.renderOnce() })
+      samples.push(performance.now() - started)
+      transactionCounts.push(transactions)
+    }
+    unsubscribe()
+    console.log("App Ctrl-U/D milliseconds:", samples.map(value => Number(value.toFixed(2))), "transactions:", transactionCounts)
+    expect(Math.max(...samples)).toBeLessThan(1000)
+    expect(Math.max(...transactionCounts)).toBeLessThanOrEqual(1)
+    expect(h.workspace().interaction.surface).toBe("composer")
+  } finally { await h.close() }
+})
+
+test("Normal cursor remains visible while crossing the viewport inside one long answer", async () => {
+  const h = await wheelHarness()
+  try {
+    await h.keys("gg")
+    expect(h.renderer.getCursorState().visible).toBe(true)
+    for (let index = 0; index < 20; index++) {
+      await h.keys("j")
+      expect(h.renderer.getCursorState().visible).toBe(true)
+    }
+  } finally { await h.close() }
+})
+
+
+profileTest("measures full App scrolling with many historical Markdown items and preserves draft editing", async () => {
+  const h = await wheelHarness()
+  try {
+    await act(async () => {
+      for (let index = 0; index < 100; index++) h.emit({ type: "conversation", event: { type: "item.started", threadId: thread, item: {
+        id: itemId(`history-${index}`), turnId: turnId(`turn-${index}`), kind: "assistant", status: "complete",
+        markdown: `## Historical answer ${index}\n\n${"Historical **Markdown** with a [reference](https://example.com).\n\n".repeat(8)}`,
+      } } })
+      h.controller.dispatchInteraction({ type: "focus.set", surface: "composer" })
+      await h.flush()
+    })
+    await act(async () => { await h.flush(); await h.renderOnce() })
+    let frameCount = 0
+    let frameCallbacks = 0
+    const originalEmit = h.renderer.emit.bind(h.renderer)
+    h.renderer.emit = (event, ...args) => {
+      if (event !== "frame") return originalEmit(event, ...args)
+      const started = performance.now()
+      const result = originalEmit(event, ...args)
+      frameCount++; frameCallbacks += performance.now() - started
+      return result
+    }
+    const samples: object[] = []
+    for (const key of ["u", "d", "u", "d"]) {
+      frameCount = 0; frameCallbacks = 0; h.reactCommits.length = 0
+      const started = performance.now()
+      let dispatch = 0
+      await act(async () => {
+        h.mockInput.pressKey(key, { ctrl: true })
+        dispatch = performance.now() - started
+        await h.flush(); await h.renderOnce()
+      })
+      await act(async () => { await h.flush(); await h.renderOnce() })
+      samples.push({ key, dispatch: Number(dispatch.toFixed(2)), settled: Number((performance.now() - started).toFixed(2)), frameCount, frameCallbacks: Number(frameCallbacks.toFixed(2)), reactCommits: h.reactCommits.map(v => Number(v.toFixed(2))) })
+    }
+    console.log("100-item App Ctrl-U/D timings:", samples)
+    await h.keys("iDraft stays editable")
+    expect(h.workspace().composer.text).toBe("Draft stays editable")
+    expect(h.workspace().interaction).toMatchObject({ mode: "insert", surface: "composer" })
   } finally { await h.close() }
 })

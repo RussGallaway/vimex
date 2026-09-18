@@ -132,7 +132,7 @@ Named commands are the stable interaction API; keybindings invoke commands rathe
 - Agent text renders as streaming Markdown.
 - Reasoning is visually subordinate and collapsible.
 - Tool calls use compact semantic cards with state, duration, and a short preview.
-- File edits use syntax-aware diffs, split on wide terminals and unified on narrow terminals.
+- File edits use syntax-aware diffs, expanded by default, split on wide terminals and unified on narrow terminals. Tool calls start collapsed. Explicit user fold choices survive streaming updates and view restoration.
 - Running items visibly update without causing completed content to jump unnecessarily.
 - Unknown Codex items remain visible as inspectable diagnostic cards.
 

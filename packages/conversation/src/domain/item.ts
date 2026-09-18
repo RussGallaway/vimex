@@ -3,5 +3,5 @@ export type ItemStatus = "running" | "complete" | "error" | "interrupted"
 export type ConversationItem = { durationMs?: number } & (
   | { id: ItemId; turnId: TurnId; kind: "user" | "assistant" | "reasoning"; markdown: string; status: ItemStatus }
   | { id: ItemId; turnId: TurnId; kind: "command" | "tool"; title: string; detail: string; executionCommand?: string; status: ItemStatus }
-  | { id: ItemId; turnId: TurnId; kind: "edit"; title: string; patch: string; status: ItemStatus }
+  | { id: ItemId; turnId: TurnId; kind: "edit"; title: string; patch: string; changes?: readonly { path: string; action: "add" | "delete" | "update"; movePath?: string; patch: string }[]; status: ItemStatus }
   | { id: ItemId; turnId: TurnId; kind: "unknown"; title: string; detail: string; status: ItemStatus })

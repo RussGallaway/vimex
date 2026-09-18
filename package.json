@@ -20,7 +20,8 @@
     "test:integration": "bun test tests/integration plugins/herdr",
     "test:contract": "bun test tests/contract",
     "test:ui": "bun test packages/ui-opentui-react",
-    "test:e2e": "bun test tests/terminal"
+    "test:e2e": "bun test tests/terminal",
+    "benchmark:transcript": "bun scripts/benchmark-transcript-scroll.tsx"
   },
   "dependencies": {
     "@opentui/core": "0.5.11",

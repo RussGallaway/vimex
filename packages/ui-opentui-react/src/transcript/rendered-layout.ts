@@ -1,4 +1,4 @@
-import { MarkdownRenderable, TextBufferRenderable, TextTableRenderable, type BlockState, type CliRenderer, type Renderable, type ScrollBoxRenderable, type TextBufferView } from "@opentui/core"
+import { DiffRenderable, MarkdownRenderable, TextBufferRenderable, TextTableRenderable, type BlockState, type CliRenderer, type Renderable, type ScrollBoxRenderable, type TextBufferView } from "@opentui/core"
 import type { ItemId } from "@vimex/conversation"
 import { graphemes, projectMarkdown, type LogicalPoint, type TranscriptState } from "@vimex/transcript"
 import type { MeasuredPoint, TranscriptLayout, VisualLine } from "./layout"
@@ -169,14 +169,18 @@ function appendLineInfo(fingerprint: unknown[], view: TextBufferRenderable | Tex
 function appendNativeFingerprint(fingerprint: unknown[], renderable: Renderable, seen: Set<Renderable>, originX: number, originY: number, includeContent = false) {
   if (seen.has(renderable)) return
   seen.add(renderable)
-  fingerprint.push(renderable, renderable.screenX - originX, renderable.screenY - originY, renderable.width, renderable.height)
+  const native = renderable as Renderable & { _x?: number; _y?: number }
+  // Viewport culling may freeze offscreen screen coordinates while the scroll
+  // origin moves. Yoga-local coordinates describe actual content geometry and
+  // remain stable across a pure scroll translation.
+  fingerprint.push(renderable, native._x ?? renderable.screenX - originX, native._y ?? renderable.screenY - originY, renderable.width, renderable.height)
   if (renderable instanceof TextBufferRenderable) appendLineInfo(fingerprint, renderable, includeContent)
   if (renderable instanceof MarkdownRenderable) {
     const runtime = renderable as unknown as { _parseState?: object | null; _stableBlockCount?: number }
     fingerprint.push(runtime._parseState, runtime._stableBlockCount, markdownBlocks(renderable).length)
     for (const block of markdownBlocks(renderable)) {
       fingerprint.push(block, block.tokenRaw)
-      appendNativeFingerprint(fingerprint, block.renderable, seen, originX, originY, true)
+      appendNativeFingerprint(fingerprint, block.renderable, seen, renderable.screenX, renderable.screenY, true)
     }
   }
   if (renderable instanceof TextTableRenderable) {
@@ -185,7 +189,7 @@ function appendNativeFingerprint(fingerprint: unknown[], renderable: Renderable,
     if (runtime._layout) fingerprint.push(...runtime._layout.columnOffsets, ...runtime._layout.rowOffsets)
     for (const row of runtime._cells ?? []) for (const cell of row) appendLineInfo(fingerprint, cell.textBufferView)
   }
-  for (const child of renderable.getChildren()) if ("screenX" in child) appendNativeFingerprint(fingerprint, child as Renderable, seen, originX, originY, includeContent)
+  for (const child of renderable.getChildren()) if ("screenX" in child) appendNativeFingerprint(fingerprint, child as Renderable, seen, renderable.screenX, renderable.screenY, includeContent)
 }
 
 function layoutFingerprint(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, state: TranscriptState): LayoutFingerprint {
@@ -295,9 +299,134 @@ function measureMarkdown(renderer: CliRenderer, markdown: MarkdownRenderable, it
   return fillPointGaps(itemId, text, result)
 }
 
+interface DiffRuntime {
+  diff: string
+  leftCodeRenderable?: TextBufferRenderable | null
+  rightCodeRenderable?: TextBufferRenderable | null
+}
+
+function measureDiff(renderer: CliRenderer, diff: DiffRenderable, itemId: ItemId): Record<number, MeasuredPoint> {
+  const runtime = diff as unknown as DiffRuntime
+  const sides = {
+    left: runtime.leftCodeRenderable ?? undefined,
+    right: runtime.rightCodeRenderable ?? undefined,
+  }
+  const sideState = Object.fromEntries(Object.entries(sides).map(([name, side]) => {
+    const lines = side?.plainText.split("\n") ?? []
+    const starts: number[] = []
+    let offset = 0
+    for (const line of lines) { starts.push(offset); offset += graphemes(line).length + 1 }
+    return [name, { side, lines, starts, cursor: 0, points: side ? measureRaw(renderer, side, itemId, side.plainText) : {} }]
+  })) as Record<"left" | "right", { side?: TextBufferRenderable; lines: string[]; starts: number[]; cursor: number; points: Record<number, MeasuredPoint> }>
+  const result: Record<number, MeasuredPoint> = {}
+  const sourceLines = runtime.diff.split("\n")
+  const sourceOffsets: number[] = []
+  let sourceOffset = 0
+  for (const line of sourceLines) { sourceOffsets.push(sourceOffset); sourceOffset += graphemes(line).length + 1 }
+  let inHunk = false
+  let oldRemaining = 0
+  let newRemaining = 0
+  const consume = (sideName: "left" | "right", content: string, at: number, map: boolean) => {
+    const side = sideState[sideName].side ? sideState[sideName] : sideState.left
+    let row = -1
+    for (let index = side.cursor; index < side.lines.length; index++) {
+      if (side.lines[index] === content) { row = index; break }
+    }
+    if (row < 0) return
+    side.cursor = row + 1
+    if (!map) return
+    const base = side.starts[row]!
+    const contentLength = graphemes(content).length
+    const visualRow = side.side?.lineInfo.lineSources.findIndex(source => source === row) ?? -1
+    const first = side.points[base] ?? (side.side && visualRow >= 0 ? {
+      itemId, graphemeOffset: base, row: visualRow, column: 0,
+      screenX: side.side.screenX, screenY: side.side.screenY + visualRow,
+    } : undefined)
+    if (first) result[at] = { ...first, graphemeOffset: at }
+    for (let local = 0; local < contentLength; local++) {
+      const point = side.points[base + local]
+      if (point) result[at + 1 + local] = { ...point, graphemeOffset: at + 1 + local }
+    }
+  }
+  for (let lineIndex = 0; lineIndex < sourceLines.length; lineIndex++) {
+    const line = sourceLines[lineIndex]!
+    const header = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))?/.exec(line)
+    if (header) {
+      inHunk = true
+      oldRemaining = Number(header[1] ?? 1)
+      newRemaining = Number(header[2] ?? 1)
+      continue
+    }
+    if (!inHunk) continue
+    const marker = line[0]
+    if (marker === " ") {
+      const content = line.slice(1)
+      consume("left", content, sourceOffsets[lineIndex]!, true)
+      if (sideState.right.side) consume("right", content, sourceOffsets[lineIndex]!, false)
+      oldRemaining--
+      newRemaining--
+    } else if (marker === "+" || marker === "-") {
+      if (!sideState.right.side) {
+        consume("left", line.slice(1), sourceOffsets[lineIndex]!, true)
+        if (marker === "+") newRemaining--
+        else oldRemaining--
+      } else {
+        // OpenTUI aligns each contiguous remove/add group to its longest side
+        // and pads the shorter pane with empty native rows. Consume the whole
+        // group before synchronizing cursors so a later blank changed line
+        // cannot bind to one of those padding rows.
+        while (lineIndex < sourceLines.length && (oldRemaining > 0 || newRemaining > 0)) {
+          const changed = sourceLines[lineIndex]!
+          const changedMarker = changed[0]
+          if (changedMarker !== "+" && changedMarker !== "-") break
+          consume(changedMarker === "+" ? "right" : "left", changed.slice(1), sourceOffsets[lineIndex]!, true)
+          if (changedMarker === "+") newRemaining--
+          else oldRemaining--
+          lineIndex++
+        }
+        lineIndex--
+        const aligned = Math.max(sideState.left.cursor, sideState.right.cursor)
+        sideState.left.cursor = aligned
+        sideState.right.cursor = aligned
+      }
+    }
+    if (oldRemaining <= 0 && newRemaining <= 0) inHunk = false
+  }
+  return fillPointGaps(itemId, runtime.diff, result)
+}
+
+function diffRenderables(renderable: Renderable): DiffRenderable[] {
+  const result: DiffRenderable[] = []
+  const visit = (current: Renderable) => {
+    if (current instanceof DiffRenderable) result.push(current)
+    else for (const child of current.getChildren()) if ("screenX" in child) visit(child as Renderable)
+  }
+  visit(renderable)
+  return result
+}
+
 function measureItem(renderer: CliRenderer, renderable: Renderable, itemId: ItemId, text: string): Record<number, MeasuredPoint> {
   const markdown = renderable.getRenderable(`markdown:${itemId}`)
   if (markdown instanceof MarkdownRenderable) return measureMarkdown(renderer, markdown, itemId, text)
+  const diffs = diffRenderables(renderable)
+  if (diffs.length) {
+    const result: Record<number, MeasuredPoint> = {}
+    let sourceCursor = 0
+    let logicalCursor = 0
+    for (const diff of diffs) {
+      const source = (diff as unknown as DiffRuntime).diff
+      const start = text.indexOf(source, sourceCursor)
+      if (start < 0) continue
+      logicalCursor += graphemes(text.slice(sourceCursor, start)).length
+      for (const [offset, point] of Object.entries(measureDiff(renderer, diff, itemId))) {
+        const graphemeOffset = logicalCursor + Number(offset)
+        result[graphemeOffset] = { ...point, graphemeOffset }
+      }
+      sourceCursor = start + source.length
+      logicalCursor += graphemes(source).length
+    }
+    return fillPointGaps(itemId, text, result)
+  }
   return fillPointGaps(itemId, text, measureRaw(renderer, renderable, itemId, text))
 }
 

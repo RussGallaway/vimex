@@ -106,7 +106,8 @@ export function moveBySemanticBlock(
   if (blocks.length === 0) return undefined
   let target: SemanticBlock | undefined
   let origin = point
-  for (let step = 0; step < Math.max(1, count); step++) {
+  const repeat = Number.isFinite(count) ? Math.max(1, Math.trunc(count)) : 1
+  for (let step = 0; step < repeat; step++) {
     target = direction === "forward"
       ? blocks.find((block) => comparePoint(state, block.from, origin) > 0)
       : blocks.findLast((block) => comparePoint(state, block.from, origin) < 0)
@@ -181,7 +182,8 @@ export function moveByUrl(
           return next < 0 ? candidates.length - 1 : next - 1
         })()
       : candidates.findLastIndex((candidate) => comparePoint(state, candidate.from, point) < 0) + 1
-  const delta = direction === "forward" ? Math.max(1, options.count ?? 1) : -Math.max(1, options.count ?? 1)
+  const count = Number.isFinite(options.count) ? Math.max(1, Math.trunc(options.count ?? 1)) : 1
+  const delta = direction === "forward" ? count : -count
   index += delta
   if (options.wrap) index = ((index % candidates.length) + candidates.length) % candidates.length
   const target = candidates[index]

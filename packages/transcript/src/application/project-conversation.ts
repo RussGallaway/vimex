@@ -12,11 +12,14 @@ function sourceOf(item: ConversationItem): string {
 export function projectItem(item: ConversationItem, previous?: TextProjection): TextProjection {
   const project = item.kind === "user" || item.kind === "assistant" || item.kind === "reasoning" ? projectMarkdown : projectPlainText
   const nodeKind = item.kind === "user" || item.kind === "assistant" ? "message" : item.kind === "command" ? "tool" : item.kind
-  return { ...project(sourceOf(item)), nodeKind, revision: (previous?.revision ?? 0) + 1 }
+  const source = sourceOf(item)
+  if (previous?.source === source && previous.nodeKind === nodeKind) return previous
+  return { ...project(source), nodeKind, revision: (previous?.revision ?? 0) + 1 }
 }
 export function syncTranscriptItem(state: TranscriptState, item: ConversationItem): TranscriptState {
   const previous = state.projectionById[item.id]
   const projection = projectItem(item, previous)
+  if (projection === previous) return state
   const isNew = !previous
   const changed = !previous || previous.source !== projection.source
   const unseenItemIds = state.unseenItemIds ?? []

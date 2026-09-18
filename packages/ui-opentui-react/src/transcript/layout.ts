@@ -26,16 +26,13 @@ export interface MeasuredPoint {
   screenY: number
 }
 
-const mark = /^\p{Mark}+$/u
-const wide = /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]|\p{Extended_Pictographic}/u
-
 export function graphemeCellWidth(value: string): number {
-  if (!value || mark.test(value)) return 0
-  return wide.test(value) ? 2 : 1
+  return value ? Bun.stringWidth(value) : 0
 }
 
-function wrapProjection(itemId: ItemId, text: string, width: number, startRow: number): VisualLine[] {
+function wrapProjection(itemId: ItemId, text: string, width: number, startRow: number, folded: boolean): VisualLine[] {
   const cells = graphemes(text)
+  if (folded) return [{ itemId, from: 0, to: cells.length, row: startRow }]
   const lines: VisualLine[] = []
   let from = 0
   let used = 0
@@ -51,12 +48,17 @@ function wrapProjection(itemId: ItemId, text: string, width: number, startRow: n
   for (let index = 0; index < cells.length; index += 1) {
     const cell = cells[index] ?? ""
     if (cell === "\n") {
-      push(index)
-      from = index + 1
+      push(Math.max(from, index - 1))
+      // Native measurement places the newline cursor at the beginning of the
+      // following visual row, alongside its first grapheme.
+      from = index
       continue
     }
     const next = graphemeCellWidth(cell)
-    if (used > 0 && used + next > width) push(index)
+    if (used > 0 && used + next > width) {
+      push(index - 1)
+      from = index
+    }
     used += next
   }
   push(cells.length)
@@ -70,7 +72,7 @@ export function buildTranscriptLayout(state: TranscriptState, width: number): Tr
   for (const itemId of state.order) {
     const projection = state.projectionById[itemId]
     if (!projection) continue
-    const itemLines = wrapProjection(itemId, projection.plain, safeWidth, lines.length)
+    const itemLines = wrapProjection(itemId, projection.plain, safeWidth, lines.length, Boolean(state.folded[itemId]))
     lines.push(...itemLines)
     linesByItem[itemId] = itemLines
   }

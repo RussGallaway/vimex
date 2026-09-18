@@ -59,7 +59,7 @@ Codex notification
   -> ConversationEvent or ApprovalRequest
   -> domain reducer
   -> transcript/workbench projector
-  -> narrow UI selector
+  -> application read model
   -> OpenTUI React renderer
 ```
 
@@ -189,3 +189,6 @@ The React adapter's `transcript/use-transcript-layout.ts` owns measurement sched
 Mouse-wheel deltas remain linear and detach native following immediately. Keyboard page jumps remain immediate; neither path introduces an animation timer. Only explicit tail attachment resumes following output. Native scroll state must not override the semantic viewport contract at the bottom edge.
 
 These are in-process feature modules, not new services or package boundaries. Rendering remains renderer-owned; logical navigation remains in the transcript package. Large cold reflows and complete end-to-end latency require separate profiling from warm scroll benchmarks.
+
+
+Diff geometry is an OpenTUI adapter concern. Canonical server patches remain in conversation records; native split columns and line-number gutters do not redefine transcript source order. Native layout integration depends on pinned OpenTUI internals and has renderer regression coverage; upgrades must revalidate those assumptions. Large-history initial Markdown settlement remains a known cold-path performance cost even though warm scroll translations reuse geometry.

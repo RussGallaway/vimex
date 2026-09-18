@@ -14,6 +14,8 @@ This directory is the design authority for v1.
 - [implementation-status.md](./implementation-status.md) tracks verified implementation and remaining acceptance work.
 - [acceptance-matrix.md](./acceptance-matrix.md) maps every numbered release criterion to evidence and remaining verification.
 - [decisions.md](./decisions.md) records settled decisions and open questions.
+- [review-rounds.md](./review-rounds.md) records parallel review repairs and measured scrolling performance.
+- [diff-review.md](./diff-review.md) compares OpenCode diff behavior and the Vimex review direction.
 
 ## Document ownership
 

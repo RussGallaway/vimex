@@ -26,7 +26,7 @@ Vimex reads JSON from `$XDG_CONFIG_HOME/vimex/config.json`, or `~/.config/vimex/
 | `reducedColor` | boolean | Reduces accents to foreground/background tones. A nonempty `NO_COLOR` also enables this at runtime. |
 | `insertEnter` | `submit`, `newline` | With `submit`, Enter sends and Shift+Enter inserts a newline. With `newline`, Enter inserts a newline; Escape then Enter sends from Normal mode. Ctrl+Enter also sends when reported distinctly. |
 | `busySubmit` | `queue`, `steer` | Sending during an active turn either queues the message for the next turn or steers the active turn. Ctrl+Enter explicitly steers in Insert mode. |
-| `foldTools` | boolean | Initially fold tool, command, and edit items. |
+| `foldTools` | boolean | Initially fold tool and command items. File-change diffs start expanded. |
 | `foldReasoning` | boolean | Initially fold reasoning items. |
 | `composerMaxHeight` | `0.1` through `0.6` | Upper bound for the fixed input area relative to terminal height. Adding lines scrolls inside the input instead of growing it. |
 | `keybindings` | object | Maps a key sequence to a named Ex command. Overrides have priority over built-in bindings whenever no overlay is open. |

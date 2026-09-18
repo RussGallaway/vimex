@@ -127,7 +127,7 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
       const foldKey = `${state.activeThreadId ?? ""}:${item.id}`
       if (initializedFolds.current.has(foldKey) || Object.hasOwn(transcript.folded, item.id)) continue
       initializedFolds.current.add(foldKey)
-      if ((settings.foldReasoning && item.kind === "reasoning") || (settings.foldTools && (item.kind === "tool" || item.kind === "command" || item.kind === "edit"))) {
+      if ((settings.foldReasoning && item.kind === "reasoning") || (settings.foldTools && (item.kind === "tool" || item.kind === "command"))) {
         controller.transcript({ type: "fold.set", itemId: item.id, folded: true })
       }
     }
@@ -208,10 +208,17 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
     renderer.updateSelection(headTarget, head.screenX, head.screenY, { finishDragging: true })
   }, [interaction.surface, layout, renderer, transcript.cursor, transcript.selection])
   useEffect(() => {
-    if (interaction.surface === "transcript" && transcript.cursor && transcript.viewport.kind !== "tail") {
-      scrollRef.current?.scrollChildIntoView(`transcript-item:${transcript.cursor.itemId}`)
-    }
-  }, [interaction.surface, transcript.cursor?.itemId, transcript.cursor?.graphemeOffset])
+    if (interaction.surface !== "transcript" || transcript.viewport.kind === "tail" || !transcript.cursor) return
+    const scrollbox = scrollRef.current
+    if (!scrollbox) return
+    const point = measuredPoint(measuredLayout.current ?? layout, transcript.cursor)
+    if (!point) { scrollbox.scrollChildIntoView(`transcript-item:${transcript.cursor.itemId}`); return }
+    const top = scrollbox.viewport.screenY
+    const bottom = top + scrollbox.viewport.height - 1
+    // Reveal the logical cell rather than a potentially thousand-row item.
+    if (point.screenY < top) scrollbox.scrollBy(point.screenY - top, "step")
+    else if (point.screenY > bottom) scrollbox.scrollBy(point.screenY - bottom, "step")
+  }, [transcript.cursor?.itemId, transcript.cursor?.graphemeOffset])
 
   const dispatchMotion = useCallback((motion: Motion, repeat = 1) => {
     let point = transcript.cursor
@@ -226,7 +233,7 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
       target: result.point,
       preferredScreenRow: (() => {
         const measured = measuredPoint(layout, result.point)
-        return measured && scrollRef.current ? measured.screenY - scrollRef.current.viewport.screenY : result.preferredScreenRow
+        return measured && scrollRef.current ? Math.max(0, Math.min(scrollRef.current.viewport.height - 1, measured.screenY - scrollRef.current.viewport.screenY)) : result.preferredScreenRow
       })(),
       extend: interaction.mode === "visual",
     })
@@ -300,7 +307,7 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
     onManualScroll()
     controller.transcript({ type: "viewport.scroll", direction, amount: effectiveAmount })
     countRef.current = ""
-    controller.dispatchInteraction({ type: "count.clear" })
+    if (explicitCount !== undefined) controller.dispatchInteraction({ type: "count.clear" })
   }, [controller, onManualScroll])
 
   const beginVisual = useCallback((shape: "character" | "line") => {

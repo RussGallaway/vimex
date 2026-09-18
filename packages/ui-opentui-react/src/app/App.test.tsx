@@ -530,6 +530,24 @@ describe("Vimex OpenTUI shell", () => {
     } finally { await act(async () => setup.renderer.destroy()) }
   })
 
+  test("defaults tools to collapsed and file diffs to expanded", async () => {
+    const thread = threadId("thread-1")
+    let state = fixture()
+    for (const item of [
+      { id: itemId("new-tool"), turnId: turnId("turn"), kind: "tool" as const, title: "Read file", detail: "contents", status: "complete" as const },
+      { id: itemId("new-edit"), turnId: turnId("turn"), kind: "edit" as const, title: "src/main.ts", patch: "@@ -1 +1 @@\n-old\n+new", status: "complete" as const },
+    ]) state = transitionWorkbench(state, { type: "conversation.event", event: { type: "item.started", threadId: thread, item } }).state
+    const commands: TranscriptUiCommand[] = []
+    const controller: VimexUiController = { ...inertController, transcript(command) { commands.push(command) } }
+    const setup = await testRender(<VimexRoot state={state} controller={controller} />, { width: 72, height: 18 })
+    try {
+      await act(async () => setup.flush())
+      expect(commands).toContainEqual({ type: "fold.set", itemId: itemId("new-tool"), folded: true })
+      expect(commands).not.toContainEqual({ type: "fold.set", itemId: itemId("new-edit"), folded: true })
+      expect(setup.renderer.root.findDescendantById("diff:new-edit")).toBeDefined()
+    } finally { await act(async () => setup.renderer.destroy()) }
+  })
+
   test("applies configured reasoning folds when an item first appears", async () => {
     const thread = threadId("thread-1")
     const state = transitionWorkbench(fixture(), {

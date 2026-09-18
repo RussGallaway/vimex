@@ -142,3 +142,35 @@ test("command projection keeps readable action, exact execution, and literal out
   expect(projection.source).toBe(`List files · packages\n${executionCommand}\n${output}`)
   expect(projection.plain).toBe(projection.source)
 })
+
+
+test("viewport anchors reject stale items and invalid coordinates, and normalize fractional offsets", () => {
+  const state = syncTranscriptItem(initialTranscript(), message("a", "🙂étext"))
+  const anchor = (id: string, offset: number, row = 0) => reduceTranscript(state, { type: "viewport.anchor", point: { itemId: itemId(id), graphemeOffset: offset }, preferredScreenRow: row })
+  expect(anchor("missing", 0)).toBe(state)
+  for (const value of [NaN, Infinity, -Infinity]) {
+    expect(anchor("a", value)).toBe(state)
+    expect(anchor("a", 0, value)).toBe(state)
+  }
+  const normalized = anchor("a", 1.9, -1.8)
+  expect(normalized.viewport).toEqual({ kind: "point", point: { itemId: itemId("a"), graphemeOffset: 1 }, preferredScreenRow: -1 })
+  expect(reduceTranscript(normalized, { type: "viewport.anchor", point: { itemId: itemId("a"), graphemeOffset: 1.9 }, preferredScreenRow: -1.8 })).toBe(normalized)
+})
+
+
+test("status-only item updates preserve projection identity but changed text and node kind invalidate it", () => {
+  const item = message("a", "**é🙂**", "running")
+  if (!("markdown" in item)) throw new Error("Expected a message fixture")
+  let state = syncTranscriptItem(initialTranscript(), item)
+  state = beginSelection(moveCursor(state, { itemId: item.id, graphemeOffset: 0 }), "character")
+  const completed = syncTranscriptItem(state, { ...item, status: "complete" })
+  expect(completed).toBe(state)
+  expect(projectItem({ ...item, status: "complete" }, state.projectionById[item.id])).toBe(state.projectionById[item.id]!)
+  const changed = syncTranscriptItem(state, { ...item, markdown: "**é🙂!**" })
+  expect(changed.projectionById[item.id]).not.toBe(state.projectionById[item.id])
+  expect(changed.projectionById[item.id]!.revision).toBe(2)
+  expect(selectedText(changed, "plain")).toBe("é")
+  const reasoning = syncTranscriptItem(state, { ...item, kind: "reasoning" })
+  expect(reasoning.projectionById[item.id]!.nodeKind).toBe("reasoning")
+  expect(reasoning.projectionById[item.id]!.revision).toBe(2)
+})

@@ -25,7 +25,7 @@ export function useTranscriptLayout(options: {
   const pendingAnchor = useRef(false)
   const pendingRestore = useRef(false)
   const estimated = useMemo(() => buildTranscriptLayout(transcript, Math.max(8, width - 7)),
-    [transcript.order, transcript.projectionById, width])
+    [transcript.order, transcript.projectionById, transcript.folded, width])
   useLayoutEffect(() => {
     measuredLayout.current = undefined
     pendingAnchor.current = false
@@ -57,8 +57,13 @@ export function useTranscriptLayout(options: {
       // Measurement owns a geometry cache. Its stable identity avoids serializing
       // every logical point merely to discover that a frame has not changed.
       if (next !== measuredLayout.current) {
+        const geometryChanged = next.points !== measuredLayout.current?.points
         measuredLayout.current = next
         setRendered({ threadId: current.threadId, layout: next })
+        // Markdown and table renderables can settle over later native frames
+        // without changing transcript state. Reapply a detached logical anchor
+        // after each real geometry revision so async reflow cannot move it.
+        if (geometryChanged && current.transcript.viewport.kind === "point" && !pendingAnchor.current) pendingRestore.current = true
       }
       if (pendingAnchor.current) {
         pendingAnchor.current = false
