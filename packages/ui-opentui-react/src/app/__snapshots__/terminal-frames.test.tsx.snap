@@ -84,22 +84,20 @@ exports[`terminal frame regressions composer stays anchored through tool streami
 `;
 
 exports[`terminal frame regressions session picker stays inside a 48x18 terminal: sessions 48x18 1`] = `
-"
-  VI┌─ Sessions ───────────────────────────┐ed
-  │ │                                      │//
-  │ │  This directory · Tab toggle scope   │
-    │  / fuzzy search title, cwd, branch…  │
-  │ │  j/k move · i search · enter open ·  │
-  │ │  ctrl-r rename · ctrl-f favorite ·   │
-  │ │  esc close                           │
-    │   ● Frame regression                 │
-    │   /work/vimex                        │
-│   │   idle · git:main · gpt-6            │
-│  D│                                      │
-│   │                                      │
-│   │                                      │
-│   │                                      │
-│  C│                                      │
-    └──────────────────────────────────────┘
- NORMAL   /work/vimex       git:main  context —"
+"┌─ Sessions ───────────────────────────┐
+│                                      │
+│  This directory · Tab toggle scope   │
+│  / fuzzy search title, cwd, branch…  │
+│  j/k move · i search · enter open ·  │
+│  ctrl-r rename · ctrl-f favorite ·   │
+│  esc close                           │
+│   ● Frame regression                 │
+│   /work/vimex                        │
+│   idle · git:main · gpt-6            │
+│                                      │
+│                                      │
+│                                      │
+│                                      │
+│                                      │
+└──────────────────────────────────────┘"
 `;

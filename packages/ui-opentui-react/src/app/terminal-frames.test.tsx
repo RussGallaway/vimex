@@ -6,6 +6,7 @@ import { itemId, threadId, turnId } from "@vimex/conversation"
 import { initialWorkbench, transitionWorkbench, type WorkbenchState } from "@vimex/workbench"
 import { VimexRoot } from "../index"
 import { inertController, type VimexUiController } from "../contracts"
+import { waitForRender } from "../test-support/wait-for-render"
 
 const thread = threadId("frame-thread")
 const tool = itemId("frame-tool")
@@ -54,9 +55,7 @@ describe("terminal frame regressions", () => {
         await act(async () => setup.flush())
         const transcript = setup.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable
         await act(async () => { transcript.scrollTo(0); await setup.flush(); await setup.renderOnce() })
-        for (let attempt = 0; attempt < 20 && !setup.captureCharFrame().includes("A stable transcript"); attempt++) {
-          await act(async () => { await Bun.sleep(5); await setup.flush(); await setup.renderOnce() })
-        }
+        await waitForRender(setup, () => setup.captureCharFrame().includes("A stable transcript"), "terminal-frame Markdown content")
         expect(setup.captureCharFrame()).toContain("A stable transcript")
         const composer = setup.renderer.root.findDescendantById("composer") as TextareaRenderable
         const shell = setup.renderer.root.findDescendantById("composer-shell")!
@@ -250,9 +249,6 @@ describe("terminal frame regressions", () => {
     const setup = await testRender(<VimexRoot state={overlayState} controller={inertController} />, { width: 48, height: 18 })
     try {
       await act(async () => setup.flush())
-      for (let attempt = 0; attempt < 20 && !setup.captureCharFrame().includes("A "); attempt++) {
-        await act(async () => { await Bun.sleep(5); await setup.flush(); await setup.renderOnce() })
-      }
       const modal = setup.renderer.root.findDescendantById("overlay-frame")!
       expect(Math.abs(modal.x + modal.width / 2 - 24)).toBeLessThanOrEqual(1)
       expect(Math.abs(modal.y + modal.height / 2 - 9)).toBeLessThanOrEqual(1)
@@ -267,7 +263,11 @@ describe("terminal frame regressions", () => {
       expect(cwd.x + cwd.width).toBeLessThanOrEqual(48)
       expect(setup.captureCharFrame()).toContain("/work/vimex")
       expect(setup.captureCharFrame()).toContain("idle · git:main · gpt-6")
-      expect(stableFrame(setup.captureCharFrame())).toMatchSnapshot("sessions 48x18")
+      const modalFrame = setup.captureCharFrame().split("\n")
+        .slice(modal.y, modal.y + modal.height)
+        .map(line => line.slice(modal.x, modal.x + modal.width))
+        .join("\n")
+      expect(stableFrame(modalFrame)).toMatchSnapshot("sessions 48x18")
     } finally { await act(async () => setup.renderer.destroy()) }
   })
 })

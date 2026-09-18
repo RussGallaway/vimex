@@ -5,6 +5,7 @@ import { itemId, turnId } from "@vimex/conversation"
 import { createEmberTideSyntax, selectTheme, themePalette } from "../theme"
 import { MarkdownMessage } from "./MarkdownMessage"
 import { RGBA } from "@opentui/core"
+import { waitForRender } from "../test-support/wait-for-render"
 
 for (const kind of ["assistant", "user"] as const) test(`${kind} theme switching refreshes nested backgrounds without remounting ordinary streamed content`, async () => {
   selectTheme("ember-tide")
@@ -20,18 +21,18 @@ for (const kind of ["assistant", "user"] as const) test(`${kind} theme switching
     return <box width="100%" height="100%" backgroundColor={themePalette(next ? "nord" : "ember-tide").background}><MarkdownMessage item={{ ...item, markdown: item.markdown + suffix }} syntax={next ? nord : ember} /></box>
   }
   const h = await testRender(<Harness />, { width: 80, height: 15 })
-  const settle = async () => {
-    for (let i = 0; i < 20; i++) await act(async () => { await Bun.sleep(5); await h.flush(); await h.renderOnce() })
-  }
   try {
-    await settle()
-    expect(h.captureCharFrame()).toContain("LISTTEXT")
+    await waitForRender(h, () => h.captureCharFrame().includes("LISTTEXT"), `${kind} Markdown content`)
     const original = h.renderer.root.findDescendantById(`markdown:${item.id}`)
     await act(async () => stream())
-    await settle()
+    await waitForRender(h, () => h.captureCharFrame().includes("streamed"), `${kind} streamed Markdown update`)
     expect(h.renderer.root.findDescendantById(`markdown:${item.id}`)).toBe(original)
     await act(async () => update())
-    await settle()
+    await waitForRender(h, () => {
+      const current = h.renderer.root.findDescendantById(`markdown:${item.id}`)
+      const spans = h.captureSpans().lines.flatMap(line => line.spans)
+      return current !== original && ["LISTTEXT", "QUOTETEXT"].every(token => spans.some(span => span.text.includes(token)))
+    }, `${kind} themed Markdown replacement`)
     expect(h.renderer.root.findDescendantById(`markdown:${item.id}`)).not.toBe(original)
     const spans = h.captureSpans().lines.flatMap(line => line.spans)
     for (const token of ["LISTTEXT", "QUOTETEXT"]) {
