@@ -9,21 +9,25 @@
     "plugins/*"
   ],
   "scripts": {
-    "dev": "bun run apps/tui/src/main.tsx",
-    "start": "bun run apps/tui/src/main.tsx",
+    "dev": "bun run apps/cli/src/main.ts",
+    "start": "bun run apps/cli/src/main.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "check": "bun run typecheck && bun run boundaries && bun run docs:check && bun test",
     "generate:codex": "bun run scripts/generate-codex-types.ts",
     "boundaries": "bun run scripts/verify-boundaries.ts",
-    "test:unit": "bun test packages/conversation packages/composer packages/interaction packages/transcript packages/approvals packages/workbench packages/platform-node apps/tui/src/cli-options.test.ts apps/tui/src/lifecycle.test.ts",
+    "test:unit": "bun test packages/conversation packages/composer packages/interaction packages/transcript packages/approvals packages/workbench packages/platform-node apps/tui/src/cli-options.test.ts apps/tui/src/lifecycle.test.ts apps/cli packages/distribution",
     "test:integration": "bun test tests/integration plugins/herdr",
     "test:contract": "bun test tests/contract",
     "test:ui": "bun test packages/ui-opentui-react",
     "test:e2e": "bun test tests/terminal",
     "benchmark:transcript": "bun scripts/benchmark-transcript-scroll.tsx",
     "docs:generate": "bun scripts/generate-manual.ts",
-    "docs:check": "bun scripts/generate-manual.ts --check"
+    "docs:check": "bun scripts/generate-manual.ts --check",
+    "build": "bun scripts/release/build.ts",
+    "package": "bun scripts/release/package.ts",
+    "release:manifest": "bun scripts/release/manifest.ts",
+    "release:formula": "bun scripts/release/update-homebrew.ts"
   },
   "dependencies": {
     "@opentui/core": "0.5.11",

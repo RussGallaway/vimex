@@ -107,7 +107,10 @@ export async function runApplication(options: CliOptions) {
       return createElement(VimexRoot, { state, controller, settings: { ...config, reducedColor: config.reducedColor || Boolean(process.env.NO_COLOR) } })
     }
     root.render(createElement(FatalBoundary, { onFatal: onFailure }, createElement(ConnectedApp)))
-    void controller.initialize(options.cwd, options.model, options.thread).catch(error => controller.notice(String(error)))
+    void controller.initialize(options.cwd, options.model, options.thread, options.resumeMode).catch(error => {
+      if (options.resumeMode) onFailure(error)
+      else controller.notice(String(error))
+    })
     await finished
   } catch (error) {
     failure ??= error ?? new Error("Unknown runtime failure")

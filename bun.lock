@@ -17,6 +17,13 @@
         "typescript": "7.0.2",
       },
     },
+    "apps/cli": {
+      "name": "@vimex/cli",
+      "version": "0.1.0",
+      "dependencies": {
+        "@vimex/platform-node": "workspace:*",
+      },
+    },
     "apps/tui": {
       "name": "@vimex/tui",
       "version": "0.1.0",
@@ -57,6 +64,10 @@
       "name": "@vimex/conversation",
       "version": "0.1.0",
     },
+    "packages/distribution": {
+      "name": "@vimex/distribution",
+      "version": "0.1.0",
+    },
     "packages/interaction": {
       "name": "@vimex/interaction",
       "version": "0.1.0",
@@ -65,6 +76,7 @@
       "name": "@vimex/platform-node",
       "version": "0.1.0",
       "dependencies": {
+        "@vimex/distribution": "workspace:*",
         "@vimex/interaction": "workspace:*",
       },
     },
@@ -188,11 +200,15 @@
 
     "@vimex/approvals": ["@vimex/approvals@workspace:packages/approvals"],
 
+    "@vimex/cli": ["@vimex/cli@workspace:apps/cli"],
+
     "@vimex/codex-app-server": ["@vimex/codex-app-server@workspace:packages/codex-app-server"],
 
     "@vimex/composer": ["@vimex/composer@workspace:packages/composer"],
 
     "@vimex/conversation": ["@vimex/conversation@workspace:packages/conversation"],
+
+    "@vimex/distribution": ["@vimex/distribution@workspace:packages/distribution"],
 
     "@vimex/herdr": ["@vimex/herdr@workspace:plugins/herdr"],
 

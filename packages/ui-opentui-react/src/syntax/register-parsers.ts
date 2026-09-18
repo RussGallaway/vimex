@@ -1,7 +1,14 @@
 import { addDefaultParsers, type FiletypeParserOptions } from "@opentui/core"
 import { fileURLToPath } from "node:url"
+import { realpathSync } from "node:fs"
+import { dirname, join } from "node:path"
+
+declare const VIMEX_COMPILED: boolean
 
 function asset(language: "python" | "bash" | "json", name: string): string {
+  if (typeof VIMEX_COMPILED !== "undefined" && VIMEX_COMPILED) {
+    return join(dirname(realpathSync(process.execPath)), "assets", "parsers", language, name)
+  }
   return fileURLToPath(new URL(`../../assets/parsers/${language}/${name}`, import.meta.url))
 }
 

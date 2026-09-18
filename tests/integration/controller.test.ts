@@ -991,3 +991,25 @@ test("manual aliases open the offline guide without changing the draft", async (
   }
   await h.controller.close()
 })
+
+test("CLI resume last and picker scope existing sessions by cwd without creating threads", async () => {
+  for (const mode of ["last", "picker"] as const) {
+    const h = harness()
+    const calls: string[] = []
+    h.backend.listThreads = async () => [{ ...summary(a), updatedAt: 10 }, { ...summary(b), cwd: "/elsewhere", updatedAt: 50 }, { ...summary(threadId("latest")), updatedAt: 20 }]
+    h.backend.startThread = async () => { throw new Error("must not create") }
+    h.backend.resumeThread = async id => { calls.push(id); return { summary: summary(id), events: [] } }
+    await h.controller.initialize("/tmp", undefined, undefined, mode)
+    expect(calls).toEqual(["latest"])
+    expect(h.controller.getSnapshot().workspaces.latest!.interaction.overlay).toBe(mode === "picker" ? "sessions" : null)
+    await h.controller.close()
+  }
+})
+test("CLI resume reports an empty cwd catalog without creating a server thread", async () => {
+  const h = harness()
+  h.backend.listThreads = async () => []
+  h.backend.startThread = async () => { throw new Error("must not create") }
+  await expect(h.controller.initialize("/tmp", undefined, undefined, "last")).rejects.toThrow("No sessions found for /tmp")
+  expect(h.controller.getSnapshot().activeThreadId).toBeUndefined()
+  await expect(h.controller.close()).rejects.toThrow("Vimex controller shutdown failed")
+})

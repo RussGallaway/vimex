@@ -2,13 +2,13 @@ import { readFile, readdir } from "node:fs/promises"
 import { join, relative, resolve } from "node:path"
 
 const root = resolve(import.meta.dir, "..")
-const pure = new Set(["conversation", "transcript", "composer", "interaction", "approvals", "workbench"])
+const pure = new Set(["conversation", "transcript", "composer", "interaction", "approvals", "workbench", "distribution"])
 const allowedDependencies: Record<string, readonly string[]> = {
-  conversation: [], composer: [], interaction: [],
+  distribution: [], conversation: [], composer: [], interaction: [],
   transcript: ["conversation"], approvals: ["conversation"],
   workbench: ["conversation", "transcript", "composer", "interaction", "approvals"],
   "codex-app-server": ["conversation", "approvals", "workbench"],
-  "platform-node": ["conversation", "transcript", "composer", "interaction", "approvals", "workbench"],
+  "platform-node": ["conversation", "transcript", "composer", "interaction", "approvals", "workbench", "distribution"],
   "ui-opentui-react": ["conversation", "transcript", "composer", "interaction", "approvals", "workbench"],
   herdr: ["conversation", "workbench"],
   testkit: ["conversation", "transcript", "composer", "interaction", "approvals", "workbench"],

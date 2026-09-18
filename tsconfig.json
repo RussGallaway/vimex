@@ -49,6 +49,9 @@
       ],
       "@vimex/testkit": [
         "./packages/testkit/src/index.ts"
+      ],
+      "@vimex/distribution": [
+        "./packages/distribution/src/index.ts"
       ]
     },
     "noEmit": true

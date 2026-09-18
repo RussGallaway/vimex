@@ -26,7 +26,9 @@ bun install --frozen-lockfile
 bun run start --cwd /path/to/project
 ```
 
-Use `bun run start --demo` for an offline streaming demonstration, or `--thread ID` to resume a Codex thread. See `bun run start --help` for the remaining options. Vimex is currently run from a checkout; there is no published binary or package yet.
+Use `bun run start --demo` for an offline streaming demonstration, `resume --last` for the latest session in this directory, or `resume ID` for an exact thread. `doctor` checks the local setup. See `bun run start --help` for the remaining options. Vimex is currently run from a checkout; there is no published binary or package yet.
+
+Build a standalone bundle with `bun run build` and an archive with `bun run package`. The monorepo Homebrew formula, curl installer, and tag-driven release workflow are implemented; see [installation](docs/install.md) for their release status and update behavior.
 
 The default dark theme is **Ember Tide**: charcoal, warm ivory, muted blue, sage, and amber.
 

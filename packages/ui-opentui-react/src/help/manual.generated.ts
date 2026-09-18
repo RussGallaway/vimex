@@ -6,7 +6,7 @@ export const manualSections = [
   },
   {
     "title": "SYNOPSIS",
-    "body": "vimex [--cwd PATH] [--thread ID] [--model NAME] [--config PATH]\n\nvimex --demo\n\nvimex --help | --version\n\nVimex currently runs from a source checkout. Use bun run start followed by the options above. A global executable, Homebrew package, curl installer, and upgrade subcommand are planned, not yet published."
+    "body": "vimex [PATH] [--cwd PATH] [--thread ID] [--model NAME] [--config PATH]\n\nvimex resume [ID] [--cwd PATH]\n\nvimex resume --last [--cwd PATH]\n\nvimex doctor [--config PATH]\n\nvimex upgrade [--version VERSION]\n\nvimex update [--version VERSION]\n\nvimex --demo\n\nvimex --help | --version\n\nFrom a source checkout, use bun run start followed by these arguments. Packaging and installation commands are implemented; the first public release is still pending."
   },
   {
     "title": "DESCRIPTION",
@@ -15,6 +15,10 @@ export const manualSections = [
   {
     "title": "OPTIONS",
     "body": "--cwd PATH: Working directory; defaults to the launch directory.\n\n--thread ID: Resume an existing Codex thread.\n\n--model NAME: Model for a new thread.\n\n--config PATH: Read an alternate Vimex JSON configuration.\n\n--demo: Run a local streaming demonstration without Codex credentials.\n\n-h, --help: Print CLI usage without starting a session.\n\n-V, --version: Print the Vimex version."
+  },
+  {
+    "title": "CLI COMMANDS",
+    "body": "resume ID opens an existing thread. resume --last opens the most recently updated session in the working directory. Bare resume opens the directory-scoped picker using an existing session; it does not create a new thread. An empty directory catalog reports an error.\n\ndoctor checks configuration, Codex, Git, terminal status, and installation ownership without starting a conversation.\n\nupgrade and update are aliases. Homebrew installations delegate to brew upgrade; direct installations download and verify an archive before atomically switching the installed bundle. Source installations print update instructions. --version VERSION explicitly selects a release for direct installations; implicit latest updates never downgrade. There are no automatic updates."
   },
   {
     "title": "MODES AND COMPOSING",

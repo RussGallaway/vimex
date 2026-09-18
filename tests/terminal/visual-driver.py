@@ -15,7 +15,9 @@ decoder = codecs.getincrementaldecoder('utf-8')('replace')
 master, slave = pty.openpty()
 fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 100, 0, 0))
 with tempfile.TemporaryDirectory(prefix='vimex-visual-') as temporary:
-    process = subprocess.Popen(['bun', 'run', 'apps/tui/src/main.tsx', '--demo'], cwd=root, stdin=slave, stdout=slave, stderr=slave, start_new_session=True,
+    binary = os.environ.get('VIMEX_TEST_BINARY')
+    command = [str(pathlib.Path(binary).resolve()), '--demo'] if binary else ['bun', 'run', 'apps/tui/src/main.tsx', '--demo']
+    process = subprocess.Popen(command, cwd=temporary if binary else root, stdin=slave, stdout=slave, stderr=slave, start_new_session=True,
         env={**os.environ, 'TERM':'xterm-256color', 'COLORTERM':'truecolor', 'NO_COLOR':'', 'HERDR_ENV':'0', 'XDG_STATE_HOME':temporary, 'XDG_CONFIG_HOME':temporary})
     os.close(slave)
     def pump(seconds=0.2):

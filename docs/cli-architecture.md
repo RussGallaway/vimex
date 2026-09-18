@@ -1,6 +1,6 @@
-# CLI architecture proposal
+# CLI architecture
 
-Status: planned. The current entry point remains apps/tui/src/main.tsx and its existing flag parser. This document defines the next distribution milestone, not existing subcommands.
+Status: implemented. apps/cli/src/main.ts is the executable entry point; apps/tui/src/main.tsx remains a source-launch compatibility wrapper.
 
 One executable should support launching the TUI and short-lived commands. Keep parsing and dispatch separate from session behavior and installation/update policy. Load OpenTUI only when launching the interactive application, so help, version, doctor, and upgrades do not initialize a renderer.
 
@@ -12,6 +12,8 @@ apps/
     run-command.ts              # dispatch to injected capabilities
     composition-root.ts         # select concrete adapters; lazy TUI import
     help.ts                     # CLI usage
+    launch-directory.ts         # validate and canonicalize working directory
+    runtime-assets.ts           # compiled bundle asset root before TUI import
   tui/src/
     composition-root.ts         # interactive application assembly
     lifecycle.ts                # terminal ownership and cleanup
@@ -41,7 +43,7 @@ packages/
 scripts/release/
   build.ts                     # executable plus native/parser assets
   package.ts                   # archives, man page and notices
-  checksums.ts
+  manifest.ts                  # verify archives and assemble checksums/catalog
   update-homebrew.ts           # formula release URL/checksum update
 Formula/vimex.rb               # tap recipe in RussGallaway/vimex itself
 install.sh
@@ -51,15 +53,15 @@ docs/man/vimex.1               # generated manual
   check.yml
   release.yml
 tests/
-  integration/distribution/
+  integration/                 # dispatch and real PTY resume tests
   terminal/                    # packaged TUI smoke checks
   install/                     # temporary-prefix install and upgrade tests
 ```
 
-The distribution package owns upgrade policy; it imports no filesystem, process, HTTP, or OpenTUI implementation. platform-node supplies those volatile integrations. CLI commands reuse the existing conversation/workbench capabilities for resume rather than adding another session manager. Doctor should probe dependencies without starting a conversation or changing configuration.
+The distribution package owns upgrade policy; it imports no filesystem, process, HTTP, or OpenTUI implementation. platform-node supplies those volatile integrations. CLI commands reuse the existing conversation/workbench capabilities for resume rather than adding another session manager. Doctor probes dependencies without starting a conversation or changing configuration.
 
 Keep one root application version. Derive --version output and release metadata from it; validate tags such as v0.1.0 against that version. Internal workspace packages need not be published separately.
 
 The installer and application upgrade path must consume the same release manifest and artifact naming scheme. Keep the shell bootstrap small. Do not duplicate model/session behavior or maintain separate update and upgrade handlers.
 
-Add colocated parser/policy unit tests, adapter integration tests, and install/upgrade smoke tests. Test unsupported platforms, checksum failure, interrupted downloads, package-manager ownership, and draft/config preservation. Existing dependency-boundary checks must include distribution when this topology is implemented.
+Add colocated parser/policy unit tests, adapter integration tests, and install/upgrade smoke tests. Test unsupported platforms, checksum failure, interrupted downloads, package-manager ownership, and draft/config preservation. Existing dependency-boundary checks must include distribution for this topology.

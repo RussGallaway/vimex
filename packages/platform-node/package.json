@@ -5,6 +5,7 @@
   "type": "module",
   "exports": "./src/index.ts",
   "dependencies": {
-    "@vimex/interaction": "workspace:*"
+    "@vimex/interaction": "workspace:*",
+    "@vimex/distribution": "workspace:*"
   }
 }

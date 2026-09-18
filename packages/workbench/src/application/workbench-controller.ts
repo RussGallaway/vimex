@@ -247,11 +247,11 @@ export class VimexController implements WorkbenchActions {
     for (const event of buffered) this.dispatch({ type: "conversation.event", event })
     if (focus) this.dispatch({ type: "thread.switch", threadId: snapshot.summary.id })
   }
-  initialize(cwd: string, model?: string, resume?: string): Promise<void> {
+  initialize(cwd: string, model?: string, resume?: string, resumeMode?: "picker" | "last"): Promise<void> {
     if (this.closing) return Promise.resolve()
-    return this.initialization ??= this.runInitialize(cwd, model, resume)
+    return this.initialization ??= this.runInitialize(cwd, model, resume, resumeMode)
   }
-  private async runInitialize(cwd: string, model?: string, resume?: string): Promise<void> {
+  private async runInitialize(cwd: string, model?: string, resume?: string, resumeMode?: "picker" | "last"): Promise<void> {
     const epoch = this.runtimeEpoch
     const navigation = this.navigationRevision
     this.initialDirectory = cwd
@@ -263,10 +263,17 @@ export class VimexController implements WorkbenchActions {
       const summaries = await this.unlessClosing(this.ports.conversation.listThreads())
       if (!summaries || !this.currentRuntime(epoch)) return
       for (const summary of summaries.value) this.register(summary)
+      if (resumeMode && !resume) {
+        const matching = summaries.value.filter(summary => this.ports.resolveDirectory(cwd, summary.cwd) === this.ports.resolveDirectory(cwd, cwd) && !this.state.retiredSideThreadIds.includes(summary.id))
+          .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+        resume = matching[0]?.id
+        if (!resume) throw new Error(`No sessions found for ${cwd}. Run vimex to start a new session.`)
+      }
       if (resume && this.state.retiredSideThreadIds.includes(threadId(resume))) throw new Error("This side chat was quit and cannot be reopened")
       const snapshot = await this.unlessClosing(resume ? this.ports.conversation.resumeThread(threadId(resume)) : this.ports.conversation.startThread(cwd, model))
       if (!snapshot || !this.currentRuntime(epoch)) return
       this.hydrate(snapshot.value, navigation === this.navigationRevision)
+      if (resumeMode === "picker" && navigation === this.navigationRevision) this.dispatchInteraction({ type: "overlay.open", overlay: "sessions" })
     } catch (error) {
       if (!this.currentRuntime(epoch)) return
       this.dispatch({ type: "connection.changed", connection: "error", error: String(error) })

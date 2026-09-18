@@ -1,6 +1,6 @@
 # Publishing Vimex through Homebrew
 
-Status: packaging plan; there is no published Vimex tap or formula yet.
+Status: Formula/vimex.rb is implemented in this repository. It is HEAD-only until the first stable release is published; the release workflow then generates its versioned URLs and checksums. No release has been published or live Homebrew installation validated yet.
 
 ## Vocabulary
 
@@ -35,7 +35,9 @@ Publish immutable application release assets first, then update Formula/vimex.rb
 
 Each Vimex release updates the formula's versioned URL and SHA-256. brew update refreshes package definitions; brew upgrade vimex upgrades the installed package. A tap does not require admission to Homebrew's official collections. Follow current tap trust prompts rather than bypassing them.
 
-Homebrew should own Homebrew-installed updates. Both vimex update and vimex upgrade will route to the same operation, delegating to brew for these installations.
+Homebrew should own Homebrew-installed updates. Both vimex update and vimex upgrade route to the same operation, delegating to brew for these installations.
+
+Before the first release, once the formula commit is on GitHub, use `brew install --HEAD russgallaway/vimex/vimex` after the explicit tap command. This builds from main and requires Bun; stable archives include the runtime and native assets.
 
 ## Admission to core
 

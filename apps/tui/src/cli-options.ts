@@ -2,6 +2,7 @@ import { resolve } from "node:path"
 
 export interface CliOptions {
   cwd: string
+  resumeMode?: "picker" | "last"
   thread?: string
   model?: string
   config?: string

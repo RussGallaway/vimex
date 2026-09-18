@@ -1,6 +1,6 @@
-# Distribution and release plan
+# Distribution and releases
 
-Status: proposal and preparation checklist. Vimex currently runs from source. Homebrew, curl installation, global CLI subcommands, and release publishing described here are not implemented or published.
+Status: CLI, native packaging, installer/updater, monorepo formula, and release workflow are implemented. macOS ARM64 bundles have passed local CLI, syntax, and PTY checks outside the checkout. The four-platform workflow has not run remotely and no public release has been published.
 
 ## Distribution
 
@@ -22,7 +22,7 @@ A curl installer should detect supported OS/architecture, fetch a versioned arch
 
 ## CLI and updates
 
-Proposed additions: `vimex PATH`, `vimex resume [ID]`, `vimex resume --last`, `vimex doctor`, and `vimex upgrade` with `update` as an alias. Preserve existing flags such as `--thread`.
+Implemented: `vimex PATH`, `vimex resume [ID]`, `vimex resume --last`, `vimex doctor`, and `vimex upgrade` with `update` as an alias. Preserve existing flags such as `--thread`.
 
 Homebrew owns upgrades of Homebrew installations. The upgrade command should delegate to it, never overwrite its managed files. Direct installations use the same artifact selection and verification logic as the installer. Source installations receive source-update instructions.
 
@@ -35,6 +35,20 @@ The existing Checks workflow runs macOS/Linux checks on pushes and pull requests
 A version-tag workflow should validate the source version, run checks, build artifacts, smoke-test them outside the repository with no Bun installation, and validate syntax assets offline. Exercise both a clean install and an upgrade from the preceding release. Check `--help`, `--version`, the demo, terminal cleanup, and the installed manual.
 
 Assemble a draft release with all archives, checksums, third-party notices, and build attestations before publication. Prefer immutable releases. After publication, update Formula/vimex.rb and its checksums on main in the same repository. Keep the application tag immutable; a formula-only follow-up commit must not trigger another release. Use narrowly scoped workflow permissions and respect branch protections. Pin workflow dependencies deliberately and avoid publishing from untrusted pull-request jobs.
+
+## Release procedure
+
+1. Update the root package.json version using SemVer; regenerate docs with `bun run docs:generate` when the manual changes. Run `bun run check`.
+2. Commit on main, review, and push the intended source. Create and push the matching immutable tag, initially `v0.1.0`.
+3. The Release workflow builds natively on macOS/Linux ARM64/x64, runs checks and packaged CLI/PTY/syntax probes, and uploads archives. `release:manifest` verifies all four archive hashes before publication.
+4. Publication assembles a draft with archives, vimex-release.json, SHA256SUMS, install.sh, and provenance. It publishes only after upload succeeds.
+5. Stable publication generates Formula/vimex.rb on main from the release manifest and pushes a formula-only commit. Prereleases leave the stable formula unchanged.
+
+Rerunning a failed publication reuses a draft. Published assets are never replaced; a retry downloads the already published manifest before updating the formula. If branch protection rejects the formula push, download that manifest, run `bun run release:formula PATH`, and submit the generated change through the repository's required review process. Do not move the release tag. Formula updates are skipped when the tag is no longer GitHub's latest stable release.
+
+The workflow needs contents:write for publication/formula updates and id-token:write plus attestations:write for provenance. It does not need another repository's token. Keep publishing tied to trusted tags. A real Homebrew install/upgrade and previous-release upgrade acceptance remain release gates; fixture tests do not establish those results before a first release exists.
+
+Local packaging tests live in tests/install. Native archives include OpenTUI assets, the generated manual, MIT license, and dependency notices. Runtime asset resolution follows the executable's real path so launcher symlinks work. No release operation was performed as part of implementing this pipeline.
 
 ## Before making the repository public
 
@@ -55,4 +69,4 @@ The intended initial release is 0.1.0, tagged v0.1.0. Use Semantic Versioning. D
 
 The compatibility surface includes CLI flags/subcommands, configuration, persisted local-state formats, and documented integration contracts. Document migration needs and keep Codex compatibility separate from Vimex's own version. work/projects/v1 remains a planning milestone, not a claim that the first release is 1.0.0.
 
-See [SemVer](https://semver.org/), [Homebrew publishing](homebrew.md), and the [proposed CLI topology](cli-architecture.md).
+See [SemVer](https://semver.org/), [Homebrew publishing](homebrew.md), and the [CLI topology](cli-architecture.md).

@@ -1,6 +1,6 @@
 # Install and run
 
-Vimex is currently distributed as source. The repository does not yet publish a standalone executable or registry package. The planned first release is 0.1.0; see [distribution and releases](releasing.md).
+The CLI, native packaging, Homebrew formula, and curl installer are implemented. The first public release, 0.1.0, has not been published yet. Source execution and local bundles are available now; release installation commands below require published assets. See [distribution and releases](releasing.md).
 
 Use `:manual` inside Vimex or `man ./docs/man/vimex.1` from the checkout to read the offline manual.
 
@@ -45,6 +45,55 @@ bun run start --demo
 ```
 
 Use `:q` to exit. Vimex restores the previous terminal screen when it exits normally, receives a handled termination signal, or encounters a handled runtime failure.
+
+## CLI
+
+```sh
+vimex /path/to/project
+vimex resume                 # existing sessions in the current directory
+vimex resume --last          # most recently updated session here
+vimex resume THREAD_ID
+vimex doctor
+vimex update                 # alias for upgrade
+vimex upgrade --version 0.1.0
+```
+
+From a checkout, replace `vimex` with `bun run start`. Bare resume and --last report an error when the directory has no sessions; neither creates a thread. Doctor checks local dependencies and configuration without starting Codex conversations.
+
+## Standalone bundles
+
+```sh
+bun run build
+bun run package
+```
+
+The host-native bundle is under `dist/vimex-v0.1.0-PLATFORM-ARCH/`. Keep `vimex`, `assets`, and `share` together: parser workers, grammars, and native libraries are runtime dependencies. The executable needs neither Bun nor a source checkout. Linux targets glibc, not musl/Alpine. Man pages and third-party notices are included.
+
+## Homebrew
+
+Once the formula commit is available on GitHub, before the first release:
+
+```sh
+brew tap russgallaway/vimex https://github.com/RussGallaway/vimex.git
+brew install --HEAD russgallaway/vimex/vimex
+```
+
+After the first stable release, omit --HEAD to install its prebuilt bundle. Use `brew upgrade vimex`, `vimex update`, or `vimex upgrade` for Homebrew-owned updates. The formula installs `man vimex`. See [Homebrew details](homebrew.md).
+
+## Direct installation
+
+After the first release is published:
+
+```sh
+curl -fsSL https://github.com/RussGallaway/vimex/releases/latest/download/install.sh -o /tmp/vimex-install.sh
+sh /tmp/vimex-install.sh
+```
+
+Read the downloaded script before running it if desired. An optional positional version selects a release: `sh /tmp/vimex-install.sh 0.1.0`. The default bundle root is `~/.local/share/vimex`, with a launcher in `~/.local/bin`; add that directory to PATH yourself. Absolute `VIMEX_INSTALL_ROOT` and `VIMEX_BIN_DIR` overrides are supported. Installation requires curl, tar, and sha256sum or shasum.
+
+The installer checks SHA-256, rejects unsafe archive entries, and switches a managed current symlink atomically. `vimex upgrade` uses the same release artifact/checksum contract and preserves previous bundles. Explicit --version may downgrade; latest never does. Installs and upgrades share a lock. No silent updates run during a session. Homebrew files and unrelated existing executables are not overwritten.
+
+For the direct bundle manual, use `man ~/.local/share/vimex/current/share/man/man1/vimex.1`, or `:manual` inside Vimex. To uninstall a default direct installation, remove its `~/.local/bin/vimex` symlink and `~/.local/share/vimex` bundle directory after checking they belong to Vimex. Configuration and conversation state are separate and remain intact.
 
 ## Codex compatibility
 
