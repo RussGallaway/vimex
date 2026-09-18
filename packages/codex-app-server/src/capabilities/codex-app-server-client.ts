@@ -1,3 +1,9 @@
+import type { ThreadCompactStartParams } from "../generated/v0_154_0/v2/ThreadCompactStartParams"
+import type { ThreadCompactStartResponse } from "../generated/v0_154_0/v2/ThreadCompactStartResponse"
+import type { ThreadGoalGetResponse } from "../generated/v0_154_0/v2/ThreadGoalGetResponse"
+import type { ThreadGoalSetParams } from "../generated/v0_154_0/v2/ThreadGoalSetParams"
+import type { ThreadGoalSetResponse } from "../generated/v0_154_0/v2/ThreadGoalSetResponse"
+import type { ThreadGoalClearResponse } from "../generated/v0_154_0/v2/ThreadGoalClearResponse"
 import type { Approval } from "@vimex/approvals"
 import type { ConversationEvent, ThreadSummary } from "@vimex/conversation"
 import type { InitializeResponse } from "../generated/v0_154_0/InitializeResponse"
@@ -247,6 +253,15 @@ export class CodexAppServerClient {
     return session(raw)
   }
 
+  async compactThread(thread: string): Promise<void> {
+    const params: ThreadCompactStartParams = { threadId: thread }
+    await this.rpc.request<ThreadCompactStartResponse>("thread/compact/start", params)
+  }
+
+  async archiveThread(thread: string): Promise<void> {
+    await this.rpc.request("thread/archive", { threadId: thread })
+  }
+
   startTurn(
     thread: string,
     input: string | readonly UserInput[],
@@ -272,6 +287,10 @@ export class CodexAppServerClient {
       ...overrides,
     } satisfies TurnSteerParams)
   }
+
+  async getGoal(thread: string) { return (await this.rpc.request<ThreadGoalGetResponse>("thread/goal/get", { threadId: thread })).goal }
+  async setGoal(thread: string, update: Omit<ThreadGoalSetParams, "threadId">) { return (await this.rpc.request<ThreadGoalSetResponse>("thread/goal/set", { threadId: thread, ...update })).goal }
+  async clearGoal(thread: string) { return (await this.rpc.request<ThreadGoalClearResponse>("thread/goal/clear", { threadId: thread })).cleared }
 
   interruptTurn(thread: string, activeTurnId: string): Promise<TurnInterruptResponse> {
     return this.rpc.request("turn/interrupt", { threadId: thread, turnId: activeTurnId })

@@ -1,3 +1,4 @@
+import { mapGoal } from "./map-goal"
 import { itemId, threadId, turnId, type ConversationEvent, type ThreadSummary } from "@vimex/conversation"
 import type { RequestId } from "../generated/v0_154_0/RequestId"
 import type { Thread } from "../generated/v0_154_0/v2/Thread"
@@ -17,6 +18,8 @@ export interface SubagentLink {
 }
 
 export type CodexAdapterEvent =
+  | { type: "compaction"; threadId: ReturnType<typeof threadId>; turnId: ReturnType<typeof turnId>; phase: "started" | "completed" }
+  | { type: "thread.goal"; threadId: ReturnType<typeof threadId>; goal: import("@vimex/conversation").ThreadGoal | null }
   | { type: "connection"; status: "connected" | "disconnected" | "error"; error?: string }
   | { type: "conversation"; event: ConversationEvent }
   | { type: "thread.summary"; summary: ThreadSummary; relation: ThreadRelation }
@@ -26,19 +29,30 @@ export type CodexAdapterEvent =
   | { type: "approval.resolved"; requestId: RequestId; threadId: ReturnType<typeof threadId> }
   | { type: "approval.cancelled"; requestId: RequestId; approvalId?: string; error: string }
   | { type: "warning"; threadId?: ReturnType<typeof threadId>; message: string }
-  | { type: "error"; threadId?: ReturnType<typeof threadId>; turnId?: ReturnType<typeof turnId>; message: string }
+  | { type: "error"; willRetry?: boolean; threadId?: ReturnType<typeof threadId>; turnId?: ReturnType<typeof turnId>; message: string }
   | ServerRequestEvent
 
 export function mapNotification(notification: ServerNotificationMessage): CodexAdapterEvent {
   const params = notification.params
   if (!isRecord(params)) return { type: "unknown", method: notification.method, payload: params }
   switch (notification.method) {
+    case "thread/goal/updated": {
+      const goal = mapGoal(params.goal)
+      if (typeof params.threadId === "string" && goal) return { type: "thread.goal", threadId: threadId(params.threadId), goal }
+      break
+    }
+    case "thread/goal/cleared":
+      if (typeof params.threadId === "string") return { type: "thread.goal", threadId: threadId(params.threadId), goal: null }
+      break
     case "thread/started": {
       const thread = params.thread
       return isThreadLike(thread)
         ? { type: "thread.summary", summary: mapThreadSummary(thread), relation: mapThreadRelation(thread) }
         : { type: "unknown", method: notification.method, payload: params }
     }
+    case "thread/compacted":
+      if (typeof params.threadId === "string" && typeof params.turnId === "string") return { type: "compaction", phase: "completed", threadId: threadId(params.threadId), turnId: turnId(params.turnId) }
+      break
     case "thread/status/changed":
       if (typeof params.threadId === "string" && isThreadStatus(params.status)) return { type: "thread.status", threadId: threadId(params.threadId), status: mapThreadStatus(params.status) }
       break
@@ -92,7 +106,7 @@ export function mapNotification(notification: ServerNotificationMessage): CodexA
     case "error": {
       const error = params.error
       const message = isRecord(error) && typeof error.message === "string" ? error.message : safeStringify(error)
-      return { type: "error", ...(typeof params.threadId === "string" ? { threadId: threadId(params.threadId) } : {}), ...(typeof params.turnId === "string" ? { turnId: turnId(params.turnId) } : {}), message }
+      return { type: "error", willRetry: params.willRetry === true, ...(typeof params.threadId === "string" ? { threadId: threadId(params.threadId) } : {}), ...(typeof params.turnId === "string" ? { turnId: turnId(params.turnId) } : {}), message }
     }
   }
   return { type: "unknown", method: notification.method, payload: params }
@@ -107,6 +121,7 @@ export function mapNotificationEvents(notification: ServerNotificationMessage): 
     if (relation.parentThreadId) events.push({ type: "subagent.link", link: { ownerThreadId: relation.parentThreadId, agentThreadId: relation.threadId, itemId: itemId(`thread:${relation.threadId}`), relation: "spawned" } })
   }
   if ((notification.method === "item/started" || notification.method === "item/completed") && isRecord(params) && typeof params.threadId === "string" && isRecord(params.item) && typeof params.item.id === "string") {
+    if (params.item.type === "contextCompaction" && typeof params.turnId === "string") events.push({ type: "compaction", phase: notification.method === "item/started" ? "started" : "completed", threadId: threadId(params.threadId), turnId: turnId(params.turnId) })
     if (params.item.type === "subAgentActivity" && typeof params.item.agentThreadId === "string") events.push({
       type: "subagent.link", link: { ownerThreadId: threadId(params.threadId), agentThreadId: threadId(params.item.agentThreadId), itemId: itemId(params.item.id), relation: "activity", ...(typeof params.item.agentPath === "string" ? { agentPath: params.item.agentPath } : {}) },
     })

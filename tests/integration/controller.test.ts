@@ -943,3 +943,35 @@ test("history safely restores a session whose old transcript point no longer exi
   expect(workspace.transcript.viewport).toEqual({ kind: "tail" })
   await h.controller.close()
 })
+
+test("goal commands use server state, serialize mutations, and preserve draft without invented prompts", async () => {
+  const h = harness()
+  const calls: unknown[] = []
+  let goal: import("@vimex/conversation").ThreadGoal | null = null
+  h.backend.getGoal = async id => { calls.push(["get", id]); return goal }
+  h.backend.setGoal = async (id, update) => {
+    calls.push(["set", id, update])
+    goal = { objective: "old", status: "active", tokenBudget: null, tokensUsed: 42, timeUsedSeconds: 3, ...goal, ...update }
+    return goal
+  }
+  h.backend.clearGoal = async id => { calls.push(["clear", id]); goal = null; return true }
+  await h.controller.initialize("/tmp")
+  h.controller.changeDraft("keep my draft", 4)
+  h.controller.executeCommand("goal Fix tests")
+  h.controller.executeCommand("goal pause")
+  await h.controller.settle()
+  expect(calls).toEqual([["set", a, { objective: "Fix tests", status: "active" }], ["set", a, { status: "paused" }]])
+  expect(h.controller.getSnapshot().error).toContain("Goal [paused]: Fix tests")
+  h.controller.executeCommand("goal")
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().error).toContain("42 tokens")
+  h.controller.executeCommand("goal --budget 30000 Improve parser")
+  await h.controller.settle()
+  expect(calls.at(-1)).toEqual(["set", a, { objective: "Improve parser", status: "active", tokenBudget: 30000 }])
+  h.controller.executeCommand("goal clear")
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().error).toBe("Goal cleared")
+  expect(h.controller.getSnapshot().workspaces[a]!.composer.text).toBe("keep my draft")
+  expect(h.starts).toEqual([])
+  await h.controller.close()
+})

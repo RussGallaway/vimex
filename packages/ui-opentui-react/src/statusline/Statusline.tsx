@@ -32,6 +32,7 @@ export function Statusline(props: {
     props.pendingApprovals > 0 ? `${props.pendingApprovals} approval${props.pendingApprovals === 1 ? "" : "s"}` : undefined,
     props.pendingQuestions > 0 ? `${props.pendingQuestions} question${props.pendingQuestions === 1 ? "" : "s"}` : undefined,
     props.activeTurn ? "working" : undefined,
+    props.summary?.goal ? `goal ${props.summary.goal.status}${props.summary.goal.tokenBudget ? ` ${Math.floor(props.summary.goal.tokensUsed / props.summary.goal.tokenBudget * 100)}%` : ""}` : undefined,
     props.selectionCount ? `${props.selectionCount} selected` : undefined,
     props.unseenEntries > 0 ? `↓ ${props.unseenEntries} new` : undefined,
     contextLabel(props.summary),

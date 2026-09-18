@@ -37,3 +37,16 @@ test("persisted favorites remain resumable when omitted from server thread list"
   expect(searchSessions([], {}, "", [favorite])).toEqual([{ id: favorite, summary: undefined, favorite: true }])
   expect(searchSessions([], {}, "unrelated", [favorite])).toEqual([])
 })
+
+test("directory scope excludes other-directory favorites and permits All scope", () => {
+  const local = threadId("local"), other = threadId("other"), nested = threadId("nested")
+  const base = { title: "Session", model: "test", reasoningEffort: "high", status: "idle" as const }
+  const summaries = {
+    [local]: { ...base, id: local, cwd: "/work/project/" },
+    [other]: { ...base, id: other, cwd: "/work/other" },
+    [nested]: { ...base, id: nested, cwd: "/work/project/nested" },
+  }
+  expect(searchSessions([local, other, nested], summaries, "", [other], "/work/project").map(row => row.id)).toEqual([local])
+  expect(searchSessions([local, other], summaries, "", [other]).map(row => row.id)).toEqual([other, local])
+  expect(searchSessions([local, other], summaries, "other", [other], "/work/project")).toEqual([])
+})

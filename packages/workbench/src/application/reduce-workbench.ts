@@ -1,3 +1,4 @@
+import { observeCompaction, observeCompactionTurn } from "./compaction"
 import { acknowledgeOutgoing, failOutgoing, retryOutgoing, submitDraft, updateDraft } from "@vimex/composer"
 import { reduceInteraction } from "@vimex/interaction"
 import { clearSelection, initialTranscript, reduceTranscript, selectedText, urlAt } from "@vimex/transcript"
@@ -7,6 +8,7 @@ import { scheduleQueued, submissionEffect } from "./submission-scheduler"
 import { createWorkspace, done, openThread, targetThread, updateWorkspace, type WorkbenchCommand, type WorkbenchEffect, type WorkbenchState, type WorkbenchTransition } from "./workbench-state"
 export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCommand): WorkbenchTransition {
   switch (command.type) {
+    case "compaction.observed": return done(observeCompaction(state, command.observation))
     case "turn.interrupt.requested":
       return state.workspaces[command.threadId]?.conversation.activeTurnId === command.turnId
         ? done({ ...state, interruptingTurns: { ...state.interruptingTurns, [command.threadId]: command.turnId } })
@@ -34,11 +36,12 @@ export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCom
       : done(state)
     case "thread.close": {
       if (!state.workspaces[command.threadId]) return done(state)
+      const compactingThreads = { ...state.compactingThreads }; delete compactingThreads[command.threadId]
       const workspaces = { ...state.workspaces }; delete workspaces[command.threadId]
       const summaries = { ...state.summaries }; delete summaries[command.threadId]
       const threadOrder = state.threadOrder.filter((id) => id !== command.threadId)
       const activeThreadId = state.activeThreadId === command.threadId ? threadOrder[0] : state.activeThreadId
-      return done({ ...state, workspaces, summaries, threadOrder, activeThreadId })
+      return done({ ...state, compactingThreads, workspaces, summaries, threadOrder, activeThreadId })
     }
     case "thread.summary.patch": {
       const summary = state.summaries[command.threadId]
@@ -63,7 +66,7 @@ export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCom
       })
     }
     case "conversation.event": {
-      const result = applyConversationEvent(state, command.event)
+      const result = applyConversationEvent(observeCompactionTurn(state, command.event), command.event)
       if (command.event.type !== "turn.completed" || result.state.interruptingTurns[command.event.threadId] !== command.event.turnId) return result
       const interruptingTurns = { ...result.state.interruptingTurns }
       delete interruptingTurns[command.event.threadId]
@@ -111,6 +114,7 @@ export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCom
       const id = targetThread(state, command.threadId)
       const workspace = id ? state.workspaces[id] : undefined
       if (!id || !workspace) return done(state)
+      if (state.compactingThreads[id]) return done({ ...state, error: "Wait for compaction to finish before sending; your draft is preserved" })
       const activeTurnId = workspace.conversation.activeTurnId
       const startingTurn = workspace.composer.outbox.some((message) => message.intent === "next-turn" && message.status === "sending")
       const queued = command.intent === "next-turn" ? Boolean(activeTurnId) || startingTurn : !activeTurnId && startingTurn
@@ -148,6 +152,7 @@ export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCom
       const workspace = id ? state.workspaces[id] : undefined
       const outgoing = workspace?.composer.outbox.find((message) => message.id === command.clientMessageId)
       if (!id || !workspace || !outgoing || outgoing.status !== "failed") return done(state)
+      if (state.compactingThreads[id]) return done({ ...state, error: "Wait for compaction to finish before sending; your draft is preserved" })
       const activeTurnId = workspace.conversation.activeTurnId
       const startingTurn = workspace.composer.outbox.some((message) => message.id !== outgoing.id && message.intent === "next-turn" && message.status === "sending")
       const queued = outgoing.intent === "next-turn" ? Boolean(activeTurnId) || startingTurn : !activeTurnId && startingTurn

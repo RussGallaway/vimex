@@ -13,6 +13,9 @@ export interface ThreadWorkspace {
 }
 export interface PendingFork { threadId: ThreadId; itemId: ItemId; turnId: TurnId; preview: string }
 export interface WorkbenchState {
+  compactingThreads: Readonly<Record<string, import("./compaction").CompactionStatus>>
+  sideChats: Readonly<Record<string, import("./side-chat").SideChat>>
+  retiredSideThreadIds: readonly ThreadId[]
   interruptingTurns: Readonly<Record<string, TurnId>>
   availableModels?: readonly AvailableModel[]
   modelCatalogError?: string
@@ -43,6 +46,7 @@ export type WorkbenchEffect =
 export interface WorkbenchTransition { state: WorkbenchState; effects: readonly WorkbenchEffect[] }
 
 export type WorkbenchCommand =
+  | { type: "compaction.observed"; observation: import("./compaction").CompactionObservation }
   | { type: "turn.interrupt.requested"; threadId: ThreadId; turnId: TurnId }
   | { type: "turn.interrupt.failed"; threadId: ThreadId; turnId: TurnId }
   | { type: "connection.changed"; connection: WorkbenchState["connection"]; error?: string }
@@ -73,7 +77,7 @@ export type WorkbenchCommand =
   | { type: "agent.link"; link: AgentRelationship }
 
 export const initialWorkbench = (): WorkbenchState => ({
-  interruptingTurns: {}, favoriteThreadIds: [], threadOrder: [], summaries: {}, workspaces: {}, approvals: initialApprovals(), questions: {}, agentRelationships: [], connection: "connecting",
+  compactingThreads: {}, sideChats: {}, retiredSideThreadIds: [], interruptingTurns: {}, favoriteThreadIds: [], threadOrder: [], summaries: {}, workspaces: {}, approvals: initialApprovals(), questions: {}, agentRelationships: [], connection: "connecting",
 })
 export function createWorkspace(id: ThreadId): ThreadWorkspace {
   return { conversation: createConversation(id), transcript: initialTranscript(), composer: initialComposer(), interaction: initialInteraction() }

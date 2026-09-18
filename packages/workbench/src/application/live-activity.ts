@@ -15,8 +15,9 @@ function labelFor(item: ConversationItem | undefined): string {
 export function liveActivity(state: WorkbenchState, threadId: ThreadId | undefined = state.activeThreadId): LiveActivity {
   const conversation = threadId ? state.workspaces[threadId]?.conversation : undefined
   const turnId = conversation?.activeTurnId
+  if (threadId && turnId && state.interruptingTurns[threadId] === turnId) return { working: true, label: "Stopping" }
+  if (threadId && state.compactingThreads[threadId]) return { working: true, label: "Compacting" }
   if (!threadId || !conversation || !turnId) return { working: false }
-  if (state.interruptingTurns[threadId] === turnId) return { working: true, label: "Stopping" }
   const turn = conversation.turns[turnId]
   const ids = turn?.itemIds ?? []
   for (let index = ids.length - 1; index >= 0; index--) {

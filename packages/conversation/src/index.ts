@@ -8,3 +8,5 @@ export * from "./domain/effective-item-status"
 export * from "./domain/fork-thread"
 export * from "./application/conversation-gateway"
 export { forkBoundary } from "./application/fork-thread"
+
+export * from "./domain/thread-goal"

@@ -217,10 +217,14 @@ describe("Vimex OpenTUI shell", () => {
       expect(measureRenderedTranscript(setup.renderer, scrollbox, foldedTranscript)).not.toBe(wide)
       measureRenderedTranscript(setup.renderer, scrollbox, transcript)
 
-      await act(async () => { setup.resize(30, 18); await setup.flush(); await setup.renderOnce() })
+      // Commit the pane geometry context before asking native layout to render its new dimensions.
+      await act(async () => { setup.resize(30, 18); await setup.flush() })
+      await act(async () => { await setup.renderOnce(); await setup.flush() })
       const narrow = measureRenderedTranscript(setup.renderer, scrollbox, transcript)!
       expect(narrow).not.toBe(wide)
       expect(Object.keys(narrow.points?.[complexId] ?? {})).toHaveLength(count + 1)
+      expect(scrollbox.width).toBe(30)
+      expect(narrow.width).toBe(30)
       expect(narrow.width).toBeLessThan(wide.width)
     } finally { await act(async () => setup.renderer.destroy()) }
   })
@@ -602,6 +606,7 @@ describe("Vimex OpenTUI shell", () => {
     const setup = await testRender(<VimexRoot state={state} controller={controller} />, { width: 96, height: 26 })
     try {
       await act(async () => setup.flush())
+      await act(async () => { setup.mockInput.pressKey("TAB"); await setup.flush() })
       await act(async () => { await setup.mockInput.typeText("fau"); await setup.flush() })
       const frame = setup.captureCharFrame()
       expect(frame).toContain("Client authentication")
@@ -627,6 +632,7 @@ describe("Vimex OpenTUI shell", () => {
     const setup = await testRender(<VimexRoot state={state} controller={controller} />, { width: 96, height: 26 })
     try {
       await act(async () => setup.flush())
+      await act(async () => { setup.mockInput.pressKey("TAB"); await setup.flush() })
       await act(async () => {
         await setup.mockInput.typeText(target)
         setup.mockInput.pressEnter()
@@ -666,6 +672,7 @@ describe("Vimex OpenTUI shell", () => {
     try {
       await act(async () => { await setup.mockInput.typeText(" s"); await setup.flush() })
       expect(setup.renderer.currentFocusedRenderable?.id).toBe("session-search")
+      await act(async () => { setup.mockInput.pressKey("TAB"); await setup.flush() })
       await act(async () => { await setup.mockInput.typeText(target); await setup.flush() })
       expect((setup.renderer.root.findDescendantById("session-search") as InputRenderable).value).toBe(target)
       await act(async () => { setup.mockInput.pressEnter(); await setup.flush() })
@@ -691,6 +698,7 @@ describe("Vimex OpenTUI shell", () => {
     const setup = await testRender(<VimexRoot state={state} controller={controller} />, { width: 86, height: 18 })
     try {
       await act(async () => setup.flush())
+      await act(async () => { setup.mockInput.pressKey("TAB"); await setup.flush() })
       await act(async () => {
         await setup.mockInput.pressKeys(Array.from({ length: 12 }, () => "ARROW_DOWN"), 1)
         await setup.flush()

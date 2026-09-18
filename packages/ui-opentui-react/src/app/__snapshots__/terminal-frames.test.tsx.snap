@@ -87,14 +87,14 @@ exports[`terminal frame regressions session picker stays inside a 48x18 terminal
 "
   VI┌─ Sessions ───────────────────────────┐ed
   │ │                                      │//
-  │ │  / fuzzy search title, cwd, branch…  │
-    │  j/k move · i search · enter open ·  │
+  │ │  This directory · Tab toggle scope   │
+    │  / fuzzy search title, cwd, branch…  │
+  │ │  j/k move · i search · enter open ·  │
   │ │  ctrl-r rename · ctrl-f favorite ·   │
   │ │  esc close                           │
-  │ │   ● Frame regression                 │
+    │   ● Frame regression                 │
     │   /work/vimex                        │
-    │   idle · git:main · gpt-6            │
-│   │                                      │
+│   │   idle · git:main · gpt-6            │
 │  D│                                      │
 │   │                                      │
 │   │                                      │

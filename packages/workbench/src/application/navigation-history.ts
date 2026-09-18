@@ -52,6 +52,10 @@ export class NavigationHistory {
     this.back = [...this.back, location].slice(-100)
     this.forward = []
   }
+  removeThread(id: ThreadId): void {
+    this.back = this.back.filter(location => location.threadId !== id)
+    this.forward = this.forward.filter(location => location.threadId !== id)
+  }
   peek(direction: "back" | "forward"): NavigationLocation | undefined { return this[direction].at(-1) }
   commit(direction: "back" | "forward", target: NavigationLocation, origin: NavigationLocation): boolean {
     if (this.peek(direction) !== target) return false

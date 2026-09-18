@@ -1,7 +1,7 @@
 import { CliRenderEvents, type ScrollBoxRenderable } from "@opentui/core"
 import { useRenderer } from "@opentui/react"
 import type { ThreadId } from "@vimex/conversation"
-import type { TranscriptState } from "@vimex/transcript"
+import type { LogicalPoint, TranscriptState } from "@vimex/transcript"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react"
 import type { VimexUiController } from "../contracts"
 import { buildTranscriptLayout, type TranscriptLayout } from "./layout"
@@ -15,6 +15,7 @@ export function useTranscriptLayout(options: {
   height: number
   scrollRef: RefObject<ScrollBoxRenderable | null>
   controller: VimexUiController
+  onAnchor?(point: LogicalPoint, preferredScreenRow: number): void
 }) {
   const renderer = useRenderer()
   const { transcript, threadId, width, height, scrollRef, controller } = options
@@ -72,7 +73,12 @@ export function useTranscriptLayout(options: {
         pendingAnchor.current = false
         pendingRestore.current = false
         const anchor = topVisiblePoint(next, scrollbox)
-        if (anchor) controller.transcript({ type: "viewport.anchor", point: { itemId: anchor.itemId, graphemeOffset: anchor.graphemeOffset }, preferredScreenRow: anchor.screenY - scrollbox.viewport.screenY })
+        if (anchor) {
+          const point = { itemId: anchor.itemId, graphemeOffset: anchor.graphemeOffset }
+          const row = anchor.screenY - scrollbox.viewport.screenY
+          if (current.onAnchor) current.onAnchor(point, row)
+          else controller.transcript({ type: "viewport.anchor", point, preferredScreenRow: row })
+        }
       } else if (pendingRestore.current && current.transcript.viewport.kind === "point") {
         const viewport = current.transcript.viewport
         const anchor = measuredPoint(next, viewport.point)

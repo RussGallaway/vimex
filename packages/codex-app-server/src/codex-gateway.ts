@@ -25,10 +25,15 @@ export function createCodexGateways(
     switch (event.type) {
       case "subagent.link": normalized = { type: "subagent.link", link: { parentId: event.link.ownerThreadId, childId: event.link.agentThreadId, itemId: event.link.itemId, relation: event.link.relation, agentPath: event.link.agentPath } }; break
       case "conversation": normalized = event; break
+      case "compaction": normalized = event; break
       case "thread.summary": normalized = { type: "summary", summary: event.summary }; break
+      case "thread.goal": normalized = { type: "metadata", threadId: event.threadId, patch: { goal: event.goal } }; break
       case "thread.status": normalized = { type: "metadata", threadId: event.threadId, patch: { status: event.status } }; break
       case "thread.tokenUsage": normalized = { type: "metadata", threadId: event.threadId, patch: { contextUsed: event.used, contextLimit: event.contextLimit } }; break
-      case "warning": case "error": normalized = { type: "notice", message: event.message }; break
+      case "error":
+        if (event.threadId && !event.willRetry) publish({ type: "compaction", phase: "failed", threadId: event.threadId, turnId: event.turnId, error: event.message })
+        normalized = { type: "notice", message: event.message }; break
+      case "warning": normalized = { type: "notice", message: event.message }; break
       case "connection": if (event.status !== "connected") normalized = { type: "disconnected", message: event.error ?? "Codex app server disconnected" }; break
       case "unknown": break
       case "approval.requested": case "approval.resolved": case "approval.cancelled": case "userInput.requested": break
@@ -79,6 +84,18 @@ export function createCodexGateways(
     return session
   }
   const conversation: ConversationGateway = {
+    compactThread: id => client.compactThread(id),
+    async getGoal(id) { const goal = await client.getGoal(id); publish({ type: "metadata", threadId: id, patch: { goal } }); return goal },
+    async setGoal(id, update) { const goal = await client.setGoal(id, update); publish({ type: "metadata", threadId: id, patch: { goal } }); return goal },
+    async clearGoal(id) { const cleared = await client.clearGoal(id); publish({ type: "metadata", threadId: id, patch: { goal: null } }); return cleared },
+    async forkSideThread(id) {
+      const fork = await client.forkThread(id, undefined, { deferGoalContinuation: true })
+      // Side questions must not inherit the parent's autonomous objective.
+      try { await client.clearGoal(fork.summary.id) }
+      catch (error) { await client.archiveThread(fork.summary.id); throw error }
+      return observeSession(fork)
+    },
+    async retireThread(id) { await client.archiveThread(id) },
     async listThreads() {
       const all = []
       let cursor: string | undefined

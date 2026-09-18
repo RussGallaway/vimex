@@ -567,3 +567,25 @@ test("s launches Flash from composer Normal while Insert s stays literal", async
     expect(h.workspace().composer.text).toBe("saved draft")
   } finally { await h.close() }
 })
+
+
+for (const surface of ["composer", "transcript"] as const) {
+  test(`t follows transcript tail from ${surface} Normal without changing draft`, async () => {
+    const h = await visualHarness()
+    try {
+      await act(async () => {
+        h.controller.changeDraft("preserve draft", 3)
+        h.controller.dispatchInteraction({ type: "focus.set", surface })
+        h.controller.transcript({ type: "viewport.anchor", point: { itemId: answer, graphemeOffset: 0 }, preferredScreenRow: 0 })
+        await h.flush()
+      })
+      await h.keys("t")
+      expect(h.workspace().transcript.viewport.kind).toBe("tail")
+      expect(h.workspace().interaction.surface).toBe(surface)
+      expect(h.workspace().composer.text).toBe("preserve draft")
+      await h.keys("i")
+      await h.keys("t")
+      expect(h.workspace().composer.text).toContain("t")
+    } finally { await h.close() }
+  })
+}

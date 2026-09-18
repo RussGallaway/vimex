@@ -20,16 +20,17 @@ function fuzzyScore(value: string, query: string): number | undefined {
   return score - Math.max(0, haystack.length - needle.length) * 0.01
 }
 
-export function searchSessions(threads: readonly ThreadId[], summaries: Readonly<Record<string, ThreadSummary>>, query: string, favorites: readonly ThreadId[] = []): SessionRow[] {
+export function searchSessions(threads: readonly ThreadId[], summaries: Readonly<Record<string, ThreadSummary>>, query: string, favorites: readonly ThreadId[] = [], cwd?: string): SessionRow[] {
   const favoriteIds = new Set(favorites)
-  const available = [...new Set([...threads, ...favorites])]
+  const normalize = (path: string) => path.replace(/\/+$/, "") || "/"
+  const available = [...new Set([...threads, ...favorites])].filter(id => cwd === undefined || (summaries[id]?.cwd !== undefined && normalize(summaries[id]!.cwd) === normalize(cwd)))
   const exactQuery = query.trim()
   const exact = available.find((id) => id === exactQuery)
   if (exact) return [{ id: exact, summary: summaries[exact], ...(favoriteIds.has(exact) ? { favorite: true } : {}) }]
   // Codex can resume a known thread that is absent from thread/list (forks and
   // hidden agent threads are common examples). Never fuzzy-match a complete
   // UUID to a different session; offer the typed ID as a resumable target.
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(exactQuery)) {
+  if (cwd === undefined && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(exactQuery)) {
     return [{ id: threadId(exactQuery) }]
   }
   return available.map((id, order) => {

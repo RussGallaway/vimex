@@ -1,12 +1,15 @@
-import { useKeyboard, useTerminalDimensions } from "@opentui/react"
-import type { TextareaRenderable } from "@opentui/core"
+import { usePaneGeometry } from "../side-chat/pane-geometry"
+import { useKeyboard, useRenderer } from "@opentui/react"
+import { CliRenderEvents, type TextareaRenderable } from "@opentui/core"
 import type { ComposerState, SubmissionIntent } from "@vimex/composer"
 import type { VimMode } from "@vimex/interaction"
 import { codeUnitOffsetToGraphemeOffset, graphemeOffsetToCodeUnitOffset } from "@vimex/interaction"
-import { useEffect, useRef, type MutableRefObject, type RefObject, type ReactNode } from "react"
+import { useEffect, useRef, useState, type MutableRefObject, type RefObject, type ReactNode } from "react"
 import { emberTide } from "../theme"
 
 export function Composer(props: {
+  expanded?: boolean
+  interactive?: boolean
   state: ComposerState
   mode: VimMode
   activeTurn: boolean
@@ -23,6 +26,8 @@ export function Composer(props: {
   onEscape?(): void
   onRetry?(id: string): void
 }) {
+  const renderer = useRenderer()
+  const [wrappedRows, setWrappedRows] = useState(1)
   const synchronizing = useRef(false)
   const committedMode = useRef(props.mode)
   const nativeSubmitIntent = useRef<SubmissionIntent | undefined>(undefined)
@@ -33,7 +38,7 @@ export function Composer(props: {
   }, [props.mode])
 
   useKeyboard((event) => {
-    if (!props.textareaRef.current?.focused) return
+    if (props.interactive === false || !props.textareaRef.current?.focused) return
     if (event.ctrl && (event.name.toLowerCase() === "return" || event.name.toLowerCase() === "enter")) {
       nativeSubmitIntent.current = "steer"
     }
@@ -62,7 +67,7 @@ export function Composer(props: {
   }, [props.state.revision, props.state.text, props.state.cursorOffset, props.textareaRef])
 
   const publishNativeDraft = () => {
-    if (synchronizing.current) return
+    if (props.interactive === false || synchronizing.current) return
     const textarea = props.textareaRef.current
     if (!textarea) return
     const cursorOffset = codeUnitOffsetToGraphemeOffset(textarea.plainText, textarea.cursorOffset)
@@ -99,10 +104,22 @@ export function Composer(props: {
   }
   props.submitRef.current = submitNativeDraft
 
-  const dimensions = useTerminalDimensions()
+  const dimensions = usePaneGeometry()
   const compact = dimensions.height < 18
   const showSendHint = dimensions.width >= 72
-  const inputHeight = Math.max(1, Math.min(props.maxHeight, compact ? 2 : 3))
+  useEffect(() => {
+    if (!props.expanded) return
+    const measure = () => {
+      const textarea = props.textareaRef.current
+      // virtualLineCount covers only the native viewport; total includes offscreen wrapped rows.
+      if (textarea) setWrappedRows(Math.max(1, textarea.editorView.getTotalVirtualLineCount()))
+    }
+    measure()
+    renderer.on(CliRenderEvents.FRAME, measure)
+    renderer.requestRender()
+    return () => { renderer.off(CliRenderEvents.FRAME, measure) }
+  }, [props.expanded, props.textareaRef, renderer])
+  const inputHeight = Math.max(1, Math.min(props.maxHeight, props.expanded ? Math.max(compact ? 2 : 3, wrappedRows) : compact ? 2 : 3))
   const queued = props.state.outbox.filter((message) => message.status === "queued").length
   const failed = props.state.outbox.filter((message) => message.status === "failed")
   return (
@@ -139,14 +156,15 @@ export function Composer(props: {
           if (event.ctrl && (event.name.toLowerCase() === "return" || event.name.toLowerCase() === "enter")) {
             nativeSubmitIntent.current = "steer"
           }
-          if (committedMode.current !== "insert") event.preventDefault()
+          if (props.interactive === false || committedMode.current !== "insert") event.preventDefault()
         }}
         onPaste={(event) => {
-          if (committedMode.current !== "insert") event.preventDefault()
+          if (props.interactive === false || committedMode.current !== "insert") event.preventDefault()
         }}
         onContentChange={publishNativeDraft}
         onCursorChange={publishNativeDraft}
         onSubmit={() => {
+          if (props.interactive === false) return
           const intent = nativeSubmitIntent.current
           nativeSubmitIntent.current = undefined
           submitNativeDraft(intent)

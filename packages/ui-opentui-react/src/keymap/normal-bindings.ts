@@ -5,10 +5,19 @@ import { transcriptBindings } from "./transcript-bindings"
 
 export function normalBindings(ctx: VimBindingContext): UiBinding[] {
   return [
+    { key: "<leader>e", cmd: () => ctx.toggleComposer() },
+    { key: "t", cmd: () => {
+      ctx.scrollRef.current?.scrollTo(Number.MAX_SAFE_INTEGER)
+      ctx.controller.transcript({ type: "viewport.tail" })
+    } },
     { key: "\\", cmd: () => ctx.controller.returnToParent() },
     { key: "[a", cmd: () => ctx.controller.cycleAgent("previous") },
     { key: "]a", cmd: () => ctx.controller.cycleAgent("next") },
     { key: "<leader>a", cmd: () => ctx.openOverlay("approvals") },
+    { key: "<leader>r", cmd: () => {
+      ctx.controller.dispatchInteraction({ type: "mode.command" })
+      ctx.controller.dispatchInteraction({ type: "command.change", value: `rename ${ctx.currentTitle ?? ""}` })
+    } },
     { key: "<leader>s", cmd: () => ctx.openOverlay("sessions") },
     { key: "<leader>q", cmd: () => ctx.openOverlay("questions") },
     { key: "<leader>?", cmd: () => ctx.openOverlay("help") },

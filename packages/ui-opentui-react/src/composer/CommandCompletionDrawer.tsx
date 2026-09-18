@@ -1,9 +1,9 @@
-import { useTerminalDimensions } from "@opentui/react"
+import { usePaneGeometry } from "../side-chat/pane-geometry"
 import { commandDescriptions, commandDescriptors, parseCommand } from "@vimex/interaction"
 import { emberTide } from "../theme"
 
 export function CommandCompletionDrawer(props: { choices: readonly string[]; selected: number; prefix: ":" | "/"; id: string; hint?: string }) {
-  const rows = Math.max(1, Math.min(6, useTerminalDimensions().height - 11))
+  const rows = Math.max(1, Math.min(6, usePaneGeometry().height - 11))
   const start = Math.max(0, props.selected - rows + 1)
   const visible = props.choices.slice(start, start + rows)
   return <box id={props.id} position="absolute" bottom="100%" left={0} right={0} zIndex={30}

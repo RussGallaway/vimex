@@ -4,19 +4,19 @@ import { KeymapProvider } from "@opentui/keymap/react"
 import { createRoot } from "@opentui/react"
 import { useRenderer } from "@opentui/react"
 import { useMemo } from "react"
-import { VimexApp } from "./app/App"
+import { SideChatLayout } from "./side-chat/SideChatLayout"
 import type { VimexAppProps } from "./contracts"
 
 export function VimexRoot(props: VimexAppProps) {
   const renderer = useRenderer()
   const keymap = useMemo(() => createVimexKeymap(renderer), [renderer])
-  return <KeymapProvider keymap={keymap}><VimexApp {...props} /></KeymapProvider>
+  return <KeymapProvider keymap={keymap}><SideChatLayout {...props} /></KeymapProvider>
 }
 
 export function mountVimex(renderer: CliRenderer, props: VimexAppProps) {
   const root = createRoot(renderer)
   const keymap = createVimexKeymap(renderer)
-  root.render(<KeymapProvider keymap={keymap}><VimexApp {...props} /></KeymapProvider>)
+  root.render(<KeymapProvider keymap={keymap}><SideChatLayout {...props} /></KeymapProvider>)
   return root
 }
 

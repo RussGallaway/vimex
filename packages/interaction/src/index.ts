@@ -13,3 +13,6 @@ export * from "./vim/composer-buffer"
 
 export { themeNames } from "./commands/theme-names"
 export type { ThemeName } from "./commands/theme-names"
+
+export { parseGoalCommand } from "./commands/goal-command"
+export type { GoalCommand } from "./commands/goal-command"

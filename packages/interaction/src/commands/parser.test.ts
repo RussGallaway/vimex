@@ -13,7 +13,7 @@ test("Ex arguments preserve paths and distinguish empty or unknown commands", ()
 
 
 test("every no-argument command rejects trailing arguments with its documented usage", () => {
-  for (const name of ["quit", "approvals", "approve", "reject", "stop", "fork", "fold", "unfold", "questions", "agents", "parent", "restart", "insert", "normal", "visual", "follow"]) {
+  for (const name of ["compact", "quit", "approvals", "approve", "reject", "stop", "fork", "fold", "unfold", "questions", "agents", "parent", "restart", "insert", "normal", "visual", "follow"]) {
     const parsed = parseCommand(`:${name} accidental`)
     if (parsed.kind !== "command") throw new Error(`Missing command ${name}`)
     expect(validateCommand(parsed)).toBe(`Usage: :${name}`)
@@ -44,4 +44,14 @@ test("dynamic model and reasoning validation uses the supplied catalog only", ()
   const parsed = parseCommand(":model server-known custom")
   if (parsed.kind !== "command") throw new Error("Expected command")
   expect(validateCommand(parsed)).toBeUndefined()
+})
+
+
+test("side commands preserve free-form questions and expose their lifecycle actions", () => {
+  for (const argument of ["", "close", "quit", "refresh", "maximize", "focus parent", "focus side", "Why did we choose this?", "Explain /tmp/path with  spaces"]) {
+    const parsed = parseCommand(`:side ${argument}`)
+    expect(parsed).toEqual({ kind: "command", name: "side", argument })
+    if (parsed.kind !== "command") throw new Error("Expected side command")
+    expect(validateCommand(parsed)).toBeUndefined()
+  }
 })

@@ -664,3 +664,66 @@ describe("model catalog pagination", () => {
     } finally { await gateway.connection.close() }
   })
 })
+
+test("goal capability uses pinned get/set/clear RPC contracts and omits unrequested budgets", async () => {
+  const { client, transport } = await connectedClient()
+  const goal = { threadId: "thr-1", objective: "Fix tests", status: "active" as const, tokenBudget: null, tokensUsed: 10, timeUsedSeconds: 1, createdAt: 1, updatedAt: 1 }
+  const get = client.getGoal("thr-1")
+  await respondNext(transport, "thread/goal/get", { goal: null })
+  expect(await get).toBeNull()
+  const set = client.setGoal("thr-1", { objective: "Fix tests", status: "active" })
+  await tick()
+  expect(transport.sent.at(-1)?.params).toEqual({ threadId: "thr-1", objective: "Fix tests", status: "active" })
+  await respondNext(transport, "thread/goal/set", { goal })
+  expect(await set).toEqual(goal)
+  const clear = client.clearGoal("thr-1")
+  await respondNext(transport, "thread/goal/clear", { cleared: true })
+  expect(await clear).toBe(true)
+  await client.close()
+})
+
+test("side fork defers inherited goal, clears it, and retirement archives exact child", async () => {
+  const { client, transport } = await connectedClient()
+  const gateway = createCodexGateways("/repo", "codex", () => client)
+  try {
+    const fork = gateway.conversation.forkSideThread!(threadId("thr-1"))
+    await respondNext(transport, "thread/fork", sessionResponse({ ...baseThread, id: "side-thread" }))
+    expect(findSent(transport, "thread/fork").params).toEqual({ threadId: "thr-1", deferGoalContinuation: true })
+    await respondNext(transport, "thread/goal/clear", { cleared: true })
+    expect(findSent(transport, "thread/goal/clear").params).toEqual({ threadId: "side-thread" })
+    expect((await fork).summary.id).toBe(threadId("side-thread"))
+    const retiring = gateway.conversation.retireThread!(threadId("side-thread"))
+    await respondNext(transport, "thread/archive", {})
+    await retiring
+    expect(findSent(transport, "thread/archive").params).toEqual({ threadId: "side-thread" })
+  } finally { await gateway.connection.close() }
+})
+
+test("compaction sends pinned RPC and observes item lifecycle independently of acknowledgement", async () => {
+  const { client, transport } = await connectedClient()
+  const gateways = createCodexGateways("/repo", "codex", () => client)
+  const events: import("@vimex/workbench").RuntimeEvent[] = []
+  gateways.connection.subscribe(event => events.push(event))
+  const request = gateways.conversation.compactThread!(threadId("thr-1"))
+  await tick()
+  expect(findSent(transport, "thread/compact/start").params).toEqual({ threadId: "thr-1" })
+  await respondNext(transport, "thread/compact/start", {})
+  await request
+  expect(events).toEqual([])
+  const params = { threadId: threadId("thr-1"), turnId: turnId("compact-turn"), item: { id: "compact-item", type: "contextCompaction" } }
+  transport.receive({ method: "item/started", params })
+  transport.receive({ method: "item/completed", params })
+  transport.receive({ method: "thread/compacted", params: { threadId: threadId("thr-1"), turnId: turnId("compact-turn") } })
+  expect(events.filter(event => event.type === "compaction")).toEqual([
+    { type: "compaction", phase: "started", threadId: threadId("thr-1"), turnId: turnId("compact-turn") },
+    { type: "compaction", phase: "completed", threadId: threadId("thr-1"), turnId: turnId("compact-turn") },
+    { type: "compaction", phase: "completed", threadId: threadId("thr-1"), turnId: turnId("compact-turn") },
+  ])
+  expect(events.filter(event => event.type === "conversation")).toHaveLength(2)
+  events.length = 0
+  transport.receive({ method: "error", params: { threadId: threadId("thr-1"), turnId: turnId("compact-turn"), willRetry: true, error: { message: "retrying" } } })
+  expect(events.some(event => event.type === "compaction")).toBe(false)
+  transport.receive({ method: "error", params: { threadId: threadId("thr-1"), turnId: turnId("compact-turn"), willRetry: false, error: { message: "failed" } } })
+  expect(events).toContainEqual({ type: "compaction", phase: "failed", threadId: threadId("thr-1"), turnId: turnId("compact-turn"), error: "failed" })
+  await gateways.connection.close()
+})

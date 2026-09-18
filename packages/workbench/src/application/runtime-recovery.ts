@@ -6,6 +6,7 @@ const uncertain = "Delivery was not confirmed before the runtime disconnected; r
 export function invalidateRuntimeState(state: WorkbenchState): WorkbenchState {
   return {
     ...state,
+    compactingThreads: {},
     approvals: { order: [], byId: {} },
     questions: {},
     workspaces: Object.fromEntries(Object.entries(state.workspaces).map(([id, workspace]) => [id, {

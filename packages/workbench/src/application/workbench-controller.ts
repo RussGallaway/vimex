@@ -1,3 +1,6 @@
+import { compactionBlockReason } from "./compaction"
+import { executeGoalCommand } from "./goal-command"
+import { SideChatCoordinator, type SideChatAction } from "./side-chat"
 import { adjacentSearchMatch, findSearchMatches, firstContentPoint, moveByWord, moveBySemanticBlock, moveByUrl, referenceText, urlAt, urlCandidates, graphemeCount, type LogicalPoint } from "@vimex/transcript"
 import { isThemeName, themeNames, type PreferenceStore } from "./display-preferences"
 import { parseCommand, validateCommand, resolveCommandName, commandDescriptors, type ExCommand } from "@vimex/interaction"
@@ -32,8 +35,89 @@ export interface ControllerPorts {
 }
 export class VimexController implements WorkbenchActions {
   private state = initialWorkbench()
+  private readonly sides = new SideChatCoordinator({
+    state: () => this.state,
+    update: side => {
+      let next = { ...this.state, sideChats: { ...this.state.sideChats, [side.parentId]: side } }
+      const workspace = side.threadId ? next.workspaces[side.threadId] : undefined
+      if (side.status === "quitting" && side.threadId && workspace) next = { ...next, workspaces: { ...next.workspaces, [side.threadId]: {
+        ...workspace, composer: { ...workspace.composer, outbox: workspace.composer.outbox.map(message => message.status === "queued" ? { ...message, status: "failed" as const, reason: "Canceled because side chat is quitting; retry explicitly if retirement fails" } : message) },
+      } } }
+      this.setState(next)
+    },
+    discard: parent => {
+      const sideChats = { ...this.state.sideChats }; delete sideChats[parent]
+      this.setState({ ...this.state, sideChats })
+    },
+    remove: (parent, retired) => {
+      const sideChats = { ...this.state.sideChats }; delete sideChats[parent]
+      const summaries = { ...this.state.summaries }; delete summaries[retired]
+      const workspaces = { ...this.state.workspaces }; delete workspaces[retired]
+      this.navigationHistory.removeThread(retired)
+      this.loaded.delete(retired); this.buffered.delete(retired)
+      const approvals = { order: this.state.approvals.order.filter(id => this.state.approvals.byId[id]?.threadId !== retired), byId: Object.fromEntries(Object.entries(this.state.approvals.byId).filter(([, approval]) => approval.threadId !== retired)) }
+      const compactingThreads = { ...this.state.compactingThreads }; delete compactingThreads[retired]
+      const interruptingTurns = { ...this.state.interruptingTurns }; delete interruptingTurns[retired]
+      const questions = Object.fromEntries(Object.entries(this.state.questions).filter(([, request]) => request.threadId !== retired))
+      this.setState({ ...this.state, sideChats, summaries, workspaces, approvals, questions, compactingThreads, interruptingTurns,
+        threadOrder: this.state.threadOrder.filter(id => id !== retired),
+        favoriteThreadIds: this.state.favoriteThreadIds.filter(id => id !== retired),
+        agentRelationships: this.state.agentRelationships.filter(link => link.childId !== retired && link.parentId !== retired),
+        retiredSideThreadIds: [...new Set([...this.state.retiredSideThreadIds, retired])] })
+    },
+    focus: id => { this.historyNavigation = undefined; return this.navigateThread(id) },
+    hydrate: snapshot => this.hydrate(snapshot, false),
+    fork: async parent => {
+      if (!this.ports.conversation.forkSideThread) throw new Error("This runtime cannot create side chats")
+      const epoch = this.runtimeEpoch
+      const snapshot = await this.ports.conversation.forkSideThread(parent)
+      if (!this.currentRuntime(epoch)) throw new Error("Runtime changed while creating side chat")
+      return snapshot
+    },
+    retire: async id => {
+      if (!this.ports.conversation.retireThread) throw new Error("This runtime cannot retire side chats")
+      const epoch = this.runtimeEpoch
+      const assertRuntime = () => { if (!this.currentRuntime(epoch)) throw new Error("Runtime changed while quitting side chat") }
+      await Promise.all([...(this.threadContinuations.get(id) ?? []), this.threadMutations.get(id)?.catch(() => {})])
+      assertRuntime()
+      if (!this.loaded.has(id)) {
+        const epoch = this.runtimeEpoch
+        const snapshot = await this.ports.conversation.resumeThread(id)
+        if (!this.currentRuntime(epoch)) throw new Error("Runtime changed while quitting side chat")
+        this.hydrate(snapshot, false)
+      }
+      await this.ports.conversation.clearGoal?.(id)
+      assertRuntime()
+      const turn = this.state.workspaces[id]?.conversation.activeTurnId
+      if (turn) await this.ports.conversation.interruptTurn(id, turn)
+      assertRuntime()
+      await this.ports.conversation.retireThread(id)
+      assertRuntime()
+    },
+    send: (id, text) => {
+      if (this.state.compactingThreads[id]) { this.notice("Wait for side chat compaction before sending a question"); return }
+      if (!this.loaded.has(id)) { this.notice("Open the side chat successfully before sending a question"); return }
+      const draft = this.state.workspaces[id]?.composer
+      this.dispatch({ type: "composer.change", threadId: id, text })
+      this.dispatch({ type: "composer.submit", threadId: id, intent: "next-turn", clientMessageId: crypto.randomUUID() })
+      if (draft?.text) this.dispatch({ type: "composer.change", threadId: id, text: draft.text, cursorOffset: draft.cursorOffset })
+    },
+    quote: (id, text) => {
+      const previous = this.state.workspaces[id]?.composer.text ?? ""
+      const next = `${previous}${previous ? "\n\n" : ""}${text.split("\n").map(line => `> ${line}`).join("\n")}`
+      this.dispatch({ type: "composer.change", threadId: id, text: next, cursorOffset: next.length })
+      this.dispatch({ type: "interaction.command", threadId: id, command: { type: "focus.set", surface: "composer" } })
+    },
+    notice: message => this.notice(message),
+    launch: operation => { this.launch(operation) },
+  })
+  sideChat = (action: SideChatAction, question?: string): void => this.sides.action(action, question)
+  anchorThread = (id: ThreadId, point: LogicalPoint, preferredScreenRow: number): void => {
+    this.dispatch({ type: "transcript.command", threadId: id, command: { type: "viewport.anchor", point, preferredScreenRow } })
+  }
   private readonly listeners = new Set<() => void>()
   private readonly pending = new Set<Promise<void>>()
+  private readonly threadContinuations = new Map<ThreadId, Set<Promise<void>>>()
   private readonly loaded = new Set<ThreadId>()
   private readonly buffered = new Map<ThreadId, ConversationEvent[]>()
   private readonly resumes = new Map<ThreadId, Promise<SessionSnapshot>>()
@@ -61,7 +145,7 @@ export class VimexController implements WorkbenchActions {
   private signalClosing!: () => void
   private readonly closingSignal = new Promise<void>(resolve => { this.signalClosing = resolve })
   constructor(private readonly ports: ControllerPorts) {
-    this.state = { ...this.state, favoriteThreadIds: [...new Set(ports.localState?.favoriteThreadIds ?? [])].map(threadId) }
+    this.state = { ...this.state, favoriteThreadIds: [...new Set(ports.localState?.favoriteThreadIds ?? [])].map(threadId), sideChats: ports.localState?.sideChats ?? {}, retiredSideThreadIds: (ports.localState?.retiredSideThreadIds ?? []).map(threadId) }
     if (ports.preferences) {
       this.desiredPreferences = ports.preferences.initial
       this.state = { ...this.state, preferences: ports.preferences.initial }
@@ -77,8 +161,22 @@ export class VimexController implements WorkbenchActions {
     for (const listener of this.listeners) listener()
     this.ports.onState?.(state)
   }
+  private retiringThread(id: ThreadId): boolean {
+    return this.state.retiredSideThreadIds.includes(id) || Object.values(this.state.sideChats).some(side => side.threadId === id && side.status === "quitting")
+  }
+  private trackContinuation(id: ThreadId, pending: Promise<void> | undefined): void {
+    if (!pending) return
+    const continuations = this.threadContinuations.get(id) ?? new Set<Promise<void>>()
+    continuations.add(pending); this.threadContinuations.set(id, continuations)
+    void pending.finally(() => { continuations.delete(pending); if (!continuations.size) this.threadContinuations.delete(id) })
+  }
   dispatch(command: WorkbenchCommand): void {
     if (this.closing) return
+    if ("threadId" in command && command.threadId && this.state.retiredSideThreadIds.includes(command.threadId)) return
+    if (command.type === "conversation.event" && this.state.retiredSideThreadIds.includes(command.event.threadId)) return
+    const recipient = command.type === "composer.submit" || command.type === "composer.retry" ? command.threadId ?? this.state.activeThreadId
+      : command.type === "approval.resolve" ? this.state.approvals.byId[command.approvalId]?.threadId : undefined
+    if (recipient && this.retiringThread(recipient)) { this.notice("Side chat is quitting; new work is paused"); return }
     const before = this.state
     const result = transitionWorkbench(before, command)
     if (command.type === "conversation.event") this.navigationHistory.reproject(before, result.state, command.event.threadId)
@@ -95,7 +193,14 @@ export class VimexController implements WorkbenchActions {
       if (localJump) { this.navigationRevision++; this.historyNavigation = undefined }
     }
     this.setState(result.state)
-    for (const effect of result.effects) this.launch(() => this.effect(effect))
+    for (const effect of result.effects) {
+      const pending = this.launch(() => this.effect(effect))
+      if (effect.type === "conversation.turn.start" || effect.type === "conversation.turn.steer") this.trackContinuation(effect.threadId, pending)
+      if (effect.type === "approval.resolve") {
+        const id = before.approvals.byId[effect.approvalId]?.threadId
+        if (id) this.trackContinuation(id, pending)
+      }
+    }
   }
   private launch(operation: () => Promise<void>): Promise<void> | undefined {
     if (this.closing) return undefined
@@ -110,7 +215,7 @@ export class VimexController implements WorkbenchActions {
   notice(message: string): void { this.setState({ ...this.state, error: message }) }
 
   private register(summary: SessionSnapshot["summary"]): void {
-    this.dispatch({ type: "thread.register", summary })
+    if (!this.state.retiredSideThreadIds.includes(summary.id)) this.dispatch({ type: "thread.register", summary })
   }
   private async unlessClosing<T>(operation: Promise<T>): Promise<{ value: T } | undefined> {
     return Promise.race([
@@ -120,6 +225,7 @@ export class VimexController implements WorkbenchActions {
   }
   private currentRuntime(epoch: number): boolean { return !this.closing && epoch === this.runtimeEpoch }
   private hydrate(snapshot: SessionSnapshot, focus: boolean): void {
+    if (this.state.retiredSideThreadIds.includes(snapshot.summary.id)) return
     this.register(snapshot.summary)
     if (this.recoveryViews[snapshot.summary.id] && !this.loaded.has(snapshot.summary.id)) {
       this.setState({ ...this.state, workspaces: { ...this.state.workspaces, [snapshot.summary.id]: createWorkspace(snapshot.summary.id) } })
@@ -151,6 +257,7 @@ export class VimexController implements WorkbenchActions {
       const summaries = await this.unlessClosing(this.ports.conversation.listThreads())
       if (!summaries || !this.currentRuntime(epoch)) return
       for (const summary of summaries.value) this.register(summary)
+      if (resume && this.state.retiredSideThreadIds.includes(threadId(resume))) throw new Error("This side chat was quit and cannot be reopened")
       const snapshot = await this.unlessClosing(resume ? this.ports.conversation.resumeThread(threadId(resume)) : this.ports.conversation.startThread(cwd, model))
       if (!snapshot || !this.currentRuntime(epoch)) return
       this.hydrate(snapshot.value, navigation === this.navigationRevision)
@@ -161,7 +268,12 @@ export class VimexController implements WorkbenchActions {
     }
   }
   private receive(event: RuntimeEvent): void {
+    if (event.type === "conversation" && this.state.retiredSideThreadIds.includes(event.event.threadId)) return
+    if (event.type === "subagent.link" && (this.state.retiredSideThreadIds.includes(event.link.childId) || this.state.retiredSideThreadIds.includes(event.link.parentId))) return
+    if (event.type === "approval" && this.state.retiredSideThreadIds.includes(event.approval.threadId)) return
+    if (event.type === "question.requested" && this.state.retiredSideThreadIds.includes(event.request.threadId)) return
     switch (event.type) {
+      case "compaction": this.dispatch({ type: "compaction.observed", observation: event }); break
       case "question.requested": this.dispatch({ type: "question.received", request: event.request }); break
       case "question.resolved": this.dispatch({ type: "question.resolved", id: event.id }); break
       case "subagent.link": this.dispatch({ type: "agent.link", link: event.link }); break
@@ -230,6 +342,7 @@ export class VimexController implements WorkbenchActions {
   answerQuestions = (id: string, answers: Readonly<Record<string, string | readonly string[]>>): void => {
     const request = this.state.questions[id]
     if (!request || this.answering.has(id)) return
+    if (this.retiringThread(request.threadId)) { this.notice("Side chat is quitting; new work is paused"); return }
     if (request.threadId !== this.state.activeThreadId) {
       this.notice("Open the question's session before responding")
       return
@@ -237,7 +350,7 @@ export class VimexController implements WorkbenchActions {
     const token = Symbol(id)
     const epoch = this.runtimeEpoch
     this.answering.set(id, token)
-    this.launch(async () => {
+    const response = this.launch(async () => {
       try {
         validateAnswers(request, answers)
         if (!this.ports.approvals.respondToQuestions) throw new Error("This runtime cannot answer questions")
@@ -251,6 +364,7 @@ export class VimexController implements WorkbenchActions {
         if (this.answering.get(id) === token) this.answering.delete(id)
       }
     })
+    this.trackContinuation(request.threadId, response)
   }
   requestFork = (selected?: ItemId): void => {
     const workspace = activeWorkspace(this.state)
@@ -278,7 +392,7 @@ export class VimexController implements WorkbenchActions {
   }
   returnToParent = (): void => {
     const child = this.state.activeThreadId
-    const parent = child && (this.parentReturns.get(child) ?? this.state.agentRelationships.find(link => link.childId === child)?.parentId)
+    const parent = child && (Object.values(this.state.sideChats).find(side => side.threadId === child)?.parentId ?? this.parentReturns.get(child) ?? this.state.agentRelationships.find(link => link.childId === child)?.parentId)
     if (!parent) { this.notice("This session has no known parent"); return }
     this.dispatchInteraction({ type: "overlay.close" })
     this.openThread(parent)
@@ -322,6 +436,13 @@ export class VimexController implements WorkbenchActions {
         if (id) {
           const snapshot = await this.ports.conversation.resumeThread(id)
           if (this.currentRuntime(epoch)) this.hydrate(snapshot, revision === this.navigationRevision)
+          const background = new Set(Object.values(this.state.sideChats).flatMap(side => side.threadId ? [side.parentId, side.threadId] : []))
+          background.delete(id)
+          for (const other of background) {
+            if (!this.currentRuntime(epoch)) return
+            const resumed = await this.ports.conversation.resumeThread(other)
+            if (this.currentRuntime(epoch)) this.hydrate(resumed, false)
+          }
         } else if (this.initialDirectory) {
           const snapshot = await this.ports.conversation.startThread(this.initialDirectory, this.initialModel)
           if (this.currentRuntime(epoch)) this.hydrate(snapshot, revision === this.navigationRevision)
@@ -362,6 +483,7 @@ export class VimexController implements WorkbenchActions {
     })
   }
   private navigateThread(id: ThreadId, restore?: { direction: "back" | "forward"; target: NavigationLocation }): Promise<void> | undefined {
+    if (this.state.retiredSideThreadIds.includes(id)) { this.notice("This side chat was quit and cannot be reopened"); return }
     const revision = ++this.navigationRevision
     const epoch = this.runtimeEpoch
     this.clearNavigationIntent()
@@ -386,6 +508,8 @@ export class VimexController implements WorkbenchActions {
       if (this.currentRuntime(epoch) && revision === this.navigationRevision) {
         const origin = navigationLocation(this.state)
         if (restore && (!origin || !this.navigationHistory.commit(restore.direction, restore.target, origin))) return
+        const side = Object.values(this.state.sideChats).find(side => side.threadId === id)
+        if (side && !side.visible && side.status !== "quitting") this.setState({ ...this.state, sideChats: { ...this.state.sideChats, [side.parentId]: { ...side, visible: true } } })
         this.restoringNavigation = Boolean(restore)
         try { this.dispatch({ type: "thread.switch", threadId: id }) }
         finally { this.restoringNavigation = false }
@@ -573,10 +697,11 @@ export class VimexController implements WorkbenchActions {
     this.launch(() => operation)
   }
   private launchThreadMutation(id: ThreadId, operation: (epoch: number) => Promise<void>): void {
+    if (this.retiringThread(id)) { this.notice("Side chat is quitting; new work is paused"); return }
     const epoch = this.runtimeEpoch
     const previous = this.threadMutations.get(id) ?? Promise.resolve()
     const pending = previous.catch(() => {}).then(async () => {
-      if (!this.currentRuntime(epoch)) return
+      if (!this.currentRuntime(epoch) || this.retiringThread(id)) return
       try { await operation(epoch) }
       catch (error) { if (this.currentRuntime(epoch)) throw error }
     })
@@ -593,6 +718,37 @@ export class VimexController implements WorkbenchActions {
     if (invalid) { this.notice(invalid); return }
     const { name: command, argument } = parsed
     switch (command) {
+      case "compact": {
+        const id = this.state.activeThreadId
+        if (!id) { this.notice("Open a session before compacting"); break }
+        if (this.state.compactingThreads[id]) break
+        if (this.retiringThread(id)) { this.notice("Side chat is quitting; new work is paused"); break }
+        const blocked = compactionBlockReason(this.state, id)
+        if (blocked) { this.notice(blocked); break }
+        const compact = this.ports.conversation.compactThread
+        if (!compact) { this.notice("This runtime does not support compaction"); break }
+        const epoch = this.runtimeEpoch
+        const request = { phase: "requested" as const, requestId: crypto.randomUUID() }
+        this.setState({ ...this.state, error: undefined, compactingThreads: { ...this.state.compactingThreads, [id]: request } })
+        const pending = this.launch(async () => {
+          try { await compact.call(this.ports.conversation, id) }
+          catch (error) {
+            if (!this.currentRuntime(epoch) || this.state.compactingThreads[id]?.requestId !== request.requestId) return
+            this.dispatch({ type: "compaction.observed", observation: { threadId: id, phase: "failed", error: `Compaction failed: ${String(error)}` } })
+          }
+        })
+        this.trackContinuation(id, pending)
+        break
+      }
+      case "goal": {
+        const id = this.state.activeThreadId
+        if (!id) { this.notice("Open a session before setting a goal"); break }
+        this.launchThreadMutation(id, async epoch => {
+          const message = await executeGoalCommand(this.ports.conversation, id, argument)
+          if (this.currentRuntime(epoch) && this.state.activeThreadId === id) this.notice(message)
+        })
+        break
+      }
       case "submit": this.submit(argument === "queue" ? "next-turn" : argument === "steer" || this.ports.busySubmit === "steer" ? "steer" : "next-turn"); break
       case "insert": this.dispatchInteraction({ type: "mode.insert" }); break
       case "normal": this.dispatchInteraction({ type: "mode.normal" }); break
@@ -636,7 +792,7 @@ export class VimexController implements WorkbenchActions {
         this.notice(next ? "Session favorited" : "Session removed from favorites")
         break
       }
-      case "follow": this.transcript({ type: "viewport.tail" }); break
+      case "tail": case "follow": this.transcript({ type: "viewport.tail" }); break
       case "approvals": case "questions": case "agents": this.dispatchInteraction({ type: "overlay.open", overlay: command }); break
       case "model": case "thinking": case "cwd": {
         if (command === "model" && !argument) {
@@ -702,6 +858,12 @@ export class VimexController implements WorkbenchActions {
         else this.notice("Open :approvals to choose a response")
         break
       }
+      case "side": {
+        const verbs: SideChatAction[] = ["open", "close", "quit", "refresh", "maximize", "reset", "parent", "side", "cycle", "quote"]
+        const action = argument === "focus parent" ? "parent" : argument === "focus side" ? "side" : argument
+        this.sideChat(verbs.includes(action as SideChatAction) ? action as SideChatAction : "open", verbs.includes(action as SideChatAction) ? undefined : argument)
+        break
+      }
       case "parent": this.returnToParent(); break
       case "restart": this.restart(); break
       case "stop": this.interrupt(); break
@@ -741,6 +903,7 @@ export class VimexController implements WorkbenchActions {
     const epoch = this.runtimeEpoch
     switch (effect.type) {
       case "conversation.turn.start": case "conversation.turn.steer": {
+        if (this.retiringThread(effect.threadId)) return
         try {
           let submittedTurn: TurnId | undefined
           const turn = this.state.workspaces[effect.threadId]?.conversation.activeTurnId

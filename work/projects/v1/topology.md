@@ -245,3 +245,8 @@ Syntax grammar registration belongs to `packages/ui-opentui-react/src/syntax/`; 
 Flash presentation and visible-cell target indexing live under `ui-opentui-react/src/transcript/` (`FlashJump.tsx`, `flash-targets.ts`). Label overlays never alter canonical transcript text. Jump history and named marks belong to transcript state/operations; workbench local-state stores source offsets for resume and owns focus transitions. Terminal key disambiguation stays in the UI keymap.
 
 Cross-session cursor/viewport history belongs to `workbench/src/application/navigation-history.ts`; it stores bounded semantic locations, leaving native geometry in the renderer and per-thread drafts in their workspaces.
+
+
+Side-chat application state lives in `workbench/src/application/side-chat.ts`, separate from thread transport and screen layout. Retirement and retained parent/child associations persist through local state. `ui-opentui-react/src/side-chat/SideChatLayout.tsx` arranges persistent pane Apps; `pane-geometry.tsx` supplies pane-local dimensions and screen origins to Markdown diffs, Flash labels, composers, and overlays. Focus gates input and hardware-cursor ownership, while both transcripts continue receiving events.
+
+`workbench/src/application/goal-command.ts` adapts goal commands to server-owned persisted goal state. `compaction.ts` owns the asynchronous per-thread compaction lifecycle. Their protocol mappings stay in the Codex adapter; neither feature implements a second agent harness or artificial continuation loop.

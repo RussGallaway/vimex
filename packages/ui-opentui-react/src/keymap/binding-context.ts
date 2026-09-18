@@ -10,6 +10,7 @@ import type { movePoint } from "../transcript/layout"
 export type Motion = Parameters<typeof movePoint>[2]
 export type UiBinding = { key: string; cmd: () => unknown }
 export interface VimBindingContext {
+  currentTitle?: string
   distinctControlI?: boolean
   interaction: InteractionState
   transcript: TranscriptState
@@ -19,6 +20,7 @@ export interface VimBindingContext {
   countRef: MutableRefObject<string>
   textareaRef: RefObject<TextareaRenderable | null>
   scrollRef: RefObject<ScrollBoxRenderable | null>
+  toggleComposer(): void
   enterVisibleTranscript(): void
   submitComposer(intent: SubmissionIntent): void
   countedMotion(motion: Motion): void

@@ -1,6 +1,6 @@
 import { themeNames } from "./theme-names"
 /** Ex command vocabulary belongs to interaction, independent of renderer and runtime. */
-export const commandNames = ["quit", "sessions", "approvals", "help", "model", "thinking", "cwd", "new", "approve", "reject", "stop", "fork", "fold", "unfold", "yank", "open", "rename", "questions", "agents", "parent", "restart", "theme", "syntax", "submit", "insert", "normal", "visual", "favorite", "follow"] as const
+export const commandNames = ["quit", "sessions", "approvals", "help", "model", "thinking", "cwd", "new", "approve", "reject", "stop", "fork", "fold", "unfold", "yank", "open", "rename", "questions", "agents", "parent", "restart", "theme", "syntax", "submit", "insert", "normal", "visual", "favorite", "follow", "tail", "compact", "side", "goal"] as const
 export type CommandName = typeof commandNames[number]
 const aliases: Readonly<Record<string, CommandName>> = { q: "quit", models: "model", copy: "yank" }
 export function resolveCommandName(value: string): CommandName | undefined {
@@ -16,7 +16,10 @@ export const commandDescriptions: Readonly<Record<CommandName, string>> = {
   rename: "Rename this session", questions: "Answer pending questions", agents: "Browse subagent sessions", parent: "Return to the parent session",
   restart: "Restart the Codex connection", theme: "Choose a color theme", syntax: "Choose syntax colors", submit: "Send the current draft",
   insert: "Enter Insert mode", normal: "Enter Normal mode", visual: "Select transcript text",
-  favorite: "Favorite or unfavorite this session", follow: "Resume following the transcript tail",
+  favorite: "Favorite or unfavorite this session", follow: "Resume following the transcript tail", tail: "Resume following the transcript tail",
+  goal: "Set, inspect, pause, resume, complete, or clear a Codex goal",
+  compact: "Compact the active session context",
+  side: "Open a forked side chat; close hides it, quit retires it",
 }
 
 
@@ -30,6 +33,8 @@ export interface CommandDescriptor {
 }
 const themes = themeNames
 const argumentDescriptors: Partial<Record<CommandName, Omit<CommandDescriptor, "description">>> = {
+  goal: { usage: "goal [show|pause|resume|complete|clear|[set] [--budget tokens] objective]", arguments: "literal", choices: ["show", "pause", "resume", "complete", "clear", "set", "--budget"] },
+  side: { usage: "side [question|close|quit|refresh|quote|maximize|focus parent|focus side]", arguments: "literal", choices: ["close", "quit", "refresh", "quote", "maximize", "focus"] },
   sessions: { usage: "sessions [thread-id]", arguments: "literal" },
   help: { usage: "help [command]", arguments: "choice", choices: [...commandNames, ...Object.keys(aliases)] },
   model: { usage: "model [model-id] [thinking-level]", arguments: "model" },

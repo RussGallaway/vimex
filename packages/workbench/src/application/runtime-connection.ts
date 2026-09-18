@@ -3,6 +3,7 @@ import type { AgentRelationship, ConversationEvent, ThreadId, ThreadSummary } fr
 
 /** Normalized observations consumed by the workbench projector. */
 export type RuntimeEvent =
+  | ({ type: "compaction" } & import("./compaction").CompactionObservation)
   | { type: "question.requested"; request: UserQuestionRequest }
   | { type: "question.resolved"; id: string }
   | { type: "subagent.link"; link: AgentRelationship }

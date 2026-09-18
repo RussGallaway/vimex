@@ -96,7 +96,7 @@ Enter `:` to open command completion above the bottom command bar. Up/Down selec
 | `:help [COMMAND]` | Browse keys and commands, or show usage for one command. |
 | `:sessions [ID]` | Open the session picker or resume an exact thread ID, including one absent from the current list. |
 | `:favorite [on\|off]` | Toggle the active session favorite, or set it explicitly. |
-| `:follow` | Return to the live transcript tail. |
+| `:follow`, `:tail` | Return to the live transcript tail. |
 | `:model [NAME] [EFFORT]` | Open the model and thinking-level picker, or set both directly. Tab completes model IDs and their supported efforts, leaving the cursor ready for the next argument. |
 | `:thinking [LEVEL]` | List supported effort levels or change effort. |
 | `:cwd [PATH]` | Show or change the active thread working directory. Relative paths resolve from its current directory. |
@@ -104,6 +104,7 @@ Enter `:` to open command completion above the bottom command bar. Up/Down selec
 | `:rename NAME` | Rename the active thread. |
 | `:approve`, `:reject` | Use a matching quick decision for the first pending approval; open `:approvals` when a choice is ambiguous. |
 | `:stop` | Interrupt the active turn. |
+| `:compact`, `/compact` | Compact the focused session context while idle. The Compacting animation follows server lifecycle events; sending is paused and drafts are preserved until it finishes. |
 | `:restart` | Restart the Codex app server and rehydrate the active thread. |
 | `:fork` | Open fork confirmation at the current message context. |
 | `:fold`, `:unfold` | Fold or unfold all foldable transcript items. |
@@ -129,3 +130,31 @@ Inspired by [flash.nvim](https://github.com/folke/flash.nvim)'s labeled search. 
 ## Agent navigation
 
 From either pane in Normal mode, `ga` opens the agent picker, `[a` and `]a` cycle the immediate parent and its children, and `\` returns to the immediate parent. Root sessions cycle their direct children. Existing `[[`/`]]` message motions remain available. Subagent sessions show a SUBAGENT badge and a parent breadcrumb; Ctrl-O/Ctrl-I revisit parent, sibling, and local transcript locations in chronological order.
+
+
+## Side chat
+
+`/side [question]` and `:side [question]` open a forked side conversation alongside the parent. With no question, they reopen the same side conversation, preserving its draft and transcript. The parent stays visible and can keep working. Context begins at the fork point; `:side refresh` supplies newer parent activity to the existing side conversation.
+
+| Key or command | Action |
+| --- | --- |
+| `Ctrl-w h` / `Ctrl-w l` | Focus the left/right pane. |
+| `Ctrl-w w` | Cycle visible panes. |
+| `Ctrl-w \|` | Maximize the focused pane; repeat to restore the split. |
+| `Ctrl-w =` | Restore default pane sizes. |
+| `\` in side Normal mode | Focus the immediate parent. |
+| `:side close` or `/side close` | Hide the side pane. Its agent can continue working; `/side` reopens the same conversation. |
+| `:side quit` or `/side quit` | Stop and retire the side agent. It cannot be reopened as that side conversation; the next `/side` creates a fresh fork. |
+| `:side refresh` | Supply the latest parent activity to the side conversation. |
+| `:side maximize` | Toggle maximization of the focused pane. |
+| `:side focus parent` / `:side focus side` | Focus a pane explicitly. |
+
+Up/Down and Ctrl-K/J continue to switch between composer and transcript within the focused pane. Escape retains mode cancellation and turn interruption; it does not close the side pane. Ctrl-O/Ctrl-I continue to navigate visit history.
+
+
+In Normal mode, `Space r` opens `:rename` with the focused session's current title ready to edit. `:rename New title` also renames directly. `t` follows the focused transcript tail from either composer or transcript without changing the draft. Insert mode still types a literal `t`.
+
+Side-pane window shortcuts: `Ctrl-W c` hides the side pane and keeps its agent running; `Ctrl-W q` quits and retires that side session. A later `/side` reopens a hidden side session, or creates a new one after quit.
+
+
+`Space e` in Normal mode expands/collapses the composer. It shows the draft up to the available pane height, then scrolls internally. Session picker opens in **This directory** scope; Tab toggles **All sessions** while preserving the search query. Favorites still obey the current scope; use All sessions or `:sessions ID` to open a known thread outside the current directory.

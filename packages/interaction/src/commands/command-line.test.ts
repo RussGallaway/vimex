@@ -47,3 +47,21 @@ test("session completion suggests known exact IDs without constraining literal r
   expect(commandCompletions(":sessions abc", { sessionIds: ["abc-123", "abc-456", "other-789"] })).toEqual([":sessions abc-123", ":sessions abc-456"])
   expect(commandCompletions(":sessions unknown", { sessionIds: ["abc-123"] })).toEqual([])
 })
+
+
+test("side completion offers lifecycle actions and focus targets without replacing questions", () => {
+  expect(commandCompletions(":sid")).toEqual([":side"])
+  expect(commandCompletions(":side ")).toEqual([":side close", ":side quit", ":side refresh", ":side quote", ":side maximize", ":side focus"])
+  expect(commandCompletions(":side q")).toEqual([":side quit", ":side quote"])
+  expect(commandCompletions(":side c")).toEqual([":side close"])
+  expect(commandCompletions(":side focus ")).toEqual([":side focus parent", ":side focus side"])
+  expect(commandCompletions(":side focus p")).toEqual([":side focus parent"])
+  expect(commandCompletions(":side Why did we choose this?")).toEqual([])
+  expect(commandCompletions(":side focus parent extra")).toEqual([])
+})
+
+
+test("tail command is discoverable alongside follow", () => {
+  expect(commandCompletions("ta")).toContain(":tail")
+  expect(commandCompletions("fol")).toContain(":follow")
+})

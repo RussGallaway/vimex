@@ -7,6 +7,8 @@ export interface VimexAppProps {
   state: WorkbenchState
   controller: VimexUiController
   settings?: Partial<VimexUiSettings>
+  interactive?: boolean
+  paneLabel?: "MAIN" | "SIDE"
 }
 
 export interface VimexUiSettings {
@@ -42,6 +44,8 @@ export const inertController: VimexUiController = {
   openChildThread() {},
   returnToParent() {},
   cycleAgent() {},
+  sideChat() {},
+  anchorThread() {},
   requestFork() {},
   confirmFork() {},
   cancelFork() {},

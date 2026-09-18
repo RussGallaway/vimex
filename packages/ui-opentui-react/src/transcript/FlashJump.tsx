@@ -1,6 +1,7 @@
+import { usePaneGeometry } from "../side-chat/pane-geometry"
 import type { InputRenderable, ScrollBoxRenderable } from "@opentui/core"
 import { useBindings } from "@opentui/keymap/react"
-import { flushSync, useRenderer, useTerminalDimensions } from "@opentui/react"
+import { flushSync, useRenderer } from "@opentui/react"
 import { useEffect, useRef, useState, type RefObject } from "react"
 import type { TranscriptState } from "@vimex/transcript"
 import type { VimexUiController } from "../contracts"
@@ -15,7 +16,7 @@ export function FlashJump(props: {
   controller: VimexUiController; extend: boolean; fromComposer: boolean; onClose(): void
 }) {
   const renderer = useRenderer()
-  const dimensions = useTerminalDimensions()
+  const dimensions = usePaneGeometry()
   const input = useRef<InputRenderable>(null)
   const [query, setQuery] = useState("")
   const [page, setPage] = useState(0)
@@ -46,7 +47,7 @@ export function FlashJump(props: {
   ] }), [results, props.onClose, props.transcript])
   return <>
     {results.labels.map(target => <text key={`${target.itemId}:${target.graphemeOffset}`} id={`flash-label:${target.label}`}
-      position="absolute" left={target.screenX} top={target.screenY} height={1} width={1} zIndex={50}
+      position="absolute" left={target.screenX - dimensions.x} top={target.screenY - dimensions.y} height={1} width={1} zIndex={50}
       fg={emberTide.background} bg={emberTide.amber}><b>{target.label}</b></text>)}
     <box id="flash-prompt" position="absolute" bottom={0} left={0} right={0} height={1} zIndex={51} flexDirection="row" paddingX={2} backgroundColor={emberTide.backgroundRaised}>
       <text fg={emberTide.amber}>Jump / </text>

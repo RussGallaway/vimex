@@ -18,6 +18,9 @@ export function commandCompletions(value: string, options: CommandCompletionOpti
   const [spelling = "", argument = "", effort = "", ...extra] = prefix.split(/\s+/)
   const name = resolveCommandName(spelling)
   if (!name || extra.length) return []
+  if (name === "side" && argument === "focus" && prefix.split(/\s+/).length === 3) {
+    return ["parent", "side"].filter(choice => choice.startsWith(effort)).map(choice => `:${spelling} focus ${choice}`)
+  }
   if (name === "model" && prefix.split(/\s+/).length >= 3) {
     return (options.modelEfforts?.[argument] ?? []).filter(choice => choice.startsWith(effort)).map(choice => `:${spelling} ${argument} ${choice}`)
   }

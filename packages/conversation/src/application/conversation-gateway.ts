@@ -1,3 +1,4 @@
+import type { ThreadGoal, GoalUpdate } from "../domain/thread-goal"
 import type { ConversationEvent } from "../domain/events"
 import type { ItemId, ThreadId, TurnId } from "../domain/identifiers"
 import type { ThreadSummary } from "../domain/thread"
@@ -8,6 +9,12 @@ export interface AgentRelationship { parentId: ThreadId; childId: ThreadId; item
 
 /** Conversation capabilities required by client use cases, independent of transport. */
 export interface ConversationGateway {
+  compactThread?(id: ThreadId): Promise<void>
+  getGoal?(id: ThreadId): Promise<ThreadGoal | null>
+  setGoal?(id: ThreadId, update: GoalUpdate): Promise<ThreadGoal>
+  clearGoal?(id: ThreadId): Promise<boolean>
+  forkSideThread?(id: ThreadId): Promise<SessionSnapshot>
+  retireThread?(id: ThreadId): Promise<void>
   listThreads(): Promise<readonly ThreadSummary[]>
   startThread(cwd: string, model?: string): Promise<SessionSnapshot>
   resumeThread(id: ThreadId): Promise<SessionSnapshot>

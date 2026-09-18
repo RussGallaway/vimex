@@ -6,11 +6,11 @@ import { initialWorkbench, transitionWorkbench } from "@vimex/workbench"
 import { VimexRoot } from "../index"
 import { inertController, type VimexUiController } from "../contracts"
 
-async function fixture() {
+async function fixture(otherCwd = "/tmp") {
   const active = threadId("active"), other = threadId("other")
   let initial = initialWorkbench()
   for (const id of [other, active]) initial = transitionWorkbench(initial, { type: "thread.open", summary: {
-    id, title: id === active ? "Active session" : "Other session", cwd: "/tmp", model: "test", reasoningEffort: "high", status: "idle", updatedAt: id === active ? 20 : 10,
+    id, title: id === active ? "Active session" : "Other session", cwd: id === active ? "/tmp" : otherCwd, model: "test", reasoningEffort: "high", status: "idle", updatedAt: id === active ? 20 : 10,
   } }).state
   initial = { ...initial, threadOrder: [active, other] }
   initial = transitionWorkbench(initial, { type: "interaction.command", command: { type: "overlay.open", overlay: "sessions" } }).state
@@ -57,4 +57,24 @@ test("Escape cancels inline rename without closing the picker or changing the ti
     await act(async () => { await setup.mockInput.typeText("Other"); await setup.flush() })
     expect(setup.captureCharFrame()).toContain("/ Other")
   } finally { await act(async () => setup.renderer.destroy()) }
+})
+
+
+test("session picker defaults to cwd and toggles All without losing search", async () => {
+  const h = await fixture("/other-project")
+  try {
+    expect(h.captureCharFrame()).toContain("This directory")
+    expect(h.captureCharFrame()).not.toContain("Other session")
+    await act(async () => { h.mockInput.pressKey("TAB"); await h.flush(); await h.renderOnce() })
+    expect(h.captureCharFrame()).toContain("All sessions")
+    expect(h.captureCharFrame()).toContain("Other session")
+    await act(async () => { await h.mockInput.typeText("Other"); await h.flush(); await h.renderOnce() })
+    await act(async () => { h.mockInput.pressKey("TAB"); await h.flush(); await h.renderOnce() })
+    expect(h.captureCharFrame()).toContain("This directory")
+    expect(h.captureCharFrame()).toContain("No matching sessions")
+    await act(async () => { h.mockInput.pressKey("TAB"); await h.flush(); await h.renderOnce() })
+    expect(h.captureCharFrame()).toContain("Other session")
+    const query = h.renderer.root.findDescendantById("session-search") as import("@opentui/core").InputRenderable
+    expect(query.value).toBe("Other")
+  } finally { await act(async () => h.renderer.destroy()) }
 })

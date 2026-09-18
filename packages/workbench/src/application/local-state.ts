@@ -17,7 +17,7 @@ export interface SavedThreadView {
   marks?: Readonly<Record<string, SavedTranscriptLocation>>
   jumps?: { back: readonly SavedTranscriptLocation[]; forward: readonly SavedTranscriptLocation[] }
 }
-export interface LocalState { version: 1; favoriteThreadIds?: readonly string[]; threads: Record<string, SavedThreadView> }
+export interface LocalState { version: 1; sideChats?: Readonly<Record<string, import("./side-chat").SideChat>>; retiredSideThreadIds?: readonly string[]; favoriteThreadIds?: readonly string[]; threads: Record<string, SavedThreadView> }
 export const emptyLocalState = (): LocalState => ({ version: 1, threads: {} })
 const record = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value)
 const integer = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0
@@ -30,6 +30,8 @@ function validSavedLocation(value: unknown): value is SavedTranscriptLocation {
 export function parseLocalState(value: unknown): LocalState {
   if (!record(value) || value.version !== 1 || !record(value.threads)) throw new Error("Invalid Vimex local state")
   if (value.favoriteThreadIds !== undefined && (!Array.isArray(value.favoriteThreadIds) || value.favoriteThreadIds.some(id => typeof id !== "string" || !id))) throw new Error("Invalid favorite thread IDs")
+  if (value.retiredSideThreadIds !== undefined && (!Array.isArray(value.retiredSideThreadIds) || value.retiredSideThreadIds.some(id => typeof id !== "string" || !id))) throw new Error("Invalid retired side threads")
+  if (value.sideChats !== undefined && (!record(value.sideChats) || Object.entries(value.sideChats).some(([id, side]) => !record(side) || side.parentId !== id || typeof side.threadId !== "string" || typeof side.visible !== "boolean" || typeof side.maximized !== "boolean"))) throw new Error("Invalid side chats")
   for (const [id, view] of Object.entries(value.threads)) {
     if (!id || !record(view) || typeof view.draft !== "string" || !integer(view.cursorOffset) || !record(view.folded) || Object.values(view.folded).some(v => typeof v !== "boolean") || !["transcript", "composer"].includes(String(view.surface))) throw new Error(`Invalid view for thread ${id}`)
     if (view.cursor !== undefined && !validPoint(view.cursor)) throw new Error(`Invalid cursor for thread ${id}`)
@@ -66,7 +68,9 @@ export function captureLocalState(state: WorkbenchState, previous: LocalState): 
       jumps: { back: transcript.jumps.back.flatMap(location => { const saved = saveLocation(location); return saved ? [saved] : [] }), forward: transcript.jumps.forward.flatMap(location => { const saved = saveLocation(location); return saved ? [saved] : [] }) },
     }
   }
-  return { version: 1, threads, favoriteThreadIds: state.favoriteThreadIds }
+  for (const id of state.retiredSideThreadIds) delete threads[id]
+  return { version: 1, threads, favoriteThreadIds: state.favoriteThreadIds, retiredSideThreadIds: state.retiredSideThreadIds,
+    sideChats: Object.fromEntries(Object.entries(state.sideChats).filter(([, side]) => side.threadId).map(([id, side]) => [id, { ...side, status: undefined }])) }
 }
 export function restoreThreadView(workspace: ThreadWorkspace, saved: SavedThreadView): ThreadWorkspace {
   const knownPoint = (point: typeof saved.cursor) => point && workspace.transcript.projectionById[point.itemId] ? point : undefined

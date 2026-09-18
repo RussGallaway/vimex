@@ -3,7 +3,7 @@ import { flushSync } from "@opentui/react"
 import { commandCompletions, parseCommand, validateCommand } from "@vimex/interaction"
 import type { InputRenderable } from "@opentui/core"
 import type { AvailableModel } from "@vimex/workbench"
-import { useState, type RefObject } from "react"
+import { useEffect, useState, type RefObject } from "react"
 import { CommandCompletionDrawer } from "./CommandCompletionDrawer"
 import type { VimexUiController } from "../contracts"
 import { emberTide } from "../theme"
@@ -17,6 +17,7 @@ export function commandBody(value: string): string {
 }
 
 export function CommandLine(props: { value: string; models?: readonly AvailableModel[]; currentModel?: string; sessionIds?: readonly string[]; inputRef: RefObject<InputRenderable | null>; controller: VimexUiController; onSubmit(value: string): void }) {
+  useEffect(() => { const input = props.inputRef.current; if (input) input.cursorOffset = input.value.length }, [props.inputRef])
   const prompt = commandPrompt(props.value)
   const completionOptions = {
     models: props.models?.map(model => model.id),

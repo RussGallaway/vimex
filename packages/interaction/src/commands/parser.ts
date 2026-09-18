@@ -1,3 +1,4 @@
+import { parseGoalCommand } from "./goal-command"
 import { commandArgumentChoices, commandDescriptors, resolveCommandName, type CommandCompletionOptions, type CommandName } from "./registry"
 
 export type ExCommand = { kind: "command"; name: CommandName; argument: string } | { kind: "empty" } | { kind: "unknown"; name: string }
@@ -13,6 +14,7 @@ export function parseCommand(line: string): ExCommand {
 
 /** Validate syntax before executing an action. Runtime catalogs remain optional. */
 export function validateCommand(command: Extract<ExCommand, { kind: "command" }>, options: CommandCompletionOptions = {}): string | undefined {
+  if (command.name === "goal") { const goal = parseGoalCommand(command.argument); return goal.kind === "invalid" ? goal.message : undefined }
   const descriptor = commandDescriptors[command.name]
   const argument = command.argument.trim()
   const usage = `Usage: :${descriptor.usage}`

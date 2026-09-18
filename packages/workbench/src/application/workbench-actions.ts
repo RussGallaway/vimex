@@ -28,6 +28,8 @@ export type TranscriptAction =
   | { type: "fork"; itemId?: ItemId }
 
 export interface WorkbenchActions {
+  sideChat(action: import("./side-chat").SideChatAction, question?: string): void
+  anchorThread(threadId: ThreadId, point: LogicalPoint, preferredScreenRow: number): void
   dispatchInteraction(command: InteractionCommand): void
   changeDraft(text: string, cursorOffset: number): void
   submit(intent: SubmissionIntent): void

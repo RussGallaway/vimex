@@ -1,4 +1,4 @@
-import { useTerminalDimensions } from "@opentui/react"
+import { usePaneGeometry } from "../side-chat/pane-geometry"
 import type { SyntaxStyle } from "@opentui/core"
 import type { ConversationItem } from "@vimex/conversation"
 import { emberTide } from "../theme"
@@ -6,7 +6,7 @@ import { itemStatusGlyph } from "./item-status"
 import { diffFiletype, diffSummary } from "./diff-summary"
 
 export function FileChange(props: { item: Extract<ConversationItem, { kind: "edit" }>; folded: boolean; syntax: SyntaxStyle }) {
-  const { width } = useTerminalDimensions()
+  const { width } = usePaneGeometry()
   const { item } = props
   // A later patch delta may outpace metadata. Always display the exact current patch.
   const changes = item.changes?.map(change => change.patch).filter(Boolean).join("\n") === item.patch

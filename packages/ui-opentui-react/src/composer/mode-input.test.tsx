@@ -237,3 +237,28 @@ describe("composer mode input isolation", () => {
     } finally { await act(async () => setup.renderer.destroy()) }
   })
 })
+
+
+test("Space e expands wrapped composer content within pane and collapses without data loss", async () => {
+  const h = await setupMode("insert")
+  try {
+    const draft = Array.from({ length: 45 }, (_, i) => `draft row ${i}`).join("\n")
+    await act(async () => { await h.mockInput.pasteBracketedText(draft); await h.flush(); await h.renderOnce() })
+    await act(async () => { h.mockInput.pressKey("ESCAPE"); await Bun.sleep(30); await h.flush() })
+    const text = h.composer.plainText
+    const cursor = h.composer.cursorOffset
+    expect(h.composer.height).toBe(3)
+    await act(async () => { await h.mockInput.typeText(" e"); await h.flush(); await h.renderOnce() })
+    await act(async () => { await h.flush(); await h.renderOnce() })
+    expect(h.composer.height).toBeGreaterThan(3)
+    expect(h.composer.height).toBeLessThan(24)
+    expect(h.composer.plainText).toBe(text)
+    expect(h.composer.cursorOffset).toBe(cursor)
+    await act(async () => { h.resize(48, 18); await h.flush(); await h.renderOnce() })
+    expect(h.composer.height).toBeLessThan(18)
+    await act(async () => { await h.mockInput.typeText(" e"); await h.flush(); await h.renderOnce() })
+    expect(h.composer.height).toBe(3)
+    expect(h.composer.plainText).toBe(text)
+    expect(h.composer.cursorOffset).toBe(cursor)
+  } finally { await act(async () => h.renderer.destroy()) }
+})
