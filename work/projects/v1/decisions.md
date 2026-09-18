@@ -58,6 +58,12 @@ This is a lightweight decision log. Change a settled decision only through a new
 
 **Reason:** Publishing an ABI before the transcript and command models settle would freeze premature abstractions.
 
+### D-010: Transcript runtime is a renderer-neutral presentation model
+
+**Decision:** Keep one canonical conversation and semantic transcript state. A per-presentation `TranscriptRuntime` derives cached immutable frames, owns damage and windowing policy, and accepts disposable block measurements from renderers. Detached reading pins a presentation revision rather than creating another transcript store.
+
+**Reason:** One terminal state may have multiple coherent presentations. This keeps navigation semantics independent of OpenTUI, prevents hidden streaming from invalidating a detached reader, supports revision-guarded incremental work with safe rebuilding, and establishes the Stage 5 render-block windowing seam without introducing another authority or package.
+
 ## Open decisions
 
 ### O-001: Insert-mode submit key

@@ -16,6 +16,8 @@ This directory is the design authority for v1.
 - [decisions.md](./decisions.md) records settled decisions and open questions.
 - [review-rounds.md](./review-rounds.md) records parallel review repairs and measured scrolling performance.
 - [diff-review.md](./diff-review.md) compares OpenCode diff behavior and the Vimex review direction.
+- [transcript-runtime.md](./transcript-runtime.md) defines compact activity presentation, streaming isolation, and the path to size-independent transcript windowing.
+- [transcript-runtime-research.md](./transcript-runtime-research.md) records the external research and reasoning behind the transcript runtime design.
 
 ## Document ownership
 
