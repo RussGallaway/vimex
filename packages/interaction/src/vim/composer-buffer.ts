@@ -305,6 +305,19 @@ function yank(buffer: ComposerBuffer, register: VimRegister): ComposerBufferResu
   return { buffer: { text: buffer.text, cursorOffset: buffer.cursorOffset }, register: nextRegister, effect: { type: "copy", text } }
 }
 
+function deleteSelection(buffer: ComposerBuffer, register: VimRegister, insertMode: boolean): ComposerBufferResult {
+  if (!buffer.selection) return { buffer, register }
+  const parts = split(buffer.text)
+  const from = clamp(Math.min(buffer.selection.anchor, buffer.selection.head), 0, parts.length)
+  const to = clamp(Math.max(buffer.selection.anchor, buffer.selection.head) + 1, from, parts.length)
+  const text = parts.slice(from, to).join("")
+  const next = replace(parts, from, to, [])
+  return {
+    buffer: { text: next.join(""), cursorOffset: insertMode ? Math.min(from, next.length) : normalCursor(next, from) },
+    register: text ? { text, shape: "character" } : register,
+  }
+}
+
 /** Applies semantic Vim behavior to a grapheme-indexed composer buffer. */
 export function applyComposerVimAction(
   buffer: ComposerBuffer,
@@ -320,6 +333,7 @@ export function applyComposerVimAction(
   }
   if (action.type === "clear-selection") return { buffer: { text: buffer.text, cursorOffset: buffer.cursorOffset }, register }
   if (action.type === "yank") return yank(buffer, register)
+  if (action.type === "delete-selection") return deleteSelection(buffer, register, action.enterInsert ?? false)
   if (action.type === "submit") return { buffer, register, effect: { type: "submit" } }
   if (action.type === "retry") return { buffer, register, effect: { type: "retry" } }
   if (action.operator === "undo" || action.operator === "redo") {

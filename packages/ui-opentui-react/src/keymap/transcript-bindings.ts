@@ -20,6 +20,7 @@ export function transcriptBindings(ctx: VimBindingContext): UiBinding[] {
   return [
     { key: "w", cmd: () => semantic("word-next") }, { key: "b", cmd: () => semantic("word-previous") }, { key: "e", cmd: () => semantic("word-end") },
     { key: "shift+w", cmd: () => semantic("WORD-next") }, { key: "shift+b", cmd: () => semantic("WORD-previous") }, { key: "shift+e", cmd: () => semantic("WORD-end") },
+    { key: "shift+[", cmd: () => semantic("block-previous") }, { key: "shift+]", cmd: () => semantic("block-next") },
     { key: "{", cmd: () => semantic("block-previous") }, { key: "}", cmd: () => semantic("block-next") },
     { key: "[[", cmd: () => semantic("message-previous") }, { key: "]]", cmd: () => semantic("message-next") },
     { key: "[u", cmd: () => semantic("url-previous") }, { key: "]u", cmd: () => semantic("url-next") },

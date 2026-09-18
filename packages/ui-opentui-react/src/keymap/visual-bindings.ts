@@ -19,7 +19,7 @@ export function visualBindings(ctx: VimBindingContext): UiBinding[] {
       ? [...countBindings(ctx), ...transcriptBindings(ctx)]
       : [
           ...Array.from({ length: 10 }, (_, digit) => ({ key: `${digit}`, cmd: () => ctx.runComposerKey(`${digit}`) })),
-          ...["h", "j", "k", "l", "w", "b", "e", "0", "^", "$", "g", "shift+g"].map((key) => ({ key, cmd: () => ctx.runComposerKey(key) })),
+          ...["h", "j", "k", "l", "w", "b", "e", "0", "^", "$", "g", "shift+g", "d", "x", "c"].map((key) => ({ key, cmd: () => ctx.runComposerKey(key) })),
         ]),
     { key: "y", cmd: () => {
       if (ctx.interaction.surface === "composer") ctx.runComposerKey("y")

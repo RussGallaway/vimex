@@ -5,12 +5,29 @@ import {
   graphemeOffsetToCodeUnitOffset,
   type ComposerBuffer,
 } from "./composer-buffer"
-import type { ComposerMotion, ComposerVimAction } from "./composer-grammar"
-import type { VimRegister } from "./state-machine"
+import { resolveComposerKey, type ComposerMotion, type ComposerVimAction } from "./composer-grammar"
+import { initialInteraction, reduceInteraction, type InteractionState, type VimRegister } from "./state-machine"
 
 const emptyRegister: VimRegister = { text: "", shape: "character" }
 const apply = (buffer: ComposerBuffer, action: ComposerVimAction, register = emptyRegister) => applyComposerVimAction(buffer, action, register)
 const motion = (buffer: ComposerBuffer, value: ComposerMotion, count = 1) => apply(buffer, { type: "motion", motion: value, count, select: false }).buffer
+
+function applyKeys(text: string, keys: readonly string[]): { buffer: ComposerBuffer; register: VimRegister; interaction: InteractionState } {
+  let buffer: ComposerBuffer = { text, cursorOffset: Math.max(0, splitForTest(text).length - 1) }
+  let register = emptyRegister
+  let interaction = reduceInteraction(initialInteraction(), { type: "focus.set", surface: "composer" })
+  for (const key of keys) {
+    const resolved = resolveComposerKey(interaction, key)
+    interaction = resolved.state
+    if (!resolved.action) continue
+    const result = applyComposerVimAction(buffer, resolved.action, register)
+    buffer = result.buffer
+    register = result.register
+  }
+  return { buffer, register, interaction }
+}
+
+const splitForTest = (text: string): string[] => [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)].map(({ segment }) => segment)
 
 describe("pure composer Vim buffer", () => {
   test("implements word, line, vertical, and document motions in graphemes", () => {
@@ -105,4 +122,40 @@ describe("pure composer Vim buffer", () => {
     expect(apply(buffer, { type: "submit" }).effect).toEqual({ type: "submit" })
     expect(apply(buffer, { type: "edit", operator: "undo", count: 1 }).effect).toEqual({ type: "history", direction: "undo" })
   })
+})
+
+test("Visual deletion is inclusive, reversible through the register, and grapheme-safe", () => {
+  for (const selection of [{ anchor: 1, head: 3 }, { anchor: 3, head: 1 }]) {
+    const deleted = apply({ text: "Aé👨‍👩‍👧‍👦\nZ", cursorOffset: selection.head, selection }, { type: "delete-selection" })
+    expect(deleted.buffer).toEqual({ text: "AZ", cursorOffset: 1 })
+    expect(deleted.register).toEqual({ text: "é👨‍👩‍👧‍👦\n", shape: "character" })
+    expect(apply(deleted.buffer, { type: "paste", placement: "before", count: 1 }, deleted.register).buffer.text).toBe("Aé👨‍👩‍👧‍👦\nZ")
+  }
+  const last = apply({ text: "A😀", cursorOffset: 1, selection: { anchor: 1, head: 1 } }, { type: "delete-selection" })
+  expect(last.buffer).toEqual({ text: "A", cursorOffset: 0 })
+  expect(apply(last.buffer, { type: "paste", placement: "after", count: 1 }, last.register).buffer.text).toBe("A😀")
+  expect(apply({ text: "😀", cursorOffset: 0, selection: { anchor: 0, head: 0 } }, { type: "delete-selection" }).buffer).toEqual({ text: "", cursorOffset: 0 })
+})
+
+test("Visual change keeps the insertion boundary at the end of the remaining text", () => {
+  expect(apply({ text: "ABC", cursorOffset: 2, selection: { anchor: 1, head: 2 } }, { type: "delete-selection", enterInsert: true }).buffer).toEqual({ text: "A", cursorOffset: 1 })
+})
+
+test("whole-buffer Visual deletion includes explicit line boundaries", () => {
+  const text = "Draft stays separate from status"
+
+  // Vim's G lands on the first nonblank character of the last line. On a
+  // single-line buffer, ggvG therefore selects only that first character.
+  const columnPreserving = applyKeys(text, ["g", "g", "v", "shift+g", "d"])
+  expect(columnPreserving.buffer.text).toBe("raft stays separate from status")
+  expect(columnPreserving.register).toEqual({ text: "D", shape: "character" })
+
+  // 0 and $ make the intended whole-buffer characterwise range explicit and
+  // work for both one-line and multiline drafts.
+  for (const value of [text, "first line\nsecond line"]) {
+    const deleted = applyKeys(value, ["g", "g", "0", "v", "shift+g", "$", "d"])
+    expect(deleted.buffer).toEqual({ text: "", cursorOffset: 0 })
+    expect(deleted.register).toEqual({ text: value, shape: "character" })
+    expect(deleted.interaction.mode).toBe("normal")
+  }
 })

@@ -72,10 +72,14 @@ export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCom
       const workspace = id ? state.workspaces[id] : undefined
       const text = workspace ? selectedText(workspace.transcript, command.format) : undefined
       if (!id || !workspace || text === undefined) return done(state)
+      const shape = workspace.transcript.selection?.shape === "line" ? "line" : "character"
+      // Line registers store content without the final line delimiter; the
+      // composer adds that delimiter when placing the register between lines.
+      const registerText = shape === "line" ? text.replace(/\n$/, "") : text
       return done(updateWorkspace(state, id, (current) => ({
         ...current,
         transcript: clearSelection(current.transcript),
-        interaction: reduceInteraction(current.interaction, { type: "mode.normal" }),
+        interaction: reduceInteraction(reduceInteraction(current.interaction, { type: "register.set", register: { text: registerText, shape } }), { type: "mode.normal" }),
       })), { type: "clipboard.write", text })
     }
     case "transcript.url.open": {

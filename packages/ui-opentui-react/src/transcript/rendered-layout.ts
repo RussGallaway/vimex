@@ -12,6 +12,7 @@ const renderedLayoutCache = new WeakMap<ScrollBoxRenderable, { fingerprint: Layo
 function cellsIn(renderer: CliRenderer, renderable: Renderable): ScreenCell[] {
   const measured: ScreenCell[] = []
   const visit = (current: Renderable) => {
+    if (current.id.startsWith("decoration:")) return
     if (current instanceof TextBufferRenderable) {
       const lines = current.plainText.split("\n")
       const info = current.lineInfo
@@ -29,7 +30,14 @@ function cellsIn(renderer: CliRenderer, renderable: Renderable): ScreenCell[] {
           while (candidateIndex + 1 < candidates.length && (info.lineStartCols[candidates[candidateIndex + 1]!] ?? 0) <= column) candidateIndex += 1
           const visual = candidates[candidateIndex] ?? sourceRow
           const start = info.lineStartCols[visual] ?? 0
-          measured.push({ char: [...part][0] ?? part, x: current.screenX + column - start, y: current.screenY + visual })
+          // Native text keeps its full logical content when the visible header
+          // is truncated. Hidden graphemes share the last visible cell rather
+          // than producing a cursor outside the renderable (or terminal).
+          if (current.width > 0 && current.height > 0) measured.push({
+            char: [...part][0] ?? part,
+            x: current.screenX + Math.max(0, Math.min(column - start, current.width - 1)),
+            y: current.screenY + Math.max(0, Math.min(visual, current.height - 1)),
+          })
           column += graphemeCellWidth(part)
         }
       }
@@ -152,22 +160,23 @@ interface TableLayout { columnOffsets: readonly number[]; rowOffsets: readonly n
 interface TableCell { textBufferView: TextBufferView }
 interface TableRuntime { _layout?: TableLayout; _cells?: readonly (readonly TableCell[])[] }
 
-function appendLineInfo(fingerprint: unknown[], view: TextBufferRenderable | TextBufferView) {
+function appendLineInfo(fingerprint: unknown[], view: TextBufferRenderable | TextBufferView, includeContent = true) {
   const info = view.lineInfo
-  fingerprint.push(view instanceof TextBufferRenderable ? view.plainText : view.getPlainText(), info.lineSources.length, ...info.lineSources, info.lineStartCols.length, ...info.lineStartCols)
+  if (includeContent) fingerprint.push(view instanceof TextBufferRenderable ? view.plainText : view.getPlainText())
+  fingerprint.push(info.lineSources.length, ...info.lineSources, info.lineStartCols.length, ...info.lineStartCols)
 }
 
-function appendNativeFingerprint(fingerprint: unknown[], renderable: Renderable, seen: Set<Renderable>) {
+function appendNativeFingerprint(fingerprint: unknown[], renderable: Renderable, seen: Set<Renderable>, includeContent = false) {
   if (seen.has(renderable)) return
   seen.add(renderable)
   fingerprint.push(renderable, renderable.screenX, renderable.screenY, renderable.width, renderable.height)
-  if (renderable instanceof TextBufferRenderable) appendLineInfo(fingerprint, renderable)
+  if (renderable instanceof TextBufferRenderable) appendLineInfo(fingerprint, renderable, includeContent)
   if (renderable instanceof MarkdownRenderable) {
     const runtime = renderable as unknown as { _parseState?: object | null; _stableBlockCount?: number }
     fingerprint.push(runtime._parseState, runtime._stableBlockCount, markdownBlocks(renderable).length)
     for (const block of markdownBlocks(renderable)) {
       fingerprint.push(block, block.tokenRaw)
-      appendNativeFingerprint(fingerprint, block.renderable, seen)
+      appendNativeFingerprint(fingerprint, block.renderable, seen, true)
     }
   }
   if (renderable instanceof TextTableRenderable) {
@@ -176,7 +185,7 @@ function appendNativeFingerprint(fingerprint: unknown[], renderable: Renderable,
     if (runtime._layout) fingerprint.push(...runtime._layout.columnOffsets, ...runtime._layout.rowOffsets)
     for (const row of runtime._cells ?? []) for (const cell of row) appendLineInfo(fingerprint, cell.textBufferView)
   }
-  for (const child of renderable.getChildren()) if ("screenX" in child) appendNativeFingerprint(fingerprint, child as Renderable, seen)
+  for (const child of renderable.getChildren()) if ("screenX" in child) appendNativeFingerprint(fingerprint, child as Renderable, seen, includeContent)
 }
 
 function layoutFingerprint(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, state: TranscriptState): LayoutFingerprint {

@@ -195,3 +195,25 @@ test("switching threads clears a composer selection even when the target restore
     expect(observed.workspaces[target]?.composer.text).toBe("WXYZ")
   } finally { await act(async () => setup.renderer.destroy()) }
 })
+
+for (const mode of ["normal", "insert"] as const) {
+  test(`Ctrl-j/k focus directly in ${mode} without inserting or submitting`, async () => {
+    let state = fixture()
+    state = transitionWorkbench(state, { type: "composer.change", text: "draft survives", cursorOffset: 14 }).state
+    if (mode === "insert") state = transitionWorkbench(state, { type: "interaction.command", command: { type: "mode.insert" } }).state
+    const commands: Parameters<VimexUiController["dispatchInteraction"]>[0][] = []
+    let submissions = 0
+    const setup = await testRender(<VimexRoot state={state} controller={{ ...inertController,
+      dispatchInteraction(command) { commands.push(command) }, submit() { submissions++ },
+    }} />, { width: 80, height: 24 })
+    try {
+      await act(async () => setup.flush())
+      await act(async () => { setup.mockInput.pressKey("k", { ctrl: true }); await setup.flush() })
+      await act(async () => { setup.mockInput.pressKey("j", { ctrl: true }); await setup.flush() })
+      expect(commands).toContainEqual({ type: "focus.set", surface: "transcript" })
+      expect(commands).toContainEqual({ type: "focus.set", surface: "composer" })
+      expect((setup.renderer.root.findDescendantById("composer") as TextareaRenderable).plainText).toBe("draft survives")
+      expect(submissions).toBe(0)
+    } finally { await act(async () => setup.renderer.destroy()) }
+  })
+}

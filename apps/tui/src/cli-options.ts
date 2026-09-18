@@ -39,6 +39,6 @@ Usage: vimex [options]
   -h, --help       Show help
   -V, --version    Show version
 
-Normal: i compose · Ctrl-w k/j focus · Ctrl-u/d scroll · v select · :help commands
+Normal: i compose · Ctrl-k/j focus · Ctrl-u/d scroll · v select · :help commands
 Insert: Enter send · Shift+Enter newline · Esc Normal
 `

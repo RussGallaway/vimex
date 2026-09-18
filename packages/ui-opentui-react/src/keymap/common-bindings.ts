@@ -1,3 +1,4 @@
+import { toggleAllFolds, toggleCurrentFold } from "./fold-bindings"
 import type { UiBinding, VimBindingContext } from "./binding-context"
 
 export function commonBindings(ctx: VimBindingContext): UiBinding[] {
@@ -13,7 +14,23 @@ export function commonBindings(ctx: VimBindingContext): UiBinding[] {
     }
     ctx.controller.dispatchInteraction({ type: "focus.set", surface })
   }
+  const slashEditing = ctx.interaction.mode === "insert" && ctx.composer.text.startsWith("/") && !ctx.composer.text.includes("\n")
   return [
+    ...(ctx.interaction.mode !== "command" && !slashEditing ? [
+      { key: "shift+tab", cmd: () => toggleAllFolds(ctx) },
+      ...(ctx.interaction.surface === "transcript" ? [{ key: "tab", cmd: () => toggleCurrentFold(ctx) }] : []),
+    ] satisfies UiBinding[] : []),
+    ...(ctx.interaction.surface === "composer" && ctx.interaction.mode !== "command" ? [
+      { key: "ctrl+e", cmd: () => ctx.scroll("down", "line") },
+      { key: "ctrl+y", cmd: () => ctx.scroll("up", "line") },
+      { key: "ctrl+d", cmd: () => ctx.scroll("down", "half-page") },
+      { key: "ctrl+u", cmd: () => ctx.scroll("up", "half-page") },
+    ] satisfies UiBinding[] : []),
+    { key: "up", cmd: () => focus("transcript") },
+    { key: "down", cmd: () => focus("composer") },
+    { key: "ctrl+k", cmd: () => focus("transcript") },
+    { key: "ctrl+j", cmd: () => focus("composer") },
+    { key: "linefeed", cmd: () => focus("composer") },
     { key: "ctrl+wk", cmd: () => focus("transcript") },
     { key: "ctrl+wj", cmd: () => focus("composer") },
     { key: "ctrl+c", cmd: () => ctx.controller.interrupt() },

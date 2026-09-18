@@ -534,3 +534,84 @@ test("favorites restore independently of history and selected-session rename doe
   expect(h.controller.getSnapshot().summaries[b]?.title).toBe("Saved research")
   await h.controller.close()
 })
+
+test("model command completion and picker share a catalog while direct model selection preserves the draft", async () => {
+  const h = harness()
+  let loads = 0
+  const changes: unknown[] = []
+  h.backend.listModels = async () => { loads++; return [{ id: "test", label: "Test", efforts: ["high"] }, { id: "next", label: "Next", efforts: ["high"] }] }
+  h.backend.updateSettings = async (_, settings) => { changes.push(settings) }
+  await h.controller.initialize("/tmp")
+  h.controller.changeDraft("keep my draft", 4)
+  h.controller.dispatchInteraction({ type: "mode.command" })
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().availableModels?.map(model => model.id)).toEqual(["test", "next"])
+  h.controller.executeCommand(":model next")
+  await h.controller.settle()
+  expect(changes).toEqual([{ model: "next" }])
+  expect(h.controller.getSnapshot().workspaces[a]?.interaction.overlay).toBeNull()
+  h.controller.executeNamedCommand("model")
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().workspaces[a]?.interaction.overlay).toBe("models")
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe("keep my draft")
+  expect(loads).toBe(1)
+  await h.controller.close()
+})
+
+
+test("stale model catalog cannot mutate settings after disconnect", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  let release!: (models: Awaited<ReturnType<ModelCatalog["listModels"]>>) => void
+  let started!: () => void
+  const requested = new Promise<void>(resolve => { started = resolve })
+  h.backend.listModels = () => { started(); return new Promise(resolve => { release = resolve }) }
+  const updates: unknown[] = []
+  h.backend.updateSettings = async (_, settings) => { updates.push(settings) }
+  h.controller.executeCommand(":model next")
+  await requested
+  h.emit({ type: "disconnected", message: "connection lost" })
+  release([{ id: "next", label: "Next", efforts: [] }])
+  await h.controller.settle()
+  expect(updates).toEqual([])
+  expect(h.controller.getSnapshot().availableModels).toBeUndefined()
+  await h.controller.close()
+})
+
+test("failed model discovery exposes an error and can be retried", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  h.backend.listModels = async () => { throw new Error("Catalog unavailable") }
+  h.controller.executeNamedCommand("model")
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().modelCatalogError).toBe("Catalog unavailable")
+  h.backend.listModels = async () => [{ id: "test", label: "Test", efforts: [] }]
+  h.controller.executeNamedCommand("model")
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().modelCatalogError).toBeUndefined()
+  expect(h.controller.getSnapshot().availableModels).toHaveLength(1)
+  await h.controller.close()
+})
+
+
+test("model and thinking level apply together only after both arguments validate", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  h.backend.listModels = async () => [{ id: "sol-5.6", label: "Sol", efforts: ["low", "medium"] }]
+  const updates: unknown[] = []
+  h.backend.updateSettings = async (_, settings) => { updates.push(settings) }
+  h.controller.changeDraft("draft stays", 5)
+  h.controller.executeCommand(":model sol-5.6 medium")
+  await h.controller.settle()
+  expect(updates).toEqual([{ model: "sol-5.6", effort: "medium" }])
+  expect(h.controller.getSnapshot().summaries[a]).toMatchObject({ model: "sol-5.6", reasoningEffort: "medium" })
+  h.controller.executeCommand(":model sol-5.6 ultra")
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().error).toContain("Unsupported reasoning effort")
+  h.controller.executeCommand(":model sol-5.6 low extra")
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().error).toContain("Usage:")
+  expect(updates).toHaveLength(1)
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe("draft stays")
+  await h.controller.close()
+})

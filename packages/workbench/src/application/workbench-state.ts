@@ -1,3 +1,4 @@
+import type { AvailableModel } from "./model-catalog"
 import type { DisplayPreferences } from "./display-preferences"
 import { createConversation, type AgentRelationship, type ConversationEvent, type ConversationState, type ItemId, type ThreadId, type ThreadSummary, type TurnId } from "@vimex/conversation"
 import { initialTranscript, type UrlCandidate, type TranscriptCommand, type TranscriptState, type ViewportAnchor } from "@vimex/transcript"
@@ -12,6 +13,8 @@ export interface ThreadWorkspace {
 }
 export interface PendingFork { threadId: ThreadId; itemId: ItemId; turnId: TurnId; preview: string }
 export interface WorkbenchState {
+  availableModels?: readonly AvailableModel[]
+  modelCatalogError?: string
   preferences?: DisplayPreferences
   pendingFork?: PendingFork
   urlChoices?: readonly UrlCandidate[]

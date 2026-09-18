@@ -18,6 +18,7 @@ export type ComposerVimAction =
   | { type: "begin-visual" }
   | { type: "clear-selection" }
   | { type: "yank" }
+  | { type: "delete-selection"; enterInsert?: boolean }
   | { type: "submit" }
   | { type: "retry" }
 
@@ -118,6 +119,7 @@ export function resolveComposerKey(state: InteractionState, key: string): Compos
     if (key === "g") return resolved(state, [{ type: "keys.pending", value: key }])
     const motion = resolveMotion(state, key, true)
     if (motion) return motion
+    if (key === "d" || key === "x" || key === "c") return resolved(state, [{ type: "count.clear" }, { type: "keys.clear" }, { type: key === "c" ? "mode.insert" : "mode.normal" }], { type: "delete-selection", enterInsert: key === "c" })
     if (key === "y") return resolved(state, [{ type: "count.clear" }, { type: "mode.normal" }], { type: "yank" })
     if (key === "escape") return resolved(state, [{ type: "mode.normal" }, { type: "focus.set", surface: "transcript" }], { type: "clear-selection" })
   }

@@ -8,7 +8,7 @@ import { forkBoundary, threadId, type ThreadId, type TurnId, type ItemId, type C
 import type { ConversationGateway, SessionSnapshot } from "@vimex/conversation"
 import type { ApprovalGateway } from "@vimex/approvals"
 import type { RuntimeConnection, RuntimeEvent } from "./runtime-connection"
-import type { ModelCatalog } from "./model-catalog"
+import type { AvailableModel, ModelCatalog } from "./model-catalog"
 import type { WorkbenchActions, TranscriptAction } from "./workbench-actions"
 import { validateAnswers } from "@vimex/approvals"
 import type { DisplayPreferences } from "./display-preferences"
@@ -37,6 +37,7 @@ export class VimexController implements WorkbenchActions {
   private readonly buffered = new Map<ThreadId, ConversationEvent[]>()
   private readonly resumes = new Map<ThreadId, Promise<SessionSnapshot>>()
   private unsubscribe?: () => void
+  private catalogRequest?: { epoch: number; promise: Promise<readonly AvailableModel[]> }
   private navigationRevision = 0
   private initialization?: Promise<void>
   private restartPending = false
@@ -170,7 +171,27 @@ export class VimexController implements WorkbenchActions {
       default: { const unreachable: never = event; throw new Error(`Unhandled runtime event: ${String(unreachable)}`) }
     }
   }
-  dispatchInteraction: WorkbenchActions["dispatchInteraction"] = command => this.dispatch({ type: "interaction.command", command })
+  private loadModels() {
+    const epoch = this.runtimeEpoch
+    if (this.catalogRequest?.epoch === epoch) return this.catalogRequest.promise
+    this.setState({ ...this.state, modelCatalogError: undefined })
+    const promise = this.ports.models.listModels().then(models => {
+      if (this.currentRuntime(epoch)) this.setState({ ...this.state, availableModels: models, modelCatalogError: undefined })
+      return models
+    }).catch(error => {
+      if (this.currentRuntime(epoch)) this.setState({ ...this.state, modelCatalogError: error instanceof Error ? error.message : String(error) })
+      if (this.catalogRequest?.promise === promise) this.catalogRequest = undefined
+      throw error
+    })
+    this.catalogRequest = { epoch, promise }
+    return promise
+  }
+  dispatchInteraction: WorkbenchActions["dispatchInteraction"] = command => {
+    this.dispatch({ type: "interaction.command", command })
+    if (command.type === "mode.command" || (command.type === "overlay.open" && command.overlay === "models")) {
+      this.launch(async () => { await this.loadModels() })
+    }
+  }
   changeDraft: WorkbenchActions["changeDraft"] = (text, cursorOffset) => this.dispatch({ type: "composer.change", text, cursorOffset })
   submit: WorkbenchActions["submit"] = intent => this.dispatch({ type: "composer.submit", intent, clientMessageId: crypto.randomUUID() })
   retryOutgoing = (id: string): void => this.dispatch({ type: "composer.retry", clientMessageId: id })
@@ -460,6 +481,10 @@ export class VimexController implements WorkbenchActions {
       case "quit": this.ports.quit(); break
       case "sessions": case "approvals": case "help": case "questions": case "agents": this.dispatchInteraction({ type: "overlay.open", overlay: command }); break
       case "model": case "thinking": case "cwd": {
+        if (command === "model" && !argument) {
+          this.dispatchInteraction({ type: "overlay.open", overlay: "models" })
+          break
+        }
         const id = this.state.activeThreadId
         if (!id || !this.state.summaries[id]) break
         this.launchThreadMutation(id, async epoch => {
@@ -472,9 +497,10 @@ export class VimexController implements WorkbenchActions {
             if (this.currentRuntime(epoch)) this.dispatch({ type: "thread.summary.patch", threadId: id, patch: { cwd, gitBranch: undefined } })
             return
           }
-          const models = await this.ports.models.listModels()
+          const models = await this.loadModels()
+          if (!this.currentRuntime(epoch)) return
           if (!argument) {
-            this.notice(command === "thinking" ? `Reasoning: ${models.find(m => m.id === summary.model)?.efforts.join(", ") ?? "unavailable"}` : `Models: ${models.map(m => m.id).join(", ")}. Use :model <name>`)
+            this.notice(`Reasoning: ${models.find(m => m.id === summary.model)?.efforts.join(", ") ?? "unavailable"}`)
             return
           }
           if (command === "thinking") {
@@ -483,9 +509,13 @@ export class VimexController implements WorkbenchActions {
             await this.ports.conversation.updateSettings(id, { effort: argument })
             if (this.currentRuntime(epoch)) this.dispatch({ type: "thread.summary.patch", threadId: id, patch: { reasoningEffort: argument } })
           } else {
-            if (!models.some(model => model.id === argument)) throw new Error(`Unknown model: ${argument}`)
-            await this.ports.conversation.updateSettings(id, { model: argument })
-            if (this.currentRuntime(epoch)) this.dispatch({ type: "thread.summary.patch", threadId: id, patch: { model: argument } })
+            const [modelId, effort, ...extra] = argument.trim().split(/\s+/)
+            if (extra.length) throw new Error("Usage: :model <model-id> [thinking-level]")
+            const model = models.find(candidate => candidate.id === modelId)
+            if (!model) throw new Error(`Unknown model: ${modelId}`)
+            if (effort && !model.efforts.includes(effort)) throw new Error(`Unsupported reasoning effort for ${model.id}: ${effort}`)
+            await this.ports.conversation.updateSettings(id, { model: model.id, ...(effort ? { effort } : {}) })
+            if (this.currentRuntime(epoch)) this.dispatch({ type: "thread.summary.patch", threadId: id, patch: { model: model.id, ...(effort ? { reasoningEffort: effort } : {}) } })
           }
         })
         break

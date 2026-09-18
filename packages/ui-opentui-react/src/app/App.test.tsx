@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
-import { MarkdownRenderable, type ScrollBoxRenderable, type TextareaRenderable } from "@opentui/core"
+import { MarkdownRenderable, type InputRenderable, type ScrollBoxRenderable, type TextareaRenderable, type TextRenderable } from "@opentui/core"
 import { itemId, threadId, turnId, type ThreadSummary } from "@vimex/conversation"
 import { initialWorkbench, transitionWorkbench, type WorkbenchState } from "@vimex/workbench"
 import { graphemes, projectItem } from "@vimex/transcript"
@@ -8,7 +8,7 @@ import { VimexRoot } from "../index"
 import { inertController, type TranscriptUiCommand, type VimexUiController } from "../contracts"
 import { act, useState } from "react"
 import { measureRenderedTranscript } from "../transcript/rendered-layout"
-import type { Overlay } from "@vimex/interaction"
+import { reduceInteraction, type Overlay } from "@vimex/interaction"
 import { createEmberTideSyntax } from "../theme"
 
 function fixture(): WorkbenchState {
@@ -65,6 +65,31 @@ describe("Vimex OpenTUI shell", () => {
     } finally {
       await act(async () => setup.renderer.destroy())
     }
+  })
+
+  test("keeps model metadata in the full-width composer and a slim responsive status strip", async () => {
+    const wide = await testRender(<VimexRoot state={fixture()} controller={inertController} />, { width: 96, height: 26 })
+    try {
+      await act(async () => { await wide.flush(); await wide.renderOnce() })
+      const composer = wide.renderer.root.findDescendantById("composer-shell")!
+      const status = wide.renderer.root.findDescendantById("status-bar")!
+      expect(composer.x).toBe(0)
+      expect(composer.width).toBe(96)
+      expect(status.height).toBe(1)
+      expect(wide.captureCharFrame()).toContain("Codex · gpt-6 · high")
+      expect(wide.captureCharFrame()).toContain("enter send · shift↵ newline")
+      expect((wide.renderer.root.findDescendantById("status-metadata") as TextRenderable).plainText).toContain("20k/100k · 20% context")
+      expect((wide.renderer.root.findDescendantById("status-metadata") as TextRenderable).plainText).not.toContain("gpt-6")
+    } finally { await act(async () => wide.renderer.destroy()) }
+
+    const narrow = await testRender(<VimexRoot state={fixture()} controller={inertController} />, { width: 48, height: 18 })
+    try {
+      await act(async () => { await narrow.flush(); await narrow.renderOnce() })
+      expect(narrow.renderer.root.findDescendantById("composer-shell")!.width).toBe(48)
+      expect(narrow.renderer.root.findDescendantById("composer-send-hint")).toBeUndefined()
+      expect(narrow.captureCharFrame()).toContain("Codex · gpt-6 · high")
+      expect(narrow.renderer.root.findDescendantById("status-bar")!.height).toBe(1)
+    } finally { await act(async () => narrow.renderer.destroy()) }
   })
 
   test("routes normal-mode keys through the controller", async () => {
@@ -175,7 +200,7 @@ describe("Vimex OpenTUI shell", () => {
       type: "conversation.event",
       event: { type: "item.started", threadId: thread, item: { id: complexId, turnId: turnId("complex-turn"), kind: "assistant", markdown, status: "complete" } },
     }).state
-    const setup = await testRender(<VimexRoot state={state} controller={inertController} />, { width: 52, height: 18 })
+    const setup = await testRender(<VimexRoot state={state} controller={inertController} />, { width: 52, height: 26 })
     try {
       await act(async () => setup.flush())
       const scrollbox = setup.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable
@@ -276,6 +301,28 @@ describe("Vimex OpenTUI shell", () => {
       syntax.destroy()
       await act(async () => setup.renderer.destroy())
     }
+  })
+
+  test("keeps measured layout cached when a same-width decorative glyph animates", async () => {
+    const thread = threadId("thread-1")
+    const transcript = fixture().workspaces[thread]!.transcript
+    const answer = itemId("answer")
+    const plain = transcript.projectionById[answer]!.plain
+    const setup = await testRender(
+      <scrollbox id="transcript"><box id={`transcript-item:${answer}`}>
+        <text id="decorative-spinner">⠋</text><text>{plain}</text>
+      </box></scrollbox>,
+      { width: 72, height: 18 },
+    )
+    try {
+      await act(async () => setup.flush())
+      const scrollbox = setup.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable
+      const before = measureRenderedTranscript(setup.renderer, scrollbox, transcript)!
+      const spinner = setup.renderer.root.findDescendantById("decorative-spinner") as TextRenderable
+      spinner.content = "⠙"
+      await act(async () => { setup.renderer.requestRender(); await setup.renderOnce() })
+      expect(measureRenderedTranscript(setup.renderer, scrollbox, transcript)).toBe(before)
+    } finally { await act(async () => setup.renderer.destroy()) }
   })
 
   test("accepts count prefixes and Ctrl-w surface focus from raw key events", async () => {
@@ -539,8 +586,69 @@ describe("Vimex OpenTUI shell", () => {
       await act(async () => { await setup.mockInput.typeText("fau"); await setup.flush() })
       const frame = setup.captureCharFrame()
       expect(frame).toContain("Client authentication")
+      expect(setup.renderer.root.findDescendantById(`session-row:${current}`)).toBeUndefined()
       expect(frame).toContain("/work/client")
       expect(frame).toContain("git:feature/auth")
+      await act(async () => { setup.mockInput.pressEnter(); await setup.flush() })
+      expect(opened).toEqual([target])
+    } finally { await act(async () => setup.renderer.destroy()) }
+  })
+
+  test("opens the live session query when text and Return arrive before React rerenders", async () => {
+    const current = threadId("thread-1")
+    const target = threadId("01a0b1fa-cd31-7f11-b465-275ed3d0c21c")
+    let state = fixture()
+    state = transitionWorkbench(state, { type: "thread.register", summary: {
+      id: threadId("unrelated-auto-review"), title: "codex-auto-review", model: "gpt-6", reasoningEffort: "low", cwd: "/work/other", status: "idle", updatedAt: Date.now(),
+    } }).state
+    state = transitionWorkbench(state, { type: "thread.switch", threadId: current }).state
+    state = withOverlay(state, "sessions")
+    const opened: string[] = []
+    const controller: VimexUiController = { ...inertController, openThread(id) { opened.push(id) } }
+    const setup = await testRender(<VimexRoot state={state} controller={controller} />, { width: 96, height: 26 })
+    try {
+      await act(async () => setup.flush())
+      await act(async () => {
+        await setup.mockInput.typeText(target)
+        setup.mockInput.pressEnter()
+        await setup.flush()
+      })
+      expect(opened).toEqual([target])
+    } finally { await act(async () => setup.renderer.destroy()) }
+  })
+
+  test("focuses session search after opening it from Normal mode", async () => {
+    const current = threadId("thread-1")
+    const target = threadId("fork-thread-from-normal")
+    let initial = transitionWorkbench(fixture(), { type: "thread.open", summary: {
+      id: target, title: "Fork target", model: "gpt-6", reasoningEffort: "high", cwd: "/work/fork", status: "idle",
+    } }).state
+    initial = transitionWorkbench(initial, { type: "thread.register", summary: {
+      id: threadId("newest-unrelated"), title: "codex-auto-review", model: "gpt-6", reasoningEffort: "low", cwd: "/work/other", status: "idle", updatedAt: Date.now(),
+    } }).state
+    initial = transitionWorkbench(initial, { type: "thread.switch", threadId: current }).state
+    const opened: string[] = []
+    function Harness() {
+      const [state, setState] = useState(initial)
+      const controller: VimexUiController = {
+        ...inertController,
+        dispatchInteraction(command) {
+          setState((previous) => {
+            const id = previous.activeThreadId!
+            const workspace = previous.workspaces[id]!
+            return { ...previous, workspaces: { ...previous.workspaces, [id]: { ...workspace, interaction: reduceInteraction(workspace.interaction, command) } } }
+          })
+        },
+        openThread(id) { opened.push(id) },
+      }
+      return <VimexRoot state={state} controller={controller} />
+    }
+    const setup = await testRender(<Harness />, { width: 96, height: 26 })
+    try {
+      await act(async () => { await setup.mockInput.typeText("s"); await setup.flush() })
+      expect(setup.renderer.currentFocusedRenderable?.id).toBe("session-search")
+      await act(async () => { await setup.mockInput.typeText(target); await setup.flush() })
+      expect((setup.renderer.root.findDescendantById("session-search") as InputRenderable).value).toBe(target)
       await act(async () => { setup.mockInput.pressEnter(); await setup.flush() })
       expect(opened).toEqual([target])
     } finally { await act(async () => setup.renderer.destroy()) }
@@ -591,6 +699,27 @@ describe("Vimex OpenTUI shell", () => {
       expect(frame).toContain("••••••")
       await act(async () => { setup.mockInput.pressEnter(); await setup.flush() })
       expect(submitted).toEqual([{ token: "hunter2" }])
+    } finally { await act(async () => setup.renderer.destroy()) }
+  })
+
+  test("submits an option-only Codex question with global Return", async () => {
+    let state = withOverlay(fixture(), "questions")
+    const id = state.activeThreadId!
+    state = { ...state, questions: { choice: { id: "choice", threadId: id, turnId: turnId("turn"), questions: [
+      { id: "direction", header: "Direction", question: "Choose a path", allowOther: false, secret: false, options: [
+        { label: "Continue", description: "Keep going" },
+        { label: "Stop", description: "End here" },
+      ] },
+    ] } } }
+    const submitted: Array<Readonly<Record<string, string | readonly string[]>>> = []
+    const controller: VimexUiController = { ...inertController, answerQuestions(_id, answers) { submitted.push(answers) } }
+    const setup = await testRender(<VimexRoot state={state} controller={controller} />, { width: 82, height: 22 })
+    try {
+      await act(async () => setup.flush())
+      expect(setup.renderer.root.findDescendantById("question-answer")).toBeUndefined()
+      await act(async () => { await setup.mockInput.pressKeys(["ARROW_DOWN"]); await setup.flush() })
+      await act(async () => { setup.mockInput.pressEnter(); await setup.flush() })
+      expect(submitted).toEqual([{ direction: "Stop" }])
     } finally { await act(async () => setup.renderer.destroy()) }
   })
 

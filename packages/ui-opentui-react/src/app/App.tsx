@@ -1,12 +1,14 @@
 import { CliRenderEvents, type InputRenderable, type Renderable, type ScrollBoxRenderable, type TextareaRenderable } from "@opentui/core"
 import { useBindings } from "@opentui/keymap/react"
-import { useRenderer, useTerminalDimensions } from "@opentui/react"
-import { initialComposer } from "@vimex/composer"
+import { flushSync, useRenderer, useTerminalDimensions } from "@opentui/react"
+import { initialComposer, type SubmissionIntent } from "@vimex/composer"
 import { applyComposerVimAction, codeUnitOffsetToGraphemeOffset, commandCompletions, graphemeOffsetToCodeUnitOffset, initialCommandHistory, initialInteraction, recallCommand, recordCommand, resolveComposerKey, type ComposerVimAction, type InteractionState } from "@vimex/interaction"
 import { graphemeCount, initialTranscript, selectedText, type TranscriptState } from "@vimex/transcript"
 import { activeWorkspace } from "@vimex/workbench"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Composer } from "../composer/Composer"
+import { SlashCommandDrawer } from "../composer/SlashCommandDrawer"
+import { useSlashCommands } from "../composer/use-slash-commands"
 import { Statusline } from "../statusline/Statusline"
 import { TranscriptViewport } from "../transcript/TranscriptViewport"
 import { defaultVimexUiSettings, type VimexAppProps } from "../contracts"
@@ -63,15 +65,19 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
   const syntax = useMemo(() => createEmberTideSyntax(settings.syntaxTheme === "theme" ? settings.theme : settings.syntaxTheme, settings.reducedColor), [settings.reducedColor, settings.syntaxTheme, settings.theme])
   const scrollRef = useRef<ScrollBoxRenderable>(null)
   const textareaRef = useRef<TextareaRenderable>(null)
+  const composerSubmitRef = useRef<((intent: SubmissionIntent) => void) | null>(null)
   const commandRef = useRef<InputRenderable>(null)
   const sessionSearchRef = useRef<InputRenderable>(null)
+  const liveSessionQuery = useRef("")
   const questionInputRef = useRef<InputRenderable>(null)
   const commandHistoryRef = useRef(initialCommandHistory())
   const composerSelectionRef = useRef<{ anchor: number; head: number } | undefined>(undefined)
   const [overlayIndex, setOverlayIndex] = useState(0)
+  const overlayIndexRef = useRef(0)
   const [sessionQuery, setSessionQuery] = useState("")
   const [questionIndex, setQuestionIndex] = useState(0)
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, string | readonly string[]>>({})
+  const [modelPicker, setModelPicker] = useState<{ stage: "models" } | { stage: "efforts"; modelId: string }>({ stage: "models" })
   const [renderedLayout, setRenderedLayout] = useState<TranscriptLayout>()
   const measuredLayout = useRef<TranscriptLayout | undefined>(undefined)
   const layoutSignature = useRef("")
@@ -90,15 +96,28 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
     .map((id) => state.approvals.byId[id])
     .find((approval) => approval !== undefined && approval.threadId === state.activeThreadId && (approval.status === "pending" || approval.status === "failed"))
   const pendingQuestion = Object.values(state.questions).find((question) => question.threadId === state.activeThreadId)
-  const sessionRows = useMemo(() => searchSessions(state.threadOrder, state.summaries, sessionQuery), [sessionQuery, state.summaries, state.threadOrder])
+  const runningItem = items.findLast(item => item.status === "running" && item.kind !== "user")
+  const activityLabel = pendingApproval ? "Approval needed" : pendingQuestion ? "Answer needed"
+    : runningItem?.kind === "reasoning" ? "Thinking" : runningItem?.kind === "assistant" ? "Responding"
+      : runningItem?.kind === "command" || runningItem?.kind === "tool" ? "Running tool"
+        : runningItem?.kind === "edit" ? "Editing" : "Waiting for Codex"
+  const sessionRows = useMemo(() => searchSessions(state.threadOrder, state.summaries, sessionQuery, state.favoriteThreadIds), [sessionQuery, state.summaries, state.threadOrder, state.favoriteThreadIds])
   const agentRows = useMemo(() => agentNavigationRows(state.activeThreadId, state.agentRelationships), [state.activeThreadId, state.agentRelationships])
   const selectionCount = selectedText(transcript, "plain")
-  const overlayLength = interaction.overlay === "sessions" ? sessionRows.length
+  const selectedPickerModel = modelPicker.stage === "efforts" ? state.availableModels?.find(model => model.id === modelPicker.modelId) : undefined
+  const overlayLength = interaction.overlay === "models" ? (modelPicker.stage === "efforts" ? (selectedPickerModel?.efforts.length ?? 0) : (state.availableModels?.length ?? 0))
+    : interaction.overlay === "sessions" ? sessionRows.length
     : interaction.overlay === "approvals" ? (pendingApproval?.choices.length ?? 0)
       : interaction.overlay === "questions" ? (pendingQuestion?.questions[questionIndex]?.options?.length ?? 1)
         : interaction.overlay === "agents" ? agentRows.length
           : interaction.overlay === "urls" ? (state.urlChoices?.length ?? 0)
             : 1
+  const activeQuestion = pendingQuestion?.questions[Math.min(questionIndex, Math.max(0, (pendingQuestion?.questions.length ?? 1) - 1))]
+  const questionOwnsReturn = Boolean(activeQuestion && (!activeQuestion.options?.length || activeQuestion.allowOther))
+  const slashCommands = useSlashCommands({ text: composer.text, textareaRef, interaction, controller, onExecute(command) {
+    commandHistoryRef.current = recordCommand(commandHistoryRef.current, command)
+    controller.executeCommand(command)
+  } })
 
   useEffect(() => () => syntax.destroy(), [syntax])
   useEffect(() => { countRef.current = interaction.count }, [interaction.count])
@@ -162,9 +181,14 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
   useEffect(() => {
     if (transcript.viewport.kind === "point") pendingRestore.current = true
   }, [geometryRevision])
-  useEffect(() => {
+  useLayoutEffect(() => {
+    overlayIndexRef.current = 0
     setOverlayIndex(0)
-    if (interaction.overlay !== "sessions") setSessionQuery("")
+    if (interaction.overlay !== "models") setModelPicker({ stage: "models" })
+    if (interaction.overlay !== "sessions") {
+      liveSessionQuery.current = ""
+      setSessionQuery("")
+    }
   }, [interaction.overlay])
   useEffect(() => { setQuestionIndex(0); setQuestionAnswers({}) }, [pendingQuestion?.id])
   useEffect(() => {
@@ -194,6 +218,25 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
       scrollRef.current?.focus()
     }
   }, [interaction.mode, interaction.overlay, interaction.surface])
+  useEffect(() => {
+    if (interaction.surface !== "transcript" || interaction.overlay || (interaction.mode !== "normal" && interaction.mode !== "visual")) return
+    const updateCursor = () => {
+      const point = measuredPoint(measuredLayout.current ?? layout, transcript.selection?.head ?? transcript.cursor)
+      const viewport = scrollRef.current?.viewport
+      const visible = Boolean(point && viewport && point.screenX >= viewport.screenX && point.screenX < viewport.screenX + viewport.width
+        && point.screenY >= viewport.screenY && point.screenY < viewport.screenY + viewport.height)
+      if (!point || !visible) { renderer.setCursorPosition(0, 0, false); return }
+      renderer.setCursorStyle({ style: "block", blinking: false })
+      // OpenTUI's hardware cursor coordinates are one-based; measured cells are zero-based.
+      renderer.setCursorPosition(point.screenX + 1, point.screenY + 1, true)
+    }
+    updateCursor()
+    renderer.on(CliRenderEvents.FRAME, updateCursor)
+    return () => {
+      renderer.off(CliRenderEvents.FRAME, updateCursor)
+      renderer.setCursorPosition(0, 0, false)
+    }
+  }, [interaction.mode, interaction.overlay, interaction.surface, layout, renderer, transcript.cursor, transcript.selection])
   useEffect(() => {
     if (interaction.surface !== "transcript") {
       renderer.clearSelection()
@@ -274,7 +317,17 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
       controller.dispatchInteraction({ type: "register.set", register: result.register })
     }
     if (result.effect?.type === "copy") controller.copyText(result.effect.text)
-    if (result.effect?.type === "submit") controller.submit(busy && settings.busySubmit === "steer" ? "steer" : "next-turn")
+    if (result.effect?.type === "submit") {
+      controller.submit(busy && settings.busySubmit === "steer" ? "steer" : "next-turn")
+      // Normal-mode Enter bypasses the textarea's native submit callback. Clear
+      // it immediately so bytes already waiting in the terminal start a new
+      // draft instead of appending to the submitted buffer.
+      textarea.setText("")
+      textarea.cursorOffset = 0
+      textarea.clearSelection()
+      composerSelectionRef.current = undefined
+      controller.changeDraft("", 0)
+    }
     if (result.effect?.type === "retry") {
       const failed = composer.outbox.find((message) => message.status === "failed")
       if (failed) controller.retryOutgoing(failed.id)
@@ -311,39 +364,67 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
   }, [controller])
 
   const activateOverlay = useCallback(() => {
-    if (interaction.overlay === "sessions") {
-      const id = sessionRows[Math.min(overlayIndex, Math.max(0, sessionRows.length - 1))]?.id
+    const activeIndex = overlayIndexRef.current
+    if (interaction.overlay === "models") {
+      if (modelPicker.stage === "models") {
+        const model = state.availableModels?.[activeIndex]
+        if (!model) return
+        if (model.efforts.length) {
+          flushSync(() => {
+            setModelPicker({ stage: "efforts", modelId: model.id })
+            const effortIndex = Math.max(0, model.efforts.indexOf(summary?.reasoningEffort ?? ""))
+            overlayIndexRef.current = effortIndex
+            setOverlayIndex(effortIndex)
+          })
+          return
+        }
+        controller.executeCommand(`model ${model.id}`)
+      } else {
+        const model = state.availableModels?.find(candidate => candidate.id === modelPicker.modelId)
+        const effort = model?.efforts[activeIndex]
+        if (!model || !effort) return
+        controller.executeCommand(`model ${model.id} ${effort}`)
+      }
+    } else if (interaction.overlay === "sessions") {
+      // Input events and Return can arrive in one terminal read. Read the native
+      // value so Return never activates rows from the previous React render.
+      const liveQuery = liveSessionQuery.current || sessionSearchRef.current?.value || sessionQuery
+      const liveRows = liveQuery === sessionQuery ? sessionRows : searchSessions(state.threadOrder, state.summaries, liveQuery, state.favoriteThreadIds)
+      const liveIndex = liveQuery === sessionQuery ? activeIndex : 0
+      const id = liveRows[Math.min(liveIndex, Math.max(0, liveRows.length - 1))]?.id
       if (id) controller.openThread(id)
     } else if (interaction.overlay === "approvals" && pendingApproval) {
-      const choice = pendingApproval.choices[Math.min(overlayIndex, Math.max(0, pendingApproval.choices.length - 1))]
+      const choice = pendingApproval.choices[Math.min(activeIndex, Math.max(0, pendingApproval.choices.length - 1))]
       if (choice) controller.resolveApproval(pendingApproval.id, choice.id)
     } else if (interaction.overlay === "questions" && pendingQuestion) {
       const question = pendingQuestion.questions[Math.min(questionIndex, pendingQuestion.questions.length - 1)]
       if (!question) return
       const liveValue = questionInputRef.current?.value
       const typed = liveValue?.length ? liveValue : questionAnswers[question.id]
-      const option = question.options?.[Math.min(overlayIndex, Math.max(0, (question.options?.length ?? 1) - 1))]
+      const option = question.options?.[Math.min(activeIndex, Math.max(0, (question.options?.length ?? 1) - 1))]
       const answer = typeof typed === "string" && typed.length ? typed : option?.label
       if (!answer) return
       const answers = { ...questionAnswers, [question.id]: answer }
       setQuestionAnswers(answers)
-      if (questionIndex < pendingQuestion.questions.length - 1) { setQuestionIndex((value) => value + 1); setOverlayIndex(0); return }
+      if (questionIndex < pendingQuestion.questions.length - 1) { overlayIndexRef.current = 0; setQuestionIndex((value) => value + 1); setOverlayIndex(0); return }
       controller.answerQuestions(pendingQuestion.id, answers)
     } else if (interaction.overlay === "fork" && state.pendingFork) {
       controller.confirmFork()
     } else if (interaction.overlay === "agents") {
-      const row = agentRows[Math.min(overlayIndex, Math.max(0, agentRows.length - 1))]
+      const row = agentRows[Math.min(activeIndex, Math.max(0, agentRows.length - 1))]
       if (row?.direction === "parent") controller.returnToParent()
       if (row?.direction === "child") controller.openChildThread(row.threadId)
     } else if (interaction.overlay === "urls") {
-      const choice = state.urlChoices?.[Math.min(overlayIndex, Math.max(0, (state.urlChoices?.length ?? 1) - 1))]
+      const choice = state.urlChoices?.[Math.min(activeIndex, Math.max(0, (state.urlChoices?.length ?? 1) - 1))]
       if (choice) controller.transcript({ type: "url.open", url: choice.url })
     }
     closeOverlay()
-  }, [agentRows, closeOverlay, controller, interaction.overlay, overlayIndex, pendingApproval, pendingQuestion, questionAnswers, questionIndex, sessionRows, state.pendingFork, state.urlChoices])
+  }, [agentRows, closeOverlay, controller, interaction.overlay, modelPicker, overlayIndex, pendingApproval, pendingQuestion, questionAnswers, questionIndex, sessionQuery, sessionRows, state.availableModels, state.favoriteThreadIds, state.pendingFork, state.summaries, state.threadOrder, state.urlChoices, summary?.reasoningEffort])
 
   const bindingContext: VimBindingContext = {
     interaction, transcript, composer, controller, countRef, textareaRef, scrollRef,
+    foldableItemIds: items.filter(item => item.kind !== "assistant" && item.kind !== "user").map(item => item.id),
+    submitComposer: intent => composerSubmitRef.current?.(intent),
     countedMotion, dispatchMotion, runComposerKey, beginVisual, openOverlay, scroll,
   }
   const changeCommandLine = useCallback((value: string) => {
@@ -368,7 +449,7 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
       ...(interaction.mode === "visual" ? visualBindings(bindingContext) : []),
       ...(interaction.mode === "insert" ? insertBindings(bindingContext) : []),
       ...(interaction.mode === "command" ? commandBindings(bindingContext) : []),
-    ],
+    ].map((binding) => ({ ...binding, cmd: () => flushSync(() => binding.cmd()) })),
   }), [bindingContext, settings.keybindings])
   useBindings(() => ({
     priority: 150,
@@ -379,7 +460,9 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
     priority: 175,
     bindings: interaction.overlay || interaction.mode !== "command" ? [] : [
       { key: "up", cmd: () => recallCommandLine(-1) },
+      { key: "ctrl+p", cmd: () => recallCommandLine(-1) },
       { key: "down", cmd: () => recallCommandLine(1) },
+      { key: "ctrl+n", cmd: () => recallCommandLine(1) },
       { key: "tab", cmd: completeCommandLine },
     ],
   }), [completeCommandLine, interaction.mode, interaction.overlay, recallCommandLine])
@@ -388,27 +471,42 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
     priority: 200,
     bindings: !interaction.overlay ? [] : [
       { key: "escape", cmd: () => {
+        if (interaction.overlay === "models" && modelPicker.stage === "efforts") {
+          const index = state.availableModels?.findIndex(model => model.id === modelPicker.modelId) ?? 0
+          flushSync(() => {
+            setModelPicker({ stage: "models" })
+            overlayIndexRef.current = Math.max(0, index)
+            setOverlayIndex(overlayIndexRef.current)
+          })
+          return
+        }
         if (interaction.overlay === "fork") controller.cancelFork()
         closeOverlay()
       } },
-      { key: "?", cmd: closeOverlay },
-      ...(["down", "ctrl+n", ...(interaction.overlay === "sessions" || interaction.overlay === "questions" ? [] : ["j"])]
-        .map((key) => ({ key, cmd: () => setOverlayIndex((value) => Math.min(Math.max(0, overlayLength - 1), value + 1)) }))),
-      ...(["up", "ctrl+p", ...(interaction.overlay === "sessions" || interaction.overlay === "questions" ? [] : ["k"])]
-        .map((key) => ({ key, cmd: () => setOverlayIndex((value) => Math.max(0, value - 1)) }))),
-      { key: "return", cmd: activateOverlay },
+      ...(interaction.overlay === "sessions" ? [] : [{ key: "?", cmd: closeOverlay }]),
+      ...(["down", "ctrl+n", ...(interaction.overlay === "sessions" || (interaction.overlay === "questions" && questionOwnsReturn) ? [] : ["j"])]
+        .map((key) => ({ key, cmd: () => {
+          overlayIndexRef.current = Math.min(Math.max(0, overlayLength - 1), overlayIndexRef.current + 1)
+          flushSync(() => setOverlayIndex(overlayIndexRef.current))
+        } }))),
+      ...(["up", "ctrl+p", ...(interaction.overlay === "sessions" || (interaction.overlay === "questions" && questionOwnsReturn) ? [] : ["k"])]
+        .map((key) => ({ key, cmd: () => {
+          overlayIndexRef.current = Math.max(0, overlayIndexRef.current - 1)
+          flushSync(() => setOverlayIndex(overlayIndexRef.current))
+        } }))),
+      ...((interaction.overlay === "sessions" || (interaction.overlay === "questions" && questionOwnsReturn)) ? [] : [{ key: "return", cmd: activateOverlay }]),
       ...(interaction.overlay === "approvals" ? Array.from({ length: 9 }, (_, index) => ({ key: `${index + 1}`, cmd: () => {
         if (!pendingApproval) return
         const choice = pendingApproval.choices[index]
         if (choice) controller.resolveApproval(pendingApproval.id, choice.id)
       } })) : []),
     ],
-  }), [activateOverlay, interaction.overlay, closeOverlay, controller, overlayLength, pendingApproval])
+  }), [activateOverlay, interaction.overlay, closeOverlay, controller, modelPicker, overlayLength, pendingApproval, questionOwnsReturn, state.availableModels])
 
   return (
-    <FullscreenShell title={summary?.title} connection={state.connection} working={summary?.status === "working"}
+    <FullscreenShell title={summary?.title} connection={state.connection} working={Boolean(workspace?.conversation.activeTurnId) || summary?.status === "working"} activityLabel={activityLabel} waiting={Boolean(pendingApproval || pendingQuestion)}
       transcript={<TranscriptViewport items={items} state={transcript} interaction={interaction} syntax={syntax} scrollRef={scrollRef} />}
-      commandLine={interaction.mode === "command" ? <CommandLine value={interaction.commandLine} inputRef={commandRef} controller={controller} onSubmit={(line) => {
+      commandLine={interaction.mode === "command" ? <CommandLine models={state.availableModels} value={interaction.commandLine} inputRef={commandRef} controller={controller} onSubmit={(line) => {
         commandHistoryRef.current = recordCommand(commandHistoryRef.current, line)
         controller.executeCommand(line)
       }} /> : undefined}
@@ -417,12 +515,20 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
         state={composer}
         mode={interaction.mode}
         activeTurn={busy}
+        model={summary?.model}
+        reasoningEffort={summary?.reasoningEffort}
         maxHeight={Math.max(3, Math.floor(dimensions.height * Math.max(0.1, Math.min(0.6, settings.composerMaxHeight))))}
         insertEnter={settings.insertEnter}
         busySubmit={settings.busySubmit}
         textareaRef={textareaRef}
-        onChange={controller.changeDraft}
-        onSubmit={controller.submit}
+        submitRef={composerSubmitRef}
+        onChange={slashCommands.changeDraft}
+        drawer={slashCommands.active ? <SlashCommandDrawer choices={slashCommands.choices} selected={slashCommands.selected} /> : undefined}
+        onSubmit={slashCommands.submit}
+        onEscape={() => {
+          if (composerInteractionRef.current.mode === "visual") runComposerKey("escape")
+          else if (composerInteractionRef.current.mode === "insert") controller.dispatchInteraction({ type: "mode.normal" })
+        }}
         onRetry={controller.retryOutgoing}
       />}
       statusline={<Statusline
@@ -436,11 +542,32 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
         activeTurn={busy}
       />}
       overlay={<OverlayLayer
+        models={state.availableModels}
+        modelCatalogError={state.modelCatalogError}
+        modelPicker={modelPicker}
         overlay={interaction.overlay}
         sessions={sessionRows}
+        onSessionRename={(id, title) => controller.renameThread(id, title)}
+        onSessionFavorite={(id) => {
+          const favorites = state.favoriteThreadIds.includes(id) ? state.favoriteThreadIds.filter(value => value !== id) : [...state.favoriteThreadIds, id]
+          const rows = searchSessions(state.threadOrder, state.summaries, sessionQuery, favorites)
+          const index = Math.max(0, rows.findIndex(row => row.id === id))
+          overlayIndexRef.current = index
+          flushSync(() => { controller.toggleFavorite(id); setOverlayIndex(index) })
+        }}
+        sessionSearchEditing={interaction.mode === "insert"}
+        onSessionSearchEditing={(editing) => flushSync(() => controller.dispatchInteraction({ type: editing ? "mode.insert" : "mode.normal" }))}
+        onSessionMove={(delta) => {
+          overlayIndexRef.current = Math.max(0, Math.min(sessionRows.length - 1, overlayIndexRef.current + delta))
+          flushSync(() => setOverlayIndex(overlayIndexRef.current))
+        }}
         sessionQuery={sessionQuery}
         sessionSearchRef={sessionSearchRef}
-        onSessionQuery={(value) => { setSessionQuery(value); setOverlayIndex(0) }}
+        onSessionQuery={(value) => {
+          liveSessionQuery.current = value
+          overlayIndexRef.current = 0
+          flushSync(() => { setSessionQuery(value); setOverlayIndex(0) })
+        }}
         summaries={state.summaries}
         activeThreadId={state.activeThreadId}
         approval={pendingApproval}

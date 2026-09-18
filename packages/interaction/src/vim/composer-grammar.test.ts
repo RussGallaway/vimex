@@ -74,3 +74,14 @@ describe("composer Vim grammar", () => {
     expect(resolveComposerKey(composerNormal(), "shift+r").action).toEqual({ type: "retry" })
   })
 })
+
+test("Visual d/x delete into Normal while c changes into Insert", () => {
+  const visual = resolveComposerKey(composerNormal(), "v").state
+  for (const key of ["d", "x", "c"]) {
+    const result = resolveComposerKey(visual, key)
+    expect(result.action).toEqual({ type: "delete-selection", enterInsert: key === "c" })
+    expect(result.state.mode).toBe(key === "c" ? "insert" : "normal")
+    expect(result.state.surface).toBe("composer")
+    expect(result.state.pendingKeys).toBe("")
+  }
+})

@@ -16,4 +16,10 @@ test("completion uses the shared command vocabulary and argument choices", () =>
   expect(commandCompletions(":rest")).toEqual([":restart"])
   expect(commandCompletions(":yank m")).toEqual([":yank markdown"])
   expect(commandCompletions(":not-real")).toEqual([])
+  expect(commandCompletions(":model sol-5.6 ", {
+    models: ["sol-5.6"], modelEfforts: { "sol-5.6": ["low", "medium", "high"] },
+  })).toEqual([":model sol-5.6 low", ":model sol-5.6 medium", ":model sol-5.6 high"])
+  expect(commandCompletions(":model sol-5.6 m", {
+    models: ["sol-5.6"], modelEfforts: { "sol-5.6": ["low", "medium", "high"] },
+  })).toEqual([":model sol-5.6 medium"])
 })

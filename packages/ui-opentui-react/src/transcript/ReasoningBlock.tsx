@@ -1,11 +1,17 @@
 import type { SyntaxStyle } from "@opentui/core"
+import { ActivityIndicator } from "../activity/ActivityIndicator"
 import { emberTide } from "../theme"
 import { MarkdownMessage, type MarkdownConversationItem } from "./MarkdownMessage"
 
 export function ReasoningBlock(props: { item: MarkdownConversationItem; folded: boolean; syntax: SyntaxStyle }) {
-  return props.folded
-    ? <box height={1} flexDirection="row" gap={1} backgroundColor={emberTide.backgroundRaised} paddingX={1}>
-        <text fg={emberTide.textMuted}>◇</text><text fg={emberTide.textSoft}>Reasoning</text><text fg={emberTide.textMuted}>[closed]</text>
-      </box>
-    : <MarkdownMessage item={props.item} syntax={props.syntax} />
+  const running = props.item.status === "running"
+  const summary = props.item.markdown.trim().match(/^\*\*([^*\n]+)\*\*(?:\r?\n|$)/)?.[1]?.trim()
+  return <box flexDirection="column">
+    <box height={1} flexDirection="row" gap={1} backgroundColor={emberTide.backgroundRaised} paddingX={1}>
+      <text flexShrink={0} fg={emberTide.textMuted}>{props.folded ? "▸" : "▾"}</text>
+      {running ? <ActivityIndicator active label="Thinking" /> : <><text fg={emberTide.textMuted}>◇</text><text fg={emberTide.textSoft}>Reasoning</text></>}
+      {props.folded && summary ? <text fg={emberTide.textMuted} flexShrink={1} minWidth={0} wrapMode="none" truncate>{summary}</text> : null}
+    </box>
+    {!props.folded ? <MarkdownMessage item={props.item} syntax={props.syntax} /> : null}
+  </box>
 }

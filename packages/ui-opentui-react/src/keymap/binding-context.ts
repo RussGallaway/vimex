@@ -1,5 +1,6 @@
 import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
-import type { ComposerState } from "@vimex/composer"
+import type { ItemId } from "@vimex/conversation"
+import type { ComposerState, SubmissionIntent } from "@vimex/composer"
 import type { InteractionState } from "@vimex/interaction"
 import type { TranscriptState } from "@vimex/transcript"
 import type { MutableRefObject, RefObject } from "react"
@@ -11,11 +12,13 @@ export type UiBinding = { key: string; cmd: () => unknown }
 export interface VimBindingContext {
   interaction: InteractionState
   transcript: TranscriptState
+  foldableItemIds?: readonly ItemId[]
   composer: ComposerState
   controller: VimexUiController
   countRef: MutableRefObject<string>
   textareaRef: RefObject<TextareaRenderable | null>
   scrollRef: RefObject<ScrollBoxRenderable | null>
+  submitComposer(intent: SubmissionIntent): void
   countedMotion(motion: Motion): void
   dispatchMotion(motion: Motion): void
   runComposerKey(key: string): void

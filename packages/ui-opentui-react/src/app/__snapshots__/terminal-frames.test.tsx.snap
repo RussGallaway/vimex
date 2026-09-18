@@ -1,0 +1,105 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`terminal frame regressions composer stays anchored through tool streaming and folding at 120x30: collapsed 120x30 1`] = `
+"
+  VIMEX / Frame regression                                                                                 ● connected
+
+  │  Result
+  │
+  │  A stable transcript with a link (https://example.com).
+
+  │
+  │   ▸ ⠋ Calling Read files
+  │
+
+
+
+
+
+
+
+
+
+
+
+
+│
+│  Draft stays here
+│
+│
+│
+│  Codex · gpt-6 · high                                                                    enter send · shift↵ newline
+
+ NORMAL   /work/vimex                                                                               git:main  context —"
+`;
+
+exports[`terminal frame regressions composer stays anchored through tool streaming and folding at 96x26: collapsed 96x26 1`] = `
+"
+  VIMEX / Frame regression                                                         ● connected
+
+  │  Result
+  │
+  │  A stable transcript with a link (https://example.com).
+
+  │
+  │   ▸ ⠋ Calling Read files
+  │
+
+
+
+
+
+
+
+
+│
+│  Draft stays here
+│
+│
+│
+│  Codex · gpt-6 · high                                            enter send · shift↵ newline
+
+ NORMAL   /work/vimex                                                       git:main  context —"
+`;
+
+exports[`terminal frame regressions composer stays anchored through tool streaming and folding at 48x18: collapsed 48x18 1`] = `
+"
+  VIMEX / Frame regression         ● connected
+
+  │  Result
+  │
+  │  A stable transcript with a link (https://
+  │  example.com).
+
+  │
+  │   ▸ ⠋ Calling Read files
+│
+│  Draft stays here
+│
+│
+│
+│  Codex · gpt-6 · high
+
+ NORMAL   /work/vimex       git:main  context —"
+`;
+
+exports[`terminal frame regressions session picker stays inside a 48x18 terminal: sessions 48x18 1`] = `
+"
+  VI┌─ Sessions ───────────────────────────┐ed
+  │ │                                      │//
+  │ │  / fuzzy search title, cwd, branch…  │
+    │  j/k move · i search · enter open ·  │
+  │ │  ctrl-r rename · ctrl-f favorite ·   │
+  │ │  esc close                           │
+  │ │   ● Frame regression                 │
+    │   /work/vimex                        │
+    │   idle · git:main · gpt-6            │
+│   │                                      │
+│  D│                                      │
+│   │                                      │
+│   │                                      │
+│   │                                      │
+│  C│                                      │
+    └──────────────────────────────────────┘
+ NORMAL   /work/vimex       git:main  context —"
+`;
