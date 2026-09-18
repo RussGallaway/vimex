@@ -1,4 +1,4 @@
 # Optional screen parser for the explicitly opted-in real Codex acceptance driver.
 pyte==0.8.2
 wcwidth==0.8.4
-Pillow==12.1.1
+Pillow==12.3.0
