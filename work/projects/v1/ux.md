@@ -28,7 +28,7 @@ Follow is also separate from mode. The transcript viewport is either attached to
 └─────────────────────────────────────────────────────┘
 ```
 
-The transcript receives remaining height. The composer is a nonshrinking sibling at the bottom and grows to a configured maximum. The status line remains visible. Narrow terminals move cwd and branch to a second row before hiding operational status.
+The transcript receives remaining height. The composer is a fixed-height sibling at the bottom; additional input lines scroll internally. A blank row separates it from the slim status strip. Narrow terminals truncate metadata within that strip rather than expanding the composer.
 
 ## Viewport behavior
 
@@ -51,8 +51,8 @@ While detached:
 |---|---|
 | `Esc` | Return to Normal mode or close the top transient overlay |
 | `:` | Enter Command mode |
-| `Ctrl-w k` | Focus transcript |
-| `Ctrl-w j` | Focus composer |
+| `Ctrl-k` (also `Ctrl-w k`) | Focus transcript |
+| `Ctrl-j` (also `Ctrl-w j`) | Focus composer |
 | `Space` | Leader prefix |
 
 `Ctrl-b` is avoided as a default leader because terminal multiplexers and Herdr may already use it.
@@ -157,3 +157,28 @@ Markdown links and detected bare URLs are indexed as semantic targets. OSC 8 lin
 ## Visual direction
 
 Use OpenCode's density, whitespace, compact tool cards, responsive layout, and restrained use of borders as inspiration. Do not inherit its mouse-first selection or ad hoc fold behavior. Mode, cursor, selection, and status must remain legible in low-color terminals.
+
+## Interaction refinements from terminal testing
+
+- The composer is a full-width panel with a left accent and an internal model/effort footer, above a separate status strip.
+- Command entry replaces that strip and preserves transcript/composer geometry.
+- Ctrl-J focuses the composer; Ctrl-K focuses the transcript; Ctrl-W J/K remain aliases.
+- A precise transcript cursor is visible in Normal and Visual modes. Visual selection begins at that cursor and extends with character, word/WORD, and line motions.
+- Submitted text leaves the native composer immediately; outbox entries retain recoverable send failures independently of the next draft.
+- Activity indicators animate locally while connected work is active. Labels reflect actual reasoning, tool, response, approval, or waiting state; animation is not evidence of new server progress.
+
+- Insert-mode slash commands use a prompt-anchored drawer above the composer, while Ex commands continue to use the bottom strip.
+
+## Command entry refinements
+
+Application actions share one command vocabulary across two entry points. Composer `/` offers discoverable slash commands; transcript Normal `/` still searches. Bottom-bar `:` offers direct arguments and completion without changing the composer draft. `/model` and argument-free `:model` open the model picker; `:model <id>` validates and applies the exact model directly. Tab completes commands and model IDs. Command mode remains a typing mode, with arrows selecting suggestions and Ctrl-P/N recalling history.
+
+Up focuses the transcript and Down focuses the composer outside menus and command completion, supporting global Ctrl-K/J-to-arrow mappings. Session menus use j/k in Normal and literal text in Insert search. Escape leaves search before closing the menu.
+
+The composer has no extra bottom padding below its model footer; one blank row separates the composer from the status or command bar.
+
+Skill discovery and path-qualified skill insertion remain pending; a textual `$name` alone is not sufficient to preserve skill identity.
+
+Composer-focused Ctrl-E/Y scroll the transcript by one line and Ctrl-D/U by half a page in Normal, Insert, and Visual modes, preserving the composer cursor and selection. Transcript block navigation supports both literal braces and explicit Shift-bracket terminal events.
+
+Tool headers use server-provided action descriptions when available. Expanded command blocks separate the exact execution command from unchanged output, with both represented in the semantic transcript for selection and copying.

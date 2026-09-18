@@ -28,7 +28,7 @@ Vimex reads JSON from `$XDG_CONFIG_HOME/vimex/config.json`, or `~/.config/vimex/
 | `busySubmit` | `queue`, `steer` | Sending during an active turn either queues the message for the next turn or steers the active turn. Ctrl+Enter explicitly steers in Insert mode. |
 | `foldTools` | boolean | Initially fold tool, command, and edit items. |
 | `foldReasoning` | boolean | Initially fold reasoning items. |
-| `composerMaxHeight` | `0.1` through `0.6` | Maximum composer share of terminal height. The UI preserves a minimum of three rows. |
+| `composerMaxHeight` | `0.1` through `0.6` | Upper bound for the fixed input area relative to terminal height. Adding lines scrolls inside the input instead of growing it. |
 | `keybindings` | object | Maps a key sequence to a named Ex command. Overrides have priority over built-in bindings whenever no overlay is open. |
 | `codexExecutable` | nonempty string | Executable path or command used to start the Codex app server. |
 

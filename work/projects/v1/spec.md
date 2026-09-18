@@ -59,7 +59,7 @@ V1 must provide:
 - Allow drafting while a turn is active.
 - Distinguish steering the active turn from queueing the next user turn.
 - Preserve the draft and transcript position across thread switches.
-- Grow from one line to a configurable fraction of terminal height.
+- Keep a fixed-height input area; additional lines scroll internally. Adapt its height only when the terminal is resized.
 
 ### Sessions and forks
 
@@ -68,6 +68,7 @@ V1 must provide:
 - Fork from a selected prior user-message boundary.
 - Open child agent threads and return to their parent.
 - Preserve local per-thread view state.
+- Rename selected sessions and persist local favorites, including resumable threads absent from the server listing.
 
 ### Status
 

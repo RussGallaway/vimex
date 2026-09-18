@@ -30,7 +30,7 @@ The default dark theme is **Ember Tide**: charcoal, warm ivory, muted blue, sage
 
 - `i` enters Insert mode; `Esc` returns to Normal.
 - In Insert mode, `Enter` submits and `Shift+Enter` adds a newline.
-- `Ctrl-w k` and `Ctrl-w j` move between transcript and composer from every mode.
+- `Ctrl-k` and `Ctrl-j` move between transcript and composer from every mode.
 - `Ctrl-e/y` scroll by line; `Ctrl-d/u` scroll by half a viewport.
 - `v` selects transcript text; `y` copies rendered text; `:yank markdown` copies its source.
 - `/` and `?` search; `n`/`N` repeat; `G` resumes following the response.

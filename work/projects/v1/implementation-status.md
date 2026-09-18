@@ -15,11 +15,11 @@ This is an implementation checkpoint, not a declaration that v1 acceptance is co
 
 ## Checkpoint validation
 
-The final checkpoint check passed TypeScript, dependency boundaries, and 189 tests with 643 assertions. `bun install --frozen-lockfile` and `git diff --check` also pass.
+The latest completed full checkpoint passed TypeScript, dependency boundaries, and 304 tests with 1,590 assertions and four frame snapshots. This includes tool presentation, folding, combined model/thinking commands, and command-picker refinements. `bun install --frozen-lockfile` and `git diff --check` also pass.
 
 A formatted Markdown projection that previously took about 5.6 seconds for 58 KB took about 7 ms after replacing repeated Unicode prefix segmentation with indexed boundary lookup. This measures projection only; it is not an end-to-end rendering benchmark.
 
-Real Codex adapter validation completed a read-only tool turn, resumed it, restarted the app-server connection, resumed again, and forked the completed turn. A dedicated Herdr pane launched Vimex and reported its live thread and lifecycle metadata. See [live validation](live-validation.md) for the separate terminal acceptance evidence and outstanding approval.
+Real Codex adapter validation completed a read-only tool turn, resumed it, restarted the app-server connection, resumed again, and forked the completed turn. A dedicated Herdr pane launched Vimex and reported its live thread and lifecycle metadata. See [live validation](live-validation.md) for the separate terminal acceptance evidence and outstanding acceptance gaps.
 
 Runtime/navigation race regressions, long-list keyboard visibility, fatal React cleanup, and draft-save warning repairs are complete and covered by the checkpoint checks.
 
@@ -27,8 +27,10 @@ The follow-up audit repaired Unicode cursor conversion, Visual-mode selection cl
 
 See the [acceptance matrix](acceptance-matrix.md) for evidence and gaps against each specification criterion.
 
+Additional TUI hardening now covers Normal/Visual native-input isolation, Ctrl-J/K focus, semantic word motions, exact-ID session resume, a separate composer panel and bottom command/status strip, responsive session/header layout, and explicit activity indicators. See [TUI testing](tui-testing.md) for source research and visual evidence.
+
 ## Remaining acceptance work
-- Exercise the real terminal acceptance matrix, including resized Markdown copying, streaming anchors, thread view restoration, forks, and URLs. The opt-in driver awaits explicit authorization following automatic approval review rejection.
+- Exercise the real terminal acceptance matrix, including resized Markdown copying, streaming anchors, thread view restoration, forks, and URLs. The authorized live smoke driver passed 16 checks; remaining gaps are recorded in the acceptance matrix.
 - Establish live keyboard approval resolution and handled-failure terminal restoration evidence; offline tests alone do not satisfy the specification’s real-app-server acceptance requirement.
 - Observe Linux and macOS CI results; local success does not establish the remote matrix.
 
@@ -37,3 +39,12 @@ See the [acceptance matrix](acceptance-matrix.md) for evidence and gaps against 
 The initial implementation accumulated domain behavior in package entry points, application orchestration in the CLI, and a broad `backend.ts` interface. These diverged from `topology.md`. The correction places behavior under its domain/application owner, organizes UI files by feature, and separates volatile adapters. Boundary checks guard against implementation barrels, reversed domain/application imports, UI adapter selection, production testkit imports, and generic UI component directories.
 
 Do not change the specification to make unfinished implementation appear complete.
+
+## Current refinements
+
+- Bottom-bar command autocomplete and composer slash commands share completion rendering and vocabulary. Model commands support a selector or direct exact-ID arguments, with paginated catalog discovery.
+- Up/Down focus the transcript/composer; menu arrows retain selection behavior. Session menus support Normal j/k and Insert search.
+- Transcript yanks populate the composer register with normalized line delimiters while clipboard text remains unchanged.
+- Composer footer spacing has been reduced per visual feedback, retaining the blank separator above status.
+- Real-PTY immediate-next-draft preservation now passes the eight-check offline driver; evidence is recorded in `/tmp/vimex-visual-e2e/result.json`.
+- `/skills` discovery and structured draft attachments remain required follow-up work under the agreed command UX.

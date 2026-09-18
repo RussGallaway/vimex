@@ -20,7 +20,7 @@ The detailed outstanding live acceptance work is tracked in [live validation](..
 
 ## Keyboard and clipboard requirements
 
-Plain control keys and Escape must reach the application. Shift+Enter requires a terminal keyboard protocol that distinguishes it from Enter; the automated fixture sends the Kitty keyboard-protocol sequence directly and verifies a multiline prompt is submitted exactly once by the following plain Enter. If the terminal cannot distinguish modified Enter, configure `insertEnter` as `newline`, then press Escape followed by Enter to send from composer Normal mode. Ctrl+Enter is another option when your terminal reports it distinctly.
+Plain control keys and Escape must reach the application. Ctrl-J focuses the composer (including its legacy Line Feed encoding); Ctrl-K focuses the transcript. The Ctrl-W J/K aliases remain available. Enter uses Carriage Return to send; a terminal configured to send Line Feed for Enter will invoke the Ctrl-J focus action instead. Shift+Enter requires a terminal keyboard protocol that distinguishes it from Enter; the automated fixture sends the Kitty keyboard-protocol sequence directly and verifies a multiline prompt is submitted exactly once by the following plain Enter. If the terminal cannot distinguish modified Enter, configure `insertEnter` as `newline`, then press Escape followed by Enter to send from composer Normal mode. Ctrl+Enter is another option when your terminal reports it distinctly.
 
 Copy requests use the best clipboard destination exposed by OpenTUI: host clipboard where available, with terminal clipboard support as an alternative. Clipboard behavior has not yet been certified across SSH, tmux, or individual terminal emulators.
 
