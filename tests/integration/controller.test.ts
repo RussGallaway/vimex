@@ -295,7 +295,7 @@ test("semantic search unfolds its target, URL choice resolves through the port, 
   let transcript = h.controller.getSnapshot().workspaces[a]!.transcript
   expect(transcript.search).toEqual({ query: "needle", direction: "forward" })
   expect(transcript.cursor?.graphemeOffset).toBe(17)
-  expect(transcript.folded[id]).toBeUndefined()
+  expect(transcript.folded[id]).toBe(false)
   h.controller.transcript({ type: "url.open" })
   expect(h.controller.getSnapshot().urlChoices?.map(candidate => candidate.url)).toEqual(["https://one.test", "https://two.test"])
   h.controller.transcript({ type: "url.open", url: "https://two.test" })
@@ -477,4 +477,39 @@ test("late fork cannot steal focus and stale URL picker choices cannot open afte
   await h.controller.settle()
   expect(h.controller.getSnapshot().activeThreadId).toBe(b)
   expect(h.opened).toEqual([])
+})
+
+test("a completed turn arriving before its start acknowledgment still drains the queued prompt", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  let resolveFirst!: (events: readonly ConversationEvent[]) => void
+  h.backend.startTurn = async (_id, text) => {
+    h.starts.push(text)
+    return h.starts.length === 1 ? new Promise(resolve => { resolveFirst = resolve })
+      : [{ type: "turn.started", threadId: a, turnId: turnId("second-turn") }]
+  }
+  h.controller.changeDraft("first", 5)
+  h.controller.submit("next-turn")
+  h.controller.changeDraft("second", 6)
+  h.controller.submit("next-turn")
+  const turn = turnId("fast-turn")
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
+  h.emit({ type: "conversation", event: { type: "turn.completed", threadId: a, turnId: turn, outcome: "complete" } })
+  resolveFirst([{ type: "turn.started", threadId: a, turnId: turn }])
+  await h.controller.settle()
+  expect(h.starts).toEqual(["first", "second"])
+  await h.controller.close()
+})
+
+test("rejected stale item events cannot regress the displayed transcript", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const item = { id: itemId("finished"), turnId: turnId("done-turn"), kind: "assistant" as const, status: "complete" as const, markdown: "Final answer" }
+  h.emit({ type: "conversation", event: { type: "item.completed", threadId: a, item } })
+  const before = h.controller.getSnapshot().workspaces[a]!.transcript.projectionById[item.id]
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { ...item, status: "running", markdown: "stale partial" } } })
+  const workspace = h.controller.getSnapshot().workspaces[a]!
+  expect(workspace.conversation.items[item.id]).toEqual(item)
+  expect(workspace.transcript.projectionById[item.id]).toBe(before)
+  await h.controller.close()
 })

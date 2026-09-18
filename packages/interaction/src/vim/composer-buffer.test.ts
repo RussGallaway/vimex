@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { applyComposerVimAction, type ComposerBuffer } from "./composer-buffer"
+import {
+  applyComposerVimAction,
+  codeUnitOffsetToGraphemeOffset,
+  graphemeOffsetToCodeUnitOffset,
+  type ComposerBuffer,
+} from "./composer-buffer"
 import type { ComposerMotion, ComposerVimAction } from "./composer-grammar"
 import type { VimRegister } from "./state-machine"
 
@@ -19,6 +24,31 @@ describe("pure composer Vim buffer", () => {
     expect(motion(buffer, "document-start").cursorOffset).toBe(2)
     expect(motion(buffer, "document-end", 0).cursorOffset).toBe(13)
     expect(motion(buffer, "document-start", 2).cursorOffset).toBe(13)
+  })
+
+  test("preserves the desired column across counted vertical movement", () => {
+    const buffer = { text: "abcdef\nx\nabcdef", cursorOffset: 5 }
+    expect(motion(buffer, "down", 2).cursorOffset).toBe(14)
+  })
+
+  test("treats combining-mark graphemes as keyword characters", () => {
+    const buffer = { text: "élan noir", cursorOffset: 0 }
+    expect(motion(buffer, "word-end").cursorOffset).toBe(3)
+    expect(motion(buffer, "word-forward").cursorOffset).toBe(5)
+  })
+
+  test("converts UTF-16 textarea offsets without splitting graphemes", () => {
+    const text = "A😀éZ"
+    expect(codeUnitOffsetToGraphemeOffset(text, 0)).toBe(0)
+    expect(codeUnitOffsetToGraphemeOffset(text, 1)).toBe(1)
+    expect(codeUnitOffsetToGraphemeOffset(text, 3)).toBe(2)
+    expect(codeUnitOffsetToGraphemeOffset(text, 4)).toBe(2)
+    expect(codeUnitOffsetToGraphemeOffset(text, 5)).toBe(3)
+    expect(graphemeOffsetToCodeUnitOffset(text, 0)).toBe(0)
+    expect(graphemeOffsetToCodeUnitOffset(text, 1)).toBe(1)
+    expect(graphemeOffsetToCodeUnitOffset(text, 2)).toBe(3)
+    expect(graphemeOffsetToCodeUnitOffset(text, 3)).toBe(5)
+    expect(graphemeOffsetToCodeUnitOffset(text, 4)).toBe(6)
   })
 
   test("deletes characters, lines, and to line end into the unnamed register", () => {

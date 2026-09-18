@@ -10,10 +10,11 @@ export function applyConversationEvent(state: WorkbenchState, event: Conversatio
   const priorTurn = event.type === "turn.completed" ? workspace.conversation.turns[event.turnId] : undefined
   const conversation = reduceConversation(workspace.conversation, event)
   let transcript = workspace.transcript
-  if (event.type === "item.started" || event.type === "item.completed") transcript = syncTranscriptItem(transcript, event.item)
-  if (event.type === "item.delta") {
-    const item = conversation.items[event.itemId]
-    if (item) transcript = syncTranscriptItem(transcript, item)
+  const changedItemId = event.type === "item.started" || event.type === "item.completed" ? event.item.id
+    : event.type === "item.delta" ? event.itemId : undefined
+  if (changedItemId) {
+    const item = conversation.items[changedItemId]
+    if (item && item !== workspace.conversation.items[changedItemId]) transcript = syncTranscriptItem(transcript, item)
   }
   let composer = workspace.composer
   const effects: WorkbenchEffect[] = []
@@ -23,7 +24,7 @@ export function applyConversationEvent(state: WorkbenchState, event: Conversatio
     if (scheduled.effect) effects.push(scheduled.effect)
   }
   if (event.type === "turn.completed" && priorTurn?.status === "running") {
-    const scheduled = scheduleQueued(composer, event.threadId)
+    const scheduled = scheduleQueued(composer, event.threadId, conversation.activeTurnId)
     composer = scheduled.composer
     if (scheduled.effect) effects.push(scheduled.effect)
   }
@@ -40,6 +41,6 @@ export function forkWorkspace(source: ThreadWorkspace, nextThreadId: ThreadId, t
       if (item) transcript = syncTranscriptItem(transcript, item)
     }
   }
-  transcript = { ...transcript, folded: Object.fromEntries(transcript.order.filter((id) => source.transcript.folded[id]).map((id) => [id, true])) }
+  transcript = { ...transcript, folded: Object.fromEntries(transcript.order.filter((id) => Object.hasOwn(source.transcript.folded, id)).map((id) => [id, source.transcript.folded[id]!])) }
   return { conversation, transcript, composer: initialComposer(), interaction: initialInteraction() }
 }

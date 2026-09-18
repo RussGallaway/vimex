@@ -1,6 +1,7 @@
 import type { TextareaRenderable } from "@opentui/core"
 import type { ComposerState, SubmissionIntent } from "@vimex/composer"
 import type { VimMode } from "@vimex/interaction"
+import { codeUnitOffsetToGraphemeOffset, graphemeOffsetToCodeUnitOffset } from "@vimex/interaction"
 import { useEffect, type RefObject } from "react"
 import { emberTide } from "../theme"
 
@@ -18,9 +19,10 @@ export function Composer(props: {
 }) {
   useEffect(() => {
     const textarea = props.textareaRef.current
-    if (!textarea || textarea.plainText === props.state.text) return
-    textarea.setText(props.state.text)
-    textarea.cursorOffset = Math.min(props.state.cursorOffset, props.state.text.length)
+    if (!textarea) return
+    if (textarea.plainText !== props.state.text) textarea.setText(props.state.text)
+    const cursorOffset = graphemeOffsetToCodeUnitOffset(props.state.text, props.state.cursorOffset)
+    if (textarea.cursorOffset !== cursorOffset) textarea.cursorOffset = cursorOffset
   }, [props.state.revision, props.state.text, props.state.cursorOffset, props.textareaRef])
 
   const queued = props.state.outbox.filter((message) => message.status === "queued").length
@@ -54,11 +56,11 @@ export function Composer(props: {
         ]}
         onContentChange={() => {
           const textarea = props.textareaRef.current
-          if (textarea) props.onChange(textarea.plainText, textarea.cursorOffset)
+          if (textarea) props.onChange(textarea.plainText, codeUnitOffsetToGraphemeOffset(textarea.plainText, textarea.cursorOffset))
         }}
         onCursorChange={() => {
           const textarea = props.textareaRef.current
-          if (textarea) props.onChange(textarea.plainText, textarea.cursorOffset)
+          if (textarea) props.onChange(textarea.plainText, codeUnitOffsetToGraphemeOffset(textarea.plainText, textarea.cursorOffset))
         }}
         onSubmit={() => props.onSubmit(props.activeTurn && props.busySubmit === "steer" ? "steer" : "next-turn")}
       />

@@ -4,7 +4,7 @@ import { parseCommand, type ExCommand } from "@vimex/interaction"
 import { captureLocalState, emptyLocalState, restoreThreadView, type LocalState, type SavedThreadView } from "./local-state"
 import { initialWorkbench, activeWorkspace, createWorkspace, type WorkbenchState, type WorkbenchCommand, type WorkbenchEffect } from "./workbench-state"
 import { transitionWorkbench } from "./reduce-workbench"
-import { forkBoundary, threadId, type ThreadId, type ItemId, type ConversationEvent } from "@vimex/conversation"
+import { forkBoundary, threadId, type ThreadId, type TurnId, type ItemId, type ConversationEvent } from "@vimex/conversation"
 import type { ConversationGateway, SessionSnapshot } from "@vimex/conversation"
 import type { ApprovalGateway } from "@vimex/approvals"
 import type { RuntimeConnection, RuntimeEvent } from "./runtime-connection"
@@ -530,11 +530,13 @@ export class VimexController implements WorkbenchActions {
     switch (effect.type) {
       case "conversation.turn.start": case "conversation.turn.steer": {
         try {
+          let submittedTurn: TurnId | undefined
           const turn = this.state.workspaces[effect.threadId]?.conversation.activeTurnId
           if (effect.type === "conversation.turn.steer" && turn) await this.ports.conversation.steerTurn(effect.threadId, turn, effect.text, effect.clientMessageId)
           else {
             const events = await this.ports.conversation.startTurn(effect.threadId, effect.text, effect.clientMessageId)
             if (!this.currentRuntime(epoch)) return
+            submittedTurn = events.find(event => event.type === "turn.started")?.turnId
             // RPC snapshots may predate already-observed live deltas/completion.
             const initial = this.state.workspaces[effect.threadId]?.conversation
             if (!initial) return
@@ -544,7 +546,7 @@ export class VimexController implements WorkbenchActions {
               if (current && replay(current, event)) this.receive({ type: "conversation", event })
             }
           }
-          if (this.currentRuntime(epoch)) this.dispatch({ type: "composer.ack", threadId: effect.threadId, clientMessageId: effect.clientMessageId })
+          if (this.currentRuntime(epoch)) this.dispatch({ type: "composer.ack", threadId: effect.threadId, clientMessageId: effect.clientMessageId, turnId: submittedTurn })
         } catch (error) {
           if (!this.currentRuntime(epoch)) return
           this.dispatch({ type: "composer.fail", threadId: effect.threadId, clientMessageId: effect.clientMessageId, reason: String(error) })

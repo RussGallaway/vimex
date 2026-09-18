@@ -24,7 +24,7 @@ function validPoint(value: unknown): boolean {
 export function parseLocalState(value: unknown): LocalState {
   if (!record(value) || value.version !== 1 || !record(value.threads)) throw new Error("Invalid Vimex local state")
   for (const [id, view] of Object.entries(value.threads)) {
-    if (!id || !record(view) || typeof view.draft !== "string" || !integer(view.cursorOffset) || !record(view.folded) || Object.values(view.folded).some(v => v !== true) || !["transcript", "composer"].includes(String(view.surface))) throw new Error(`Invalid view for thread ${id}`)
+    if (!id || !record(view) || typeof view.draft !== "string" || !integer(view.cursorOffset) || !record(view.folded) || Object.values(view.folded).some(v => typeof v !== "boolean") || !["transcript", "composer"].includes(String(view.surface))) throw new Error(`Invalid view for thread ${id}`)
     if (view.cursor !== undefined && !validPoint(view.cursor)) throw new Error(`Invalid cursor for thread ${id}`)
     if (!record(view.viewport) || (view.viewport.kind !== "tail" && !(view.viewport.kind === "point" && validPoint(view.viewport.point) && integer(view.viewport.preferredScreenRow)))) throw new Error(`Invalid viewport for thread ${id}`)
     const outbox = view.outbox ?? []

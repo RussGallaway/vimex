@@ -15,7 +15,7 @@ export function attachTail(state: TranscriptState): TranscriptState {
   return {
     ...state,
     cursor: last && projection ? { itemId: last, graphemeOffset: graphemeCount(projection.plain) } : state.cursor,
-    viewport: { kind: "tail" }, unseenEntries: 0,
+    viewport: { kind: "tail" }, unseenEntries: 0, unseenItemIds: [],
   }
 }
 export function beginSelection(state: TranscriptState, shape: TranscriptSelection["shape"]): TranscriptState {
@@ -28,13 +28,10 @@ export function swapSelection(state: TranscriptState): TranscriptState {
 }
 export function clearSelection(state: TranscriptState): TranscriptState { return { ...state, selection: undefined } }
 export function setFold(state: TranscriptState, id: ItemId, folded: boolean): TranscriptState {
-  const next = { ...state.folded }
-  if (folded) next[id] = true
-  else delete next[id]
-  return { ...state, folded: next }
+  return { ...state, folded: { ...state.folded, [id]: folded } }
 }
 export function setAllFolds(state: TranscriptState, folded: boolean): TranscriptState {
-  return { ...state, folded: folded ? Object.fromEntries(state.order.map((id) => [id, true])) : {} }
+  return { ...state, folded: Object.fromEntries(state.order.map((id) => [id, folded])) }
 }
 function comparePoint(state: TranscriptState, a: LogicalPoint, b: LogicalPoint): number {
   const ai = state.order.indexOf(a.itemId)

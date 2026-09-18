@@ -1,13 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
-import type { ScrollBoxRenderable } from "@opentui/core"
+import { MarkdownRenderable, type ScrollBoxRenderable, type TextareaRenderable } from "@opentui/core"
 import { itemId, threadId, turnId, type ThreadSummary } from "@vimex/conversation"
 import { initialWorkbench, transitionWorkbench, type WorkbenchState } from "@vimex/workbench"
+import { graphemes, projectItem } from "@vimex/transcript"
 import { VimexRoot } from "../index"
 import { inertController, type TranscriptUiCommand, type VimexUiController } from "../contracts"
-import { act } from "react"
+import { act, useState } from "react"
 import { measureRenderedTranscript } from "../transcript/rendered-layout"
 import type { Overlay } from "@vimex/interaction"
+import { createEmberTideSyntax } from "../theme"
 
 function fixture(): WorkbenchState {
   const thread = threadId("thread-1")
@@ -165,6 +167,117 @@ describe("Vimex OpenTUI shell", () => {
     }
   })
 
+  test("keeps every logical point mapped across complex Markdown reflow", async () => {
+    const thread = threadId("thread-1")
+    const complexId = itemId("complex-markdown")
+    const markdown = "# Heading\n\n- alpha alpha\n- beta\n\n| A | B |\n|---|---|\n| x | y |\n\n```ts\nconst x = 1\n```\n\nA [link](https://example.com) and **bold** text"
+    const state = transitionWorkbench(fixture(), {
+      type: "conversation.event",
+      event: { type: "item.started", threadId: thread, item: { id: complexId, turnId: turnId("complex-turn"), kind: "assistant", markdown, status: "complete" } },
+    }).state
+    const setup = await testRender(<VimexRoot state={state} controller={inertController} />, { width: 52, height: 18 })
+    try {
+      await act(async () => setup.flush())
+      const scrollbox = setup.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable
+      const transcript = state.workspaces[thread]!.transcript
+      const projection = transcript.projectionById[complexId]!
+      const wide = measureRenderedTranscript(setup.renderer, scrollbox, transcript)!
+      expect(measureRenderedTranscript(setup.renderer, scrollbox, transcript)).toBe(wide)
+      const count = graphemes(projection.plain).length
+      expect(Object.keys(wide.points?.[complexId] ?? {})).toHaveLength(count + 1)
+      const dataOffset = graphemes(projection.plain.slice(0, projection.plain.indexOf("| x") + 2)).length
+      const dataRow = setup.captureCharFrame().split("\n").findIndex((line) => line.includes("│x"))
+      expect(wide.points?.[complexId]?.[dataOffset]?.screenY).toBe(dataRow)
+      const foldedTranscript = { ...transcript, folded: { ...transcript.folded, [complexId]: true } }
+      expect(measureRenderedTranscript(setup.renderer, scrollbox, foldedTranscript)).not.toBe(wide)
+      measureRenderedTranscript(setup.renderer, scrollbox, transcript)
+
+      await act(async () => { setup.resize(30, 18); await setup.flush(); await setup.renderOnce() })
+      const narrow = measureRenderedTranscript(setup.renderer, scrollbox, transcript)!
+      expect(narrow).not.toBe(wide)
+      expect(Object.keys(narrow.points?.[complexId] ?? {})).toHaveLength(count + 1)
+      expect(narrow.width).toBeLessThan(wide.width)
+    } finally { await act(async () => setup.renderer.destroy()) }
+  })
+
+  test("measures large multiline tool output without dropping logical points", async () => {
+    const thread = threadId("thread-1")
+    const tool = itemId("large-tool")
+    const detail = Array.from({ length: 400 }, (_, index) => `${String(index).padStart(4, "0")}: ${"result ".repeat(12)}`).join("\n")
+    let state = transitionWorkbench(fixture(), {
+      type: "conversation.event",
+      event: { type: "item.started", threadId: thread, item: { id: tool, turnId: turnId("tool-turn"), kind: "tool", title: "large output", detail, status: "complete" } },
+    }).state
+    const workspace = state.workspaces[thread]!
+    state = { ...state, workspaces: { ...state.workspaces, [thread]: { ...workspace, transcript: { ...workspace.transcript, folded: { ...workspace.transcript.folded, [tool]: false } } } } }
+    const setup = await testRender(<VimexRoot state={state} controller={inertController} settings={{ foldTools: false }} />, { width: 48, height: 12 })
+    try {
+      await act(async () => setup.flush())
+      const scrollbox = setup.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable
+      const transcript = state.workspaces[thread]!.transcript
+      const started = performance.now()
+      const layout = measureRenderedTranscript(setup.renderer, scrollbox, transcript)!
+      expect(measureRenderedTranscript(setup.renderer, scrollbox, transcript)).toBe(layout)
+      const elapsed = performance.now() - started
+      const count = graphemes(transcript.projectionById[tool]!.plain).length
+      expect(Object.keys(layout.points?.[tool] ?? {})).toHaveLength(count + 1)
+      expect(elapsed).toBeLessThan(2_000)
+
+      const originalScrollTop = scrollbox.scrollTop
+      scrollbox.scrollTop = Math.max(0, originalScrollTop - 4)
+      const scrolled = measureRenderedTranscript(setup.renderer, scrollbox, transcript)!
+      expect(scrolled).not.toBe(layout)
+      scrollbox.scrollTop = originalScrollTop
+      measureRenderedTranscript(setup.renderer, scrollbox, transcript)
+    } finally { await act(async () => setup.renderer.destroy()) }
+  })
+
+  test("invalidates cached layout when same-size native Markdown content changes", async () => {
+    const thread = threadId("thread-1")
+    const original = fixture()
+    const workspace = original.workspaces[thread]!
+    const answer = workspace.conversation.items[itemId("answer")]!
+    if (answer.kind !== "assistant") throw new Error("assistant fixture expected")
+    const nativeOriginal = { ...answer, markdown: "plain composer." }
+    const changed = { ...answer, markdown: "plain composer!" }
+    const beforeTranscript = { ...workspace.transcript, projectionById: {
+      ...workspace.transcript.projectionById,
+      [changed.id]: projectItem(nativeOriginal, workspace.transcript.projectionById[changed.id]),
+    } }
+    const afterTranscript = { ...beforeTranscript, projectionById: {
+      ...beforeTranscript.projectionById,
+      [changed.id]: projectItem(changed, workspace.transcript.projectionById[changed.id]),
+    } }
+    const syntax = createEmberTideSyntax()
+    const setup = await testRender(
+      <scrollbox id="transcript"><box id={`transcript-item:${changed.id}`}><markdown id={`markdown:${changed.id}`} content={nativeOriginal.markdown} syntaxStyle={syntax} conceal /></box></scrollbox>,
+      { width: 72, height: 18 },
+    )
+    try {
+      await act(async () => setup.flush())
+      const scrollbox = setup.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable
+      const before = measureRenderedTranscript(setup.renderer, scrollbox, beforeTranscript)!
+      expect(measureRenderedTranscript(setup.renderer, scrollbox, beforeTranscript)).toBe(before)
+      const markdown = setup.renderer.root.findDescendantById(`markdown:${changed.id}`) as MarkdownRenderable
+      markdown.content = changed.markdown
+      const deadline = performance.now() + 250
+      do {
+        await act(async () => {
+          setup.renderer.requestRender()
+          await setup.renderOnce()
+          await new Promise((resolve) => setTimeout(resolve, 5))
+        })
+      } while (!setup.captureCharFrame().includes("composer!") && performance.now() < deadline)
+      const after = measureRenderedTranscript(setup.renderer, scrollbox, afterTranscript)!
+      expect(after).not.toBe(before)
+      expect(measureRenderedTranscript(setup.renderer, scrollbox, afterTranscript)).toBe(after)
+      expect(setup.captureCharFrame()).toContain("composer!")
+    } finally {
+      syntax.destroy()
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
   test("accepts count prefixes and Ctrl-w surface focus from raw key events", async () => {
     const commands: Parameters<VimexUiController["dispatchInteraction"]>[0][] = []
     const controller: VimexUiController = { ...inertController, dispatchInteraction(command) { commands.push(command) } }
@@ -226,6 +339,29 @@ describe("Vimex OpenTUI shell", () => {
     }
   })
 
+  test("consumes scroll counts and applies them to each viewport step", async () => {
+    const transcriptCommands: TranscriptUiCommand[] = []
+    const interactionCommands: Parameters<VimexUiController["dispatchInteraction"]>[0][] = []
+    const controller: VimexUiController = {
+      ...inertController,
+      transcript(command) { transcriptCommands.push(command) },
+      dispatchInteraction(command) { interactionCommands.push(command) },
+    }
+    const setup = await testRender(<VimexRoot state={fixture()} controller={controller} />, { width: 52, height: 14 })
+    try {
+      await act(async () => setup.flush())
+      await setup.mockInput.typeText("3")
+      setup.mockInput.pressKey("e", { ctrl: true })
+      await act(async () => setup.flush())
+      expect(transcriptCommands.filter((command) => command.type === "viewport.scroll")).toEqual([
+        { type: "viewport.scroll", direction: "down", amount: "line" },
+        { type: "viewport.scroll", direction: "down", amount: "line" },
+        { type: "viewport.scroll", direction: "down", amount: "line" },
+      ])
+      expect(interactionCommands.at(-1)).toEqual({ type: "count.clear" })
+    } finally { await act(async () => setup.renderer.destroy()) }
+  })
+
   test("runs Vim word motion against the focused composer buffer", async () => {
     const state = fixture()
     const id = state.activeThreadId!
@@ -282,6 +418,70 @@ describe("Vimex OpenTUI shell", () => {
     }
   })
 
+  test("converts native UTF-16 cursor offsets at the grapheme composer boundary", async () => {
+    const state = fixture()
+    const id = state.activeThreadId!
+    const workspace = state.workspaces[id]!
+    const composerState: WorkbenchState = {
+      ...state,
+      workspaces: { ...state.workspaces, [id]: {
+        ...workspace,
+        interaction: { ...workspace.interaction, mode: "normal", surface: "composer" },
+        composer: { ...workspace.composer, text: "A😀éZ", cursorOffset: 1, revision: 1 },
+      } },
+    }
+    const changes: Array<{ text: string; cursor: number }> = []
+    const controller: VimexUiController = { ...inertController, changeDraft(text, cursor) { changes.push({ text, cursor }) } }
+    const setup = await testRender(<VimexRoot state={composerState} controller={controller} />, { width: 60, height: 16 })
+    try {
+      await act(async () => setup.flush())
+      await setup.mockInput.typeText("x")
+      await act(async () => setup.flush())
+      expect(changes.at(-1)).toEqual({ text: "AéZ", cursor: 1 })
+    } finally { await act(async () => setup.renderer.destroy()) }
+  })
+
+  test("remounts native composer history and restores the cursor when switching threads", async () => {
+    const first = threadId("thread-1")
+    const second = threadId("thread-2")
+    let state = transitionWorkbench(fixture(), { type: "thread.open", summary: {
+      id: second, title: "Second", model: "gpt-6", reasoningEffort: "high", cwd: "/work/second", status: "idle",
+    } }).state
+    const firstWorkspace = state.workspaces[first]!
+    const secondWorkspace = state.workspaces[second]!
+    state = {
+      ...state,
+      activeThreadId: first,
+      workspaces: {
+        ...state.workspaces,
+        [first]: { ...firstWorkspace, interaction: { ...firstWorkspace.interaction, mode: "insert", surface: "composer" }, composer: { ...firstWorkspace.composer, text: "same", cursorOffset: 0, revision: 1 } },
+        [second]: { ...secondWorkspace, interaction: { ...secondWorkspace.interaction, mode: "normal", surface: "composer" }, composer: { ...secondWorkspace.composer, text: "same", cursorOffset: 4, revision: 1 } },
+      },
+    }
+    const secondState = { ...state, activeThreadId: second }
+    let showSecond!: () => void
+    const changes: Array<{ text: string; cursor: number }> = []
+    const controller: VimexUiController = { ...inertController, changeDraft(text, cursor) { changes.push({ text, cursor }) } }
+    function Harness() {
+      const [current, setCurrent] = useState(state)
+      showSecond = () => setCurrent(secondState)
+      return <VimexRoot state={current} controller={controller} />
+    }
+    const setup = await testRender(<Harness />, { width: 60, height: 16 })
+    try {
+      await act(async () => setup.flush())
+      await setup.mockInput.typeText("!")
+      await act(async () => { showSecond(); await setup.flush() })
+      const textarea = setup.renderer.root.findDescendantById("composer") as TextareaRenderable
+      expect(textarea.plainText).toBe("same")
+      expect(textarea.cursorOffset).toBe(4)
+      changes.length = 0
+      await setup.mockInput.typeText("u")
+      await act(async () => setup.flush())
+      expect(changes.at(-1)).toEqual({ text: "same", cursor: 4 })
+    } finally { await act(async () => setup.renderer.destroy()) }
+  })
+
   test("applies configured reasoning folds when an item first appears", async () => {
     const thread = threadId("thread-1")
     const state = transitionWorkbench(fixture(), {
@@ -302,6 +502,26 @@ describe("Vimex OpenTUI shell", () => {
     } finally {
       await act(async () => setup.renderer.destroy())
     }
+  })
+
+  test("preserves an explicitly opened reasoning item when default folding is enabled", async () => {
+    const thread = threadId("thread-1")
+    const thought = itemId("opened-thought")
+    let state = transitionWorkbench(fixture(), {
+      type: "conversation.event",
+      event: { type: "item.started", threadId: thread, item: {
+        id: thought, turnId: turnId("turn"), kind: "reasoning", markdown: "visible reasoning", status: "complete",
+      } },
+    }).state
+    const workspace = state.workspaces[thread]!
+    state = { ...state, workspaces: { ...state.workspaces, [thread]: { ...workspace, transcript: { ...workspace.transcript, folded: { ...workspace.transcript.folded, [thought]: false } } } } }
+    const transcriptCommands: TranscriptUiCommand[] = []
+    const controller: VimexUiController = { ...inertController, transcript(command) { transcriptCommands.push(command) } }
+    const setup = await testRender(<VimexRoot state={state} controller={controller} settings={{ foldReasoning: true }} />, { width: 72, height: 18 })
+    try {
+      await act(async () => setup.flush())
+      expect(transcriptCommands).not.toContainEqual({ type: "fold.set", itemId: thought, folded: true })
+    } finally { await act(async () => setup.renderer.destroy()) }
   })
 
   test("fuzzy-filters rich session rows and opens the selected result", async () => {

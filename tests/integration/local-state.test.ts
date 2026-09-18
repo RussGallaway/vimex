@@ -53,3 +53,12 @@ test("version-one state without an outbox remains compatible", () => {
   delete legacy.outbox
   expect(parseLocalState({ version: 1, threads: { thread: legacy } }).threads.thread?.outbox).toEqual([])
 })
+
+test("explicitly unfolded items survive serialization and history restoration", () => {
+  const local = parseLocalState({ version: 1, threads: { thread: { ...saved, folded: { message: false } } } })
+  const workspace = createWorkspace(id)
+  workspace.transcript = syncTranscriptItem(workspace.transcript, { id: itemId("message"), turnId: turnId("turn"), kind: "command", title: "tool", detail: "output", status: "complete" })
+  const restored = restoreThreadView(workspace, local.threads.thread!)
+  expect(restored.transcript.folded).toEqual({ message: false })
+  expect(() => parseLocalState({ version: 1, threads: { thread: { ...saved, folded: { message: "false" } } } })).toThrow()
+})

@@ -26,3 +26,10 @@ for (const scenario of ["signal", "save-failure"]) {
     expect(JSON.parse(stdout).passed).toBe(true)
   }, 30000)
 }
+
+test.skipIf(!Bun.which("tmux"))("isolated tmux: Markdown, Vim input, draft preservation, and quit", async () => {
+  const process = Bun.spawn(["python3", join(import.meta.dir, "tmux-driver.py")], { stdout: "pipe", stderr: "pipe" })
+  const [stdout, stderr, exit] = await Promise.all([new Response(process.stdout).text(), new Response(process.stderr).text(), process.exited])
+  if (exit !== 0) throw new Error(`tmux integration failed: ${stderr}\n${stdout}`)
+  expect(JSON.parse(stdout).passed).toBe(true)
+}, 30000)

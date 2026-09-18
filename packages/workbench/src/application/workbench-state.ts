@@ -53,7 +53,7 @@ export type WorkbenchCommand =
   | { type: "transcript.url.open"; threadId?: ThreadId }
   | { type: "composer.change"; threadId?: ThreadId; text: string; cursorOffset?: number }
   | { type: "composer.submit"; threadId?: ThreadId; intent: SubmissionIntent; clientMessageId: string }
-  | { type: "composer.ack"; threadId: ThreadId; clientMessageId: string }
+  | { type: "composer.ack"; threadId: ThreadId; clientMessageId: string; turnId?: TurnId }
   | { type: "composer.fail"; threadId: ThreadId; clientMessageId: string; reason: string }
   | { type: "composer.retry"; threadId?: ThreadId; clientMessageId: string }
   | { type: "approval.received"; approval: Approval }

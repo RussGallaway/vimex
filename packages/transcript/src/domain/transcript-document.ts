@@ -27,9 +27,11 @@ export interface TranscriptState {
   projectionById: Readonly<Record<string, TextProjection>>
   cursor?: LogicalPoint
   selection?: TranscriptSelection
-  folded: Readonly<Record<string, true>>
+  folded: Readonly<Record<string, boolean>>
   viewport: ViewportAnchor
   unseenEntries: number
+  /** Item ids whose changed output has already contributed to unseenEntries. */
+  unseenItemIds: readonly ItemId[]
 }
 export type TranscriptCommand =
   | { type: "search.set"; query: string; direction: "forward" | "backward" }
@@ -43,5 +45,5 @@ export type TranscriptCommand =
   | { type: "fold.all"; folded: boolean }
 
 export const initialTranscript = (): TranscriptState => ({
-  order: [], projectionById: {}, folded: {}, viewport: { kind: "tail" }, unseenEntries: 0,
+  order: [], projectionById: {}, folded: {}, viewport: { kind: "tail" }, unseenEntries: 0, unseenItemIds: [],
 })

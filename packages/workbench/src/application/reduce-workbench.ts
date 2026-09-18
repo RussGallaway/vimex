@@ -111,9 +111,11 @@ export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCom
         : failOutgoing(workspace.composer, command.clientMessageId, command.reason)
       // A start-turn acknowledgement may precede turn.started. Keep queued
       // steering serialized until the runtime has supplied the real turn id.
+      const acknowledgedTurn = command.type === "composer.ack" && command.turnId ? workspace.conversation.turns[command.turnId] : undefined
       const waitForStartedTurn = command.type === "composer.ack"
         && outgoing?.intent === "next-turn"
         && !workspace.conversation.activeTurnId
+        && !(acknowledgedTurn && acknowledgedTurn.status !== "running")
       const scheduled = waitForStartedTurn
         ? { composer: settled }
         : scheduleQueued(settled, command.threadId, workspace.conversation.activeTurnId)

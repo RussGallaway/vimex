@@ -2,7 +2,7 @@ import { CliRenderEvents, type InputRenderable, type Renderable, type ScrollBoxR
 import { useBindings } from "@opentui/keymap/react"
 import { useRenderer, useTerminalDimensions } from "@opentui/react"
 import { initialComposer } from "@vimex/composer"
-import { applyComposerVimAction, commandCompletions, initialCommandHistory, initialInteraction, recallCommand, recordCommand, resolveComposerKey, type ComposerVimAction, type InteractionState } from "@vimex/interaction"
+import { applyComposerVimAction, codeUnitOffsetToGraphemeOffset, commandCompletions, graphemeOffsetToCodeUnitOffset, initialCommandHistory, initialInteraction, recallCommand, recordCommand, resolveComposerKey, type ComposerVimAction, type InteractionState } from "@vimex/interaction"
 import { graphemeCount, initialTranscript, selectedText, type TranscriptState } from "@vimex/transcript"
 import { activeWorkspace } from "@vimex/workbench"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -73,11 +73,13 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
   const [questionIndex, setQuestionIndex] = useState(0)
   const [questionAnswers, setQuestionAnswers] = useState<Record<string, string | readonly string[]>>({})
   const [renderedLayout, setRenderedLayout] = useState<TranscriptLayout>()
+  const measuredLayout = useRef<TranscriptLayout | undefined>(undefined)
   const layoutSignature = useRef("")
   const pendingScrollAnchor = useRef(false)
   const pendingRestore = useRef(false)
   const countRef = useRef(interaction.count)
   const composerInteractionRef = useRef(interaction)
+  const composerThreadRef = useRef(state.activeThreadId)
   composerInteractionRef.current = interaction
   const initializedFolds = useRef(new Set<string>())
   const transcriptWidth = Math.max(8, dimensions.width - 7)
@@ -101,24 +103,35 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
   useEffect(() => () => syntax.destroy(), [syntax])
   useEffect(() => { countRef.current = interaction.count }, [interaction.count])
   useEffect(() => {
+    const switchedThread = composerThreadRef.current !== state.activeThreadId
+    composerThreadRef.current = state.activeThreadId
+    if (!switchedThread && interaction.mode === "visual" && interaction.surface === "composer") return
+    composerSelectionRef.current = undefined
+    textareaRef.current?.clearSelection()
+  }, [interaction.mode, interaction.surface, state.activeThreadId])
+  useEffect(() => {
     for (const item of items) {
-      if (initializedFolds.current.has(item.id)) continue
-      initializedFolds.current.add(item.id)
+      const foldKey = `${state.activeThreadId ?? ""}:${item.id}`
+      if (initializedFolds.current.has(foldKey) || Object.hasOwn(transcript.folded, item.id)) continue
+      initializedFolds.current.add(foldKey)
       if ((settings.foldReasoning && item.kind === "reasoning") || (settings.foldTools && (item.kind === "tool" || item.kind === "command" || item.kind === "edit"))) {
         controller.transcript({ type: "fold.set", itemId: item.id, folded: true })
       }
     }
-  }, [controller, items, settings.foldReasoning, settings.foldTools])
+  }, [controller, items, settings.foldReasoning, settings.foldTools, state.activeThreadId, transcript.folded])
   useEffect(() => {
     const measure = () => {
       const scrollbox = scrollRef.current
       if (!scrollbox) return
       const next = measureRenderedTranscript(renderer, scrollbox, transcript)
       if (!next) return
-      const signature = JSON.stringify(next.points)
-      if (signature !== layoutSignature.current) {
-        layoutSignature.current = signature
-        setRenderedLayout(next)
+      if (next !== measuredLayout.current) {
+        measuredLayout.current = next
+        const signature = JSON.stringify(next.points)
+        if (signature !== layoutSignature.current) {
+          layoutSignature.current = signature
+          setRenderedLayout(next)
+        }
       }
       if (pendingScrollAnchor.current) {
         pendingScrollAnchor.current = false
@@ -145,7 +158,7 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
     renderer.requestRender()
     return () => { renderer.off(CliRenderEvents.FRAME, measure) }
   }, [controller, renderer, transcript])
-  const geometryRevision = `${dimensions.width}:${dimensions.height}:${Object.keys(transcript.folded).join(",")}:${transcript.order.map((id) => transcript.projectionById[id]?.revision ?? 0).join(",")}`
+  const geometryRevision = `${dimensions.width}:${dimensions.height}:${Object.entries(transcript.folded).map(([id, folded]) => `${id}:${folded}`).join(",")}:${transcript.order.map((id) => transcript.projectionById[id]?.revision ?? 0).join(",")}`
   useEffect(() => {
     if (transcript.viewport.kind === "point") pendingRestore.current = true
   }, [geometryRevision])
@@ -236,20 +249,26 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
     const nativeSelection = textarea.getSelection()
     const result = applyComposerVimAction({
       text: textarea.plainText,
-      cursorOffset: textarea.cursorOffset,
-      selection: composerSelectionRef.current ?? (nativeSelection ? { anchor: nativeSelection.start, head: Math.max(nativeSelection.start, nativeSelection.end - 1) } : undefined),
+      cursorOffset: codeUnitOffsetToGraphemeOffset(textarea.plainText, textarea.cursorOffset),
+      selection: composerSelectionRef.current ?? (nativeSelection ? {
+        anchor: codeUnitOffsetToGraphemeOffset(textarea.plainText, nativeSelection.start),
+        head: Math.max(0, codeUnitOffsetToGraphemeOffset(textarea.plainText, nativeSelection.end) - 1),
+      } : undefined),
     }, action, composerInteractionRef.current.unnamedRegister)
     if (result.effect?.type === "history") {
       if (result.effect.direction === "undo") textarea.undo()
       else textarea.redo()
     } else {
       if (textarea.plainText !== result.buffer.text) textarea.replaceText(result.buffer.text)
-      textarea.cursorOffset = result.buffer.cursorOffset
-      if (result.buffer.selection) textarea.setSelectionInclusive(result.buffer.selection.anchor, result.buffer.selection.head)
+      textarea.cursorOffset = graphemeOffsetToCodeUnitOffset(result.buffer.text, result.buffer.cursorOffset)
+      if (result.buffer.selection) textarea.setSelectionInclusive(
+        graphemeOffsetToCodeUnitOffset(result.buffer.text, result.buffer.selection.anchor),
+        graphemeOffsetToCodeUnitOffset(result.buffer.text, result.buffer.selection.head),
+      )
       else textarea.clearSelection()
     }
     composerSelectionRef.current = result.buffer.selection
-    controller.changeDraft(textarea.plainText, textarea.cursorOffset)
+    controller.changeDraft(textarea.plainText, codeUnitOffsetToGraphemeOffset(textarea.plainText, textarea.cursorOffset))
     const previous = composerInteractionRef.current.unnamedRegister
     if (previous.text !== result.register.text || previous.shape !== result.register.shape) {
       controller.dispatchInteraction({ type: "register.set", register: result.register })
@@ -270,9 +289,14 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
 
   const scroll = useCallback((direction: "up" | "down", amount: "line" | "half-page" | "page") => {
     const delta = direction === "down" ? 1 : -1
-    scrollRef.current?.scrollBy(delta * (amount === "line" ? 1 : amount === "half-page" ? 0.5 : 1), amount === "line" ? "step" : "viewport")
+    const explicitCount = countRef.current ? Math.max(1, Number.parseInt(countRef.current, 10)) : undefined
+    const effectiveAmount = explicitCount && amount === "half-page" ? "line" : amount
+    const repeat = explicitCount ?? 1
+    scrollRef.current?.scrollBy(delta * repeat * (effectiveAmount === "line" ? 1 : effectiveAmount === "half-page" ? 0.5 : 1), effectiveAmount === "line" ? "step" : "viewport")
     pendingScrollAnchor.current = true
-    controller.transcript({ type: "viewport.scroll", direction, amount })
+    for (let index = 0; index < repeat; index += 1) controller.transcript({ type: "viewport.scroll", direction, amount: effectiveAmount })
+    countRef.current = ""
+    controller.dispatchInteraction({ type: "count.clear" })
   }, [controller])
 
   const beginVisual = useCallback((shape: "character" | "line") => {
@@ -389,6 +413,7 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
         controller.executeCommand(line)
       }} /> : undefined}
       composer={<Composer
+        key={state.activeThreadId}
         state={composer}
         mode={interaction.mode}
         activeTurn={busy}

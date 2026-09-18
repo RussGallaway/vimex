@@ -17,6 +17,17 @@ describe("transcript", () => {
     expect(attachTail(state)).toMatchObject({ viewport: { kind: "tail" }, unseenEntries: 0 })
   })
 
+  test("counts changed output from an existing streaming item once while detached", () => {
+    let state = syncTranscriptItem(initialTranscript(), message("stream", "first", "running"))
+    state = moveCursor(state, { itemId: itemId("stream"), graphemeOffset: 0 })
+    state = syncTranscriptItem(state, message("stream", "first\nsecond", "running"))
+    expect(state.unseenEntries).toBe(1)
+    state = syncTranscriptItem(state, message("stream", "first\nsecond\nthird", "running"))
+    expect(state.unseenEntries).toBe(1)
+    state = attachTail(state)
+    expect(state.unseenItemIds).toEqual([])
+  })
+
   test("projects Markdown with exact source mapping and URL ranges", () => {
     const projection = projectItem(message("m", "# Hello **brave** [world](https://example.test) 👨‍👩‍👧‍👦"))
     expect(projection.plain).toBe("Hello brave world 👨‍👩‍👧‍👦")
@@ -58,6 +69,13 @@ describe("transcript", () => {
     expect(state.cursor).toEqual(cursor)
     expect(state.viewport).toEqual(viewport)
     expect(urlAt(state)).toBe("https://example.test")
+  })
+
+  test("retains explicit unfolded state for default-fold restoration", () => {
+    let state = syncTranscriptItem(initialTranscript(), message("a", "tool output"))
+    state = setFold(state, itemId("a"), false)
+    expect(Object.hasOwn(state.folded, itemId("a"))).toBe(true)
+    expect(state.folded[itemId("a")]).toBe(false)
   })
 })
 

@@ -1,5 +1,5 @@
 import type { CliRenderer } from "@opentui/core"
-import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
+import { createVimexKeymap } from "./keymap/create-keymap"
 import { KeymapProvider } from "@opentui/keymap/react"
 import { createRoot } from "@opentui/react"
 import { useRenderer } from "@opentui/react"
@@ -9,13 +9,13 @@ import type { VimexAppProps } from "./contracts"
 
 export function VimexRoot(props: VimexAppProps) {
   const renderer = useRenderer()
-  const keymap = useMemo(() => createDefaultOpenTuiKeymap(renderer), [renderer])
+  const keymap = useMemo(() => createVimexKeymap(renderer), [renderer])
   return <KeymapProvider keymap={keymap}><VimexApp {...props} /></KeymapProvider>
 }
 
 export function mountVimex(renderer: CliRenderer, props: VimexAppProps) {
   const root = createRoot(renderer)
-  const keymap = createDefaultOpenTuiKeymap(renderer)
+  const keymap = createVimexKeymap(renderer)
   root.render(<KeymapProvider keymap={keymap}><VimexApp {...props} /></KeymapProvider>)
   return root
 }

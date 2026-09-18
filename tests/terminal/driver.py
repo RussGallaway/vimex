@@ -71,6 +71,11 @@ try:
     offset = send(b"terminal integration draft")
     wait_for(b"terminal integration draft", offset)
     if scenario == "server":
+        # Kitty keyboard protocol distinguishes Shift+Enter from plain Enter.
+        send(b"\x1b[13;2u")
+        offset = send(b"second line")
+        # OpenTUI emits differential cells; the second line may not be contiguous in the byte stream.
+        wait_for(b"38", offset)
         send(b"\r")
         wait_for(b"approval")
     offset = send(b"\x1b")
@@ -105,7 +110,9 @@ try:
     if scenario == "server":
         with open(trace) as file:
             requests = [json.loads(line) for line in file]
-        assert any(r.get("method") == "turn/start" for r in requests), "turn never submitted"
+        starts = [r for r in requests if r.get("method") == "turn/start"]
+        assert len(starts) == 1, "Shift+Enter submitted a turn or Enter submitted more than once"
+        assert starts[0]["params"]["input"][0]["text"] == "terminal integration draft\nsecond line", "Shift+Enter did not preserve a newline in the submitted prompt"
         assert any(r.get("id") == 77 and r.get("result", {}).get("decision") == "accept" for r in requests), "approval response never reached app server"
     print(json.dumps({"passed": True, "bytes": len(output), "checks": ["alternate-screen", "markdown", "insert", "draft", "escape", "command", "quit", "terminal-restoration"]}))
 finally:

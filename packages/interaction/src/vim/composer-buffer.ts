@@ -4,6 +4,28 @@ import type { VimRegister } from "./state-machine"
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 const split = (value: string): string[] => [...segmenter.segment(value)].map(({ segment }) => segment)
 
+/** Converts a JavaScript text control's UTF-16 cursor boundary to a safe grapheme boundary. */
+export function codeUnitOffsetToGraphemeOffset(text: string, offset: number): number {
+  const bounded = clamp(offset, 0, text.length)
+  let graphemeOffset = 0
+  for (const part of segmenter.segment(text)) {
+    if (part.index >= bounded) break
+    if (part.index + part.segment.length > bounded) break
+    graphemeOffset++
+  }
+  return graphemeOffset
+}
+
+/** Converts a grapheme cursor boundary to a JavaScript UTF-16 string offset. */
+export function graphemeOffsetToCodeUnitOffset(text: string, offset: number): number {
+  const target = Math.max(0, Math.trunc(offset))
+  let graphemeOffset = 0
+  for (const part of segmenter.segment(text)) {
+    if (graphemeOffset++ === target) return part.index
+  }
+  return text.length
+}
+
 export interface ComposerBufferSelection {
   readonly anchor: number
   readonly head: number
@@ -57,7 +79,7 @@ function normalLineTarget(parts: readonly string[], start: number, end: number, 
 
 function category(value: string | undefined): "space" | "keyword" | "punctuation" {
   if (!value || /^\s$/u.test(value)) return "space"
-  return /^[\p{L}\p{N}_]$/u.test(value) ? "keyword" : "punctuation"
+  return /^[\p{L}\p{N}_][\p{L}\p{N}\p{M}_]*$/u.test(value) ? "keyword" : "punctuation"
 }
 
 function wordForward(parts: readonly string[], origin: number): number {
@@ -140,7 +162,24 @@ function moveBuffer(buffer: ComposerBuffer, motion: ComposerMotion, count: numbe
   let target = origin
   if (motion === "document-start") target = targetLine(parts, Math.max(1, count))
   else if (motion === "document-end" && count > 0) target = targetLine(parts, count)
-  else {
+  else if (motion === "up" || motion === "down") {
+    const column = origin - lineStart(parts, origin)
+    target = origin
+    for (let step = 0; step < Math.max(1, count); step++) {
+      const start = lineStart(parts, target)
+      const end = lineEnd(parts, target)
+      if (motion === "up") {
+        if (start === 0) break
+        const previousEnd = start - 1
+        const previousStart = lineStart(parts, previousEnd)
+        target = normalLineTarget(parts, previousStart, previousEnd, column)
+      } else {
+        if (end >= parts.length) break
+        const nextStart = end + 1
+        target = normalLineTarget(parts, nextStart, lineEnd(parts, nextStart), column)
+      }
+    }
+  } else {
     for (let step = 0; step < Math.max(1, count); step++) target = moveOnce(parts, target, motion)
   }
   return {

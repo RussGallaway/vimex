@@ -1,5 +1,5 @@
 import type { ConversationItem } from "@vimex/conversation"
-import { graphemeCount, projectMarkdown, projectPlainText } from "../domain/markdown-source-map"
+import { projectMarkdown, projectPlainText } from "../domain/markdown-source-map"
 import type { LogicalPoint, TextProjection, TranscriptState } from "../domain/transcript-document"
 function sourceOf(item: ConversationItem): string {
   switch (item.kind) {
@@ -16,6 +16,9 @@ export function syncTranscriptItem(state: TranscriptState, item: ConversationIte
   const previous = state.projectionById[item.id]
   const projection = projectItem(item, previous)
   const isNew = !previous
+  const changed = !previous || previous.source !== projection.source
+  const unseenItemIds = state.unseenItemIds ?? []
+  const newlyUnseen = state.viewport.kind === "point" && changed && !unseenItemIds.includes(item.id)
   // Markdown delimiters can become invisible when a streamed construct closes.
   // Preserve the source location rather than the old rendered-text index.
   const reproject = (point: LogicalPoint): LogicalPoint => {
@@ -31,13 +34,14 @@ export function syncTranscriptItem(state: TranscriptState, item: ConversationIte
     cursor: state.cursor ? reproject(state.cursor) : undefined,
     selection: state.selection ? { ...state.selection, anchor: reproject(state.selection.anchor), head: reproject(state.selection.head) } : undefined,
     viewport: state.viewport.kind === "point" ? { ...state.viewport, point: reproject(state.viewport.point) } : state.viewport,
-    unseenEntries: state.viewport.kind === "point" && isNew ? state.unseenEntries + 1 : state.unseenEntries,
+    unseenEntries: newlyUnseen ? state.unseenEntries + 1 : state.unseenEntries,
+    unseenItemIds: newlyUnseen ? [...unseenItemIds, item.id] : unseenItemIds,
   })
 }
 export function clampTranscript(state: TranscriptState): TranscriptState {
   const clampPoint = (point: LogicalPoint): LogicalPoint => {
     const projection = state.projectionById[point.itemId]
-    return projection ? { ...point, graphemeOffset: Math.max(0, Math.min(point.graphemeOffset, graphemeCount(projection.plain))) } : point
+    return projection ? { ...point, graphemeOffset: Math.max(0, Math.min(point.graphemeOffset, projection.sourceSpans.length)) } : point
   }
   return {
     ...state,

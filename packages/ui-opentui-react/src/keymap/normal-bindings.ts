@@ -4,12 +4,14 @@ import { transcriptBindings } from "./transcript-bindings"
 
 export function normalBindings(ctx: VimBindingContext): UiBinding[] {
   return [
+    { key: "<leader>a", cmd: () => ctx.openOverlay("approvals") },
+    { key: "<leader>s", cmd: () => ctx.openOverlay("sessions") },
+    { key: "<leader>q", cmd: () => ctx.openOverlay("questions") },
+    { key: "<leader>?", cmd: () => ctx.openOverlay("help") },
     ...(ctx.interaction.surface === "transcript"
       ? [...countBindings(ctx), ...transcriptBindings(ctx)]
       : Array.from({ length: 10 }, (_, digit) => ({ key: `${digit}`, cmd: () => ctx.runComposerKey(`${digit}`) }))),
     { key: "escape", cmd: () => ctx.controller.dispatchInteraction({ type: "focus.set", surface: "transcript" }) },
-    { key: "ctrl+wk", cmd: () => ctx.controller.dispatchInteraction({ type: "focus.set", surface: "transcript" }) },
-    { key: "ctrl+wj", cmd: () => ctx.controller.dispatchInteraction({ type: "focus.set", surface: "composer" }) },
     { key: "i", cmd: () => ctx.interaction.surface === "composer" ? ctx.runComposerKey("i") : ctx.controller.dispatchInteraction({ type: "mode.insert" }) },
     { key: "v", cmd: () => {
       if (ctx.interaction.surface === "composer") ctx.runComposerKey("v")
