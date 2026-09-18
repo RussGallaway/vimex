@@ -48,7 +48,8 @@ with tempfile.TemporaryDirectory(prefix="vimex-tmux-") as temporary:
         status = ""
         while time.monotonic() < deadline:
             status = tmux("display-message", "-p", "-t", "vimex-test", "#{pane_dead} #{pane_dead_status}").stdout.strip()
-            if status.startswith("1 "):
+            fields = status.split()
+            if len(fields) == 2 and fields[0] == "1":
                 break
             time.sleep(0.05)
         assert status == "1 0", f"Vimex did not quit successfully in tmux: {status}"

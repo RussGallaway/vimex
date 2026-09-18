@@ -51,7 +51,7 @@ jobs:
           VIMEX_TEST_BINARY="$bundle/vimex" python tests/terminal/visual-driver.py
           python tests/install/resume-smoke.py "$bundle/vimex"
       - run: bun run package
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vimex-${{ matrix.target }}
           path: |
@@ -73,13 +73,13 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.6
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: vimex-*
           path: dist
           merge-multiple: true
       - run: bun run release:manifest
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: 'dist/*.tar.gz'
       - name: Publish complete release
