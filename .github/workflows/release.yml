@@ -51,7 +51,7 @@ jobs:
           VIMEX_TEST_BINARY="$bundle/vimex" python tests/terminal/visual-driver.py
           python tests/install/resume-smoke.py "$bundle/vimex"
       - run: bun run package
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vimex-${{ matrix.target }}
           path: |
