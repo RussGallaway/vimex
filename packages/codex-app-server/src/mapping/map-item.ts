@@ -2,6 +2,7 @@ import { itemId, threadId, turnId, type ConversationEvent, type ConversationItem
 import type { ThreadItem } from "../generated/v0_154_0/v2/ThreadItem"
 import type { Turn } from "../generated/v0_154_0/v2/Turn"
 import type { UserInput } from "../generated/v0_154_0/v2/UserInput"
+import { commandTitle } from "./command-presentation"
 import { isRecord } from "../rpc/request-router"
 
 export function mapThreadItem(item: ThreadItem, ownerTurnId: string, completed: boolean): ConversationItem {
@@ -13,7 +14,7 @@ export function mapThreadItem(item: ThreadItem, ownerTurnId: string, completed: 
     case "agentMessage": return { id, turnId: owner, kind: "assistant", markdown: item.text, status: fallbackStatus }
     case "plan": return { id, turnId: owner, kind: "assistant", markdown: item.text, status: fallbackStatus }
     case "reasoning": return { id, turnId: owner, kind: "reasoning", markdown: item.summary.join("\n\n") || item.content.join("\n\n"), status: fallbackStatus }
-    case "commandExecution": return { id, turnId: owner, kind: "command", title: item.command, detail: item.aggregatedOutput ?? "", durationMs: item.durationMs ?? undefined, status: mapItemStatus(item.status) }
+    case "commandExecution": return { id, turnId: owner, kind: "command", title: commandTitle(item.command, item.commandActions ?? []), executionCommand: item.command, detail: item.aggregatedOutput ?? "", durationMs: item.durationMs ?? undefined, status: mapItemStatus(item.status) }
     case "fileChange": return {
       id, turnId: owner, kind: "edit", title: item.changes.map(change => change.path).join(", ") || "File changes",
       patch: item.changes.map(change => change.diff).filter(Boolean).join("\n"), status: mapItemStatus(item.status),

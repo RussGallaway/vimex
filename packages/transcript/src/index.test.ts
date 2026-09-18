@@ -119,3 +119,12 @@ test("tool output preserves literal Markdown and retains bare URL navigation", (
   expect(projection.links[0]?.url).toBe("https://example.test")
   expect(projection.sourceRegions).toEqual([])
 })
+
+
+test("command projection keeps readable action, exact execution, and literal output independently copyable", () => {
+  const executionCommand = "/bin/zsh -lc 'find packages -maxdepth 2 -type d | head -12'"
+  const output = "packages\npackages/composer\n"
+  const projection = projectItem({ id: itemId("command-detail"), turnId: turnId("turn"), kind: "command", title: "List files · packages", executionCommand, detail: output, status: "complete" })
+  expect(projection.source).toBe(`List files · packages\n${executionCommand}\n${output}`)
+  expect(projection.plain).toBe(projection.source)
+})

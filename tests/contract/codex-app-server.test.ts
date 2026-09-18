@@ -626,3 +626,41 @@ async function respondNext(transport: FakeTransport, method: string, result: unk
 function tick() {
   return new Promise<void>((resolve) => setTimeout(resolve, 0))
 }
+
+describe("model catalog pagination", () => {
+  const wireModel = (model: string) => ({
+    id: `catalog-${model}`, model, displayName: model, description: "Test",
+    supportedReasoningEfforts: [{ reasoningEffort: "high", description: "Deep" }],
+    defaultReasoningEffort: "high", inputModalities: ["text"], isDefault: false,
+  })
+
+  test("maps every model page using the actual model identifier", async () => {
+    const { client, transport } = await connectedClient()
+    const gateway = createCodexGateways("/repo", "codex", () => client)
+    try {
+      const result = gateway.models.listModels()
+      await respondNext(transport, "model/list", { data: [wireModel("first")], nextCursor: "page-two" })
+      await tick()
+      const next = findSent(transport, "model/list")
+      expect(next.params).toEqual({ cursor: "page-two", limit: 100 })
+      transport.receive({ id: next.id, result: { data: [wireModel("second")], nextCursor: null } })
+      expect(await result).toEqual([
+        { id: "first", label: "first", efforts: ["high"] },
+        { id: "second", label: "second", efforts: ["high"] },
+      ])
+    } finally { await gateway.connection.close() }
+  })
+
+  test("rejects cyclic cursors instead of hanging or silently truncating", async () => {
+    const { client, transport } = await connectedClient()
+    const gateway = createCodexGateways("/repo", "codex", () => client)
+    try {
+      const result = gateway.models.listModels()
+      const rejected = result.then(() => undefined, error => error)
+      await respondNext(transport, "model/list", { data: [wireModel("first")], nextCursor: "repeated" })
+      await respondNext(transport, "model/list", { data: [], nextCursor: "repeated" })
+      expect(String(await rejected)).toContain("repeated pagination cursor")
+      expect(transport.sent.filter(message => message.method === "model/list")).toHaveLength(2)
+    } finally { await gateway.connection.close() }
+  })
+})

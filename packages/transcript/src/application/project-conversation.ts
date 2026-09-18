@@ -5,6 +5,7 @@ function sourceOf(item: ConversationItem): string {
   switch (item.kind) {
     case "user": case "assistant": case "reasoning": return item.markdown
     case "edit": return item.patch
+    case "command": return [item.title, item.executionCommand, item.detail].filter(Boolean).join("\n")
     default: return [item.title, item.detail].filter(Boolean).join("\n")
   }
 }

@@ -103,8 +103,19 @@ export function createCodexGateways(
   }
   const models: ModelCatalog = {
     async listModels() {
-      const result = await client.listModels()
-      return result.models.map(model => ({ id: model.model, label: model.label, efforts: model.supportedReasoningEfforts.map(e => e.effort) }))
+      // Keep every page on one connection, even if the runtime restarts mid-list.
+      const source = client
+      const all: Awaited<ReturnType<ModelCatalog["listModels"]>>[number][] = []
+      const seen = new Set<string>()
+      let cursor: string | undefined
+      do {
+        const page = await source.listModels({ cursor, limit: 100 })
+        all.push(...page.models.map(model => ({ id: model.model, label: model.label, efforts: model.supportedReasoningEfforts.map(e => e.effort) })))
+        cursor = page.nextCursor ?? undefined
+        if (cursor && seen.has(cursor)) throw new Error("Codex model catalog returned a repeated pagination cursor")
+        if (cursor) seen.add(cursor)
+      } while (cursor)
+      return all
     },
   }
   return { connection, conversation, approvals, models }
