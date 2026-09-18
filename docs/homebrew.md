@@ -1,6 +1,6 @@
 # Publishing Vimex through Homebrew
 
-Status: Formula/vimex.rb is published from this repository. Stable releases generate its versioned URLs and checksums from the verified release manifest and merge the update after protected checks pass.
+Status: Formula/vimex.rb is published from this repository. Stable releases generate its versioned URLs and checksums from the verified release manifest, then deploy the formula automatically after the full release matrix passes.
 
 ## Vocabulary
 

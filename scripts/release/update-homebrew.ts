@@ -61,7 +61,7 @@ ${stanza("linux")}
   end
 
   test do
-    assert_match "vimex", shell_output("#{bin}/vimex --version")
+    assert_equal "vimex #{version}", shell_output("#{bin}/vimex --version").strip
     assert_match "resume", shell_output("#{bin}/vimex --help")
   end
 end

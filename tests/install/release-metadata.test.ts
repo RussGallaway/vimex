@@ -47,6 +47,7 @@ test("release generator verifies four archives and emits matching manifest, sums
     expect(source).toContain('run "/usr/bin/gzip", args: ["-d", native_library]')
     expect(source).toContain('libexec.install Dir[(bundle/"*").to_s]')
     expect(source).toContain('bin.install_symlink libexec/"vimex"')
+    expect(source).toContain('assert_equal "vimex #{version}", shell_output("#{bin}/vimex --version").strip')
     if (Bun.which("ruby")) {
       const ruby = Bun.spawn(["ruby", "-c", formula], { stdout: "pipe", stderr: "pipe" })
       expect(await ruby.exited).toBe(0)
