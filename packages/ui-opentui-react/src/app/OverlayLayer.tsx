@@ -4,7 +4,7 @@ import { useBindings } from "@opentui/keymap/react"
 import { useTerminalDimensions } from "@opentui/react"
 import type { InputRenderable, ScrollBoxRenderable } from "@opentui/core"
 import type { ThreadId, ThreadSummary } from "@vimex/conversation"
-import type { Overlay } from "@vimex/interaction"
+import { commandNames, commandDescriptors, type Overlay } from "@vimex/interaction"
 import type { AvailableModel, WorkbenchState } from "@vimex/workbench"
 import type { UrlCandidate } from "@vimex/transcript"
 import { useRef, type RefObject } from "react"
@@ -34,15 +34,20 @@ function HelpOverlay() {
     ["Modes", "i insert   v visual   : command   esc normal"], ["Move", "h/j/k/l cursor   0/$ line   gg/G transcript"],
     ["Scroll", "ctrl-y/e line   ctrl-u/d half page   ctrl-b/f page"], ["Act", "y copy   gx open URL   f fork   ctrl-c interrupt"],
     ["Fold", "za toggle   zo open   zc close   zR/zM all"], ["Views", "s sessions   a approvals   :help"],
-    ["Focus", "ctrl-k transcript   ctrl-j composer   ctrl-w k/j aliases"],
+    ["Focus", "↑ transcript   ↓ composer   ctrl-w k/j aliases"],
     ["Composer", "h/j/k/l  w/b  0/$  x/dd  u/ctrl-r  i/a/I/A  v select"],
     ["Menus", "j/k choose   i search   esc normal/close"],
     ["Send", "enter send   ctrl-enter steer   shift-enter newline"],
   ] as const
-  return <OverlayFrame title="Vimex keys" width={82}>
+  return <OverlayFrame title="Vimex keys and commands" width={82}>
     <scrollbox id="help-scroll" ref={helpRef} height={Math.min(19, Math.max(1, Math.floor(dimensions.height * 0.85) - 5))}>
     {groups.map(([title, detail]) => <box key={title} flexDirection="row" marginBottom={1}>
       <text width={12} flexShrink={0} fg={emberTide.amber}><b>{title}</b></text><text fg={emberTide.textSoft}>{detail}</text>
+    </box>)}
+    <text marginTop={1} marginBottom={1} fg={emberTide.amber}><b>Slash and Ex commands</b></text>
+    {commandNames.map(name => <box key={name} flexDirection="column" marginBottom={1}>
+      <text fg={emberTide.blueBright}>:{commandDescriptors[name].usage}</text>
+      <text fg={emberTide.textSoft}>{commandDescriptors[name].description}</text>
     </box>)}
     </scrollbox>
     <text height={1} fg={emberTide.textMuted} wrapMode="none" truncate>j/k scroll · esc close</text>

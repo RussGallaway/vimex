@@ -69,7 +69,7 @@ const TranscriptRow = memo(function TranscriptRow(props: {
   return (
     <box id={`transcript-item:${props.item.id}`} flexShrink={0} marginBottom={1}
       border={["left"]} borderColor={props.selected ? emberTide.amber : props.current ? emberTide.blueBright : emberTide.borderMuted}
-      paddingLeft={2} backgroundColor={props.item.kind === "user" ? emberTide.backgroundPanel : emberTide.background}>
+      paddingLeft={2} paddingRight={props.item.kind === "user" ? 2 : 0} paddingY={props.item.kind === "user" ? 1 : 0} backgroundColor={props.item.kind === "user" ? emberTide.backgroundPanel : emberTide.background}>
       <TranscriptNode item={props.item} folded={props.folded} syntax={props.syntax} />
     </box>
   )

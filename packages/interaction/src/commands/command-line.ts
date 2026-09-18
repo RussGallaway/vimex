@@ -1,4 +1,4 @@
-import { commandNames } from "./registry"
+import { commandArgumentChoices, commandNames, resolveCommandName, type CommandCompletionOptions } from "./registry"
 
 export interface CommandHistory { entries: readonly string[]; index: number; draft: string }
 export const initialCommandHistory = (): CommandHistory => ({ entries: [], index: 0, draft: "" })
@@ -12,16 +12,16 @@ export function recallCommand(history: CommandHistory, current: string, directio
   const index = Math.min(history.entries.length, Math.max(0, history.index + direction))
   return { history: { ...history, index, draft }, value: index === history.entries.length ? draft : history.entries[index]! }
 }
-export function commandCompletions(value: string, options: {
-  models?: readonly string[]
-  modelEfforts?: Readonly<Record<string, readonly string[]>>
-} = {}): readonly string[] {
-  const prefix = value.replace(/^:/, "")
-  if (!prefix.includes(" ")) return commandNames.filter(name => name.startsWith(prefix)).map(name => `:${name}`)
-  const [name, argument = "", effort = ""] = prefix.split(/\s+/, 3)
-  if ((name === "model" || name === "models") && prefix.split(/\s+/).length >= 3) {
-    return (options.modelEfforts?.[argument] ?? []).filter(choice => choice.startsWith(effort)).map(choice => `:${name} ${argument} ${choice}`)
+export function commandCompletions(value: string, options: CommandCompletionOptions = {}): readonly string[] {
+  const prefix = value.replace(/^:/, "").trimStart()
+  if (!/\s/.test(prefix)) return commandNames.filter(name => name.startsWith(prefix)).map(name => `:${name}`)
+  const [spelling = "", argument = "", effort = "", ...extra] = prefix.split(/\s+/)
+  const name = resolveCommandName(spelling)
+  if (!name || extra.length) return []
+  if (name === "model" && prefix.split(/\s+/).length >= 3) {
+    return (options.modelEfforts?.[argument] ?? []).filter(choice => choice.startsWith(effort)).map(choice => `:${spelling} ${argument} ${choice}`)
   }
-  const choices = name === "model" || name === "models" ? options.models ?? [] : name === "yank" ? ["text", "markdown"] : name === "theme" ? ["ember-tide", "nord", "kanagawa"] : []
-  return choices.filter(choice => choice.startsWith(argument)).map(choice => `:${name} ${choice}`)
+  // Never replace a literal path, title, URL, or a completed extra argument.
+  if (prefix.split(/\s+/).length > 2) return []
+  return (commandArgumentChoices(name, options) ?? []).filter(choice => choice.startsWith(argument)).map(choice => `:${spelling} ${choice}`)
 }

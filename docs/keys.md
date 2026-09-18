@@ -78,13 +78,13 @@ In the transcript, Tab toggles the current foldable block. Shift-Tab toggles all
 | `ga`, `:agents` | Open parent/child agent navigation. |
 | `:questions` | Open pending structured questions. |
 | `:parent` | Return to the parent agent thread. |
-| `:help` | Open the compact key reference. |
+| `:help` | Open the scrollable key and command reference. |
 
 Normal mode also provides a Space leader vocabulary: `Space s` opens sessions, `Space a` opens approvals, `Space q` opens questions, and `Space ?` opens help. The second key is a leader token rather than an independent fallback action.
 
 In menus, use `j/k`, Up/Down, or `Ctrl-p`/`Ctrl-n` to choose, and Enter to activate. Session menus use `j/k` in Normal mode. Press `i` or `/` to enter Insert search; other text starts search automatically. While searching, `j/k` type literal letters. Escape returns to Normal navigation, then Escape again closes. Rename inputs also keep literal text keys. Option-only questions accept `j/k`; free-text questions preserve those letters. Approval choices can be selected with `1` through `9`.
 
-Typing `/` at the beginning of an Insert-mode draft opens the command drawer above the composer. Up/Down or `Ctrl-p`/`Ctrl-n` selects, Tab completes, and Enter runs the selected command. `j/k` remain query letters because this is Insert mode. Escape dismisses the drawer into Normal mode. Unknown commands remain editable rather than executing another command.
+Typing `/` at the beginning of an Insert-mode draft opens the command drawer above the composer. Up/Down or `Ctrl-p`/`Ctrl-n` selects, Tab completes, and Enter runs the selected command. `j/k` remain query letters because this is Insert mode. Escape dismisses the drawer into Normal mode. Unknown commands and invalid arguments remain editable with inline feedback. Use `//text` to send a literal slash-leading prompt (`/text`). Model IDs, thinking levels, theme choices, and session IDs complete from the same vocabulary as Ex. Tab adds a trailing space so the next argument can be completed. `submit` is an Ex action because the composer contains the slash command itself.
 
 ## Command mode
 
@@ -93,6 +93,10 @@ Enter `:` to open command completion above the bottom command bar. Up/Down selec
 | Command | Action |
 | --- | --- |
 | `:q` | Quit. |
+| `:help [COMMAND]` | Browse keys and commands, or show usage for one command. |
+| `:sessions [ID]` | Open the session picker or resume an exact thread ID, including one absent from the current list. |
+| `:favorite [on\|off]` | Toggle the active session favorite, or set it explicitly. |
+| `:follow` | Return to the live transcript tail. |
 | `:model [NAME] [EFFORT]` | Open the model and thinking-level picker, or set both directly. Tab completes model IDs and their supported efforts, leaving the cursor ready for the next argument. |
 | `:thinking [LEVEL]` | List supported effort levels or change effort. |
 | `:cwd [PATH]` | Show or change the active thread working directory. Relative paths resolve from its current directory. |
@@ -103,10 +107,11 @@ Enter `:` to open command completion above the bottom command bar. Up/Down selec
 | `:restart` | Restart the Codex app server and rehydrate the active thread. |
 | `:fork` | Open fork confirmation at the current message context. |
 | `:fold`, `:unfold` | Fold or unfold all foldable transcript items. |
-| `:yank [text\|markdown]` | Copy selection/current context as rendered text or Markdown source. |
+| `:yank [text\|markdown]`, `:copy [text\|markdown]` | Copy the selection or current transcript block as rendered text or exact source, also populating the composer register. |
 | `:open [URL]` | Open a supplied URL or the current transcript URL. |
 | `:theme NAME` | Select and persist a UI theme. |
 | `:syntax NAME` | Select and persist a syntax theme; `theme` follows the UI palette. |
-| `:submit`, `:insert`, `:normal`, `:visual` | Invoke the corresponding action or mode. |
+| `:submit [queue\|steer]` | Send the composer draft using the configured default or an explicit queue/steer intent. |
+| `:insert`, `:normal`, `:visual` | Enter a mode; Visual initializes a transcript selection. |
 
 Mouse-wheel scrolling moves the transcript by precise terminal rows, preserves composer focus and both text cursors, and detaches from the streaming tail. Reaching the bottom with the wheel keeps the viewport detached; use the explicit follow command to resume following.

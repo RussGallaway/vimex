@@ -1,5 +1,5 @@
 import { useTerminalDimensions } from "@opentui/react"
-import { commandDescriptions, parseCommand } from "@vimex/interaction"
+import { commandDescriptions, commandDescriptors, parseCommand } from "@vimex/interaction"
 import { emberTide } from "../theme"
 
 export function CommandCompletionDrawer(props: { choices: readonly string[]; selected: number; prefix: ":" | "/"; id: string; hint?: string }) {
@@ -15,7 +15,11 @@ export function CommandCompletionDrawer(props: { choices: readonly string[]; sel
       return <box key={choice} id={`${props.id}-choice:${start + index}`} height={1} flexDirection="row" gap={2}
         backgroundColor={selected ? emberTide.selection : emberTide.backgroundPanel}>
         <text width="35%" flexShrink={0} wrapMode="none" truncate fg={selected ? emberTide.selectionText : emberTide.text}>{props.prefix}{choice}</text>
-        <text flexGrow={1} minWidth={0} wrapMode="none" truncate fg={selected ? emberTide.selectionText : emberTide.textMuted}>{command.kind === "command" ? commandDescriptions[command.name] : ""}</text>
+        <text flexGrow={1} minWidth={0} wrapMode="none" truncate fg={selected ? emberTide.selectionText : emberTide.textMuted}>{command.kind === "command"
+          ? command.argument || commandDescriptors[command.name].arguments !== "none"
+            ? `Usage: ${props.prefix}${commandDescriptors[command.name].usage}`
+            : commandDescriptions[command.name]
+          : ""}</text>
       </box>
     }) : <text height={1} fg={emberTide.textMuted}>No matching commands</text>}
 

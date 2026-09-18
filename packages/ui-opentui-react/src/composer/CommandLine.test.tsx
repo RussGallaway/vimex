@@ -53,7 +53,7 @@ test("colon autocomplete sits above command bar without changing or moving the d
     const bar = h.renderer.root.findDescendantById("command-bar")!
     expect(drawer.y + drawer.height).toBeLessThanOrEqual(bar.y)
     expect(h.captureCharFrame()).toContain(":help")
-    expect(h.captureCharFrame()).toContain("Show keyboard help")
+    expect(h.captureCharFrame()).toContain("Usage: :help [command]")
     expect(composer.y).toBe(before.y)
     expect(composer.height).toBe(before.height)
     await act(async () => { h.mockInput.pressKey("TAB"); await h.flush() })
@@ -158,5 +158,18 @@ test("empty colon Return does not execute the first completion", async () => {
     await act(async () => { h.mockInput.pressKey("RETURN"); await h.flush() })
     expect(h.executed).toEqual([""])
     expect(h.workspace().composer.text).toBe("Keep my unfinished draft")
+  } finally { await h.close() }
+})
+
+test("invalid recognized Ex arguments show usage and preserve Command input", async () => {
+  const h = await harness()
+  try {
+    await h.keys(":")
+    await h.keys("theme ultraviolet")
+    await act(async () => { h.mockInput.pressKey("RETURN"); await h.flush(); await h.renderOnce() })
+    expect(h.executed).toEqual([])
+    expect(h.workspace().interaction.mode).toBe("command")
+    expect(h.workspace().interaction.commandLine).toBe("theme ultraviolet")
+    expect(h.captureCharFrame()).toContain("Usage: :theme [ember-tide|nord|kanagawa]")
   } finally { await h.close() }
 })

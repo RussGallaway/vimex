@@ -108,7 +108,10 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
             : 1
   const activeQuestion = pendingQuestion?.questions[Math.min(questionIndex, Math.max(0, (pendingQuestion?.questions.length ?? 1) - 1))]
   const questionOwnsReturn = Boolean(activeQuestion && (!activeQuestion.options?.length || activeQuestion.allowOther))
-  const slashCommands = useSlashCommands({ text: composer.text, textareaRef, interaction, controller, onExecute(command) {
+  const slashCommands = useSlashCommands({ text: composer.text, textareaRef, interaction, controller,
+    completionOptions: { models: state.availableModels?.map(model => model.id),
+      modelEfforts: Object.fromEntries(state.availableModels?.map(model => [model.id, model.efforts]) ?? []), currentModel: summary?.model, sessionIds: state.threadOrder },
+    onExecute(command) {
     commandHistoryRef.current = recordCommand(commandHistoryRef.current, command)
     controller.executeCommand(command)
   } })
@@ -464,7 +467,7 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
   return (
     <FullscreenShell title={summary?.title} connection={state.connection} working={Boolean(workspace?.conversation.activeTurnId) || summary?.status === "working"} activityLabel={activityLabel} waiting={Boolean(pendingApproval || pendingQuestion)}
       transcript={<TranscriptViewport items={items} state={transcript} interaction={interaction} syntax={syntax} scrollRef={scrollRef} onManualScroll={onManualScroll} />}
-      commandLine={interaction.mode === "command" ? <CommandLine models={state.availableModels} value={interaction.commandLine} inputRef={commandRef} controller={controller} onSubmit={(line) => {
+      commandLine={interaction.mode === "command" ? <CommandLine sessionIds={state.threadOrder} currentModel={summary?.model} models={state.availableModels} value={interaction.commandLine} inputRef={commandRef} controller={controller} onSubmit={(line) => {
         commandHistoryRef.current = recordCommand(commandHistoryRef.current, line)
         controller.executeCommand(line)
       }} /> : undefined}
@@ -481,7 +484,7 @@ export function VimexApp({ state, controller, settings: settingsInput }: VimexAp
         textareaRef={textareaRef}
         submitRef={composerSubmitRef}
         onChange={slashCommands.changeDraft}
-        drawer={slashCommands.active ? <SlashCommandDrawer choices={slashCommands.choices} selected={slashCommands.selected} /> : undefined}
+        drawer={slashCommands.active ? <SlashCommandDrawer choices={slashCommands.choices} selected={slashCommands.selected} hint={slashCommands.feedback} /> : undefined}
         onSubmit={slashCommands.submit}
         onEscape={() => {
           if (composerInteractionRef.current.mode === "visual") runComposerKey("escape")

@@ -212,7 +212,7 @@ describe("terminal frame regressions", () => {
           expect(help.scrollHeight).toBeGreaterThan(help.height)
           await act(async () => { await setup.mockInput.typeText("G"); await setup.flush(); await setup.renderOnce() })
           expect(help.scrollTop).toBeGreaterThan(0)
-          expect(setup.captureCharFrame()).toContain("shift-enter")
+          expect(setup.captureCharFrame()).toContain(":follow")
           await act(async () => { await setup.mockInput.typeText("g"); await setup.flush(); await setup.renderOnce() })
           expect(help.scrollTop).toBe(0)
         }

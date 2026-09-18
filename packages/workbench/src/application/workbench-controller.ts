@@ -1,6 +1,6 @@
 import { adjacentSearchMatch, findSearchMatches, firstContentPoint, moveByWord, moveBySemanticBlock, moveByUrl, referenceText, urlAt, urlCandidates, graphemeCount, type LogicalPoint } from "@vimex/transcript"
 import { isThemeName, themeNames, type PreferenceStore } from "./display-preferences"
-import { parseCommand, type ExCommand } from "@vimex/interaction"
+import { parseCommand, validateCommand, resolveCommandName, commandDescriptors, type ExCommand } from "@vimex/interaction"
 import { captureLocalState, emptyLocalState, restoreThreadView, type LocalState, type SavedThreadView } from "./local-state"
 import { initialWorkbench, activeWorkspace, createWorkspace, type WorkbenchState, type WorkbenchCommand, type WorkbenchEffect } from "./workbench-state"
 import { transitionWorkbench } from "./reduce-workbench"
@@ -192,7 +192,10 @@ export class VimexController implements WorkbenchActions {
       this.launch(async () => { await this.loadModels() })
     }
   }
-  changeDraft: WorkbenchActions["changeDraft"] = (text, cursorOffset) => this.dispatch({ type: "composer.change", text, cursorOffset })
+  changeDraft: WorkbenchActions["changeDraft"] = (text, cursorOffset) => {
+    this.dispatch({ type: "composer.change", text, cursorOffset })
+    if (/^\/(?:models?|thinking)(?:\s|$)/.test(text) && !this.catalogRequest) this.launch(async () => { await this.loadModels() })
+  }
   submit: WorkbenchActions["submit"] = intent => this.dispatch({ type: "composer.submit", intent, clientMessageId: crypto.randomUUID() })
   retryOutgoing = (id: string): void => this.dispatch({ type: "composer.retry", clientMessageId: id })
   copyText = (text: string): void => { this.launch(() => this.ports.clipboard.writeText(text)) }
@@ -465,12 +468,24 @@ export class VimexController implements WorkbenchActions {
   private runCommand(parsed: ExCommand): void {
     if (parsed.kind === "empty") return
     if (parsed.kind === "unknown") { this.notice(`Unknown command: ${parsed.name}`); return }
+    const invalid = validateCommand(parsed)
+    if (invalid) { this.notice(invalid); return }
     const { name: command, argument } = parsed
     switch (command) {
-      case "submit": this.submit(this.ports.busySubmit === "steer" ? "steer" : "next-turn"); break
+      case "submit": this.submit(argument === "queue" ? "next-turn" : argument === "steer" || this.ports.busySubmit === "steer" ? "steer" : "next-turn"); break
       case "insert": this.dispatchInteraction({ type: "mode.insert" }); break
       case "normal": this.dispatchInteraction({ type: "mode.normal" }); break
-      case "visual": this.dispatchInteraction({ type: "mode.visual" }); break
+      case "visual": {
+        const transcript = activeWorkspace(this.state)?.transcript
+        const first = transcript?.order[0]
+        const point = transcript?.cursor ?? (first ? { itemId: first, graphemeOffset: 0 } : undefined)
+        if (!point) { this.notice("No transcript content to select"); break }
+        this.dispatchInteraction({ type: "focus.set", surface: "transcript" })
+        this.transcript({ type: "cursor.move", target: point, preferredScreenRow: 2, extend: false })
+        this.transcript({ type: "selection.begin", shape: "character" })
+        this.dispatchInteraction({ type: "mode.visual" })
+        break
+      }
       case "theme": case "syntax": {
         if (!argument) { this.notice(`${command}: ${[...themeNames, ...(command === "syntax" ? ["theme"] : [])].join(", ")}`); break }
         if (!isThemeName(argument) && !(command === "syntax" && argument === "theme")) { this.notice(`Unknown ${command}: ${argument}`); break }
@@ -480,7 +495,28 @@ export class VimexController implements WorkbenchActions {
         break
       }
       case "quit": this.ports.quit(); break
-      case "sessions": case "approvals": case "help": case "questions": case "agents": this.dispatchInteraction({ type: "overlay.open", overlay: command }); break
+      case "sessions": {
+        if (!argument) this.dispatchInteraction({ type: "overlay.open", overlay: "sessions" })
+        else this.openThread(threadId(argument))
+        break
+      }
+      case "help": {
+        const name = resolveCommandName(argument)
+        if (name) this.notice(`:${commandDescriptors[name].usage} — ${commandDescriptors[name].description}`)
+        else this.dispatchInteraction({ type: "overlay.open", overlay: "help" })
+        break
+      }
+      case "favorite": {
+        const id = this.state.activeThreadId
+        if (!id) break
+        const favorite = this.state.favoriteThreadIds.includes(id)
+        const next = argument ? argument === "on" : !favorite
+        if (next !== favorite) this.toggleFavorite(id)
+        this.notice(next ? "Session favorited" : "Session removed from favorites")
+        break
+      }
+      case "follow": this.transcript({ type: "viewport.tail" }); break
+      case "approvals": case "questions": case "agents": this.dispatchInteraction({ type: "overlay.open", overlay: command }); break
       case "model": case "thinking": case "cwd": {
         if (command === "model" && !argument) {
           this.dispatchInteraction({ type: "overlay.open", overlay: "models" })
@@ -550,7 +586,21 @@ export class VimexController implements WorkbenchActions {
       case "stop": this.interrupt(); break
       case "fork": this.transcript({ type: "fork" }); break
       case "fold": case "unfold": this.transcript({ type: "fold.all", folded: command === "fold" }); break
-      case "yank": this.transcript({ type: "copy", format: argument === "markdown" ? "source" : "plain" }); break
+      case "yank": {
+        const transcript = activeWorkspace(this.state)?.transcript
+        const format = argument === "markdown" ? "source" : "plain"
+        if (transcript?.selection) this.transcript({ type: "copy", format })
+        else {
+          const id = transcript?.cursor?.itemId ?? transcript?.order.at(-1)
+          const projection = id ? transcript?.projectionById[id] : undefined
+          if (!projection) { this.notice("No transcript content to copy"); break }
+          const text = format === "source" ? projection.source : projection.plain
+          this.dispatchInteraction({ type: "register.set", register: { text, shape: "character" } })
+          this.copyText(text)
+          this.notice("Copied current transcript block")
+        }
+        break
+      }
       case "open": {
         if (argument) {
           this.setState({ ...this.state, urlChoices: undefined })
