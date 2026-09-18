@@ -78,6 +78,41 @@ describe("transcript", () => {
     expect(state.folded[itemId("a")]).toBe(false)
   })
 
+  test("records bounded branching jumps, skips stale entries, and reprojects marks", () => {
+    let state = syncTranscriptItem(initialTranscript(), message("a", "prefix **bold", "running"))
+    state = syncTranscriptItem(state, message("b", "destination"))
+    const origin = { point: { itemId: itemId("a"), graphemeOffset: 9 }, preferredScreenRow: 4 }
+    const destination = { point: { itemId: itemId("b"), graphemeOffset: 2 }, preferredScreenRow: 2 }
+    state = reduceTranscript(state, { type: "cursor.move", point: origin.point, preferredScreenRow: origin.preferredScreenRow })
+    state = reduceTranscript(state, { type: "mark.set", name: "a", target: origin })
+    state = reduceTranscript(state, { type: "jump.to", target: destination })
+    expect(state.jumps.back).toEqual([origin])
+    state = reduceTranscript(state, { type: "jump.back" })
+    expect(state.cursor).toEqual(origin.point)
+    state = reduceTranscript(state, { type: "jump.forward" })
+    expect(state.cursor).toEqual(destination.point)
+    state = reduceTranscript(state, { type: "jump.to", target: origin })
+    expect(state.jumps.forward).toEqual([])
+    for (let index = 0; index < 105; index++) state = reduceTranscript(state, { type: "jump.to", target: { point: { itemId: itemId("b"), graphemeOffset: index % 2 }, preferredScreenRow: 2 } })
+    expect(state.jumps.back).toHaveLength(100)
+    state = { ...state, jumps: { back: [origin, { point: { itemId: itemId("missing"), graphemeOffset: 0 }, preferredScreenRow: 0 }], forward: [] } }
+    state = reduceTranscript(state, { type: "jump.back" })
+    expect(state.cursor).toEqual(origin.point)
+    const displayed = { cursor: state.cursor, viewport: state.viewport }
+    state = { ...state, jumps: { back: [{ point: { itemId: itemId("missing"), graphemeOffset: 0 }, preferredScreenRow: 0 }], forward: [] } }
+    state = reduceTranscript(state, { type: "jump.back" })
+    expect(state).toMatchObject({ ...displayed, jumps: { back: [], forward: [] } })
+    state = setFold(state, itemId("b"), true)
+    state = reduceTranscript(state, { type: "mark.set", name: "b", target: destination })
+    state = reduceTranscript(state, { type: "mark.jump", name: "b" })
+    expect(state.folded[itemId("b")]).toBe(false)
+    expect(state.cursor).toEqual(destination.point)
+    state = syncTranscriptItem(state, message("a", "prefix **bold** and more", "running"))
+    expect(state.marks.a?.point.graphemeOffset).toBe(7)
+    state = reduceTranscript(state, { type: "mark.jump", name: "a" })
+    expect(state.cursor).toEqual(state.marks.a?.point)
+  })
+
   test("anchors the viewport without moving the cursor or changing a visual selection", () => {
     let state = syncTranscriptItem(initialTranscript(), message("a", "first line\nsecond line"))
     state = moveCursor(state, { itemId: itemId("a"), graphemeOffset: 2 })

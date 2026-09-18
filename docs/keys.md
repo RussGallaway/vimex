@@ -28,7 +28,7 @@ Press `:help` for the compact in-app reference.
 | `{`, `}` (Shift-[ / Shift-]) | Previous/next semantic block. |
 | `[[`, `]]` | Previous/next message. |
 | `[u`, `]u` | Previous/next URL. |
-| `/`, `?` | Search forward/backward. |
+| `/`, `?` | Search transcript forward/backward; also available from composer Normal mode. |
 | `n`, `N` | Next/previous search match. |
 | `r` | Quote the selected text or current semantic block into the composer. |
 | `gx` | Open the URL at the cursor, or show a URL chooser when needed. |
@@ -67,13 +67,13 @@ In Insert mode:
 
 Command entry replaces the bottom status strip while leaving the composer and transcript in place. Enter executes; Escape restores the status strip.
 
-In the transcript, Tab toggles the current foldable block. Shift-Tab toggles all foldable blocks from either transcript or composer without changing focus or the draft: if any block is collapsed it expands all; otherwise it collapses all. Command completion and overlays keep their local Tab behavior. `zR` and `zM` retain their uppercase Vim meanings. Current-block `za`/`zo`/`zc` operate only on foldable transcript blocks, in Normal or Visual mode; they do not change composer text or fold ordinary messages. Visual selections remain intact when toggling folds.
+In transcript Normal mode, Enter toggles the current foldable block. Shift-Tab toggles all foldable blocks from either transcript or composer without changing focus or the draft: if any block is collapsed it expands all; otherwise it collapses all. Command completion and overlays keep their local Tab behavior. `zR` and `zM` retain their uppercase Vim meanings. Current-block `za`/`zo`/`zc` operate only on foldable transcript blocks, in Normal or Visual mode; they do not change composer text or fold ordinary messages. Visual selections remain intact when toggling folds.
 
 ## Views and overlays
 
 | Key or command | Action |
 | --- | --- |
-| `s`, `:sessions` | Search and switch sessions. |
+| `Space s`, `:sessions` | Search and switch sessions. |
 | `a` from transcript Normal mode, `:approvals` | Open pending approvals. In composer Normal mode, `a` keeps its Vim append meaning. |
 | `ga`, `:agents` | Open parent/child agent navigation. |
 | `:questions` | Open pending structured questions. |
@@ -115,3 +115,13 @@ Enter `:` to open command completion above the bottom command bar. Up/Down selec
 | `:insert`, `:normal`, `:visual` | Enter a mode; Visual initializes a transcript selection. |
 
 Mouse-wheel scrolling moves the transcript by precise terminal rows, preserves composer focus and both text cursors, and detaches from the streaming tail. Reaching the bottom with the wheel keeps the viewport detached; use the explicit follow command to resume following.
+
+
+## Flash jumps, jumplist, and marks
+
+- `s` in transcript Normal/Visual mode opens Flash; `Ctrl-g` opens it from either pane, including composer Insert mode. Type visible text, then a highlighted label. Labels never consume a valid continuation of the query. Enter chooses the first labeled match; Tab cycles label pages. Escape cancels and restores focus/mode without changing drafts. Resize or session changes cancel the prompt.
+- Matching is literal and case-insensitive unless the query contains uppercase. Targets are visible rendered text, excluding hidden folded content. A Visual transcript jump extends selection. Source text is not modified by labels.
+- `Ctrl-o` goes backward through significant jumps; `Ctrl-i` goes forward. On terminals advertising Kitty keyboard support they are distinct from Tab. Legacy terminals encode Ctrl-I as Tab, so Tab is accepted as a fallback outside command/slash completion. Enter toggles the current fold; Shift-Tab still toggles all.
+- `ma` through `mz` set session-local named marks at the transcript cursor. Backtick+a or apostrophe+a returns to mark a's exact text position. Both forms currently use exact positions (apostrophe is not linewise). Marks and the bounded jumplist survive session resume; unavailable targets are discarded.
+
+Inspired by [flash.nvim](https://github.com/folke/flash.nvim)'s labeled search. This implements transcript jumps, not Neovim Treesitter selection or operator-pending remote actions.

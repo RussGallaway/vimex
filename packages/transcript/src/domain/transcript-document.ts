@@ -15,6 +15,7 @@ export interface TextProjection {
   revision: number
 }
 export interface LogicalPoint { itemId: ItemId; graphemeOffset: number }
+export interface JumpLocation { point: LogicalPoint; preferredScreenRow: number }
 export type ViewportAnchor =
   | { kind: "tail" }
   | { kind: "point"; point: LogicalPoint; preferredScreenRow: number }
@@ -34,10 +35,17 @@ export interface TranscriptState {
   unseenEntries: number
   /** Item ids whose changed output has already contributed to unseenEntries. */
   unseenItemIds: readonly ItemId[]
+  jumps: { back: readonly JumpLocation[]; forward: readonly JumpLocation[] }
+  marks: Readonly<Record<string, JumpLocation>>
 }
 export type TranscriptCommand =
   | { type: "search.set"; query: string; direction: "forward" | "backward" }
   | { type: "cursor.move"; point: LogicalPoint; preferredScreenRow?: number }
+  | { type: "jump.to"; target: JumpLocation; origin?: JumpLocation }
+  | { type: "jump.back"; origin?: JumpLocation }
+  | { type: "jump.forward"; origin?: JumpLocation }
+  | { type: "mark.set"; name: string; target: JumpLocation }
+  | { type: "mark.jump"; name: string; origin?: JumpLocation }
   | { type: "viewport.anchor"; point: LogicalPoint; preferredScreenRow: number }
   | { type: "tail.attach" }
   | { type: "selection.begin"; shape: TranscriptSelection["shape"] }
@@ -48,5 +56,5 @@ export type TranscriptCommand =
   | { type: "fold.all"; folded: boolean }
 
 export const initialTranscript = (): TranscriptState => ({
-  order: [], projectionById: {}, folded: {}, viewport: { kind: "tail" }, unseenEntries: 0, unseenItemIds: [],
+  order: [], projectionById: {}, folded: {}, viewport: { kind: "tail" }, unseenEntries: 0, unseenItemIds: [], jumps: { back: [], forward: [] }, marks: {},
 })

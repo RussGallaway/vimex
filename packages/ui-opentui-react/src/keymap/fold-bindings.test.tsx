@@ -54,12 +54,12 @@ test("typed uppercase zR/zM expand and collapse all without lowercase aliases", 
   } finally { await h.close() }
 })
 
-test("Tab toggles only the current transcript block", async () => {
+test("Enter toggles only the current transcript block", async () => {
   const h = await harness()
   try {
-    await act(async () => { h.mockInput.pressKey("TAB"); await h.flush() })
+    await act(async () => { h.mockInput.pressKey("RETURN"); await h.flush() })
     expect(h.workspace().transcript.folded).toMatchObject({ [tool]: false, [thought]: false })
-    await act(async () => { h.mockInput.pressKey("TAB"); await h.flush() })
+    await act(async () => { h.mockInput.pressKey("RETURN"); await h.flush() })
     expect(h.workspace().transcript.folded).toMatchObject({ [tool]: true, [thought]: false })
   } finally { await h.close() }
 })

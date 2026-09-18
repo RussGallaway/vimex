@@ -664,7 +664,7 @@ describe("Vimex OpenTUI shell", () => {
     }
     const setup = await testRender(<Harness />, { width: 96, height: 26 })
     try {
-      await act(async () => { await setup.mockInput.typeText("s"); await setup.flush() })
+      await act(async () => { await setup.mockInput.typeText(" s"); await setup.flush() })
       expect(setup.renderer.currentFocusedRenderable?.id).toBe("session-search")
       await act(async () => { await setup.mockInput.typeText(target); await setup.flush() })
       expect((setup.renderer.root.findDescendantById("session-search") as InputRenderable).value).toBe(target)

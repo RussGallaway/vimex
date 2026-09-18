@@ -161,7 +161,7 @@ test("transcript cursor hides outside the viewport and yields to session search"
     const scrollbox = h.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable
     await act(async () => { scrollbox.scrollTo(scrollbox.scrollHeight); await h.flush(); await h.renderOnce() })
     expect(h.renderer.getCursorState().visible).toBe(false)
-    await h.keys("s")
+    await h.keys(" s")
     const search = h.renderer.root.findDescendantById("session-search")!
     const cursor = h.renderer.getCursorState()
     expect(cursor.visible).toBe(true)
@@ -343,7 +343,7 @@ test("Escape interrupts active turns in Normal mode after dismissing editing mod
     await h.keys(":")
     await escape()
     expect(h.interrupted).toHaveLength(1)
-    await h.keys("s")
+    await h.keys(" s")
     expect(h.workspace().interaction.overlay).toBe("sessions")
     await escape()
     expect(h.workspace().interaction.overlay).toBeNull()
@@ -400,5 +400,107 @@ for (const key of ["ctrl-k", "up"] as const) test(`${key} enters the bottom visi
     const moved = h.workspace().transcript.cursor
     await act(async () => { h.mockInput.pressKey("ARROW_UP"); await h.flush(); await h.renderOnce() })
     expect(h.workspace().transcript.cursor).toEqual(moved)
+  } finally { await h.close() }
+})
+
+async function flashKey(h: Awaited<ReturnType<typeof visualHarness>>, key: string, ctrl = false) {
+  await act(async () => { h.mockInput.pressKey(key, { ctrl }); if (key === "ESCAPE") await Bun.sleep(30); await h.flush(); await h.renderOnce() })
+}
+
+test("Flash jumps from Insert composer to labeled transcript text, preserving draft and supporting jump-back", async () => {
+  const h = await visualHarness()
+  try {
+    await h.keys("i")
+    await h.keys("Draft untouched")
+    await flashKey(h, "g", true)
+    expect(h.captureCharFrame()).toContain("Jump /")
+    await h.keys("bold")
+    expect(h.captureCharFrame()).toContain("1 matches")
+    expect(h.workspace().composer.text).toBe("Draft untouched")
+    expect(h.renderer.root.findDescendantById("flash-label:a")).toBeDefined()
+    await h.keys("a")
+    expect(h.renderer.root.findDescendantById("flash-query")).toBeUndefined()
+    expect(h.workspace().interaction).toMatchObject({ mode: "normal", surface: "transcript" })
+    expect(h.workspace().transcript.cursor).toEqual({ itemId: answer, graphemeOffset: 6 })
+    expect(h.workspace().composer.text).toBe("Draft untouched")
+    await flashKey(h, "o", true)
+    expect(h.workspace().transcript.cursor?.graphemeOffset).not.toBe(6)
+    await flashKey(h, "TAB")
+    expect(h.workspace().transcript.cursor?.graphemeOffset).toBe(6)
+  } finally { await h.close() }
+})
+
+test("Flash cancellation restores composer Insert focus and does not interrupt or change cursor", async () => {
+  const h = await visualHarness()
+  try {
+    await h.keys("i")
+    await h.keys("draft")
+    const cursor = h.workspace().transcript.cursor
+    await flashKey(h, "g", true)
+    await h.keys("unmatched")
+    expect(h.captureCharFrame()).toContain("0 matches")
+    await flashKey(h, "ESCAPE")
+    expect(h.workspace().interaction).toMatchObject({ mode: "insert", surface: "composer" })
+    expect(h.workspace().transcript.cursor).toEqual(cursor)
+    expect(h.interrupted).toHaveLength(0)
+    await h.keys(" preserved")
+    expect(h.workspace().composer.text).toBe("draft preserved")
+  } finally { await h.close() }
+})
+
+test("Flash extends Visual selection and marks restore exact transcript positions", async () => {
+  const h = await visualHarness()
+  try {
+    await h.keys("ggma")
+    const marked = h.workspace().transcript.cursor
+    await h.keys("vs")
+    await h.keys("bold")
+    await flashKey(h, "RETURN")
+    expect(h.workspace().interaction.mode).toBe("visual")
+    expect(h.workspace().transcript.selection?.anchor).toEqual(marked)
+    expect(h.workspace().transcript.selection?.head.graphemeOffset).toBe(6)
+    await flashKey(h, "ESCAPE")
+    await h.keys("`a")
+    expect(h.workspace().transcript.cursor).toEqual(marked)
+  } finally { await h.close() }
+})
+
+
+for (const prefix of ["/", "?"]) test(`${prefix} in composer Normal searches transcript without changing draft`, async () => {
+  const h = await visualHarness()
+  try {
+    await flashKey(h, "ARROW_DOWN")
+    await act(async () => { h.controller.changeDraft("keep this", 3); await h.flush() })
+    await h.keys(prefix + "bold")
+    expect(h.workspace().interaction.mode).toBe("command")
+    expect(h.workspace().composer.text).toBe("keep this")
+    await flashKey(h, "RETURN")
+    expect(h.workspace().interaction).toMatchObject({ mode: "normal", surface: "transcript" })
+    expect(h.workspace().transcript.cursor?.graphemeOffset).toBe(6)
+    expect(h.workspace().composer.text).toBe("keep this")
+  } finally { await h.close() }
+})
+
+test("Flash stays isolated during streaming and cancels cleanly on narrow resize", async () => {
+  const h = await visualHarness()
+  try {
+    await h.keys("i")
+    await h.keys("/theme")
+    await flashKey(h, "g", true)
+    await h.keys("bold")
+    await act(async () => {
+      h.emit({ type: "conversation", event: { type: "item.delta", threadId: thread, itemId: answer, delta: " More streaming text." } })
+      await h.flush(); await h.renderOnce()
+    })
+    expect(h.renderer.root.findDescendantById("flash-label:a")).toBeDefined()
+    expect(h.workspace().composer.text).toBe("/theme")
+    await act(async () => { h.resize(38, 18); await h.flush(); await h.renderOnce() })
+    expect(h.renderer.root.findDescendantById("flash-query")).toBeUndefined()
+    expect(h.workspace().interaction).toMatchObject({ mode: "insert", surface: "composer" })
+    await flashKey(h, "g", true)
+    await h.keys("bold")
+    expect(h.captureCharFrame()).toContain("Jump / bold")
+    await flashKey(h, "ESCAPE")
+    expect(h.workspace().composer.text).toBe("/theme")
   } finally { await h.close() }
 })

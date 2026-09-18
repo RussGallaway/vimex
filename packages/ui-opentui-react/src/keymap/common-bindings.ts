@@ -19,7 +19,10 @@ export function commonBindings(ctx: VimBindingContext): UiBinding[] {
   return [
     ...(ctx.interaction.mode !== "command" && !slashEditing ? [
       { key: "shift+tab", cmd: () => toggleAllFolds(ctx) },
-      ...(ctx.interaction.surface === "transcript" ? [{ key: "tab", cmd: () => toggleCurrentFold(ctx) }] : []),
+      ...(ctx.interaction.surface === "transcript" && ctx.interaction.mode === "normal" ? [{ key: "return", cmd: () => toggleCurrentFold(ctx) }] : []),
+      { key: "ctrl+o", cmd: () => ctx.controller.transcript({ type: "jump.back" }) },
+      { key: "ctrl+i", cmd: () => ctx.controller.transcript({ type: "jump.forward" }) },
+      ...(!ctx.distinctControlI ? [{ key: "tab", cmd: () => ctx.controller.transcript({ type: "jump.forward" }) }] : []),
     ] satisfies UiBinding[] : []),
     ...(ctx.interaction.surface === "composer" && ctx.interaction.mode !== "command" ? [
       { key: "ctrl+e", cmd: () => ctx.scroll("down", "line") },

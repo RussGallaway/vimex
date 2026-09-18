@@ -71,3 +71,19 @@ test("favorites persist even for unloaded threads and older state remains valid"
   expect(parseLocalState({ version: 1, threads: {} }).favoriteThreadIds).toBeUndefined()
   expect(() => parseLocalState({ version: 1, threads: {}, favoriteThreadIds: [123] })).toThrow()
 })
+
+test("marks and jumplists persist as source offsets and restore across Markdown reflow", () => {
+  const workspace = createWorkspace(id)
+  workspace.transcript = syncTranscriptItem(workspace.transcript, { id: itemId("message"), turnId: turnId("turn"), kind: "assistant", markdown: "prefix **bold**", status: "complete" })
+  const location = { point: { itemId: itemId("message"), graphemeOffset: 8 }, preferredScreenRow: 3 }
+  workspace.transcript = { ...workspace.transcript, marks: { a: location }, jumps: { back: [location], forward: [] } }
+  const state = { ...openThread(initialWorkbench(), { id, title: "thread", cwd: "/tmp", model: "model", reasoningEffort: "high", status: "idle" }), workspaces: { [id]: workspace } }
+  const captured = parseLocalState(JSON.parse(JSON.stringify(captureLocalState(state, emptyLocalState()))))
+  expect(captured.threads[id]?.marks?.a?.sourceOffset).toBeGreaterThan(8)
+  const resumed = createWorkspace(id)
+  resumed.transcript = syncTranscriptItem(resumed.transcript, { id: itemId("message"), turnId: turnId("turn"), kind: "assistant", markdown: "prefix **bold** and more", status: "complete" })
+  const restored = restoreThreadView(resumed, captured.threads[id]!)
+  expect(restored.transcript.marks.a?.point.graphemeOffset).toBe(8)
+  expect(restored.transcript.jumps.back).toEqual([restored.transcript.marks.a!])
+  expect(() => parseLocalState({ version: 1, threads: { thread: { ...saved, marks: { bad: { itemId: "message", sourceOffset: -1, preferredScreenRow: 0 } } } } })).toThrow()
+})

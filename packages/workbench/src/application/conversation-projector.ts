@@ -41,6 +41,12 @@ export function forkWorkspace(source: ThreadWorkspace, nextThreadId: ThreadId, t
       if (item) transcript = syncTranscriptItem(transcript, item)
     }
   }
-  transcript = { ...transcript, folded: Object.fromEntries(transcript.order.filter((id) => Object.hasOwn(source.transcript.folded, id)).map((id) => [id, source.transcript.folded[id]!])) }
+  const retained = (location: import("@vimex/transcript").JumpLocation) => Boolean(transcript.projectionById[location.point.itemId])
+  transcript = {
+    ...transcript,
+    folded: Object.fromEntries(transcript.order.filter((id) => Object.hasOwn(source.transcript.folded, id)).map((id) => [id, source.transcript.folded[id]!])),
+    marks: Object.fromEntries(Object.entries(source.transcript.marks).filter(([, location]) => retained(location))),
+    jumps: { back: source.transcript.jumps.back.filter(retained), forward: source.transcript.jumps.forward.filter(retained) },
+  }
   return { conversation, transcript, composer: initialComposer(), interaction: initialInteraction() }
 }

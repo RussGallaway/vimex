@@ -346,11 +346,24 @@ export class VimexController implements WorkbenchActions {
   transcript = (command: TranscriptAction): void => {
     const workspace = activeWorkspace(this.state)
     if (!workspace) return
-    const move = (point?: LogicalPoint) => {
+    const move = (point?: LogicalPoint, record = true) => {
       if (!point) return
       if (workspace.transcript.folded[point.itemId]) this.dispatch({ type: "transcript.command", command: { type: "fold.set", itemId: point.itemId, folded: false } })
-      this.dispatch({ type: "transcript.command", command: { type: "cursor.move", point, preferredScreenRow: 2 } })
+      this.dispatch({ type: "transcript.command", command: record ? { type: "jump.to", target: { point, preferredScreenRow: 2 } } : { type: "cursor.move", point, preferredScreenRow: 2 } })
     }
+    const preserveVisual = () => workspace.interaction.mode === "visual" && workspace.interaction.surface === "transcript"
+    const navigationOrigin = () => workspace.interaction.surface === "transcript" && workspace.transcript.cursor
+      ? { point: workspace.transcript.cursor, preferredScreenRow: 0 }
+      : workspace.transcript.viewport.kind === "point" ? { point: workspace.transcript.viewport.point, preferredScreenRow: workspace.transcript.viewport.preferredScreenRow } : undefined
+    const focusJump = (preserve = preserveVisual()) => {
+      if (preserve) return
+      this.dispatchInteraction({ type: "mode.normal" })
+      this.dispatchInteraction({ type: "focus.set", surface: "transcript" })
+    }
+    const sameDisplayedLocation = (before: typeof workspace.transcript, after: typeof workspace.transcript | undefined) => before.cursor?.itemId === after?.cursor?.itemId
+      && before.cursor?.graphemeOffset === after?.cursor?.graphemeOffset
+      && JSON.stringify(before.viewport) === JSON.stringify(after?.viewport)
+      && before.folded === after?.folded
     switch (command.type) {
       case "navigate": {
         const direction = command.motion.endsWith("previous") ? "backward" : "forward"
@@ -358,10 +371,10 @@ export class VimexController implements WorkbenchActions {
         const transcript = workspace.transcript
         if (command.motion.startsWith("word-") || command.motion.startsWith("WORD-")) {
           const motion = command.motion.endsWith("previous") ? "previous" : command.motion.endsWith("end") ? "end" : "next"
-          move(moveByWord(transcript, motion, transcript.cursor, count, command.motion.startsWith("WORD-")))
+          move(moveByWord(transcript, motion, transcript.cursor, count, command.motion.startsWith("WORD-")), false)
         } else if (command.motion.startsWith("block-")) move(moveBySemanticBlock(transcript, direction, transcript.cursor, count))
         else if (command.motion.startsWith("url-")) move(moveByUrl(transcript, direction, transcript.cursor, { count, wrap: true }))
-        else if (command.motion === "first-content") move(firstContentPoint(transcript))
+        else if (command.motion === "first-content") move(firstContentPoint(transcript), false)
         else {
           const origin = transcript.cursor ? transcript.order.indexOf(transcript.cursor.itemId) : -1
           const candidates = transcript.order.filter((id, index) => {
@@ -377,7 +390,9 @@ export class VimexController implements WorkbenchActions {
         const query = command.query || workspace.transcript.search?.query || ""
         this.dispatch({ type: "transcript.command", command: { type: "search.set", query, direction: command.direction } })
         const matches = findSearchMatches(workspace.transcript, query)
-        move(adjacentSearchMatch(workspace.transcript, matches, command.direction)?.from)
+        const target = adjacentSearchMatch(workspace.transcript, matches, command.direction)?.from
+        move(target)
+        if (target) focusJump()
         if (!matches.length) this.notice(`Pattern not found: ${query}`)
         break
       }
@@ -385,7 +400,9 @@ export class VimexController implements WorkbenchActions {
         const search = workspace.transcript.search
         if (!search) { this.notice("Search with / or ? first"); break }
         const direction = command.reverse ? (search.direction === "forward" ? "backward" : "forward") : search.direction
-        move(adjacentSearchMatch(workspace.transcript, findSearchMatches(workspace.transcript, search.query), direction, workspace.transcript.cursor, { count: command.count })?.from)
+        const target = adjacentSearchMatch(workspace.transcript, findSearchMatches(workspace.transcript, search.query), direction, workspace.transcript.cursor, { count: command.count })?.from
+        move(target)
+        if (target) focusJump()
         break
       }
       case "selection.swap": this.dispatch({ type: "transcript.command", command }); break
@@ -398,10 +415,52 @@ export class VimexController implements WorkbenchActions {
         break
       }
       case "cursor.move": this.dispatch({ type: "transcript.command", command: { type: "cursor.move", point: command.target, preferredScreenRow: command.preferredScreenRow } }); break
+      case "jump": {
+        if (!workspace.transcript.projectionById[command.target.itemId]) break
+        if (!command.extend) this.dispatch({ type: "transcript.command", command: { type: "selection.clear" } })
+        const originRow = command.originPreferredScreenRow ?? (command.origin && workspace.transcript.viewport.kind === "point"
+          && workspace.transcript.viewport.point.itemId === command.origin.itemId
+          && workspace.transcript.viewport.point.graphemeOffset === command.origin.graphemeOffset
+          ? workspace.transcript.viewport.preferredScreenRow : 0)
+        this.dispatch({ type: "transcript.command", command: { type: "jump.to", target: { point: command.target, preferredScreenRow: command.preferredScreenRow ?? 2 }, origin: command.origin ? { point: command.origin, preferredScreenRow: originRow } : undefined } })
+        focusJump(Boolean(command.extend) && preserveVisual())
+        break
+      }
+      case "jump.back": case "jump.forward": {
+        const before = activeWorkspace(this.state)?.transcript
+        this.dispatch({ type: "transcript.command", command: { ...command, origin: navigationOrigin() } })
+        if (before && !sameDisplayedLocation(before, activeWorkspace(this.state)?.transcript)) focusJump()
+        break
+      }
+      case "mark.set": {
+        const transcript = workspace.transcript
+        if (!/^[a-zA-Z]$/.test(command.name)) { this.notice(`Invalid mark: ${command.name}`); break }
+        const point = workspace.interaction.surface === "transcript" && transcript.cursor ? transcript.cursor
+          : transcript.viewport.kind === "point" ? transcript.viewport.point : transcript.cursor ?? (() => {
+          const itemId = transcript.order.at(-1), projection = itemId ? transcript.projectionById[itemId] : undefined
+          return itemId && projection ? { itemId, graphemeOffset: projection.sourceSpans.length } : undefined
+        })()
+        if (!point) { this.notice("No transcript position to mark"); break }
+        const preferredScreenRow = transcript.viewport.kind === "point" && transcript.viewport.point.itemId === point.itemId && transcript.viewport.point.graphemeOffset === point.graphemeOffset ? transcript.viewport.preferredScreenRow : 0
+        this.dispatch({ type: "transcript.command", command: { type: "mark.set", name: command.name, target: { point, preferredScreenRow } } })
+        break
+      }
+      case "mark.jump": {
+        if (!workspace.transcript.marks[command.name]) { this.notice(`Mark not set: ${command.name}`); break }
+        const before = activeWorkspace(this.state)?.transcript
+        this.dispatch({ type: "transcript.command", command: { ...command, origin: navigationOrigin() } })
+        if (before && !sameDisplayedLocation(before, activeWorkspace(this.state)?.transcript)) focusJump()
+        break
+      }
       case "selection.begin": this.dispatch({ type: "transcript.command", command }); break
       case "selection.clear": this.dispatch({ type: "transcript.command", command }); break
       case "viewport.anchor": this.dispatch({ type: "transcript.command", command }); break
-      case "viewport.tail": this.dispatch({ type: "transcript.command", command: { type: "tail.attach" } }); break
+      case "viewport.tail": {
+        const itemId = workspace.transcript.order.at(-1), projection = itemId ? workspace.transcript.projectionById[itemId] : undefined
+        if (itemId && projection) this.dispatch({ type: "transcript.command", command: { type: "jump.to", target: { point: { itemId, graphemeOffset: projection.sourceSpans.length }, preferredScreenRow: 0 } } })
+        this.dispatch({ type: "transcript.command", command: { type: "tail.attach" } })
+        break
+      }
       case "viewport.scroll": {
         const point = workspace.transcript.cursor
         if (point) this.dispatch({ type: "transcript.command", command: { type: "viewport.anchor", point, preferredScreenRow: 0 } })

@@ -18,6 +18,8 @@ export interface TranscriptLayout {
 }
 
 export interface MeasuredPoint {
+  /** Cursor fallback for text hidden inside a collapsed block; not a jump target. */
+  hidden?: boolean
   itemId: ItemId
   graphemeOffset: number
   row: number

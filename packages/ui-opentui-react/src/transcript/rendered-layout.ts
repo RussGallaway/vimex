@@ -525,7 +525,7 @@ export function measureRenderedTranscript(
         if (fallback) {
           const length = graphemes(projection.plain).length
           for (let offset = 0; offset <= length; offset += 1) {
-            measured[offset] ??= { ...fallback, graphemeOffset: offset }
+            measured[offset] ??= { ...fallback, graphemeOffset: offset, hidden: true }
           }
         }
       }

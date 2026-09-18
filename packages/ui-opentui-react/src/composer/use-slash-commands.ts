@@ -8,6 +8,7 @@ import type { VimexUiController } from "../contracts"
 import { slashCommandChoices } from "./slash-commands"
 
 export function useSlashCommands(options: {
+  suspended?: boolean
   text: string
   textareaRef: RefObject<TextareaRenderable | null>
   interaction: InteractionState
@@ -16,7 +17,7 @@ export function useSlashCommands(options: {
   onExecute(command: string): void
 }) {
   const { interaction, controller } = options
-  const active = interaction.mode === "insert" && interaction.surface === "composer" && !interaction.overlay
+  const active = !options.suspended && interaction.mode === "insert" && interaction.surface === "composer" && !interaction.overlay
     && options.text.startsWith("/") && !options.text.startsWith("//") && !options.text.includes("\n")
   const choices = slashCommandChoices(options.text, options.completionOptions)
   const [selection, setSelection] = useState({ query: "", index: 0, chosen: false })

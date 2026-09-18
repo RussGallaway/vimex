@@ -56,13 +56,18 @@ with tempfile.TemporaryDirectory(prefix='vimex-visual-') as temporary:
         send(b'l')
         assert (screen.cursor.x,screen.cursor.y)==(old_cursor[0]+1,old_cursor[1]), 'Transcript cursor did not move one character'
         checks.append('precise-transcript-cursor')
+        before_flash=(screen.cursor.x,screen.cursor.y)
+        send(b's');wait('Jump /');send(b'Vimex');wait('matches');capture('03-flash-labels')
+        send(b'a');pump();assert 'Jump /' not in '\n'.join(screen.display), 'Flash did not jump'
+        send(b'\x0f');pump();assert (screen.cursor.x,screen.cursor.y)==before_flash, 'Jump-back did not restore transcript cursor'
+        checks.append('flash-label-and-jump-back')
         send(b'Vj');wait('VISUAL');capture('03-selection')
         assert not screen.cursor.hidden, 'Visual transcript head cursor is hidden'
         send(b'\x1b');wait('NORMAL')
         screen.resize(lines=18,columns=48)
         fcntl.ioctl(master,termios.TIOCSWINSZ,struct.pack('HHHH',18,48,0,0));os.killpg(process.pid,signal.SIGWINCH)
         pump(0.5);capture('04-narrow')
-        send(b's');wait('Sessions');capture('05-sessions')
+        send(b' s');wait('Sessions');capture('05-sessions')
         send(b'NO_SUCH_VIMEX_SESSION_729');pump(0.5);capture('06-filtered-sessions')
         wait('No matching sessions');checks.append('session-filter-reactive')
         send(b'\x1b');send(b'\x1b');wait('NORMAL')

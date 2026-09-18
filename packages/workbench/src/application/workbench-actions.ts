@@ -11,6 +11,11 @@ export type TranscriptAction =
   | { type: "selection.swap" }
   | { type: "reference" }
   | { type: "cursor.move"; target: LogicalPoint; preferredScreenRow: number; extend: boolean }
+  | { type: "jump"; target: LogicalPoint; preferredScreenRow?: number; extend?: boolean; origin?: LogicalPoint; originPreferredScreenRow?: number }
+  | { type: "jump.back" }
+  | { type: "jump.forward" }
+  | { type: "mark.set"; name: string }
+  | { type: "mark.jump"; name: string }
   | { type: "selection.begin"; shape: "character" | "line" }
   | { type: "selection.clear" }
   | { type: "viewport.scroll"; direction: "up" | "down"; amount: "line" | "half-page" | "page" }

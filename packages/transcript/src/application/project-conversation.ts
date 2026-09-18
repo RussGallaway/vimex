@@ -39,6 +39,8 @@ export function syncTranscriptItem(state: TranscriptState, item: ConversationIte
     cursor: state.cursor ? reproject(state.cursor) : undefined,
     selection: state.selection ? { ...state.selection, anchor: reproject(state.selection.anchor), head: reproject(state.selection.head) } : undefined,
     viewport: state.viewport.kind === "point" ? { ...state.viewport, point: reproject(state.viewport.point) } : state.viewport,
+    jumps: { back: state.jumps.back.map(location => ({ ...location, point: reproject(location.point) })), forward: state.jumps.forward.map(location => ({ ...location, point: reproject(location.point) })) },
+    marks: Object.fromEntries(Object.entries(state.marks).map(([name, location]) => [name, { ...location, point: reproject(location.point) }])),
     unseenEntries: newlyUnseen ? state.unseenEntries + 1 : state.unseenEntries,
     unseenItemIds: newlyUnseen ? [...unseenItemIds, item.id] : unseenItemIds,
   })
@@ -53,5 +55,7 @@ export function clampTranscript(state: TranscriptState): TranscriptState {
     cursor: state.cursor ? clampPoint(state.cursor) : undefined,
     selection: state.selection ? { ...state.selection, anchor: clampPoint(state.selection.anchor), head: clampPoint(state.selection.head) } : undefined,
     viewport: state.viewport.kind === "point" ? { ...state.viewport, point: clampPoint(state.viewport.point) } : state.viewport,
+    jumps: { back: state.jumps.back.map(location => ({ ...location, point: clampPoint(location.point) })), forward: state.jumps.forward.map(location => ({ ...location, point: clampPoint(location.point) })) },
+    marks: Object.fromEntries(Object.entries(state.marks).map(([name, location]) => [name, { ...location, point: clampPoint(location.point) }])),
   }
 }

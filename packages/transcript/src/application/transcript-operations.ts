@@ -1,6 +1,6 @@
 import type { ItemId } from "@vimex/conversation"
 import { graphemes, graphemeCount } from "../domain/markdown-source-map"
-import type { LogicalPoint, TextProjection, TranscriptCommand, TranscriptSelection, TranscriptState } from "../domain/transcript-document"
+import type { JumpLocation, LogicalPoint, TextProjection, TranscriptCommand, TranscriptSelection, TranscriptState } from "../domain/transcript-document"
 import { clampTranscript } from "./project-conversation"
 export function moveCursor(state: TranscriptState, point: LogicalPoint, preferredScreenRow = 0): TranscriptState {
   return clampTranscript({
@@ -21,6 +21,44 @@ export function anchorViewport(state: TranscriptState, point: LogicalPoint, pref
     && state.viewport.point.graphemeOffset === anchored.graphemeOffset
     && state.viewport.preferredScreenRow === preferredScreenRow) return state
   return { ...state, viewport: { kind: "point", point: anchored, preferredScreenRow } }
+}
+const JUMP_LIMIT = 100
+function validLocation(state: TranscriptState, location: JumpLocation | undefined): location is JumpLocation {
+  return Boolean(location && state.projectionById[location.point.itemId] && Number.isFinite(location.point.graphemeOffset))
+}
+function currentLocation(state: TranscriptState): JumpLocation | undefined {
+  if (state.viewport.kind === "point" && validLocation(state, { point: state.viewport.point, preferredScreenRow: state.viewport.preferredScreenRow })) return { point: state.viewport.point, preferredScreenRow: state.viewport.preferredScreenRow }
+  if (state.cursor && validLocation(state, { point: state.cursor, preferredScreenRow: 0 })) return { point: state.cursor, preferredScreenRow: 0 }
+  const itemId = state.order.at(-1), projection = itemId ? state.projectionById[itemId] : undefined
+  return itemId && projection ? { point: { itemId, graphemeOffset: projection.sourceSpans.length }, preferredScreenRow: 0 } : undefined
+}
+function sameLocation(a: JumpLocation | undefined, b: JumpLocation | undefined): boolean {
+  return Boolean(a && b && a.point.itemId === b.point.itemId && a.point.graphemeOffset === b.point.graphemeOffset && a.preferredScreenRow === b.preferredScreenRow)
+}
+function atLocation(state: TranscriptState, location: JumpLocation): TranscriptState {
+  if (!validLocation(state, location)) return state
+  const revealed = state.folded[location.point.itemId] ? setFold(state, location.point.itemId, false) : state
+  return moveCursor(revealed, location.point, location.preferredScreenRow)
+}
+function jumpTo(state: TranscriptState, target: JumpLocation, origin?: JumpLocation): TranscriptState {
+  if (!validLocation(state, target)) return state
+  const from = validLocation(state, origin) ? origin : currentLocation(state)
+  if (sameLocation(from, target)) return atLocation(state, target)
+  const back = from ? [...state.jumps.back, from].slice(-JUMP_LIMIT) : state.jumps.back
+  return { ...atLocation(state, target), jumps: { back, forward: [] } }
+}
+function jumpHistory(state: TranscriptState, direction: "back" | "forward", origin?: JumpLocation): TranscriptState {
+  const source = [...state.jumps[direction]]
+  let target: JumpLocation | undefined
+  while (source.length && !target) {
+    const candidate = source.pop()
+    if (validLocation(state, candidate)) target = candidate
+  }
+  if (!target) return source.length === state.jumps[direction].length ? state : { ...state, jumps: { ...state.jumps, [direction]: source } }
+  const opposite = direction === "back" ? "forward" : "back"
+  const current = validLocation(state, origin) ? origin : currentLocation(state)
+  const destination = current ? [...state.jumps[opposite], current].slice(-JUMP_LIMIT) : state.jumps[opposite]
+  return { ...atLocation(state, target), jumps: { ...state.jumps, [direction]: source, [opposite]: destination } }
 }
 export function attachTail(state: TranscriptState): TranscriptState {
   const last = state.order.at(-1)
@@ -106,6 +144,14 @@ export function reduceTranscript(state: TranscriptState, command: TranscriptComm
   switch (command.type) {
     case "search.set": return { ...state, search: { query: command.query, direction: command.direction } }
     case "cursor.move": return moveCursor(state, command.point, command.preferredScreenRow)
+    case "jump.to": return jumpTo(state, command.target, command.origin)
+    case "jump.back": return jumpHistory(state, "back", command.origin)
+    case "jump.forward": return jumpHistory(state, "forward", command.origin)
+    case "mark.set": return validLocation(state, command.target) && /^[a-zA-Z]$/.test(command.name) ? { ...state, marks: { ...state.marks, [command.name]: command.target } } : state
+    case "mark.jump": {
+      const target = state.marks[command.name]
+      return target ? jumpTo(state, target, command.origin) : state
+    }
     case "viewport.anchor": return anchorViewport(state, command.point, command.preferredScreenRow)
     case "tail.attach": return attachTail(state)
     case "selection.begin": return beginSelection(state, command.shape)
