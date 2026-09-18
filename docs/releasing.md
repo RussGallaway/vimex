@@ -8,14 +8,15 @@ Use versioned GitHub Releases as the source of platform archives, checksums, and
 
 Users should not need Bun or a checkout for a packaged release. Keep Codex separately installed and authenticated initially. Publish a tested Codex compatibility range rather than claiming compatibility with all versions.
 
-Use a maintainer-owned Homebrew tap initially. The repository currently points to RussGallaway/vimex; choose the public owner before publishing URLs. If using codeinbox/homebrew-tap, the proposed commands are:
+Use the existing public monorepo, https://github.com/RussGallaway/vimex, as the tap. Keep its recipe at Formula/vimex.rb. The proposed commands, once the release and formula are published, are:
 
 ```sh
-brew install codeinbox/tap/vimex
+brew tap russgallaway/vimex https://github.com/RussGallaway/vimex.git
+brew install russgallaway/vimex/vimex
 brew upgrade vimex
 ```
 
-After adding that tap, `brew install vimex` can resolve its formula. A fresh installation without a tap requires acceptance into Homebrew's official collection. Install the generated manual at `share/man/man1/vimex.1`.
+After the qualified install trusts the formula, the unambiguous short name `vimex` is usable. An explicit URL is necessary on the first tap because this repository is not named homebrew-vimex. A fresh installation without a tap requires acceptance into Homebrew's official collection. Install the generated manual at `share/man/man1/vimex.1`.
 
 A curl installer should detect supported OS/architecture, fetch a versioned archive, verify its checksum, and install without sudo into a documented user location. Support explicit versions and installation prefixes. Do not silently rewrite shell configuration. Prefer an atomic executable replacement and provide an uninstall procedure.
 
@@ -33,7 +34,7 @@ The existing Checks workflow runs macOS/Linux checks on pushes and pull requests
 
 A version-tag workflow should validate the source version, run checks, build artifacts, smoke-test them outside the repository with no Bun installation, and validate syntax assets offline. Exercise both a clean install and an upgrade from the preceding release. Check `--help`, `--version`, the demo, terminal cleanup, and the installed manual.
 
-Assemble a draft release with all archives, checksums, third-party notices, and build attestations before publication. Prefer immutable releases. After publication, update the tap's formula and checksums using narrowly scoped credentials. Pin workflow dependencies deliberately and avoid publishing from untrusted pull-request jobs.
+Assemble a draft release with all archives, checksums, third-party notices, and build attestations before publication. Prefer immutable releases. After publication, update Formula/vimex.rb and its checksums on main in the same repository. Keep the application tag immutable; a formula-only follow-up commit must not trigger another release. Use narrowly scoped workflow permissions and respect branch protections. Pin workflow dependencies deliberately and avoid publishing from untrusted pull-request jobs.
 
 ## Before making the repository public
 

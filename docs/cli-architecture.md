@@ -43,6 +43,7 @@ scripts/release/
   package.ts                   # archives, man page and notices
   checksums.ts
   update-homebrew.ts           # formula release URL/checksum update
+Formula/vimex.rb               # tap recipe in RussGallaway/vimex itself
 install.sh
 docs/manual.md                 # shared source for UI guide and Unix manual
 docs/man/vimex.1               # generated manual

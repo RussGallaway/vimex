@@ -16,7 +16,22 @@ An upstream release archive and a Homebrew bottle are different artifacts. Our t
 
 ## Our tap
 
-Choose the publishing owner and create a repository named homebrew-tap. For codeinbox/homebrew-tap, Formula/vimex.rb would be the package recipe. A user could install it with brew install codeinbox/tap/vimex, which adds the tap as needed. After tapping, brew install vimex can use the short name when unambiguous.
+Keep the formula in the application monorepo: https://github.com/RussGallaway/vimex, at Formula/vimex.rb. A separate repository is not required. Homebrew explicitly supports a named tap backed by an arbitrary Git URL.
+
+Once the formula and first release are published, install with:
+
+```sh
+brew tap russgallaway/vimex https://github.com/RussGallaway/vimex.git
+brew install russgallaway/vimex/vimex
+```
+
+The first command associates the local tap name with our actual repository. Without the explicit URL, Homebrew would infer RussGallaway/homebrew-vimex, which is not our repository. A fully qualified install selects and trusts the specific formula; after that, the unambiguous short name vimex is usable.
+
+This layout keeps application and packaging reviews together and avoids cross-repository release credentials. The tradeoff is that Homebrew clones and updates the application repository, including its tracked assets, rather than a small recipes-only repository. Ordinary application commits update the tap checkout but do not upgrade the installed executable unless the formula version or revision changes.
+
+A dedicated homebrew-* repository is a useful convention when distributing multiple independent tools or needing shorter first-install commands. For our monorepo preference, that convenience does not justify another maintained repository. Keep the formula in Homebrew's recognized top-level Formula directory, not an arbitrary nested packaging directory.
+
+Publish immutable application release assets first, then update Formula/vimex.rb on main to reference their versioned URLs and checksums. The formula continues pointing at the last published release while development proceeds. Do not move the release tag to include this follow-up recipe commit.
 
 Each Vimex release updates the formula's versioned URL and SHA-256. brew update refreshes package definitions; brew upgrade vimex upgrades the installed package. A tap does not require admission to Homebrew's official collections. Follow current tap trust prompts rather than bypassing them.
 
@@ -32,4 +47,4 @@ For Vimex, native OpenTUI/Bun packaging and a clean source build are the main en
 
 When eligible, check existing submissions, prepare a formula against homebrew/core, run a source install, brew test, brew audit --strict --new --online, and style checks. Submit the PR, disclose AI assistance where required, and respond to maintainer feedback. Homebrew decides acceptance and maintains the official recipe afterward.
 
-References: [tap maintenance](https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap), [formula requirements](https://docs.brew.sh/Acceptable-Formulae), [shared acceptance policy](https://docs.brew.sh/Package-Acceptance-Policy), [contribution process](https://docs.brew.sh/Adding-Software-to-Homebrew).
+References: [explicit-URL taps and naming conventions](https://docs.brew.sh/Taps), [tap maintenance](https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap), [formula requirements](https://docs.brew.sh/Acceptable-Formulae), [shared acceptance policy](https://docs.brew.sh/Package-Acceptance-Policy), [contribution process](https://docs.brew.sh/Adding-Software-to-Homebrew).
