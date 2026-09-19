@@ -1,6 +1,6 @@
 # Transcript windowing implementation
 
-Status: Stages 5.0–5.4 are complete and verified. Stage 5.5 follow, detachment, and multiple-presentation hardening is next.
+Status: Stages 5.0–5.4 are complete and verified. Stage 5.5 is in progress; bounded same-item follow and reattachment are complete.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
@@ -26,7 +26,7 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 | Stage 5b: windowed mounting | Complete | Commit `3e24002`; bounded production runtime, React/native mounting, observer lifetime, scaling evidence, and review sign-off below |
 | Stage 5c: anchor correction | Complete | Commit `97f163f`; atomic height correction, window-local geometry, logical-anchor restoration, scaling evidence, and review sign-off below |
 | Stage 5d: off-window semantics | Complete | Commits `a24f5af`, `df243a1`, `9266837`, `0e1ad6d`; indexed target materialization and URL motion, bounded selection clipping, canonical cross-window copy, atomic navigation/fold/picker settlement, and evidence below |
-| Stage 5e: follow and detachment | Not started | — |
+| Stage 5e: follow and detachment | In progress | Stage 5.5a commit `9e8974e`; bounded same-item follow/reattach runtime reconciliation and evidence below |
 | Stage 5f: stress, review, and evidence | Not started | — |
 
 “Complete” means the slice's exit criteria pass, evidence is recorded here, and the implementation is committed. Partial working-tree changes do not count as complete.
@@ -941,3 +941,38 @@ Every scale retained complete-plan identity, performed one height-index update, 
 - Parallel architecture, correctness, and performance reviews ran before implementation and again after the slice. Repairs unified opaque fold-key ordering; filtered invalid restored/forked folds; inherited fork defaults; preserved fold damage through reveals; made non-history cursor unfolds atomic; scheduled native fold measurements explicitly; fixed inclusive/reverse URL-selection boundaries; guarded stale current-item cursors; eliminated picker Enter/cancel/navigation double publications; added exact picker owner/scope validation and bounded membership lookup; and replaced the degenerate fold benchmark with a real measured height change. Final reviewers signed off with no blocker.
 
 Stage 5.4 is complete: semantic results retain exhaustive pass-through references, no target discovery depends on a native node, and explicit off-window materialization settles as one user-visible transition. Overall Stage 5 remains open. Search discovery, complete append/lineage reconciliation, persistence/global-fold enumeration, and individual-item URL/text work remain proportional to their semantic input or output; stable production sub-blocks for oversized Markdown, command output, and diffs remain required before the final Stage 5 acceptance claim.
+
+### Stage 5.5a — bounded same-item follow and reattachment
+
+Implementation commit: `9e8974e` (`perf: bound transcript tail reconciliation`). This slice closes the historical-size cost in production reconciliation when an existing tail item changes. Structural tail insertion, canonical conversation ingress, hidden-pane native suspension, and combined multi-presentation settlement remain later Stage 5.5 work.
+
+#### Persistent presentation structures and guarded fallback
+
+- Windowed runtimes now represent the complete lightweight block plan as an immutable persistent indexed facade. A stable-key root-block replacement validates the prior slot and path-copies one balanced-tree path. The published old plan remains unchanged and ordinary array indexing, iteration, slicing, mapping, concatenation, reflection, and JSON behavior remain compatible.
+- Replacement lineage is private runtime data. The height index rebinds only when the new plan proves it is the exact immediate one-slot successor of the indexed plan, the item block remains a stable `root`, and the item owns exactly one indexed ordinal. Unrelated, reordered, duplicate, missing, or future multi-sub-block relationships reject the fast path and retain the complete rebuild fallback.
+- Projection records use an immutable persistent AVL-backed `Record` representation. Existing-item projection replacement path-copies logarithmically while preserving ordinary record enumeration, serialization, numeric-property ordering, special opaque keys, and untouched projection identity.
+- A changed block invalidates only its old measured height and detailed geometry. The height index binds to the new plan with one logarithmic point update; planning materializes one bounded trailing slice; geometry composes only that window.
+- The pass-through reference remains deliberately distinct: `createTranscriptFrame` and a no-policy runtime retain the simple frozen dense block array and complete geometry path. Windowed full rebuilds normalize into the persistent plan only after choosing the production policy.
+
+#### Deterministic follow and reattachment scaling
+
+The executable production-runtime cell starts from an already constructed canonical fixture and windowed runtime. It measures one existing tail-item delta, then detaches, accepts one hidden tail delta with zero publication, and reattaches to the latest tail. Canonical snapshot construction, cold persistent-plan normalization, and the deliberate full-rebuild fallback are outside this timing boundary and are named in the benchmark output.
+
+| Complete blocks | Mounted after follow / reattach | Projection visits=copies | Block validation+update visits / copies | Height visits / copies | Window slice / geometry visits | Follow / hidden / reattach publications | Follow / reattach |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 48 / 48 | 6=6 | 16 / 8 | 8 / 0 | 48 / 48 | 1 / 0 / 1 | 0.264 / 0.145 ms |
+| 1k | 48 / 48 | 9=9 | 22 / 11 | 11 / 0 | 48 / 48 | 1 / 0 / 1 | 0.116 / 0.090 ms |
+| 10k | 48 / 48 | 13=13 | 30 / 15 | 15 / 0 | 48 / 48 | 1 / 0 / 1 | 0.147 / 0.106 ms |
+| 100k | 48 / 48 | 16=16 | 36 / 18 | 18 / 0 | 48 / 48 | 1 / 0 / 1 | 0.243 / 0.170 ms |
+
+Every cell builds exactly one changed item, performs one projection update, one block-plan update, and one height-index update for follow and again for reattachment. Complete-plan builds and visits, height-index builds and complete block visits, and complete-geometry visits are all zero. The latest displayed canonical revision and trailing window publish together once; a measurement batch captured before reattachment is a strict no-op afterward. Timings are diagnostic; logarithmic update paths, fixed 48-block slices, identity preservation, zero hidden publication, and one coherent reattachment publication are the hard gates.
+
+#### Repository, PTY, benchmark, and review gates
+
+- Focused transcript, planner, height-index, runtime, scaling, controller, and side-chat verification passed. The final repaired core matrix passed 79 tests and 5,685 assertions; an independent correctness rerun passed 90 tests and 5,724 assertions. Typecheck and `git diff --check` passed.
+- `bun run check` passed typecheck, dependency boundaries, generated-doc validation, and every non-sandbox-sensitive test: 724 passed and 5 intentional profiling skips. Its only failure was the sandbox-denied isolated tmux socket; the other four real PTY cases passed in that run.
+- The complete terminal rerun outside the sandbox passed all five PTY/tmux cases; isolated tmux completed in 695 ms.
+- The executable 100/1k/10k/100k benchmark passed all publication, identity, complete-work-zero, logarithmic-update, and bounded-window assertions shown above.
+- Parallel architecture, correctness, and performance reviews ran before implementation and after the initial slice. The repair round restored the distinct dense reference, hardened proxy reflection and integrity operations, added exact replacement-lineage proof, rejected future sub-block ambiguity, counted complete geometry at its real boundary, separated point-update work from bounded window slicing, observed hidden publications instead of printing a literal, and made AVL allocation/bounds evidence truthful. All three final reviewers signed off with no blocker.
+
+Stage 5.5a is complete for the explicitly scoped production runtime boundary. It does not claim bounded canonical ingress: `ConversationState.items` still uses a complete record copy for a delta, and changed individual Markdown/tool content is still projected as one content-sized item. New tail items and turn-activity structure still select the full rebuild, and hidden/maximized panes still retain React/native resources. Those remain required before Stage 5.5 or overall Stage 5 can be marked complete.
