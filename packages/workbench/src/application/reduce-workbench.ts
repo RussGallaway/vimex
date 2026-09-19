@@ -76,13 +76,20 @@ export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCom
       const id = targetThread(state, command.threadId)
       return id ? done(updateWorkspace(state, id, (workspace) => ({ ...workspace, interaction: reduceInteraction(workspace.interaction, command.command) }))) : done(state)
     }
-    case "transcript.command": {
+    case "transcript.command": case "transcript.navigate": {
       const id = targetThread(state, command.threadId)
       if (!id) return done(state)
       const workspace = state.workspaces[id]
       if (!workspace) return done(state)
       const transcript = reduceTranscript(workspace.transcript, command.command)
-      const next = updateWorkspace(state, id, (current) => transcript === current.transcript ? current : { ...current, transcript })
+      let interaction = workspace.interaction
+      if (command.type === "transcript.navigate" && command.focusMode) {
+        interaction = reduceInteraction(interaction, { type: "mode.normal" })
+        if (command.focusMode === "visual") interaction = reduceInteraction(interaction, { type: "mode.visual" })
+        interaction = reduceInteraction(interaction, { type: "focus.set", surface: "transcript" })
+      }
+      const next = updateWorkspace(state, id, (current) => transcript === current.transcript && interaction === current.interaction
+        ? current : { ...current, transcript, interaction })
       const restores = command.command.type.startsWith("fold.") ? [{ type: "viewport.restore" as const, threadId: id, anchor: workspace.transcript.viewport }] : []
       return done(next, ...restores)
     }

@@ -211,8 +211,9 @@ export function transcriptOrderIndex(
 }
 export type TranscriptCommand =
   | { type: "search.set"; query: string; direction: "forward" | "backward" }
+  | { type: "search.jump"; target: JumpLocation; search?: { query: string; direction: "forward" | "backward" } }
   | { type: "cursor.move"; point: LogicalPoint; preferredScreenRow?: number }
-  | { type: "jump.to"; target: JumpLocation; origin?: JumpLocation }
+  | { type: "jump.to"; target: JumpLocation; origin?: JumpLocation; clearSelection?: boolean }
   | { type: "jump.back"; origin?: JumpLocation }
   | { type: "jump.forward"; origin?: JumpLocation }
   | { type: "mark.set"; name: string; target: JumpLocation }

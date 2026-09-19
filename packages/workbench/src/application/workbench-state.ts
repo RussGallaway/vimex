@@ -49,6 +49,10 @@ export type WorkbenchEffect =
 
 export interface WorkbenchTransition { state: WorkbenchState; effects: readonly WorkbenchEffect[] }
 
+type TranscriptNavigationCommand = Extract<TranscriptCommand, {
+  type: "search.set" | "search.jump" | "jump.to" | "mark.jump"
+}>
+
 export type WorkbenchCommand =
   | { type: "compaction.observed"; observation: import("./compaction").CompactionObservation }
   | { type: "turn.interrupt.requested"; threadId: ThreadId; turnId: TurnId }
@@ -65,6 +69,7 @@ export type WorkbenchCommand =
   | { type: "conversation.event"; event: ConversationEvent }
   | { type: "interaction.command"; threadId?: ThreadId; command: InteractionCommand }
   | { type: "transcript.command"; threadId?: ThreadId; command: TranscriptCommand }
+  | { type: "transcript.navigate"; threadId?: ThreadId; command: TranscriptNavigationCommand; focusMode?: "normal" | "visual" }
   | { type: "transcript.yank"; threadId: ThreadId; text: string; shape: "character" | "line" }
   | { type: "composer.change"; threadId?: ThreadId; text: string; cursorOffset?: number }
   | { type: "composer.submit"; threadId?: ThreadId; intent: SubmissionIntent; clientMessageId: string }

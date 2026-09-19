@@ -77,6 +77,39 @@ describe("transcript", () => {
     expect(state.viewport).toEqual({ kind: "point", point: state.selection!.head, preferredScreenRow: 7 })
   })
 
+  test("compound search and jump reductions equal their sequential semantic references", () => {
+    let state = syncTranscriptItem(initialTranscript(), message("a", "origin"))
+    state = syncTranscriptItem(state, message("b", "needle target"))
+    state = moveCursor(state, { itemId: itemId("a"), graphemeOffset: 1 }, 4)
+    state = beginSelection(state, "character")
+    state = setFold(state, itemId("b"), true)
+    const target = { point: { itemId: itemId("b"), graphemeOffset: 0 }, preferredScreenRow: 2 }
+    const sequentialSearch = reduceTranscript(
+      reduceTranscript(state, { type: "search.set", query: "needle", direction: "forward" }),
+      { type: "jump.to", target },
+    )
+    expect(reduceTranscript(state, {
+      type: "search.jump", search: { query: "needle", direction: "forward" }, target,
+    })).toEqual(sequentialSearch)
+
+    const sequentialClearJump = reduceTranscript(
+      reduceTranscript(state, { type: "selection.clear" }),
+      { type: "jump.to", target },
+    )
+    expect(reduceTranscript(state, { type: "jump.to", target, clearSelection: true })).toEqual(sequentialClearJump)
+
+    expect(moveCursor(state, { itemId: itemId("missing"), graphemeOffset: 0 })).toBe(state)
+    expect(moveCursor(state, { itemId: itemId("a"), graphemeOffset: 0.5 })).toBe(state)
+    expect(moveCursor(state, { itemId: itemId("a"), graphemeOffset: 999 }).cursor).toEqual({
+      itemId: itemId("a"), graphemeOffset: graphemeCount("origin"),
+    })
+    let atEnd = syncTranscriptItem(initialTranscript(), message("end", "abc"))
+    atEnd = moveCursor(atEnd, { itemId: itemId("end"), graphemeOffset: 3 }, 2)
+    expect(reduceTranscript(atEnd, {
+      type: "jump.to", target: { point: { itemId: itemId("end"), graphemeOffset: 999 }, preferredScreenRow: 2 },
+    })).toBe(atEnd)
+  })
+
   test("selection count uses a warm logarithmic length index instead of materializing selected history", () => {
     const ids = Object.freeze(Array.from({ length: 100_000 }, (_, index) => itemId(`count-${index}`)))
     const projection = projectItem(message("count-projection", "x"))

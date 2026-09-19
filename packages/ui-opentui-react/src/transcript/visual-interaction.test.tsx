@@ -550,6 +550,27 @@ test("Flash extends Visual selection and marks restore exact transcript position
   } finally { await h.close() }
 })
 
+for (const prefix of ["/", "?"]) test(`${prefix} preserves Visual selection while searching transcript`, async () => {
+  const h = await visualHarness()
+  try {
+    await h.keys("ggv")
+    const anchor = h.workspace().transcript.selection?.anchor
+    expect(anchor).toBeDefined()
+    await h.keys(prefix + "bold")
+    expect(h.workspace().interaction.mode).toBe("command")
+    await flashKey(h, "RETURN")
+    expect(h.workspace().interaction).toMatchObject({ mode: "visual", surface: "transcript", commandLine: "" })
+    expect(h.workspace().transcript.selection?.anchor).toEqual(anchor)
+    expect(h.workspace().transcript.selection?.head.graphemeOffset).toBe(6)
+    await h.keys("n")
+    expect(h.workspace().interaction.mode).toBe("visual")
+    expect(h.workspace().transcript.selection?.anchor).toEqual(anchor)
+    await h.keys("N")
+    expect(h.workspace().interaction.mode).toBe("visual")
+    expect(h.workspace().transcript.selection?.anchor).toEqual(anchor)
+  } finally { await h.close() }
+})
+
 
 for (const prefix of ["/", "?"]) test(`${prefix} in composer Normal searches transcript without changing draft`, async () => {
   const h = await visualHarness()

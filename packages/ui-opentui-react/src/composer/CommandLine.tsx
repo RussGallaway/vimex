@@ -62,7 +62,9 @@ export function CommandLine(props: { value: string; currentTitle?: string; model
       flushSync(() => setValidation({ query: props.value, message: invalid }))
       return
     }
-    props.controller.dispatchInteraction({ type: "mode.normal" })
+    // Transcript search owns its focus/mode settlement so selection extension,
+    // cursor movement, and command-line dismissal publish as one state.
+    if (prompt === ":") props.controller.dispatchInteraction({ type: "mode.normal" })
     props.onSubmit(value)
   }
   return <box id="command-bar" height={1} marginTop={1} flexShrink={0} flexDirection="row" paddingX={2} backgroundColor={emberTide.backgroundRaised}>

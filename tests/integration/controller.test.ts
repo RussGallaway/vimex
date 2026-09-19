@@ -318,6 +318,14 @@ test("Workbench owns independent bounded main and side transcript runtime lifeti
   expect(side.getSnapshot().window.blocks.length).toBe(12)
   expect(main.getSnapshot()).toBe(mainFrame)
   expect([mainPublications, sidePublications]).toEqual([1, 1])
+
+  mainPublications = 0
+  sidePublications = 0
+  const sideTarget = { itemId: itemId("side-5"), graphemeOffset: 0 }
+  h.controller.transcript({ type: "cursor.move", target: sideTarget, preferredScreenRow: 2, extend: false })
+  expect([mainPublications, sidePublications]).toEqual([0, 1])
+  expect(pointIsMaterialized(side.getSnapshot().window.blocks, sideTarget)).toBe(true)
+  expect(main.getSnapshot()).toBe(mainFrame)
   stopMain(); stopSide()
 
   h.controller.sideChat("quit")
@@ -441,6 +449,179 @@ test("distant selection swap reveals one bounded endpoint and copy spans unmount
   expect(h.copied.at(-1)).toBe(expectedPlain)
   expect(runtime.getSnapshot().blocks).toBe(blocks)
   expect(runtime.getSnapshot().window.blocks.length).toBeLessThanOrEqual(72)
+  await h.controller.close()
+})
+
+test("off-window search adopts hidden content in one bounded coherent publication", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const runtime = h.controller.transcriptRuntime("main")!
+  const ids = Array.from({ length: 100 }, (_, index) => itemId(`search-window-${index}`))
+  for (let index = 0; index < ids.length; index++) h.emit({ type: "conversation", event: {
+    type: "item.started", threadId: a, item: {
+      id: ids[index]!, turnId: turnId(`search-window-turn-${index}`), kind: "assistant", markdown: `settled ${index}`, status: "complete",
+    },
+  } })
+  h.controller.transcript({ type: "cursor.move", target: { itemId: ids[5]!, graphemeOffset: 0 }, preferredScreenRow: 3, extend: false })
+  const pinned = runtime.getSnapshot()
+  const hidden = itemId("search-window-hidden")
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: {
+    id: hidden, turnId: turnId("search-window-hidden-turn"), kind: "reasoning", markdown: "hidden unique-needle target", status: "complete",
+  } } })
+  expect(runtime.getSnapshot()).toBe(pinned)
+  h.controller.transcript({ type: "fold.set", itemId: hidden, folded: true })
+  h.controller.dispatchInteraction({ type: "mode.insert" })
+  let statePublications = 0, runtimePublications = 0, presentationPublications = 0
+  h.controller.subscribe(() => { statePublications++ })
+  runtime.subscribe(() => { runtimePublications++ })
+  h.controller.subscribePresentation("main", () => { presentationPublications++ })
+  h.controller.executeCommand("/unique-needle")
+  const frame = runtime.getSnapshot()
+  const target = frame.transcript.cursor!
+  expect(statePublications).toBe(1)
+  expect(runtimePublications).toBe(1)
+  expect(presentationPublications).toBe(1)
+  expect(frame.displayedCanonicalRevision).toBe(h.controller.getSnapshot().workspaces[a]!.canonicalRevision)
+  expect(frame.transcript.search).toEqual({ query: "unique-needle", direction: "forward" })
+  expect(target).toEqual({ itemId: hidden, graphemeOffset: 7 })
+  expect(frame.transcript.viewport).toEqual({ kind: "point", point: target, preferredScreenRow: 2 })
+  expect(frame.transcript.folded[hidden]).toBe(false)
+  expect(pointIsMaterialized(frame.window.blocks, target)).toBe(true)
+  expect(frame.window.blocks.length).toBeLessThanOrEqual(72)
+  expect(h.controller.getSnapshot().workspaces[a]!.interaction).toMatchObject({ mode: "normal", surface: "transcript" })
+  h.controller.dispatchInteraction({ type: "mode.insert" })
+  h.controller.executeCommand("/not-present")
+  expect(h.controller.getSnapshot().workspaces[a]!.transcript.search).toEqual({ query: "not-present", direction: "forward" })
+  expect(h.controller.getSnapshot().workspaces[a]!.interaction).toMatchObject({ mode: "normal", surface: "transcript" })
+  await h.controller.close()
+})
+
+test("off-window mark and clamped explicit jump each publish one complete target frame", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const runtime = h.controller.transcriptRuntime("main")!
+  const ids = Array.from({ length: 100 }, (_, index) => itemId(`jump-window-${index}`))
+  for (let index = 0; index < ids.length; index++) h.emit({ type: "conversation", event: {
+    type: "item.started", threadId: a, item: {
+      id: ids[index]!, turnId: turnId(`jump-window-turn-${index}`), kind: index === 8 ? "reasoning" : "assistant", markdown: `entry-${index}`, status: "complete",
+    },
+  } })
+
+  const marked = { itemId: ids[8]!, graphemeOffset: 2 }
+  h.controller.transcript({ type: "cursor.move", target: marked, preferredScreenRow: 4, extend: false })
+  h.controller.transcript({ type: "mark.set", name: "a" })
+  h.controller.transcript({ type: "cursor.move", target: { itemId: ids[95]!, graphemeOffset: 0 }, preferredScreenRow: 3, extend: false })
+  h.controller.transcript({ type: "fold.set", itemId: marked.itemId, folded: true })
+  let statePublications = 0, publications = 0
+  h.controller.subscribe(() => { statePublications++ })
+  runtime.subscribe(() => { publications++ })
+  h.controller.transcript({ type: "mark.jump", name: "a" })
+  let frame = runtime.getSnapshot()
+  expect(statePublications).toBe(1)
+  expect(publications).toBe(1)
+  expect(frame.transcript.cursor).toEqual(marked)
+  expect(frame.transcript.viewport).toEqual({ kind: "point", point: marked, preferredScreenRow: 4 })
+  expect(frame.transcript.folded[marked.itemId]).toBe(false)
+  expect(pointIsMaterialized(frame.window.blocks, marked)).toBe(true)
+  expect(frame.window.blocks.length).toBeLessThanOrEqual(72)
+
+  const selectionStart = { itemId: ids[90]!, graphemeOffset: 0 }
+  const selectionEnd = { itemId: ids[95]!, graphemeOffset: 2 }
+  h.controller.transcript({ type: "cursor.move", target: selectionStart, preferredScreenRow: 3, extend: false })
+  h.controller.transcript({ type: "selection.begin", shape: "character" })
+  h.controller.transcript({ type: "cursor.move", target: selectionEnd, preferredScreenRow: 3, extend: true })
+  statePublications = 0
+  publications = 0
+  const rawTarget = { itemId: ids[5]!, graphemeOffset: 999 }
+  h.controller.transcript({ type: "jump", target: rawTarget })
+  frame = runtime.getSnapshot()
+  const clamped = { itemId: rawTarget.itemId, graphemeOffset: frame.transcript.projectionById[rawTarget.itemId]!.sourceSpans.length }
+  expect(statePublications).toBe(1)
+  expect(publications).toBe(1)
+  expect(frame.transcript.selection).toBeUndefined()
+  expect(frame.transcript.cursor).toEqual(clamped)
+  expect(frame.transcript.viewport).toEqual({ kind: "point", point: clamped, preferredScreenRow: 2 })
+  expect(pointIsMaterialized(frame.window.blocks, clamped)).toBe(true)
+  expect(frame.window.blocks.length).toBeLessThanOrEqual(72)
+  await h.controller.close()
+})
+
+test("cross-thread history atomically materializes the restored viewport rather than its distant cursor", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const runtime = h.controller.transcriptRuntime("main")!
+  const ids = Array.from({ length: 100 }, (_, index) => itemId(`history-window-${index}`))
+  for (let index = 0; index < ids.length; index++) h.emit({ type: "conversation", event: {
+    type: "item.started", threadId: a, item: {
+      id: ids[index]!, turnId: turnId(`history-window-turn-${index}`), kind: "assistant", markdown: `history ${index}`, status: "complete",
+    },
+  } })
+  const cursor = { itemId: ids[5]!, graphemeOffset: 1 }
+  const anchor = { itemId: ids[80]!, graphemeOffset: 2 }
+  h.controller.transcript({ type: "cursor.move", target: cursor, preferredScreenRow: 3, extend: false })
+  h.controller.transcript({ type: "viewport.anchor", point: anchor, preferredScreenRow: 7 })
+  h.controller.openThread(b)
+  await h.controller.settle()
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: b, item: {
+    id: itemId("history-window-b"), turnId: turnId("history-window-b-turn"), kind: "assistant", markdown: "thread b", status: "complete",
+  } } })
+  let statePublications = 0, runtimePublications = 0, presentationPublications = 0
+  h.controller.subscribe(() => { statePublications++ })
+  runtime.subscribe(() => { runtimePublications++ })
+  h.controller.subscribePresentation("main", () => { presentationPublications++ })
+  h.controller.transcript({ type: "jump.back" })
+  await h.controller.settle()
+  const frame = runtime.getSnapshot()
+  expect(statePublications).toBe(1)
+  expect(runtimePublications).toBe(1)
+  expect(presentationPublications).toBe(1)
+  expect(frame.threadId).toBe(a)
+  expect(frame.transcript.cursor).toEqual(cursor)
+  expect(frame.transcript.viewport).toEqual({ kind: "point", point: anchor, preferredScreenRow: 7 })
+  expect(pointIsMaterialized(frame.window.blocks, anchor)).toBe(true)
+  expect(pointIsMaterialized(frame.window.blocks, cursor)).toBe(false)
+  expect(frame.window.blocks.length).toBeLessThanOrEqual(72)
+  await h.controller.close()
+})
+
+test("thread navigation closes the source overlay without turning an old follow cursor into a reveal", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const runtime = h.controller.transcriptRuntime("main")!
+  const first = itemId("thread-tail-first")
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: {
+    id: first, turnId: turnId("thread-tail-turn-0"), kind: "assistant", markdown: "first", status: "complete",
+  } } })
+  h.controller.transcript({ type: "viewport.tail" })
+  const ids = [first]
+  for (let index = 1; index < 100; index++) {
+    const id = itemId(`thread-tail-${index}`)
+    ids.push(id)
+    h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: {
+      id, turnId: turnId(`thread-tail-turn-${index}`), kind: "assistant", markdown: `tail ${index}`, status: "complete",
+    } } })
+  }
+  expect(h.controller.getSnapshot().workspaces[a]!.transcript).toMatchObject({ viewport: { kind: "tail" }, cursor: { itemId: first } })
+  h.controller.dispatchInteraction({ type: "overlay.open", overlay: "help" })
+  h.controller.openThread(b)
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().workspaces[a]!.interaction.overlay).toBeNull()
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: b, item: {
+    id: itemId("thread-tail-b"), turnId: turnId("thread-tail-b-turn"), kind: "assistant", markdown: "thread b", status: "complete",
+  } } })
+  let publications = 0
+  runtime.subscribe(() => { publications++ })
+  h.controller.openThread(a)
+  await h.controller.settle()
+  const frame = runtime.getSnapshot()
+  const tail = { itemId: ids.at(-1)!, graphemeOffset: frame.transcript.projectionById[ids.at(-1)!]!.sourceSpans.length }
+  expect(publications).toBe(1)
+  expect(frame.threadId).toBe(a)
+  expect(frame.mode).toBe("follow")
+  expect(frame.transcript.viewport).toEqual({ kind: "tail" })
+  expect(pointIsMaterialized(frame.window.blocks, tail)).toBe(true)
+  expect(pointIsMaterialized(frame.window.blocks, { itemId: first, graphemeOffset: 0 })).toBe(false)
+  expect(frame.window.blocks.length).toBeLessThanOrEqual(72)
   await h.controller.close()
 })
 

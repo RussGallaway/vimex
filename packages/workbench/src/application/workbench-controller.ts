@@ -44,7 +44,7 @@ export interface ControllerPorts {
 interface TranscriptRuntimeHint {
   canonicalOnly?: boolean
   canonicalDamageByThread?: Readonly<Record<string, TranscriptDamage>>
-  reveal?: { threadId: ThreadId; request: TranscriptRevealRequest }
+  reveal?: { threadId: ThreadId; presentationId: TranscriptPresentationId; request: TranscriptRevealRequest }
 }
 
 export class VimexController implements WorkbenchActions, TranscriptPresentationHost, WorkbenchPublicationHost {
@@ -156,7 +156,6 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
   private unsubscribe?: () => void
   private catalogRequest?: { epoch: number; promise: Promise<readonly AvailableModel[]> }
   private readonly navigationHistory = new NavigationHistory()
-  private restoringNavigation = false
   private historyNavigation?: { queue: ("back" | "forward")[] }
   private navigationRevision = 0
   private initialization?: Promise<void>
@@ -240,7 +239,8 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
       mode: workspace.transcript.viewport.kind === "tail" ? "follow" : "detached",
       canonicalDamage: hint.canonicalDamageByThread?.[thread] ?? this.canonicalDamage(previous, workspace),
       presentationDamage,
-      reveal: hint.reveal?.threadId === thread ? hint.reveal.request : undefined,
+      reveal: hint.reveal?.threadId === thread && hint.reveal.presentationId === presentationId
+        ? hint.reveal.request : undefined,
       excludedTurnIds: side?.inheritedTurnIds?.map(id => id as TurnId),
     }
   }
@@ -459,29 +459,38 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     const before = this.state
     const result = transitionWorkbench(before, command)
     if (command.type === "conversation.event") this.navigationHistory.reproject(before, result.state, command.event.threadId)
-    const localJump = command.type === "transcript.command" && (command.command.type === "jump.to" || command.command.type === "mark.jump")
+    const transcriptCommand = command.type === "transcript.command" || command.type === "transcript.navigate" ? command.command : undefined
+    const localJump = transcriptCommand && (transcriptCommand.type === "jump.to" || transcriptCommand.type === "search.jump" || transcriptCommand.type === "mark.jump")
       && hasRecordedJump(before, result.state)
     const switched = before.activeThreadId !== result.state.activeThreadId
-    if (!this.restoringNavigation && (localJump || switched)) {
+    if (localJump || switched) {
       this.navigationHistory.seed(before)
       const origin = navigationLocation(before)
       if (origin) {
-        const explicit = command.type === "transcript.command" && "origin" in command.command ? command.command.origin : undefined
+        const explicit = transcriptCommand && "origin" in transcriptCommand ? transcriptCommand.origin : undefined
         this.navigationHistory.record(explicit ? { ...origin, cursor: explicit.point, viewport: { kind: "point", ...explicit } } : origin)
       }
       if (localJump) { this.navigationRevision++; this.historyNavigation = undefined }
     }
-    const revealThread = command.type === "transcript.command" ? command.threadId ?? before.activeThreadId : undefined
-    const revealPoint = command.type === "transcript.command" && revealThread
-      ? command.command.type === "cursor.move" ? command.command.point
-        : command.command.type === "jump.to" ? command.command.target.point
-          : command.command.type === "selection.swap" ? result.state.workspaces[revealThread]?.transcript.cursor
-          : command.command.type === "jump.back" || command.command.type === "jump.forward" || command.command.type === "mark.jump"
-            ? result.state.workspaces[revealThread]?.transcript.cursor : undefined
+    const revealThread = command.type === "transcript.command" || command.type === "transcript.navigate"
+      ? command.threadId ?? before.activeThreadId : undefined
+    const priorTranscript = revealThread ? before.workspaces[revealThread]?.transcript : undefined
+    const nextTranscript = revealThread ? result.state.workspaces[revealThread]?.transcript : undefined
+    const targetCommand = transcriptCommand && (transcriptCommand.type === "cursor.move" || transcriptCommand.type === "jump.to"
+      || transcriptCommand.type === "search.jump" || transcriptCommand.type === "selection.swap"
+      || transcriptCommand.type === "jump.back" || transcriptCommand.type === "jump.forward" || transcriptCommand.type === "mark.jump")
+    const revealChanged = priorTranscript && nextTranscript && (priorTranscript.cursor?.itemId !== nextTranscript.cursor?.itemId
+      || priorTranscript.cursor?.graphemeOffset !== nextTranscript.cursor?.graphemeOffset
+      || JSON.stringify(priorTranscript.viewport) !== JSON.stringify(nextTranscript.viewport)
+      || priorTranscript.folded !== nextTranscript.folded)
+    const revealPoint = targetCommand && revealChanged && nextTranscript
+      ? nextTranscript.viewport.kind === "point" ? nextTranscript.viewport.point : nextTranscript.cursor
       : undefined
-    const revealReason: TranscriptRevealRequest["reason"] = command.type === "transcript.command" && command.command.type === "mark.jump" ? "mark"
-      : command.type === "transcript.command" && (command.command.type === "jump.to" || command.command.type === "jump.back" || command.command.type === "jump.forward") ? "jump" : "cursor"
-    this.setState(result.state, revealThread && revealPoint ? { reveal: { threadId: revealThread, request: { id: ++this.revealRevision, point: revealPoint, reason: revealReason } } } : undefined)
+    const revealReason: TranscriptRevealRequest["reason"] = transcriptCommand?.type === "search.jump" ? "search"
+      : transcriptCommand?.type === "mark.jump" ? "mark"
+        : transcriptCommand && (transcriptCommand.type === "jump.to" || transcriptCommand.type === "jump.back" || transcriptCommand.type === "jump.forward") ? "jump" : "cursor"
+    const presentationId = this.activeTranscriptPresentation()
+    this.setState(result.state, revealThread && revealPoint && presentationId ? { reveal: { threadId: revealThread, presentationId, request: { id: ++this.revealRevision, point: revealPoint, reason: revealReason } } } : undefined)
     for (const effect of result.effects) {
       const pending = this.launch(() => this.effect(effect))
       if (effect.type === "conversation.turn.start" || effect.type === "conversation.turn.steer") this.trackContinuation(effect.threadId, pending)
@@ -803,7 +812,6 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     const revision = ++this.navigationRevision
     const epoch = this.runtimeEpoch
     this.clearNavigationIntent()
-    this.dispatchInteraction({ type: "overlay.close" })
     return this.launch(async () => {
       if (this.restartBarrier) await this.restartBarrier
       if (!this.currentRuntime(epoch) || this.state.connection !== "connected") return
@@ -825,14 +833,33 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
         const origin = navigationLocation(this.state)
         if (restore && (!origin || !this.navigationHistory.commit(restore.direction, restore.target, origin))) return
         const side = sideChatForChild(this.state, id)
-        if (side && !side.visible && side.status !== "quitting") this.setState({ ...this.state, sideChats: { ...this.state.sideChats, [side.parentId]: { ...side, visible: true } } })
-        this.restoringNavigation = Boolean(restore)
-        try { this.dispatch({ type: "thread.switch", threadId: id }) }
-        finally { this.restoringNavigation = false }
+        const sourceThread = this.state.activeThreadId
+        const prepared = sourceThread
+          ? transitionWorkbench(this.state, { type: "interaction.command", threadId: sourceThread, command: { type: "overlay.close" } }).state
+          : this.state
+        const visible = side && !side.visible && side.status !== "quitting"
+          ? { ...prepared, sideChats: { ...prepared.sideChats, [side.parentId]: { ...side, visible: true } } }
+          : prepared
         if (restore) {
-          const restored = restoreNavigationLocation(this.state, restore.target)
-          const point = restore.target.cursor ?? (restore.target.viewport.kind === "point" ? restore.target.viewport.point : undefined)
-          this.setState(restored, point ? { reveal: { threadId: id, request: { id: ++this.revealRevision, point, reason: "history" } } } : undefined)
+          const switched = transitionWorkbench(visible, { type: "thread.switch", threadId: id }).state
+          const restored = restoreNavigationLocation(switched, restore.target)
+          const transcript = restored.workspaces[id]?.transcript
+          const point = transcript?.viewport.kind === "point" ? transcript.viewport.point : undefined
+          const presentationId = threadForPresentation(restored, "side") === id ? "side"
+            : threadForPresentation(restored, "main") === id ? "main" : undefined
+          this.setState(restored, point && presentationId ? { reveal: { threadId: id, presentationId, request: { id: ++this.revealRevision, point, reason: "history" } } } : undefined)
+        } else {
+          const switched = transitionWorkbench(visible, { type: "thread.switch", threadId: id }).state
+          const closed = transitionWorkbench(switched, { type: "interaction.command", threadId: id, command: { type: "overlay.close" } }).state
+          if (this.state.activeThreadId !== closed.activeThreadId) {
+            this.navigationHistory.seed(this.state)
+            if (origin) this.navigationHistory.record(origin)
+          }
+          const transcript = closed.workspaces[id]?.transcript
+          const point = transcript?.viewport.kind === "point" ? transcript.viewport.point : undefined
+          const presentationId = threadForPresentation(closed, "side") === id ? "side"
+            : threadForPresentation(closed, "main") === id ? "main" : undefined
+          this.setState(closed, point && presentationId ? { reveal: { threadId: id, presentationId, request: { id: ++this.revealRevision, point, reason: "thread" } } } : undefined)
         }
       }
     })
@@ -860,22 +887,15 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     if (!workspace) return
     const move = (point?: LogicalPoint, record = true) => {
       if (!point) return
-      if (workspace.transcript.folded[point.itemId]) this.dispatch({ type: "transcript.command", command: { type: "fold.set", itemId: point.itemId, folded: false } })
+      if (!record && workspace.transcript.folded[point.itemId]) this.dispatch({ type: "transcript.command", command: { type: "fold.set", itemId: point.itemId, folded: false } })
       this.dispatch({ type: "transcript.command", command: record ? { type: "jump.to", target: { point, preferredScreenRow: 2 } } : { type: "cursor.move", point, preferredScreenRow: 2 } })
     }
-    const preserveVisual = () => workspace.interaction.mode === "visual" && workspace.interaction.surface === "transcript"
+    const preserveVisual = () => workspace.interaction.surface === "transcript" && Boolean(workspace.transcript.selection)
+      && (workspace.interaction.mode === "visual" || workspace.interaction.mode === "command")
+    const navigationFocusMode = (): "normal" | "visual" => preserveVisual() ? "visual" : "normal"
     const navigationOrigin = () => workspace.interaction.surface === "transcript" && workspace.transcript.cursor
       ? { point: workspace.transcript.cursor, preferredScreenRow: 0 }
       : workspace.transcript.viewport.kind === "point" ? { point: workspace.transcript.viewport.point, preferredScreenRow: workspace.transcript.viewport.preferredScreenRow } : undefined
-    const focusJump = (preserve = preserveVisual()) => {
-      if (preserve) return
-      this.dispatchInteraction({ type: "mode.normal" })
-      this.dispatchInteraction({ type: "focus.set", surface: "transcript" })
-    }
-    const sameDisplayedLocation = (before: typeof workspace.transcript, after: typeof workspace.transcript | undefined) => before.cursor?.itemId === after?.cursor?.itemId
-      && before.cursor?.graphemeOffset === after?.cursor?.graphemeOffset
-      && JSON.stringify(before.viewport) === JSON.stringify(after?.viewport)
-      && before.folded === after?.folded
     switch (command.type) {
       case "navigate": {
         const direction = command.motion.endsWith("previous") ? "backward" : "forward"
@@ -892,11 +912,13 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
       }
       case "search": {
         const query = command.query || workspace.transcript.search?.query || ""
-        this.dispatch({ type: "transcript.command", command: { type: "search.set", query, direction: command.direction } })
         const matches = findSearchMatches(workspace.transcript, query)
         const target = adjacentSearchMatch(workspace.transcript, matches, command.direction)?.from
-        move(target)
-        if (target) focusJump()
+        if (target) this.dispatch({
+          type: "transcript.navigate", focusMode: navigationFocusMode(),
+          command: { type: "search.jump", search: { query, direction: command.direction }, target: { point: target, preferredScreenRow: 2 } },
+        })
+        else this.dispatch({ type: "transcript.navigate", focusMode: navigationFocusMode(), command: { type: "search.set", query, direction: command.direction } })
         if (!matches.length) this.notice(`Pattern not found: ${query}`)
         break
       }
@@ -905,21 +927,26 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
         if (!search) { this.notice("Search with / or ? first"); break }
         const direction = command.reverse ? (search.direction === "forward" ? "backward" : "forward") : search.direction
         const target = adjacentSearchMatch(workspace.transcript, findSearchMatches(workspace.transcript, search.query), direction, workspace.transcript.cursor, { count: command.count })?.from
-        move(target)
-        if (target) focusJump()
+        if (target) this.dispatch({
+          type: "transcript.navigate", focusMode: navigationFocusMode(),
+          command: { type: "search.jump", target: { point: target, preferredScreenRow: 2 } },
+        })
         break
       }
       case "selection.swap": this.dispatch({ type: "transcript.command", command }); break
       case "cursor.move": this.dispatch({ type: "transcript.command", command: { type: "cursor.move", point: command.target, preferredScreenRow: command.preferredScreenRow } }); break
       case "jump": {
         if (!workspace.transcript.projectionById[command.target.itemId]) break
-        if (!command.extend) this.dispatch({ type: "transcript.command", command: { type: "selection.clear" } })
         const originRow = command.originPreferredScreenRow ?? (command.origin && workspace.transcript.viewport.kind === "point"
           && workspace.transcript.viewport.point.itemId === command.origin.itemId
           && workspace.transcript.viewport.point.graphemeOffset === command.origin.graphemeOffset
           ? workspace.transcript.viewport.preferredScreenRow : 0)
-        this.dispatch({ type: "transcript.command", command: { type: "jump.to", target: { point: command.target, preferredScreenRow: command.preferredScreenRow ?? 2 }, origin: command.origin ? { point: command.origin, preferredScreenRow: originRow } : undefined } })
-        focusJump(Boolean(command.extend) && preserveVisual())
+        this.dispatch({
+          type: "transcript.navigate", focusMode: Boolean(command.extend) && preserveVisual() ? "visual" : "normal",
+          command: { type: "jump.to", target: { point: command.target, preferredScreenRow: command.preferredScreenRow ?? 2 },
+            origin: command.origin ? { point: command.origin, preferredScreenRow: originRow } : undefined,
+            clearSelection: !command.extend },
+        })
         break
       }
       case "jump.back": case "jump.forward": {
@@ -940,10 +967,16 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
         break
       }
       case "mark.jump": {
-        if (!workspace.transcript.marks[command.name]) { this.notice(`Mark not set: ${command.name}`); break }
-        const before = activeWorkspace(this.state)?.transcript
-        this.dispatch({ type: "transcript.command", command: { ...command, origin: navigationOrigin() } })
-        if (before && !sameDisplayedLocation(before, activeWorkspace(this.state)?.transcript)) focusJump()
+        const target = workspace.transcript.marks[command.name]
+        if (!target) { this.notice(`Mark not set: ${command.name}`); break }
+        const changesDisplay = workspace.transcript.folded[target.point.itemId]
+          || workspace.transcript.cursor?.itemId !== target.point.itemId
+          || workspace.transcript.cursor.graphemeOffset !== target.point.graphemeOffset
+          || workspace.transcript.viewport.kind !== "point"
+          || workspace.transcript.viewport.point.itemId !== target.point.itemId
+          || workspace.transcript.viewport.point.graphemeOffset !== target.point.graphemeOffset
+          || workspace.transcript.viewport.preferredScreenRow !== target.preferredScreenRow
+        this.dispatch({ type: "transcript.navigate", focusMode: changesDisplay ? navigationFocusMode() : undefined, command: { ...command, origin: navigationOrigin() } })
         break
       }
       case "selection.begin": this.dispatch({ type: "transcript.command", command }); break
@@ -963,11 +996,11 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     }
   }
   executeCommand = (line: string, presentationId?: TranscriptPresentationId): void => {
+    if (/^[/?]/.test(line)) { this.transcript({ type: "search", query: line.slice(1), direction: line[0] === "/" ? "forward" : "backward" }); return }
     if (presentationId) {
       const context = this.presentationContext(presentationId)
       if (context) this.dispatch({ type: "interaction.command", threadId: context.threadId, command: { type: "mode.normal" } })
     } else this.dispatchInteraction({ type: "mode.normal" })
-    if (/^[/?]/.test(line)) { this.transcript({ type: "search", query: line.slice(1), direction: line[0] === "/" ? "forward" : "backward" }); return }
     this.runCommand(parseCommand(line), presentationId)
   }
   executeNamedCommand = (name: string, presentationId?: TranscriptPresentationId): void => this.runCommand(parseCommand(name), presentationId)
