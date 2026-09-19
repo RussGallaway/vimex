@@ -1,4 +1,4 @@
-import { itemId, threadId, turnId, type AgentCoordinationAction, type AgentStateStatus, type ConversationEvent, type ConversationItem, type ItemStatus, type TurnOutcome } from "@vimex/conversation"
+import { itemId, threadId, turnId, type AgentCoordinationAction, type AgentStateStatus, type ConversationEvent, type ConversationItem, type ItemActivity, type ItemStatus, type TurnOutcome } from "@vimex/conversation"
 import type { ThreadItem } from "../generated/v0_154_0/v2/ThreadItem"
 import type { Turn } from "../generated/v0_154_0/v2/Turn"
 import type { UserInput } from "../generated/v0_154_0/v2/UserInput"
@@ -15,13 +15,17 @@ export function mapThreadItem(item: ThreadItem, ownerTurnId: string, completed: 
     case "agentMessage": return { id, turnId: owner, kind: "assistant", markdown: item.text, status: fallbackStatus }
     case "plan": return { id, turnId: owner, kind: "assistant", markdown: item.text, status: fallbackStatus }
     case "reasoning": return { id, turnId: owner, kind: "reasoning", markdown: item.summary.join("\n\n") || item.content.join("\n\n"), status: fallbackStatus }
-    case "commandExecution": return { id, turnId: owner, kind: "command", title: commandTitle(item.command, item.commandActions ?? []), executionCommand: item.command, detail: item.aggregatedOutput ?? "", durationMs: durationMs(item.durationMs), status: mapItemStatus(item.status, fallbackStatus) }
+    case "commandExecution": {
+      const activity = commandActivity(item.commandActions ?? [])
+      return { id, turnId: owner, kind: "command", title: commandTitle(item.command, item.commandActions ?? []), executionCommand: item.command, detail: item.aggregatedOutput ?? "", durationMs: durationMs(item.durationMs), ...(activity ? { activity } : {}), status: mapItemStatus(item.status, fallbackStatus) }
+    }
     case "fileChange": return {
       id, turnId: owner, kind: "edit", title: item.changes.map(change => change.path).join(", ") || "File changes",
       changes: item.changes.map(change => ({ path: change.path, action: change.kind.type, ...(change.kind.type === "update" && change.kind.move_path ? { movePath: change.kind.move_path } : {}), patch: change.diff })),
       patch: item.changes.map(change => change.diff).filter(Boolean).join("\n"), status: mapItemStatus(item.status, fallbackStatus),
     }
-    case "mcpToolCall": return toolItem(id, owner, `${item.server} · ${item.tool}`, item.result ?? item.error ?? item.arguments, mapItemStatus(item.status, fallbackStatus), item.durationMs)
+    case "mcpToolCall": return toolItem(id, owner, `${item.server} · ${item.tool}`, item.result ?? item.error ?? item.arguments, mapItemStatus(item.status, fallbackStatus), item.durationMs,
+      item.readOnlyHint === true ? providerActivity(item.server, item.tool, item.appContext?.appName) : undefined)
     case "dynamicToolCall": return toolItem(id, owner, [item.namespace, item.tool].filter(Boolean).join(" · "), item.contentItems ?? item.arguments, mapItemStatus(item.status, fallbackStatus), item.durationMs)
     case "collabAgentToolCall": {
       if (!isAgentTool(item.tool) || typeof item.senderThreadId !== "string" || !Array.isArray(item.receiverThreadIds) || !item.receiverThreadIds.every(id => typeof id === "string")) {
@@ -37,7 +41,7 @@ export function mapThreadItem(item: ThreadItem, ownerTurnId: string, completed: 
       }
     }
     case "functionCallOutput": return toolItem(id, owner, [item.namespace, item.name].filter(Boolean).join(" · "), item.output, fallbackStatus)
-    case "webSearch": return toolItem(id, owner, "Web search", item, fallbackStatus)
+    case "webSearch": return toolItem(id, owner, "Web search", item, fallbackStatus, undefined, { family: "web-research" })
     case "imageView": return toolItem(id, owner, "View image", item.path, fallbackStatus)
     case "imageGeneration": return toolItem(id, owner, "Image generation", item, fallbackStatus)
     case "subAgentActivity": return typeof item.agentThreadId === "string" && typeof item.agentPath === "string" && isAgentActivity(item.kind) ? {
@@ -138,9 +142,19 @@ function timestampMs(seconds: number | null): number | undefined {
   return Number.isFinite(milliseconds) ? milliseconds : undefined
 }
 function durationMs(value: number | null | undefined): number | undefined { return value === null || value === undefined || !Number.isFinite(value) || value < 0 ? undefined : value }
-function toolItem(id: ReturnType<typeof itemId>, owner: ReturnType<typeof turnId>, title: string, detail: unknown, status: ItemStatus, durationMs?: number | null): ConversationItem {
+function toolItem(id: ReturnType<typeof itemId>, owner: ReturnType<typeof turnId>, title: string, detail: unknown, status: ItemStatus, durationMs?: number | null, activity?: ItemActivity): ConversationItem {
   const duration = durationMs === undefined || durationMs === null || !Number.isFinite(durationMs) || durationMs < 0 ? undefined : durationMs
-  return { id, turnId: owner, kind: "tool", title, detail: typeof detail === "string" ? detail : safeStringify(detail), status, ...(duration === undefined ? {} : { durationMs: duration }) }
+  return { id, turnId: owner, kind: "tool", title, detail: typeof detail === "string" ? detail : safeStringify(detail), status, ...(duration === undefined ? {} : { durationMs: duration }), ...(activity ? { activity } : {}) }
+}
+function commandActivity(actions: readonly { type: string }[]): ItemActivity | undefined {
+  return actions.length > 0 && actions.every(action => action.type === "read") ? { family: "read" } : undefined
+}
+function displayProvider(value: string): string {
+  return value.split(/[-_\s]+/u).filter(Boolean).map(part => part[0]!.toUpperCase() + part.slice(1)).join(" ")
+}
+function providerActivity(namespace: string, tool: string, appName?: string | null): ItemActivity {
+  const provider = appName?.trim() || (namespace === "codex_apps" ? tool.split(/[._]/u)[0]! : namespace)
+  return { family: "provider", label: displayProvider(provider) }
 }
 function inputText(content: readonly UserInput[]): string {
   return content.filter((input): input is Extract<UserInput, { type: "text" }> => input.type === "text").map(input => input.text).join("\n")

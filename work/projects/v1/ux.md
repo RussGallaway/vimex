@@ -136,6 +136,27 @@ Named commands are the stable interaction API; keybindings invoke commands rathe
 - Running items visibly update without causing completed content to jump unnecessarily.
 - Unknown Codex items remain visible as inspectable diagnostic cards.
 
+Adjacent homogeneous activity is summarized after it settles:
+
+```text
+live
+  ▾ ⋯ Calling  Web search
+
+settled, collapsed
+  ▸ ✓ Web research · 9 searches
+  ▸ ✓ Read files · 7 reads
+  ▸ ✓ Linear · 4 actions · 3.9s
+
+opened or precisely targeted
+  ▾ ✓ Web search
+  ▸ ✓ Web search
+  ▸ ✓ Web search
+```
+
+Grouping requires at least two adjacent completed items from the same semantic family and never crosses an assistant progress message, user message, turn boundary, or different family. Web searches group as Web research, command actions explicitly identified as reads group as Read files, and read-only plugin/MCP activity groups by its adapter-supplied provider identity. A batch duration appears only when every child supplies a positive observed duration; unknown and zero durations are omitted rather than presented as measured work.
+
+The batch is a presentation relationship, not a replacement item. Search, copy, marks, jumps, selection, and fork boundaries continue to use the original item IDs. While work is live the current action remains visible. Failures, interruptions, approvals, edits, writes, and destructive commands never disappear into a success summary. Opening a batch uses the existing fold command on its lead item; navigating directly to any compacted child temporarily restores the ordinary rows.
+
 Folding state is owned per logical item and per thread. Mouse click may toggle a fold, but every fold action has a keyboard command.
 
 ## Sessions, forks, and agents

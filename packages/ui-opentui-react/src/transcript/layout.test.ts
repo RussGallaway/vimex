@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { itemId } from "@vimex/conversation"
-import { composeTranscriptGeometry, graphemeCount, initialTranscript, projectMarkdown, type BlockGeometry, type TranscriptState } from "@vimex/transcript"
-import { blockRefForPoint, buildTranscriptLayout, graphemeCellWidth, movePoint, pointInLayout, selectedRangeForItem } from "./layout"
+import { composeTranscriptGeometry, graphemeCount, initialTranscript, projectMarkdown, type BlockGeometry, type TranscriptGeometry, type TranscriptState } from "@vimex/transcript"
+import { blockRefForPoint, buildTranscriptLayout, graphemeCellWidth, movePoint, pointInLayout, selectedRangeForItem, type TranscriptLayout } from "./layout"
+import { rebaseTranscriptLayout, visibleMeasuredPoints } from "./rendered-layout"
 
 const first = itemId("first")
 const second = itemId("second")
+const third = itemId("third")
 
 function stateFor(firstText: string, secondText = ""): TranscriptState {
   return {
@@ -121,6 +123,47 @@ test("measured inclusive row endpoints retain their own row for horizontal motio
   expect(movePoint(layout, point, "left")?.point.graphemeOffset).toBe(0)
   expect(movePoint(layout, point, "line-start")?.point.graphemeOffset).toBe(0)
   expect(movePoint(layout, point, "line-end")?.point.graphemeOffset).toBe(1)
+})
+
+test("zero-row activity children cannot disturb visible-point ordering", () => {
+  const geometryFor = (blockKey: string, rows: number): BlockGeometry => ({
+    key: { blockKey, contentRevision: 1, width: 80, styleRevision: "test", folded: true,
+      ...(rows === 0 ? { presentation: "activity-hidden" as const } : {}) },
+    nativeRevision: 1,
+    rows,
+    points: rows ? { 0: { graphemeOffset: 0, x: 0, y: 0, row: 0, column: 0 } } : {},
+    lines: rows ? [{ from: 0, to: 0, row: 0 }] : [],
+  })
+  const keys = ["item:first:root", "item:second:root", "item:third:root"]
+  const geometries = [geometryFor(keys[0]!, 1), geometryFor(keys[1]!, 0), geometryFor(keys[2]!, 1)]
+  const geometry: TranscriptGeometry = {
+    generation: 0, revision: 1, width: 80, styleRevision: "test",
+    byBlockKey: Object.fromEntries(geometries.map(value => [value.key.blockKey, value])),
+    rowByBlockKey: { [keys[0]!]: 0, [keys[1]!]: 1, [keys[2]!]: 1 },
+    blockRows: [
+      { blockKey: keys[0]!, itemId: first, start: 0, rows: 1 },
+      { blockKey: keys[1]!, itemId: second, start: 1, rows: 0 },
+      { blockKey: keys[2]!, itemId: third, start: 1, rows: 1 },
+    ],
+    totalRows: 2, measuredBlockCount: 3, totalPoints: 2,
+  }
+  const base: TranscriptLayout = {
+    width: 80, lines: [], linesByItem: {},
+    placementByBlockKey: {
+      [keys[0]!]: { screenX: 0, screenY: 10 },
+      // A layout-disabled native child may report an unrelated origin.
+      [keys[1]!]: { screenX: 0, screenY: 0 },
+      [keys[2]!]: { screenX: 0, screenY: 11 },
+    },
+    blockKeysByItem: {
+      [first]: [{ blockKey: keys[0]!, from: 0, to: 0 }],
+      [second]: [{ blockKey: keys[1]!, from: 0, to: 0 }],
+      [third]: [{ blockKey: keys[2]!, from: 0, to: 0 }],
+    },
+  }
+  const rebased = rebaseTranscriptLayout(base, geometry)
+  expect(rebased.screenBlockRows?.map(row => row.itemId)).toEqual([first, third])
+  expect(visibleMeasuredPoints(rebased, { screenY: 10, height: 2 }).map(point => point.itemId)).toEqual([first, third])
 })
 
 test("block-local geometry composes navigation without cloning historical points", () => {

@@ -70,6 +70,12 @@ This is a lightweight decision log. Change a settled decision only through a new
 
 **Reason:** The primary transcript is the user's durable work record, not a lossless protocol dump. Excluding reasoning before semantic transcript state is created removes repetitive rows from navigation, search, selection, copying, unseen counts, geometry, and future window planning. Canonical retention preserves diagnostics and future inspection without introducing a second authority.
 
+### D-012: Homogeneous settled activity is a runtime presentation batch
+
+**Decision:** Preserve every tool and command as a canonical semantic item, and let `TranscriptRuntime` derive `TranscriptActivityBatch` relationships for two or more adjacent, settled items in the same activity family. The protocol adapter supplies structured `web-research`, `read`, or read-only provider metadata; presentation titles never determine grouping. A batch is compact only while all children remain folded. Expanding the lead item, navigating to a hidden child, anchoring there, or selecting it restores the ordinary child rows. Running, failed, interrupted, approval, edit, write, and destructive activity remains individually prominent.
+
+**Reason:** Repeated safe reads, searches, and provider calls are useful as one work unit after completion but must remain individually inspectable and semantically addressable. A runtime-owned relationship gives every presentation the same policy, keeps React from becoming a second transcript model, and preserves canonical IDs for search, copy, marks, jumps, forks, detachment, and future render-block windowing.
+
 ## Open decisions
 
 ### O-001: Insert-mode submit key

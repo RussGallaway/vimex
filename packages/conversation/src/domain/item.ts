@@ -1,5 +1,11 @@
 import type { ItemId, ThreadId, TurnId } from "./identifiers"
 export type ItemStatus = "running" | "complete" | "error" | "interrupted"
+export type ItemActivityFamily = "web-research" | "read" | "provider"
+export interface ItemActivity {
+  family: ItemActivityFamily
+  /** Human-readable provider name supplied or normalized at the adapter boundary. */
+  label?: string
+}
 export type AgentCoordinationAction = "spawn" | "send-input" | "send-message" | "follow-up" | "resume" | "wait" | "interrupt" | "close" | "list"
 export type AgentAction = AgentCoordinationAction | "activity"
 export type AgentActivityKind = "started" | "interacted" | "interrupted" | "completed"
@@ -15,7 +21,7 @@ export type AgentItem =
   | AgentItemBase & { action: "activity"; activity: AgentActivityKind; agentPath: string; senderThreadId?: undefined; agentStates?: undefined }
 export type ConversationItem = { durationMs?: number } & (
   | { id: ItemId; turnId: TurnId; kind: "user" | "assistant" | "reasoning"; markdown: string; status: ItemStatus }
-  | { id: ItemId; turnId: TurnId; kind: "command" | "tool"; title: string; detail: string; executionCommand?: string; status: ItemStatus }
+  | { id: ItemId; turnId: TurnId; kind: "command" | "tool"; title: string; detail: string; executionCommand?: string; activity?: ItemActivity; status: ItemStatus }
   | { id: ItemId; turnId: TurnId; kind: "edit"; title: string; patch: string; changes?: readonly { path: string; action: "add" | "delete" | "update"; movePath?: string; patch: string }[]; status: ItemStatus }
   | AgentItem
   | { id: ItemId; turnId: TurnId; kind: "unknown"; title: string; detail: string; status: ItemStatus; transcript?: "diagnostic" })

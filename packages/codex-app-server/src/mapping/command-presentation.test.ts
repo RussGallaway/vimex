@@ -25,6 +25,6 @@ test("command item separates readable title, exact execution, and unmodified out
   }
   expect(mapThreadItem(item, "turn", true)).toMatchObject({
     kind: "command", title: "Read /repo/README.md", executionCommand: command,
-    detail: "line one\nline two\n", status: "complete", durationMs: 12,
+    detail: "line one\nline two\n", status: "complete", durationMs: 12, activity: { family: "read" },
   })
 })

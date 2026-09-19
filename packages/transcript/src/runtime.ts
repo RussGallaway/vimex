@@ -1,7 +1,7 @@
 import type { ConversationState, ItemId, ThreadId, TurnId } from "@vimex/conversation"
 import type { LogicalPoint, TranscriptState } from "./domain/transcript-document"
 import { composeTranscriptGeometry, emptyTranscriptGeometry, freezeBlockGeometry, geometryMatchesBlock, type BlockMeasurementBase, type BlockMeasurementBatch, type LayoutResetReason, type TranscriptGeometry } from "./geometry"
-import { blockKey, buildTranscriptBlocks, buildTranscriptItemBlock, passThroughWindow, type TranscriptBlock, type TranscriptItemBlock, type TranscriptWindow } from "./window"
+import { blockKey, buildTranscriptBlocks, buildTranscriptItemBlock, passThroughWindow, passThroughWindowWithActivityPlan, type TranscriptActivityPresentation, type TranscriptBlock, type TranscriptItemBlock, type TranscriptWindow } from "./window"
 
 export type TranscriptDamage =
   | Readonly<{ kind: "none" }>
@@ -87,6 +87,54 @@ function sameList<T>(left: readonly T[] | undefined, right: readonly T[] | undef
 function shallowRecordEqual(left: object, right: object): boolean {
   const leftEntries = Object.entries(left), rightEntries = Object.entries(right)
   return leftEntries.length === rightEntries.length && leftEntries.every(([key, value]) => Object.is(value, (right as Record<string, unknown>)[key]))
+}
+
+function sameActivityProtection(left: TranscriptState, right: TranscriptState, window: TranscriptWindow): boolean {
+  const protectedMember = (point: LogicalPoint | undefined) => {
+    const batch = point ? window.activityBatchByItem[point.itemId] : undefined
+    if (!point || !batch) return undefined
+    const outsideLead = point.itemId === batch.leadItemId && (point.graphemeOffset < batch.leadGraphemeFrom
+      || point.graphemeOffset > batch.leadGraphemeTo || (point.graphemeOffset === batch.leadGraphemeTo && !batch.leadIncludesEnd))
+    return point.itemId !== batch.leadItemId || outsideLead ? batch.key : undefined
+  }
+  return left.folded === right.folded
+    && protectedMember(left.cursor) === protectedMember(right.cursor)
+    && protectedMember(left.viewport.kind === "tail" ? undefined : left.viewport.point)
+      === protectedMember(right.viewport.kind === "tail" ? undefined : right.viewport.point)
+    && protectedMember(left.selection?.anchor) === protectedMember(right.selection?.anchor)
+    && protectedMember(left.selection?.head) === protectedMember(right.selection?.head)
+}
+
+function changedActivityPresentationIds(
+  left: Readonly<Record<string, TranscriptActivityPresentation>>,
+  right: Readonly<Record<string, TranscriptActivityPresentation>>,
+): readonly ItemId[] {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)])
+  const ids = new Set<ItemId>()
+  for (const key of keys) {
+    if (left[key]?.kind === right[key]?.kind) continue
+    const itemId = right[key]?.itemId ?? left[key]?.itemId
+    if (itemId) ids.add(itemId)
+  }
+  return [...ids]
+}
+
+function damageWithActivityChanges(damage: TranscriptDamage, itemIds: readonly ItemId[]): TranscriptDamage {
+  if (!itemIds.length) return frozenDamage(damage)
+  if (damage.kind === "full" || damage.kind === "layout") return frozenDamage(damage)
+  const prior = damage.kind === "blocks" ? damage.itemIds : []
+  return frozenDamage({ kind: "blocks", itemIds: [...prior, ...itemIds] })
+}
+
+function activityTopologyChanged(left: TranscriptBlock | undefined, right: TranscriptItemBlock | undefined): boolean {
+  if (!left || !("item" in left) || !right) return true
+  const a = left.item, b = right.item
+  const relevant = (a.kind === "command" || a.kind === "tool") && a.activity
+    || (b.kind === "command" || b.kind === "tool") && b.activity
+  if (!relevant) return false
+  if ((a.kind !== "command" && a.kind !== "tool") || (b.kind !== "command" && b.kind !== "tool")) return true
+  return a.status !== b.status || a.durationMs !== b.durationMs
+    || a.activity?.family !== b.activity?.family || a.activity?.label !== b.activity?.label
 }
 
 function sameBlock(left: TranscriptBlock, right: TranscriptBlock): boolean {
@@ -204,12 +252,14 @@ function revealIsMaterialized(input: TranscriptRuntimeInput, blocks: readonly Tr
       || (block.sourceSpan.to === latest.source.length && offset === block.sourceSpan.to)))
 }
 
-function reconciledGeometry(previous: TranscriptGeometry | undefined, input: TranscriptRuntimeInput, blocks: readonly TranscriptBlock[]): TranscriptGeometry {
-  if (!previous) return composeTranscriptGeometry(blocks, input.transcript.folded, {}, 0, 0)
-  return composeTranscriptGeometry(blocks, input.transcript.folded, previous.byBlockKey, previous.generation, previous.revision, previous.width, previous.styleRevision)
+function reconciledGeometry(previous: TranscriptGeometry | undefined, input: TranscriptRuntimeInput, blocks: readonly TranscriptBlock[], window: TranscriptWindow): TranscriptGeometry {
+  if (!previous) return composeTranscriptGeometry(blocks, input.transcript.folded, {}, 0, 0, undefined, undefined, window.activityPresentation)
+  return composeTranscriptGeometry(blocks, input.transcript.folded, previous.byBlockKey, previous.generation, previous.revision, previous.width, previous.styleRevision, window.activityPresentation)
 }
 
-function frameFor(input: TranscriptRuntimeInput, blocks: readonly TranscriptBlock[], displayedCanonicalRevision: number, revision: number, damage: TranscriptDamage, previousGeometry?: TranscriptGeometry): TranscriptFrame {
+function frameFor(input: TranscriptRuntimeInput, blocks: readonly TranscriptBlock[], displayedCanonicalRevision: number, revision: number, damage: TranscriptDamage, previousGeometry?: TranscriptGeometry, previousWindow?: TranscriptWindow): TranscriptFrame {
+  const window = passThroughWindow(blocks, input.transcript, previousWindow)
+  const activityDamage = previousWindow ? changedActivityPresentationIds(previousWindow.activityPresentation, window.activityPresentation) : []
   return Object.freeze({
     threadId: input.threadId,
     canonicalGeneration: input.canonicalGeneration,
@@ -218,16 +268,16 @@ function frameFor(input: TranscriptRuntimeInput, blocks: readonly TranscriptBloc
     mode: input.mode,
     transcript: presentationTranscript(input.transcript, blocks),
     blocks,
-    window: passThroughWindow(blocks),
-    geometry: reconciledGeometry(previousGeometry, input, blocks),
-    damage: frozenDamage(damage),
+    window,
+    geometry: reconciledGeometry(previousGeometry, input, blocks, window),
+    damage: damageWithActivityChanges(damage, activityDamage),
   })
 }
 
 function buildFrame(input: TranscriptRuntimeInput, previous: TranscriptFrame | undefined, revision: number, damage: TranscriptDamage): TranscriptFrame {
   const planned = buildTranscriptBlocks({ conversation: input.conversation, transcript: input.transcript, excludedTurnIds: input.excludedTurnIds })
   const blocks = previous ? reconcileBlocks(previous.blocks, planned) : planned
-  return frameFor(input, blocks, input.canonicalRevision, revision, damage, previous?.geometry)
+  return frameFor(input, blocks, input.canonicalRevision, revision, damage, previous?.geometry, previous?.window)
 }
 
 /** Stateless full-rebuild fallback for inert renderers; it owns no runtime lifetime. */
@@ -242,6 +292,7 @@ export function createTranscriptFrame(input: TranscriptRuntimeInput): Transcript
 export class TranscriptRuntime {
   private frame: TranscriptFrame
   private latestInput: TranscriptRuntimeInput
+  private activityProtectionState: TranscriptState
   private readonly itemBlockIndexes = new Map<ItemId, number>()
   private hiddenDamage: TranscriptDamage = noneDamage
   private readonly listeners = new Set<() => void>()
@@ -252,6 +303,7 @@ export class TranscriptRuntime {
 
   constructor(input: TranscriptRuntimeInput) {
     this.latestInput = input
+    this.activityProtectionState = input.transcript
     this.frame = createTranscriptFrame(input)
     this.reindex(this.frame.blocks)
     this.lastRevealId = input.reveal?.id ?? -1
@@ -288,6 +340,11 @@ export class TranscriptRuntime {
     return this.frame
   }
 
+  private publishInputFrame(frame: TranscriptFrame): TranscriptFrame {
+    this.activityProtectionState = this.latestInput.transcript
+    return this.publish(frame)
+  }
+
   private reindex(blocks: readonly TranscriptBlock[]): void {
     this.itemBlockIndexes.clear()
     for (let index = 0; index < blocks.length; index++) {
@@ -301,6 +358,7 @@ export class TranscriptRuntime {
   private incrementalFrame(input: TranscriptRuntimeInput, itemIds: readonly ItemId[], damage: TranscriptDamage): TranscriptFrame | undefined {
     let nextBlocks: TranscriptBlock[] | undefined
     let materialized = false
+    let activityChanged = false
     let projections: Record<string, TranscriptItemBlock["projection"]> | undefined
     for (const itemId of itemIds) {
       const index = this.itemBlockIndexes.get(itemId)
@@ -309,6 +367,7 @@ export class TranscriptRuntime {
       if (!prior && !next) continue
       materialized = true
       if (!prior || !("projection" in prior) || !next || prior.turnId !== next.turnId) return undefined
+      activityChanged ||= activityTopologyChanged(prior, next)
       projections ??= { ...this.frame.transcript.projectionById }
       projections[itemId] = next.projection
       if (sameBlock(prior, next)) continue
@@ -319,6 +378,10 @@ export class TranscriptRuntime {
     // transcript. Advancing them must not publish a frame or wake renderers.
     if (!materialized) return this.frame
     const blocks = nextBlocks ? Object.freeze(nextBlocks) : this.frame.blocks
+    const window = activityChanged
+      ? passThroughWindow(blocks, input.transcript, this.frame.window)
+      : passThroughWindowWithActivityPlan(blocks, this.frame.window, input.transcript)
+    const activityDamage = changedActivityPresentationIds(this.frame.window.activityPresentation, window.activityPresentation)
     const transcript = presentationTranscriptWithProjections(input.transcript, this.frame.transcript.order, Object.freeze(projections!))
     return Object.freeze({
       threadId: input.threadId,
@@ -328,22 +391,26 @@ export class TranscriptRuntime {
       mode: input.mode,
       transcript,
       blocks,
-      window: passThroughWindow(blocks),
-      geometry: reconciledGeometry(this.frame.geometry, input, blocks),
-      damage: frozenDamage(damage),
+      window,
+      geometry: reconciledGeometry(this.frame.geometry, input, blocks, window),
+      damage: damageWithActivityChanges(damage, activityDamage),
     })
   }
 
   private presentationFrame(input: TranscriptRuntimeInput, damage: TranscriptDamage): TranscriptFrame {
-    const geometry = shallowRecordEqual(input.transcript.folded, this.frame.transcript.folded)
-      ? this.frame.geometry : reconciledGeometry(this.frame.geometry, input, this.frame.blocks)
+    const window = sameActivityProtection(input.transcript, this.activityProtectionState, this.frame.window)
+      ? this.frame.window : passThroughWindowWithActivityPlan(this.frame.blocks, this.frame.window, input.transcript)
+    const activityDamage = changedActivityPresentationIds(this.frame.window.activityPresentation, window.activityPresentation)
+    const geometry = input.transcript.folded === this.activityProtectionState.folded && activityDamage.length === 0
+      ? this.frame.geometry : reconciledGeometry(this.frame.geometry, input, this.frame.blocks, window)
     return Object.freeze({
       ...this.frame,
       presentationRevision: this.frame.presentationRevision + 1,
       mode: input.mode,
       transcript: presentationTranscriptWithProjections(input.transcript, this.frame.transcript.order, this.frame.transcript.projectionById),
+      window,
       geometry,
-      damage: frozenDamage(damage),
+      damage: damageWithActivityChanges(damage, activityDamage),
     })
   }
 
@@ -362,14 +429,16 @@ export class TranscriptRuntime {
 
     const blocks = new Map(this.frame.blocks.map(block => [blockKey(block), block]))
     const measuredKeys = new Set<string>()
+    const presentation = this.frame.window.activityPresentation
     for (const measurement of batch.measurements) {
       if (measuredKeys.has(measurement.key.blockKey)) return this.frame
       measuredKeys.add(measurement.key.blockKey)
       const block = blocks.get(measurement.key.blockKey)
+      const blockPresentation = block ? presentation[blockKey(block)]?.kind ?? "item" : "item"
       if (!block || !geometryMatchesBlock(measurement, block,
-        block.key.kind === "item" && Boolean(this.frame.transcript.folded[block.key.itemId]))) return this.frame
+        block.key.kind === "item" && (blockPresentation !== "item" || Boolean(this.frame.transcript.folded[block.key.itemId])), blockPresentation)) return this.frame
       if (!Number.isInteger(measurement.nativeRevision) || measurement.nativeRevision < 0
-        || !Number.isInteger(measurement.rows) || measurement.rows < 1
+        || !Number.isInteger(measurement.rows) || measurement.rows < 0 || (measurement.rows === 0 && blockPresentation !== "activity-hidden")
         || !Number.isInteger(measurement.key.width) || measurement.key.width < 1) return this.frame
       const prior = this.frame.geometry.byBlockKey[measurement.key.blockKey]
       if (prior && measurement.nativeRevision <= prior.nativeRevision) return this.frame
@@ -392,7 +461,7 @@ export class TranscriptRuntime {
     }
     if (!changed) return this.frame
     const geometry = composeTranscriptGeometry(this.frame.blocks, this.frame.transcript.folded, nextByKey,
-      this.frame.geometry.generation, this.frame.geometry.revision + 1, first.key.width, first.key.styleRevision)
+      this.frame.geometry.generation, this.frame.geometry.revision + 1, first.key.width, first.key.styleRevision, presentation)
     return this.publish(Object.freeze({
       ...this.frame,
       presentationRevision: this.frame.presentationRevision + 1,
@@ -417,11 +486,11 @@ export class TranscriptRuntime {
     this.hiddenDamage = noneDamage
     const incremental = reuse && incrementalItemIds ? this.incrementalFrame(input, incrementalItemIds, damage) : undefined
     if (incremental === this.frame) {
-      return input.mode === this.frame.mode ? this.frame : this.publish(this.presentationFrame(input, damage))
+      return input.mode === this.frame.mode ? this.frame : this.publishInputFrame(this.presentationFrame(input, damage))
     }
     const next = incremental ?? buildFrame(input, reuse ? this.frame : undefined, this.frame.presentationRevision + 1, damage)
     if (!incremental) this.reindex(next.blocks)
-    return this.publish(next)
+    return this.publishInputFrame(next)
   }
 
   update(input: TranscriptRuntimeInput): TranscriptFrame {
@@ -461,11 +530,11 @@ export class TranscriptRuntime {
           const hiddenDamage = this.hiddenDamage
           return this.rebuild(input, mergeDamage(presentationDamage, mergeDamage({ kind: "view" }, hiddenDamage)), true, blockDamageIds(hiddenDamage))
         }
-        return this.publish(this.presentationFrame(input, mergeDamage(presentationDamage, Object.freeze({ kind: "view" as const }))))
+        return this.publishInputFrame(this.presentationFrame(input, mergeDamage(presentationDamage, Object.freeze({ kind: "view" as const }))))
       }
 
       if (detaching || presentationDamage.kind !== "none") {
-        return this.publish(this.presentationFrame(input, presentationDamage.kind === "none" ? noneDamage : presentationDamage))
+        return this.publishInputFrame(this.presentationFrame(input, presentationDamage.kind === "none" ? noneDamage : presentationDamage))
       }
       return priorFrame
     }
@@ -475,7 +544,7 @@ export class TranscriptRuntime {
     const damage = reattaching
       ? mergeDamage(this.hiddenDamage, mergeDamage(canonicalDamage, presentationDamage))
       : mergeDamage(canonicalDamage, presentationDamage)
-    if (!revisionChanged && !reattaching) return this.publish(this.presentationFrame(input, damage))
+    if (!revisionChanged && !reattaching) return this.publishInputFrame(this.presentationFrame(input, damage))
     const incrementalItemIds = reattaching
       ? blockDamageIds(this.hiddenDamage, canonicalDamage)
       : blockDamageIds(canonicalDamage)

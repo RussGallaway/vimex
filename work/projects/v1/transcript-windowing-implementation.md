@@ -192,6 +192,9 @@ type TranscriptBlock =
 
 interface TranscriptWindow {
   blocks: readonly TranscriptBlock[]
+  activityBatches: readonly TranscriptActivityBatch[]
+  activityBatchByItem: Readonly<Record<ItemId, TranscriptActivityBatch>>
+  activityPresentation: Readonly<Record<string, TranscriptActivityPresentation>> // keyed by blockKey
   topSpacerRows: number
   bottomSpacerRows: number
   overscanRows: number
@@ -201,6 +204,8 @@ interface TranscriptWindow {
 `TranscriptFrame.blocks` is the complete lightweight chronological plan and remains available for semantic routing, height indexing, and full-rebuild equivalence. `TranscriptFrame.window.blocks` is the materialized subset that the OpenTUI adapter mounts and measures. Renderer-neutral geometry may combine retained measurements and estimates across the complete plan, but native renderable inspection is restricted to the materialized window.
 
 The current pass-through planner is the full-rebuild reference implementation, so the complete plan and materialized subset are equal today. Windowed output must preserve the same chronological block order and semantic behavior for every materialized range.
+
+The complete-plan projection also derives immutable, item-scoped homogeneous activity relationships. `TranscriptRuntime` publishes the selected activity presentation once; UI rendering and native measurement consume that same map. When every child is folded, the planner treats the batch lead as the visible row and its children as zero-row blocks; a window boundary must not manufacture a partial batch. An explicit reveal of a compacted child dissolves the batch presentation before selecting the target range. Windowing may omit compacted child mounts, but it must retain the canonical item IDs and reproduce the pass-through presentation after expansion. Complete segmentation must be structurally shared or indexed so ordinary view publications project only the bounded window instead of cloning or scanning a transcript-sized homogeneous run.
 
 ## Window planner model
 

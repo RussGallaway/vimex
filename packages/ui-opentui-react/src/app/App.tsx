@@ -33,7 +33,7 @@ import { agentNavigationRows } from "../agents/AgentsOverlay"
 import { useTranscriptRuntime } from "../transcript/use-transcript-runtime"
 
 const blankTranscript = initialTranscript()
-const blankTranscriptWindow: TranscriptWindow = Object.freeze({ blocks: Object.freeze([]), topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
+const blankTranscriptWindow: TranscriptWindow = Object.freeze({ blocks: Object.freeze([]), activityBatches: Object.freeze([]), activityBatchByItem: Object.freeze({}), activityPresentation: Object.freeze({}), topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
 const blankComposer = initialComposer()
 const blankInteraction = initialInteraction()
 

@@ -17,6 +17,7 @@ import {
   type BlockGeometry,
   type GeometryStyleRevision,
   type TranscriptBlock,
+  type TranscriptBlockPresentation,
 } from "@vimex/transcript"
 import { graphemeCellWidth } from "./layout"
 
@@ -45,6 +46,7 @@ export interface MeasureRenderedBlockInput {
   readonly width: number
   readonly styleRevision: GeometryStyleRevision
   readonly folded: boolean
+  readonly presentation?: TranscriptBlockPresentation
 }
 
 export interface DirtyRenderedBlock {
@@ -503,6 +505,7 @@ function sameKey(left: BlockGeometry["key"], right: BlockGeometry["key"]): boole
     && left.width === right.width
     && left.styleRevision === right.styleRevision
     && left.folded === right.folded
+    && (left.presentation ?? "item") === (right.presentation ?? "item")
 }
 
 function sameGeometryShape(left: BlockGeometry, right: BlockGeometry): boolean {
@@ -530,18 +533,24 @@ export function measureRenderedBlock(input: MeasureRenderedBlockInput): BlockGeo
     width: Math.max(1, Math.floor(input.width)),
     styleRevision: input.styleRevision,
     folded: input.folded,
+    ...((input.presentation ?? "item") === "item" ? {} : { presentation: input.presentation }),
   })
   state.blockKey = key.blockKey
   if (!state.dirty && state.geometry && sameKey(state.geometry.key, key)) return state.geometry
 
   observeNativeTree(state, input.renderable)
+  const hidden = input.presentation === "activity-hidden"
+  const activityLead = input.presentation === "activity-lead"
   const range = "item" in input.block ? blockGraphemeRange(input.block) : { from: 0, to: 0 }
   const text = "item" in input.block ? graphemes(input.block.projection.plain).slice(range.from, range.to).join("") : ""
   const textLength = range.to - range.from
-  let nativePoints = "item" in input.block
+  let nativePoints = "item" in input.block && !hidden && !activityLead
     ? measureItem(input.renderer, input.renderable, input.block.key.itemId, text, !input.folded)
     : {}
-  if (input.folded) nativePoints = foldedPointFallback(textLength, nativePoints)
+  if (input.folded && !hidden) {
+    if (!Object.keys(nativePoints).length) nativePoints[0] = { graphemeOffset: 0, x: input.renderable.screenX, y: input.renderable.screenY }
+    nativePoints = foldedPointFallback(textLength, nativePoints)
+  }
   // Adjacent item sub-blocks share a logical boundary. Only the final block
   // owns the document-end cursor; a non-final block must not duplicate the
   // next block's first address or trap left/right motion at that boundary.
@@ -575,7 +584,7 @@ export function measureRenderedBlock(input: MeasureRenderedBlockInput): BlockGeo
     // Revisions are process-monotonic rather than renderable-local so a native
     // remount of the same logical block cannot look older than runtime cache.
     nativeRevision: nextNativeRevision++,
-    rows: Math.max(1, input.renderable.height, ...lines.map(line => line.row + 1)),
+    rows: hidden ? 0 : Math.max(1, input.renderable.height, ...lines.map(line => line.row + 1)),
     points,
     lines,
   })

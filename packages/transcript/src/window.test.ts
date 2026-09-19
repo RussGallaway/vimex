@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { createConversation, itemId, reduceConversation, threadId, turnId, type ConversationEvent } from "@vimex/conversation"
 import { initialTranscript } from "./domain/transcript-document"
 import { syncTranscriptItem } from "./application/project-conversation"
-import { blockGraphemeRange, blockKey, buildTranscriptBlocks, passThroughWindow, pointIsMaterialized, type TranscriptItemBlock } from "./window"
+import { blockGraphemeRange, blockKey, buildTranscriptBlocks, passThroughWindow, pointIsMaterialized, transcriptActivityPresentation, type TranscriptItemBlock } from "./window"
 
 function fixture() {
   const thread = threadId("thread")
@@ -111,10 +111,79 @@ test("item revisions include render-visible metadata as well as projection revis
 test("pass-through materializes every block with no spacers or overscan", () => {
   const { conversation, transcript } = fixture()
   const blocks = buildTranscriptBlocks({ conversation, transcript })
-  const window = passThroughWindow(blocks)
-  expect(window).toEqual({ blocks, topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
+  const window = passThroughWindow(blocks, transcript)
+  expect(window).toEqual({ blocks, activityBatches: [], activityBatchByItem: {}, activityPresentation: {}, topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
   expect(window.blocks).toBe(blocks)
   expect(Object.isFrozen(window)).toBe(true)
+})
+
+test("derives adjacent settled web, read, and provider activity batches without hiding canonical blocks", () => {
+  const thread = threadId("activity-thread"), turn = turnId("activity-turn")
+  const items = [
+    { id: itemId("web-1"), turnId: turn, kind: "tool" as const, title: "Web search", detail: "one", activity: { family: "web-research" as const }, status: "complete" as const },
+    { id: itemId("web-2"), turnId: turn, kind: "tool" as const, title: "Web search", detail: "two", activity: { family: "web-research" as const }, status: "complete" as const },
+    { id: itemId("message"), turnId: turn, kind: "assistant" as const, markdown: "progress", status: "complete" as const },
+    { id: itemId("read-1"), turnId: turn, kind: "command" as const, title: "Read /repo/a.ts", detail: "a", activity: { family: "read" as const }, status: "complete" as const },
+    { id: itemId("read-2"), turnId: turn, kind: "command" as const, title: "Read /repo/b.ts", detail: "b", activity: { family: "read" as const }, status: "complete" as const },
+    { id: itemId("linear-1"), turnId: turn, kind: "tool" as const, title: "codex_apps · linear.search_documentation", detail: "a", activity: { family: "provider" as const, label: "Linear" }, status: "complete" as const, durationMs: 833 },
+    { id: itemId("linear-2"), turnId: turn, kind: "tool" as const, title: "codex_apps · linear.get_issue", detail: "b", activity: { family: "provider" as const, label: "Linear" }, status: "complete" as const, durationMs: 965 },
+    { id: itemId("linear-error"), turnId: turn, kind: "tool" as const, title: "codex_apps · linear.list_comments", detail: "error", status: "error" as const },
+  ]
+  let conversation = reduceConversation(createConversation(thread), { type: "turn.started", threadId: thread, turnId: turn })
+  let transcript = initialTranscript()
+  for (const item of items) {
+    conversation = reduceConversation(conversation, { type: "item.started", threadId: thread, item })
+    transcript = syncTranscriptItem(transcript, item)
+  }
+  const blocks = buildTranscriptBlocks({ conversation, transcript })
+  const window = passThroughWindow(blocks, transcript)
+
+  expect(window.blocks).toHaveLength(items.length)
+  expect(window.activityBatches).toEqual([
+    expect.objectContaining({ family: "web-research", label: "Web research", countLabel: "2 searches", leadItemId: itemId("web-1"), itemIds: [itemId("web-1"), itemId("web-2")] }),
+    expect.objectContaining({ family: "read", label: "Read files", countLabel: "2 reads", leadItemId: itemId("read-1"), itemIds: [itemId("read-1"), itemId("read-2")] }),
+    expect.objectContaining({ family: "provider", label: "Linear", countLabel: "2 actions", leadItemId: itemId("linear-1"), itemIds: [itemId("linear-1"), itemId("linear-2")], durationMs: 1798 }),
+  ])
+  expect(window.activityBatches[0]?.durationMs).toBeUndefined()
+  expect(window.activityBatches.every(Object.isFrozen)).toBe(true)
+
+  const first = blocks.find(block => block.key.kind === "item" && block.key.itemId === itemId("web-1")) as TranscriptItemBlock
+  const boundary = first.sourceSpan.from + 1
+  const prefix = Object.freeze({ ...first, sourceSpan: Object.freeze({ from: first.sourceSpan.from, to: boundary }) })
+  const split = Object.freeze({ ...first, key: Object.freeze({ ...first.key, blockId: "result" }), sourceSpan: Object.freeze({ from: boundary, to: first.sourceSpan.to }) })
+  const splitState = { ...transcript, folded: { ...transcript.folded, [itemId("web-1")]: true, [itemId("web-2")]: true } }
+  const splitWindow = passThroughWindow(Object.freeze([prefix, split, ...blocks.slice(1)]), splitState)
+  expect(splitWindow.activityBatches[0]?.countLabel).toBe("2 searches")
+  expect(splitWindow.activityBatches[0]?.itemIds).toEqual([itemId("web-1"), itemId("web-2")])
+  expect(splitWindow.activityPresentation[`item:web-1:root`]?.kind).toBe("activity-lead")
+  expect(splitWindow.activityPresentation[`item:web-1:result`]?.kind).toBe("activity-hidden")
+  expect(splitWindow.activityPresentation[`item:web-2:root`]?.kind).toBe("activity-hidden")
+  const outsideLead = splitWindow.activityBatches[0]!.leadGraphemeTo + (splitWindow.activityBatches[0]!.leadIncludesEnd ? 1 : 0)
+  expect(transcriptActivityPresentation(splitWindow, { ...splitState, cursor: { itemId: itemId("web-1"), graphemeOffset: outsideLead } })).toEqual({})
+})
+
+test("activity presentation compacts only fully folded groups and reveals a precise hidden target", () => {
+  const thread = threadId("batch-state"), turn = turnId("batch-turn")
+  const ids = [itemId("batch-a"), itemId("batch-b")]
+  const items = ids.map((id, index) => ({ id, turnId: turn, kind: "tool" as const, title: "Web search", detail: String(index), activity: { family: "web-research" as const }, status: "complete" as const }))
+  let conversation = reduceConversation(createConversation(thread), { type: "turn.started", threadId: thread, turnId: turn })
+  let transcript = initialTranscript()
+  for (const item of items) {
+    conversation = reduceConversation(conversation, { type: "item.started", threadId: thread, item })
+    transcript = syncTranscriptItem(transcript, item)
+  }
+  const folded = { ...transcript, folded: { [ids[0]!]: true, [ids[1]!]: true } }
+  const window = passThroughWindow(buildTranscriptBlocks({ conversation, transcript }), folded)
+  expect(transcriptActivityPresentation(window, folded)).toMatchObject({
+    [`item:${ids[0]}:root`]: { kind: "activity-lead", itemId: ids[0] },
+    [`item:${ids[1]}:root`]: { kind: "activity-hidden", itemId: ids[1] },
+  })
+  expect(window.activityPresentation).toMatchObject({
+    [`item:${ids[0]}:root`]: { kind: "activity-lead", itemId: ids[0] },
+    [`item:${ids[1]}:root`]: { kind: "activity-hidden", itemId: ids[1] },
+  })
+  expect(transcriptActivityPresentation(window, { ...folded, cursor: { itemId: ids[1]!, graphemeOffset: 0 } })).toEqual({})
+  expect(transcriptActivityPresentation(window, { ...folded, folded: { ...folded.folded, [ids[0]!]: false } })).toEqual({})
 })
 
 test("logical targets materialize only through item blocks, including empty source", () => {
