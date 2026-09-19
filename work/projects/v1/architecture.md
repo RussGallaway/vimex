@@ -102,18 +102,17 @@ There is no undifferentiated global state object. A store implementation may hos
 Screen rows are ephemeral. Transcript positions must refer to stable logical identities:
 
 ```ts
-type LogicalPosition = {
+type LogicalPoint = {
   itemId: ItemId
-  blockId: BlockId
   graphemeOffset: number
 }
 
 type ViewportAnchor =
-  | { type: "tail" }
-  | { type: "position"; position: LogicalPosition; screenRow: number }
+  | { kind: "tail" }
+  | { kind: "point"; point: LogicalPoint; preferredScreenRow: number }
 ```
 
-The transcript keeps canonical Markdown and a source map between rendered blocks and source spans. This supports rendered-text copy, Markdown copy, URL resolution, search, reflow, and stable Visual selections.
+Semantic positions deliberately omit render-block identity: Stage 5 may split or replace blocks without invalidating cursor, selection, marks, jumps, or viewport anchors. The transcript keeps canonical Markdown and a source map between rendered blocks and source spans. This supports rendered-text copy, Markdown copy, URL resolution, search, reflow, and stable Visual selections.
 
 `item/completed` or its current protocol equivalent is authoritative. Deltas update provisional state; completion replaces or reconciles it.
 

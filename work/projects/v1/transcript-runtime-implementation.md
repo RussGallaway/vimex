@@ -19,7 +19,7 @@ Stages 1–4 are the current delivery target. Stage 5 contracts must be supporte
 | Architecture and research | Complete | Commit `8f6bba9` |
 | Baseline profiling | Complete | Measurements recorded below |
 | Stage 1: compact activity | Complete | Commit `7a4209d`; full gate plus isolated tmux rerun |
-| Stage 2: ingress and detachment | In progress | Stage 2a commit `07678c4` |
+| Stage 2: ingress and detachment | Complete | Stage 2a `07678c4`; Stage 2b `28cc24d` |
 | Stage 3: block-local geometry | Not started | — |
 | Stage 4: narrow observation | Not started | — |
 | Stage 5: block windowing | Contract only | Deferred |
@@ -191,27 +191,27 @@ packages/ui-opentui-react/src/
 
 ### Stage 2b — runtime and detachment
 
-- [ ] Introduce `TranscriptRuntime` with cached immutable `TranscriptFrame` output.
-- [ ] Introduce Stage 5-compatible block and window contracts.
-- [ ] Model blocks as a union of source-backed item blocks and source-less, turn-owned activity decoration blocks.
-- [ ] Begin with a pass-through planner that materializes all blocks.
-- [ ] Track canonical and presentation revisions explicitly.
-- [ ] Keep the displayed content revision stable while detached.
-- [ ] Record changed item IDs and unseen activity without publishing hidden content damage.
-- [ ] Keep cursor, selection, folds, search, marks, jumps, and logical anchor live.
-- [ ] Materialize explicit navigation targets absent from the displayed frame.
-- [ ] Reattach by selecting the newest canonical revision atomically.
+- [x] Introduce `TranscriptRuntime` with cached immutable `TranscriptFrame` output.
+- [x] Introduce Stage 5-compatible block and window contracts.
+- [x] Model blocks as a union of source-backed item blocks and source-less, turn-owned activity decoration blocks.
+- [x] Begin with a pass-through planner that materializes all blocks.
+- [x] Track canonical and presentation revisions explicitly.
+- [x] Keep the displayed content revision stable while detached.
+- [x] Record changed item IDs and unseen activity without publishing hidden content damage.
+- [x] Keep cursor, selection, folds, search, marks, jumps, and logical anchor live.
+- [x] Materialize explicit navigation targets absent from the displayed frame.
+- [x] Reattach by selecting the newest canonical revision atomically.
 
 ### Tests
 
 - [x] Coalesced events reduce to the same canonical state as uncoalesced events.
 - [x] Every lifecycle boundary flushes pending deltas in order.
 - [x] An injected scheduler makes cadence tests deterministic.
-- [ ] Detached frame identity remains stable during tail streaming.
-- [ ] Detached navigation remains responsive while canonical state advances.
-- [ ] Search, mark, jump, and thread navigation reveal absent targets.
-- [ ] Reattachment equals a fresh frame built from current canonical state.
-- [ ] Full rebuild and incremental update frames are semantically equivalent.
+- [x] Detached frame identity remains stable during tail streaming.
+- [x] Detached navigation remains responsive while canonical state advances.
+- [x] Search, mark, jump, and thread navigation reveal absent targets.
+- [x] Reattachment equals a fresh frame built from current canonical state.
+- [x] Full rebuild and incremental update frames are semantically equivalent.
 
 ### Exit criteria
 
@@ -238,6 +238,18 @@ packages/ui-opentui-react/src/
 - Full repository gate: 574 pass, 5 intentional skips; the managed sandbox removed the detached tmux socket, and the exact isolated tmux test passed separately outside the sandbox.
 - Typecheck, dependency boundaries, documentation check, and diff check pass.
 - Three parallel review tracks reported no remaining Stage 2a blockers after repair.
+
+### Stage 2b verification evidence
+
+- Commit `28cc24d` introduces one Workbench-owned `TranscriptRuntime` per stable presentation identity, cached immutable frames, guarded canonical generations and revisions, coherent detached frames, explicit target reveals, and atomic reattachment.
+- Source-backed item blocks and source-less turn-activity blocks now flow through a pass-through `TranscriptWindow`; arbitrary item sub-block IDs, source spans, spacer rows, and overscan establish the Stage 5 renderer contract without implementing windowing.
+- Canonical block damage updates only affected item blocks. A 300-item regression preserves the historical block plan and projection identities; structural or unknown relationships take the full-rebuild fallback.
+- React owns no runtime lifetime. Its bridge subscribes to the Workbench runtime and uses only a stateless full frame before a presentation owner exists.
+- Detached streaming retained exact frame identity across 100 consecutive deltas and emitted no presentation notifications. Reattachment matched a fresh full frame and published once.
+- Isolated runtime-update measurements, with Markdown projection prepared before timing, were 0.026 ms at 1K characters, 0.015 ms at 10K, 0.019 ms at 50K, and 0.033 ms at 100K. Remaining shallow immutable-container work measured 0.058 ms at 300 historical items, 0.588 ms at 3K, and 2.417 ms at 10K.
+- The existing 135,389-character renderer benchmark remained effectively flat: measure 0.030 ms, anchor 0.254 ms, frame 0.129 ms.
+- Final focused verification passed 131 tests. The repository gate passed typecheck, dependency boundaries, documentation generation, 606 tests, and 5 intentional performance skips; the managed sandbox removed the tmux socket, and the exact isolated tmux scenario passed outside it.
+- Two parallel review-and-repair rounds covering runtime correctness, ownership/topology, tests, and performance reported no remaining blockers.
 
 ## Stage 3 — block-local geometry
 
@@ -397,6 +409,8 @@ Add one row after each coherent implementation commit.
 |---|---|---|---|---|---|
 | 2026-09-18 | Architecture | `8f6bba9` | Documentation review; `git diff --check` | Baseline recorded above | Runtime design and research committed |
 | 2026-09-18 | Stage 1 | `7a4209d` | Typecheck, boundaries, docs, 563-test repository run plus isolated tmux rerun, 98 focused tests, three parallel review scopes | 135,389 chars: measure 0.038 ms, anchor 0.243 ms, frame 0.160 ms | Compact turn-aware activity, structured agent vocabulary, observed timing, non-canonical decorations, one heartbeat per visible pane |
+| 2026-09-18 | Stage 2a | `07678c4` | Typecheck, boundaries, docs, 574-test repository run plus isolated tmux rerun, deterministic ingress tests, three parallel review scopes | Settlement bounded by injected cadence; no permanent polling timer | Atomic bounded ingress, lifecycle drains, hydration replay, staged navigation-history projection |
+| 2026-09-18 | Stage 2b | `28cc24d` | Typecheck, boundaries, docs, 606-test repository run plus isolated tmux rerun, 131 focused tests, two parallel review-and-repair rounds | Runtime update 0.015–0.033 ms at 10K–100K active chars; 2.417 ms at 10K historical items; detached deltas publish 0 frames | Workbench-owned runtime, coherent detachment, incremental block damage, thin React bridge, Stage 5 block/window contract |
 
 ## Deferred questions
 

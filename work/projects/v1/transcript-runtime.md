@@ -55,9 +55,11 @@ It does not own canonical conversation items, cursor, selection, search, jumps, 
 
 ```ts
 interface TranscriptFrame {
-  canonicalRevision: number
+  /** Canonical revision represented by this displayed frame. */
+  displayedCanonicalRevision: number
   presentationRevision: number
   mode: "follow" | "detached"
+  transcript: TranscriptState
   blocks: readonly TranscriptBlock[]
   window: TranscriptWindow
   damage: TranscriptDamage
