@@ -17,7 +17,7 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 
 | Work | State | Evidence |
 |---|---|---|
-| Stage 5 topology and contracts | Complete | Established by Stages 2–3 |
+| Stage 5 topology and contracts | Complete | Established by Stages 2–4 |
 | Baseline and large-history fixtures | Not started | — |
 | Stage 5a: pure window planner | Not started | — |
 | Stage 5b: windowed mounting | Not started | — |
@@ -180,7 +180,9 @@ interface TranscriptWindow {
 }
 ```
 
-The current pass-through planner is the full-rebuild reference implementation. Windowed output must preserve the same chronological block order and semantic behavior for every materialized range.
+`TranscriptFrame.blocks` is the complete lightweight chronological plan and remains available for semantic routing, height indexing, and full-rebuild equivalence. `TranscriptFrame.window.blocks` is the materialized subset that the OpenTUI adapter mounts and measures. Renderer-neutral geometry may combine retained measurements and estimates across the complete plan, but native renderable inspection is restricted to the materialized window.
+
+The current pass-through planner is the full-rebuild reference implementation, so the complete plan and materialized subset are equal today. Windowed output must preserve the same chronological block order and semantic behavior for every materialized range.
 
 ## Window planner model
 

@@ -197,7 +197,7 @@ Move responsibility in tested vertical slices. The legacy hook and the runtime m
 
 ### Stage 2 — bounded ingress and coherent detachment
 
-- Coalesce adjacent deltas for one item on a short bounded cadence.
+- Coalesce item-local deltas within a short bounded cadence while preserving first-seen item order and semantic boundaries.
 - Flush before every semantic or lifecycle boundary.
 - Keep a detached presentation revision coherent while canonical state advances.
 - Accumulate hidden tail damage and live unseen counts without invalidating the detached frame.
@@ -219,7 +219,8 @@ Move responsibility in tested vertical slices. The legacy hook and the runtime m
 - Subscribe panes and observers to the smallest semantic slices they consume.
 - Stop persistence and Herdr reporting from running for every token delta.
 - Keep animation cadence independent of transcript content and geometry cadence.
-- Cap ingress and presentation work so navigation cannot be starved.
+- Cap normal scheduled ingress work at 64 distinct streams per turn and continue backlog on a zero-delay task so navigation cannot be starved; retain atomic semantic and lifecycle drains.
+- Cache layout and pane publications by their narrow semantic inputs so unrelated canonical changes preserve snapshot identity.
 
 ### Stage 5 — render-block windowing
 
@@ -248,7 +249,9 @@ interface TranscriptWindow {
 }
 ```
 
-Stages 1–4 use a pass-through window planner that returns all blocks. Stage 5 changes the policy and materialization strategy, not transcript semantics or the renderer contract.
+`TranscriptFrame.blocks` is the complete lightweight chronological block plan. `TranscriptFrame.window.blocks` is the subset selected for native mounting and measurement. Renderer-neutral height composition may retain measurements or estimates for the complete plan, but the OpenTUI adapter must inspect native renderables only for the materialized window. Stages 1–4 use a pass-through planner, so both arrays currently contain every block; Stage 5 changes the window policy and materialization strategy without changing transcript semantics or this ownership contract.
+
+[Transcript windowing implementation](./transcript-windowing-implementation.md) owns the deferred Stage 5 execution order, verification, and performance evidence.
 
 Item blocks address canonical source; an item with empty canonical source uses a zero-width span and retains one logical anchor point. Turn-activity blocks are runtime-owned, source-less decoration so empty terminal turns retain chronology without entering cursor, selection, search, copy, or fork semantics. The temporary Stage 1 UI join that places turn footers beside rows must move into the runtime block plan in Stage 2.
 

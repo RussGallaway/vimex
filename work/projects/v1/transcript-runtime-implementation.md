@@ -4,6 +4,7 @@ Status: active execution ledger. Update this document as implementation evidence
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime research](./transcript-runtime-research.md) owns the supporting evidence and references.
+- [Transcript windowing implementation](./transcript-windowing-implementation.md) owns the deferred Stage 5 execution plan.
 - This document owns implementation order, status, verification, and commit evidence.
 
 ## Objective
@@ -21,7 +22,7 @@ Stages 1–4 are the current delivery target. Stage 5 contracts must be supporte
 | Stage 1: compact activity | Complete | Commit `7a4209d`; full gate plus isolated tmux rerun |
 | Stage 2: ingress and detachment | Complete | Stage 2a `07678c4`; Stage 2b `28cc24d` |
 | Stage 3: block-local geometry | Complete | Commit `f71cba9`; full gate plus isolated tmux rerun |
-| Stage 4: narrow observation | Not started | — |
+| Stage 4: narrow observation | Complete | Commits `efad886`, `21ea810`, and `31c4e41`; full gate plus isolated tmux rerun |
 | Stage 5: block windowing | Contract only | Deferred |
 
 “Complete” means the stage's exit criteria pass, evidence is recorded here, and the implementation is committed. Partial working-tree changes do not count as complete.
@@ -182,7 +183,7 @@ packages/ui-opentui-react/src/
 ### Stage 2a — ingress settlement
 
 - [x] Introduce a bounded conversation-ingress settler.
-- [x] Coalesce adjacent deltas only when thread and item identity match.
+- [x] Coalesce item-local deltas within one cadence while preserving first-seen item order and semantic boundaries.
 - [x] Preserve first-seen order across independent items.
 - [x] Flush before item completion, turn completion, hydration, disconnect, restart, and shutdown.
 - [x] Flush before non-delta events whose meaning depends on prior text.
@@ -230,7 +231,7 @@ packages/ui-opentui-react/src/
 ### Stage 2a verification evidence
 
 - Commit `07678c4` introduces one controller-owned ingress path for live events and authoritative hydration replay.
-- Adjacent matching deltas coalesce; interleaved items preserve first-seen order while committing once per cadence.
+- Item-local deltas coalesce across interleaved streams within one cadence; first-seen item order and semantic boundaries remain stable.
 - Atomic batches retain text and semantic boundaries across pre-commit failures without a permanent retry timer.
 - Shutdown closes intake before its final drain, publishes the drained state for persistence, and rejects re-entrant input.
 - Navigation-history reprojection is staged without changing the stable identity used by in-flight asynchronous jumps.
@@ -329,7 +330,11 @@ Unrelated state and presentation work no longer wakes the transcript, persistenc
 
 ```text
 packages/workbench/src/application/
+  conversation-ingress.ts
+  local-state.ts
+  workbench-observation.ts
   workbench-controller.ts
+  workbench-publications.ts
 
 apps/tui/src/
   composition-root.ts
@@ -343,24 +348,24 @@ packages/ui-opentui-react/src/
 
 ### Work
 
-- [ ] Publish cached immutable snapshots suitable for narrow selection.
-- [ ] Preserve the state-prop UI interface for presentational tests.
-- [ ] Subscribe each pane to its own workspace and presentation slice.
-- [ ] Keep detached transcript content references stable.
-- [ ] Make persistence observe only serializable local-view fields.
-- [ ] Make Herdr reporting observe only lifecycle metadata.
-- [ ] Retain the existing Herdr reporter's latest-wins queue.
-- [ ] Isolate heartbeat animation from transcript layout invalidation.
-- [ ] Cap ingest and presentation work per scheduling turn when necessary.
+- [x] Publish cached immutable snapshots suitable for narrow selection.
+- [x] Preserve the state-prop UI interface for presentational tests.
+- [x] Subscribe each pane to its own workspace and presentation slice.
+- [x] Keep detached transcript content references stable.
+- [x] Make persistence observe only serializable local-view fields.
+- [x] Make Herdr reporting observe only lifecycle metadata.
+- [x] Retain the existing Herdr reporter's latest-wins queue.
+- [x] Isolate heartbeat animation from transcript layout invalidation.
+- [x] Cap normal scheduled ingress work per scheduling turn so presentation input cannot starve navigation.
 
 ### Tests
 
-- [ ] Snapshot identity changes only when selected values change.
-- [ ] Streaming one pane does not reconcile the other pane's transcript.
-- [ ] Detached rows do not rerender for hidden tail deltas.
-- [ ] Persistence does not capture token-only changes.
-- [ ] Herdr does not report when its semantic signature is unchanged.
-- [ ] Navigation remains responsive during sustained streaming.
+- [x] Snapshot identity changes only when selected values change.
+- [x] Streaming one pane does not reconcile the other pane's transcript.
+- [x] Detached rows do not rerender for hidden tail deltas.
+- [x] Persistence does not capture token-only changes.
+- [x] Herdr does not report when its semantic signature is unchanged.
+- [x] Navigation remains responsive during sustained streaming.
 
 ### Exit criteria
 
@@ -368,6 +373,17 @@ packages/ui-opentui-react/src/
 - One animation tick cannot invalidate the transcript subtree.
 - Persistence and Herdr cadence are independent of token cadence.
 - Side-by-side panes remain independently responsive.
+
+### Verification evidence
+
+- Commit `efad886` gives local persistence and Herdr lifecycle reporting cached semantic signatures. Token-only changes no longer wake either observer, while the Herdr reporter retains its latest-wins delivery queue.
+- Commit `21ea810` adds cached layout and pane publications, a production external-store bridge, pane-local subscriptions, a memoized viewport surface, coherent canonical/publication/runtime assignment order, and cleanup for hidden side-pane heartbeats. The state-prop root remains available for presentational tests.
+- Commit `31c4e41` bounds a normal scheduled ingress turn to 64 distinct streams, continues backlog on a zero-delay task, and coalesces all item-local deltas within a cadence without crossing semantic boundaries. Explicit lifecycle drains and failed semantic batches remain atomic.
+- Side-chat lookup uses an immutable-state `WeakMap` index with role-specific child lookup. Parent/child identifier collisions retain correct projection, runtime input, hydration, navigation, and pane invalidation behavior.
+- The focused final hardening set passed 105 tests. Parallel architecture, correctness, and test/performance review-and-repair rounds reported no remaining blockers.
+- The full repository gate passed typecheck, dependency boundaries, documentation generation, 649 tests, and 5 intentional performance skips. The managed sandbox removed the tmux socket, and the exact isolated tmux scenario passed outside it.
+- The connected-App profile passed 11 scenarios in an 80×24 terminal. Its navigation fixture contained 100 historical Markdown items with eight repeated paragraphs each; warm navigation settled in approximately 19–21 ms with 0.09–0.21 ms input dispatch and 0.45–0.51 ms React commits. Its detached fixture appended 1,200 Markdown paragraphs to a live answer; steady deltas settled in approximately 18–20 ms and navigation in approximately 52–57 ms with 0.22–0.30 ms React commits. The first large-frame materialization was approximately 228 ms.
+- These measurements do not justify a second presentation scheduler: bounded ingress and narrow publications remove token-cadence starvation, while remaining cost is primarily native frame and Markdown work. Stage 5 block windowing is the next topology-preserving scaling step.
 
 ## Stage 5 — render-block windowing
 
@@ -428,12 +444,13 @@ Add one row after each coherent implementation commit.
 | 2026-09-18 | Stage 1 | `7a4209d` | Typecheck, boundaries, docs, 563-test repository run plus isolated tmux rerun, 98 focused tests, three parallel review scopes | 135,389 chars: measure 0.038 ms, anchor 0.243 ms, frame 0.160 ms | Compact turn-aware activity, structured agent vocabulary, observed timing, non-canonical decorations, one heartbeat per visible pane |
 | 2026-09-18 | Stage 2a | `07678c4` | Typecheck, boundaries, docs, 574-test repository run plus isolated tmux rerun, deterministic ingress tests, three parallel review scopes | Settlement bounded by injected cadence; no permanent polling timer | Atomic bounded ingress, lifecycle drains, hydration replay, staged navigation-history projection |
 | 2026-09-18 | Stage 2b | `28cc24d` | Typecheck, boundaries, docs, 606-test repository run plus isolated tmux rerun, 131 focused tests, two parallel review-and-repair rounds | Runtime update 0.015–0.033 ms at 10K–100K active chars; 2.417 ms at 10K historical items; detached deltas publish 0 frames | Workbench-owned runtime, coherent detachment, incremental block damage, thin React bridge, Stage 5 block/window contract |
+| 2026-09-18 | Stage 3 | `f71cba9` | Typecheck, boundaries, docs, 622-test repository run plus isolated tmux rerun, 343 transcript/UI tests, three parallel review scopes | Ten-point tail update 0.064–0.080 ms with up to 495K retained points; bottom navigation 0.010–0.26 ms | Immutable block-local geometry, guarded native measurement, indexed navigation, scroll translation fast path |
+| 2026-09-18 | Stage 4 | `efad886`, `21ea810`, `31c4e41` | Typecheck, boundaries, docs, 649-test repository run plus isolated tmux rerun, 105 final hardening tests, parallel review-and-repair rounds | Warm navigation 19–21 ms; detached steady deltas 18–20 ms; React commits 0.22–0.51 ms | Semantic external observers, cached pane publications, bounded ingress turns, indexed side associations; no additional presentation scheduler |
 
 ## Deferred questions
 
 Answer these through measurement rather than speculative topology:
 
-- Exact ingress settlement cadence.
 - Stable Markdown sub-block identity across reparses.
 - Incremental-versus-full rebuild cost threshold.
 - Geometry-cache budget and reset interval.
@@ -441,3 +458,5 @@ Answer these through measurement rather than speculative topology:
 - The transcript size at which indexed search becomes necessary.
 
 Record answers here when evidence exists. Update the normative design only if an invariant or ownership boundary changes.
+
+Resolved: ingress settles on the existing short cadence, processes at most 64 distinct streams in a normal scheduled turn, and schedules a zero-delay continuation for remaining work. Semantic and lifecycle boundaries still drain atomically.
