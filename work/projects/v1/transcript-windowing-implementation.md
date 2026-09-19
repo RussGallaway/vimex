@@ -1,6 +1,6 @@
 # Transcript windowing implementation
 
-Status: Stages 5.0–5.4 are complete and verified. Stage 5.5 is in progress; bounded same-item follow, reattachment, canonical ingress, monotonic cross-presentation settlement, hidden-presentation resource suspension, and exact structural tail admission are complete.
+Status: Stages 5.0–5.4 are complete and verified. Stage 5.5 is in progress; bounded same-item follow, reattachment, canonical ingress, monotonic cross-presentation settlement, hidden-presentation resource suspension, exact structural tail admission, and detached unseen accumulation are complete.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
@@ -26,7 +26,7 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 | Stage 5b: windowed mounting | Complete | Commit `3e24002`; bounded production runtime, React/native mounting, observer lifetime, scaling evidence, and review sign-off below |
 | Stage 5c: anchor correction | Complete | Commit `97f163f`; atomic height correction, window-local geometry, logical-anchor restoration, scaling evidence, and review sign-off below |
 | Stage 5d: off-window semantics | Complete | Commits `a24f5af`, `df243a1`, `9266837`, `0e1ad6d`; indexed target materialization and URL motion, bounded selection clipping, canonical cross-window copy, atomic navigation/fold/picker settlement, and evidence below |
-| Stage 5e: follow and detachment | In progress | Stage 5.5a commit `9e8974e`, Stage 5.5b commit `e5dfc61`, Stage 5.5c commit `b3d26f9`, Stage 5.5d commit `4189d25`, and Stage 5.5e commit `70733dc`; bounded same-item canonical ingress, follow/reattach reconciliation, monotonic independent-presentation settlement, hidden-presentation resource suspension, exact structural tail admission, and evidence below |
+| Stage 5e: follow and detachment | In progress | Stage 5.5a commit `9e8974e`, Stage 5.5b commit `e5dfc61`, Stage 5.5c commit `b3d26f9`, Stage 5.5d commit `4189d25`, Stage 5.5e commit `70733dc`, and Stage 5.5f commit `43d9a9b`; bounded same-item canonical ingress, follow/reattach reconciliation, monotonic independent-presentation settlement, hidden-presentation resource suspension, exact structural tail admission, detached unseen accumulation, and evidence below |
 | Stage 5f: stress, review, and evidence | Not started | — |
 
 “Complete” means the slice's exit criteria pass, evidence is recorded here, and the implementation is committed. Partial working-tree changes do not count as complete.
@@ -1130,3 +1130,53 @@ Mounted, retained, publication, commit, candidate, attempted-measurement, accept
 - Parallel architecture, correctness, and performance reviews ran throughout the slice and after repairs. Repairs closed mode crossing, exclusions, exact projection/fold lineage, duplicate-order rejection, reveal/presentation ambiguity, same-batch empty-turn proof, cold derived-presentation normalization, warm derived indexes, and native seed-settlement gaps. All three final reviewers signed off with no blocker.
 
 Stage 5.5e is complete for exact empty-turn plus first-item structural tail admission. Completion/activity changes, detached unseen accumulation, and stable production sub-blocks for oversized Markdown, command output, and diffs remain open before Stage 5.5 and overall Stage 5 can be marked complete.
+
+### Stage 5.5f — bounded detached unseen accumulation
+
+Implementation commit: `43d9a9b` (`perf: bound detached unseen accumulation`). This slice removes total-history work from steady detached unseen tracking, private hidden-damage accumulation, and side-child inherited-turn membership. It also proves the status-only Workbench publication boundary through React, native-root retention, and OpenTUI measurement. Multi-item structural catch-up remains a correct full-build fallback; completion/activity structure and stable production sub-blocks remain later work.
+
+#### Semantic authority and disposable cache ownership
+
+- `TranscriptState.unseenItemIds` remains the semantic authority and preserves ordinary readonly-array iteration, reflection, JSON, duplicates, opaque IDs, and persisted plain-array compatibility. Its persistent sequence and membership index path-copy only the append path; repeat deltas retain the exact unseen-sequence identity.
+- `TranscriptRuntime` owns a private per-presentation `HiddenDamageAccumulator`. It visits only incoming changed IDs, preserves the public damage precedence and ordered uniqueness of the full reference, materializes an ID array only at a missing-target reveal or reattachment, and resets on every rebuild. No semantic meaning moved into the runtime cache.
+- Follow and detached runtimes therefore retain independent hidden-damage state. A retained-point reveal keeps the pinned complete plan and semantic unseen sequence; invalid reveals remain frozen; missing targets and reattachment adopt the latest canonical input through the existing rebuild/reference boundary.
+- Side-chat inherited turn IDs remain Workbench semantic state. Local restore, fork completion, and hydration normalize them to the persistent array-compatible sequence; live child projection uses indexed membership instead of scanning inherited parent history.
+- The React/OpenTUI measurement observer is an optional diagnostic sink. It observes completed scheduler passes but owns no UI state, geometry, runtime input, or publication decision.
+
+#### Deterministic detached accumulation scaling
+
+The measured workload starts with the same complete semantic backlog and a separately seeded private hidden-damage backlog at 100/1k/10k/100k. Text-length and URL indexes are explicitly primed before the boundary. The seed is proved rather than inferred: every scale records one merge, exactly `N` input visits, exactly `N` unique additions, and zero snapshot work. The measured sequence is one empty turn, one first unseen item, one repeat delta for that item, and one presentation-only publication.
+
+| Complete blocks / unseen backlog | Mounted | Hidden content / presentation publications | Unseen membership visits | Sequence append / membership-index update visits / copied nodes | Measured hidden merges / input visits / additions / snapshots | Complete plan, height, or geometry work | Hidden settlement |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 48 | 0 / 1 | 14 | 3 / 8 / 10 | 3 / 2 / 1 / 0 | 0 | 0.346 ms |
+| 1k | 48 | 0 / 1 | 20 | 6 / 11 / 13 | 3 / 2 / 1 / 0 | 0 | 0.220 ms |
+| 10k | 48 | 0 / 1 | 28 | 5 / 15 / 17 | 3 / 2 / 1 / 0 | 0 | 0.425 ms |
+| 100k | 48 | 0 / 1 | 34 | 6 / 18 / 20 | 3 / 2 / 1 / 0 | 0 | 0.973 ms |
+
+Every scale performs two indexed membership checks, one append, zero unseen normalization visits, zero cold text/URL builds or visits, two text/URL index updates, and zero hidden-damage snapshot visits inside the measured interval. The only total-size terms are logarithmic persistent paths. The separately measured side-child inherited-turn miss performs one lookup, zero normalization visits, and 6/9/13/16 membership-node visits across 100/1k/10k/100k.
+
+#### Connected Workbench, React, native, and measurement boundary
+
+The production probe starts with a fully settled detached frame and complete semantic unseen backlog. It routes a distinct `item.started` through the real Workbench projection and publication selector, `useVisiblePresentationSnapshot`, the owned runtime subscription, `TranscriptViewport`, native roots, and `useTranscriptLayout`. It drains two quiescent zero-attempt setup passes before beginning the measured interval and cumulatively observes every later scheduler pass.
+
+| Complete blocks | Mounted roots | Distinct item: Workbench / runtime / React publications | Measurement passes / attempts / reports | Retained / mounted / unmounted roots | Repeat delta: publications / passes / attempts / reports | Distinct / repeat settlement |
+|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 24 | 1 / 0 / 1 | 2 / 0 / 0 | 24 / 0 / 0 | 0 / 0 / 0 / 0 | 18.989 / 0.226 ms |
+| 1k | 24 | 1 / 0 / 1 | 2 / 0 / 0 | 24 / 0 / 0 | 0 / 0 / 0 / 0 | 16.448 / 0.097 ms |
+| 10k | 24 | 1 / 0 / 1 | 2 / 0 / 0 | 24 / 0 / 0 | 0 / 0 / 0 / 0 | 17.823 / 0.124 ms |
+| 100k | 24 | 1 / 0 / 1 | 2 / 0 / 0 | 24 / 0 / 0 | 0 / 0 / 0 / 0 | 1.496 / 0.345 ms |
+
+The direct runtime/native hidden-delta cell independently retains 34 mounted roots with zero runtime publications, React commits, mounts, or unmounts at every scale. The native cleanup regression remains exact: the scheduler records every pruned logical key and the benchmark compares the sorted key set against the same captured pre-publication frame. Native-only runs passed at 48×18, 80×24, and 140×40; the widest overlapping movement pruned exactly the 14 departed measured keys rather than comparing against a later geometry-shifted window.
+
+#### Equivalence, fallback, repository, and review gates
+
+- Persisted plain unseen arrays with duplicate and prototype-named IDs normalize once through `syncTranscriptItem`; existing membership does not increment the count, and one new ID appends exactly once. Array semantics and prior snapshot immutability remain intact.
+- Hidden damage precedence is covered for blocks, folds, view, layout, and full damage. A 4,096-ID backlog adds each unique ID once, does no snapshot work while detached, and materializes exactly once on reattachment. Multi-item detached tail admission publishes one reattached frame equal to a fresh full-build runtime; this intentionally proves the fallback rather than claiming bounded structural catch-up.
+- The controller integration proves a distinct detached item publishes status once without publishing its content frame, repeat deltas do not republish status, and a new detach epoch counts the item again.
+- Focused final review suites passed 155–190 tests with zero failures. `bun run typecheck`, dependency boundaries, documentation generation, and `git diff --check` passed.
+- The complete repository gate passed 767 tests with 5 intentional profiling skips. Its sole sandbox failure was the isolated tmux socket denial; the exact host-level rerun passed: `bun test tests/terminal/terminal.test.ts --test-name-pattern "isolated tmux"` — 1 passed in 744 ms.
+- The executable core and native 100/1k/10k/100k matrix passed every seed, logarithmic-path, zero-complete-work, publication, cumulative-measurement, identity-retention, and native-churn assertion above.
+- Parallel architecture, correctness, and performance reviews ran before and after repair. Repairs added membership-index append counters, an all-scale private backlog, explicit text/URL priming, indexed side-child membership, the connected status-only boundary, cumulative scheduler observation, exact departed-key cleanup, persisted-array adversaries, and a multi-item full-reference fallback. All three final reviewers signed off with no blocker.
+
+Stage 5.5f is complete for steady detached unseen accumulation and status-only presentation publication. Multi-new-item detached reattachment remains semantically exact through the full rebuild and is not claimed as total-size-independent. Turn completion/activity structure and stable production sub-blocks for oversized Markdown, command output, and diffs remain open before Stage 5.5 and overall Stage 5 can be marked complete.
