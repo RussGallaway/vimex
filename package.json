@@ -23,6 +23,7 @@
     "test:e2e": "bun test tests/terminal",
     "benchmark:transcript": "bun scripts/benchmark-transcript-scroll.tsx",
     "benchmark:transcript-windowing": "bun scripts/benchmark-transcript-windowing.tsx",
+    "benchmark:transcript-window-planner": "bun scripts/benchmark-transcript-window-planner.ts",
     "benchmark:transcript-windowing:native": "VIMEX_WINDOWING_NATIVE_BASELINE=1 VIMEX_WINDOWING_GEOMETRY_BASELINE=1 VIMEX_WINDOWING_SIZES=100 VIMEX_WINDOWING_VIEWPORTS=80x24 bun scripts/benchmark-transcript-windowing.tsx",
     "benchmark:transcript-windowing:input": "bun scripts/benchmark-transcript-windowing-input.tsx",
     "docs:generate": "bun scripts/generate-manual.ts",
