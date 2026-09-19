@@ -1,6 +1,6 @@
 # Transcript windowing implementation
 
-Status: Stages 5.0–5.1 are complete and verified. The indexed pure planner is established; Stage 5.2 is next.
+Status: Stages 5.0–5.2 are complete and verified. Production mounting and native measurement are window-bounded; Stage 5.3 is next.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
@@ -23,7 +23,7 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 | Stages 1–4 performance baseline | Complete | Reproducible benchmark commit `ae73913`; inherited measurements below |
 | Stage 5 scaling fixtures | Complete | Commit `edc28c0`; deterministic runtime/React curves, real native cells, connected-input ceiling, and evidence below |
 | Stage 5a: pure window planner | Complete | Commit `4021939`; indexed height queries, bounded follow/detached/reveal windows, pass-through fallback, and evidence below |
-| Stage 5b: windowed mounting | Not started | — |
+| Stage 5b: windowed mounting | Complete | Commit `3e24002`; bounded production runtime, React/native mounting, observer lifetime, scaling evidence, and review sign-off below |
 | Stage 5c: anchor correction | Not started | — |
 | Stage 5d: off-window semantics | Not started | — |
 | Stage 5e: follow and detachment | Not started | — |
@@ -363,12 +363,12 @@ Exit criteria:
 
 ### Stage 5.2 — windowed mounting
 
-- [ ] Render planned blocks rather than the complete block array.
-- [ ] Add stable leading and trailing spacer roots.
-- [ ] Mount and unmount measurement observers with their owning block roots.
-- [ ] Prioritize visible block measurement over overscan.
-- [ ] Bound mounted block and native-node counts.
-- [ ] Preserve the pass-through renderer behind a test-only comparison seam until equivalence is established.
+- [x] Render planned blocks rather than the complete block array.
+- [x] Add stable leading and trailing spacer roots.
+- [x] Mount and unmount measurement observers with their owning block roots.
+- [x] Prioritize visible block measurement over overscan.
+- [x] Bound mounted block and native-node counts.
+- [x] Preserve the pass-through renderer behind a test-only comparison seam until equivalence is established.
 
 Exit criteria:
 
@@ -691,3 +691,53 @@ The same benchmark builds 100/1k/10k/100k stable sub-blocks for one oversized it
 - Parallel architecture, correctness, and performance reviews ran after the slice. Repairs bounded negative preferred rows and replaced an O(n) same-item sub-block scan with the indexed logarithmic resolver. A final audit also made distinct per-sub-block projection snapshots an explicit unsupported relationship. Focused gates and scaling benchmarks were rerun after repair; final review found no Stage 5.1 blocker.
 
 Stage 5 size-independence acceptance remains open. The pure planner now makes selected range size and indexed lookup/update work independent of total history except for logarithmic tree depth, but production native mounting remains pass-through until Stage 5.2 consumes the planned window.
+
+### Stage 5.2 — windowed mounting
+
+Implementation commit: `3e24002` (`feat: mount bounded transcript windows`). Production Workbench presentations now opt into a viewport/overscan policy while direct `TranscriptRuntime` construction remains the pass-through semantic reference.
+
+#### Production ownership and correctness
+
+- Each presentation runtime owns its height index, window, frame, geometry, and measurement acceptance boundary. Main and side presentations were exercised independently; resizing or retiring one does not publish or dispose the other.
+- `TranscriptViewport` renders only `frame.window.blocks` between stable leading and trailing spacer roots. Render-block chronology and identity come from the complete plan; activity adjacency is explicit complete-plan metadata rather than inferred from mounted siblings.
+- The native scheduler synchronizes exact mounted keys on every window change, prioritizes visible candidates before overscan, and prunes departed pending entries, roots, children, placements, screen rows, and cached layouts. Retained native callbacks after unmount cannot reintroduce dirty work. Hidden panes run cleanup without measurement.
+- Semantic authorities remain complete. Default-fold policy and fold-all traverse `TranscriptState`, selection uses a complete-order index, and off-window `gg`/`G` plus boundary-crossing motions use the complete layout reference before publishing a logical target. These reference scans are intentionally retained for correctness and are scheduled for indexing in Stages 5.4–5.5.
+- Measurements are accepted only for the current materialized window and generation. A drop-only window shrink cannot retain stale geometry, and a no-op window plan preserves frame/window identity.
+
+#### Deterministic native scaling
+
+The 80×24 production cell ran identical workloads at every fixture size. Counts are hard gates; timings remain machine-specific diagnostics.
+
+| Complete blocks | Cold mounted / measured | Visible / overscan candidates | Native descendants + spacer roots | Follow retained / changed / attempted | Detached mounted / attempted / publications | Hidden delta publications / churn |
+|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 48 / 48 | 12 / 36 | 246 + 2 | 48 / 1 / 4 | 72 / 50 / 2 | 0 / 0 |
+| 1k | 48 / 48 | 12 / 36 | 242 + 2 | 48 / 1 / 4 | 72 / 72 / 2 | 0 / 0 |
+| 10k | 48 / 48 | 12 / 36 | 242 + 2 | 48 / 1 / 4 | 72 / 72 / 2 | 0 / 0 |
+| 100k | 48 / 48 | 12 / 36 | 242 + 2 | 48 / 1 / 4 | 72 / 72 / 2 | 0 / 0 |
+
+The 100-block detached movement overlaps its prior window and therefore attempts only 50 of 72 mounted roots; the larger fixtures intentionally move to a disjoint window and prune exactly 48 departed roots. Every detached movement publishes twice: once for the logical window move and once for accepted geometry. After acknowledgement, pending measurement count is zero. Hidden canonical tail changes publish and commit zero frames for the detached presentation.
+
+The viewport matrix also passed at 48×18, 80×24, and 140×40. Follow windows mounted 36, 48, and 80 blocks respectively; follow damage attempted 3, 4, and 6 candidates. The widest 100-block cell naturally mounted 98 detached blocks because the bounded requested window approached the complete fixture, not because its policy changed.
+
+#### Connected input boundary
+
+The connected cell includes public Workbench command handling, production runtime publication, Connected React reconciliation, OpenTUI roots, native frame callbacks, measurement, and settlement. Fixture construction and hydration remain outside the measured interval.
+
+| Complete blocks | Materialized / mounted / measured | Runtime / presentation publications | Native descendants after + spacer roots | Dispatch / final settlement | Result |
+|---:|---:|---:|---:|---:|---|
+| 100 | 42 / 42 / 42 | 4 / 1 | 230 + 2 | 58.800 / 136.688 ms | Passed |
+| 1k | 42 / 42 / 42 | 2 / 1 | 224 + 2 | 64.153 / 103.003 ms | Passed |
+| 10k | 42 / 42 / 42 | 2 / 1 | 224 + 2 | 93.033 / 132.495 ms | Passed |
+| 100k | 42 / 42 / 42 | 2 / 1 | 224 + 2 | 491.793 / 561.720 ms | Passed |
+
+The inherited 100k cell failed while attempting pass-through native allocation. The windowed cell now settles with 42 mounted and measured roots. Its remaining total-size timing and memory curve is diagnostic evidence of complete semantic construction, height-index construction, and geometry composition still in the path; it is not attributed to bounded native mounting.
+
+#### Repository, PTY, benchmark, and review gates
+
+- Focused packages, Workbench integration, App, and renderer gates passed: 360 passed, 5 intentional skips, 0 failed, 37,026 assertions.
+- `bun run check` passed typecheck, dependency boundaries, generated-doc validation, and every non-sandbox-sensitive test: 685 passed and 5 intentional skips. Its only failure was the sandbox-denied tmux socket.
+- The exact isolated rerun outside the sandbox passed: `bun test tests/terminal/terminal.test.ts --test-name-pattern "isolated tmux"` — 1 passed in 689 ms.
+- The complete 100/1k/10k/100k production native and connected-input matrices passed, as did the 48×18, 80×24, and 140×40 viewport matrix. `git diff --check` passed.
+- Parallel architecture, correctness, and performance reviews ran before and after repair. Repairs covered complete-plan activity adjacency, stale layout/cache pruning, hidden-pane cleanup, visible-first evidence, selection indexing, semantic default folds, off-window navigation, independent Workbench ownership, real publication and native-node counts, and retained-callback observer release. Final reviewers found no Stage 5.2 blocker.
+
+Stage 5.2 satisfies its bounded mounting and native-measurement exit criteria across the recorded scaling range. Overall Stage 5 acceptance remains open: estimate correction and anchor stability, fully indexed off-window semantics, bounded follow/reconciliation work, and stable render sub-block production for oversized individual Markdown, command, and diff items remain later ledger slices.
