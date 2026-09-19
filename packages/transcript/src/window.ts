@@ -390,6 +390,17 @@ function snapshotTurn(turn: Turn): Turn {
   return Object.freeze({ ...turn, itemIds: Object.freeze([...turn.itemIds]) })
 }
 
+/** Builds the source-less terminal decoration for one canonical turn. */
+export function buildTranscriptTurnActivityBlock(turn: Turn): TranscriptTurnActivityBlock | undefined {
+  if (!hasTurnActivity(turn)) return undefined
+  return Object.freeze({
+    key: Object.freeze({ kind: "turn-activity" as const, turnId: turn.id }),
+    turn: snapshotTurn(turn),
+    contentRevision: turnActivityRevision(turn),
+    estimatedRows: 2,
+  })
+}
+
 function buildItemBlock(
   input: Pick<BuildTranscriptBlocksInput, "conversation" | "transcript">,
   itemId: ItemId,
@@ -452,14 +463,8 @@ export function buildTranscriptBlocks(input: BuildTranscriptBlocksInput): readon
       if (block) blocks.push(block)
     }
 
-    if (hasTurnActivity(turn)) {
-      blocks.push(Object.freeze({
-        key: Object.freeze({ kind: "turn-activity" as const, turnId }),
-        turn: snapshotTurn(turn),
-        contentRevision: turnActivityRevision(turn),
-        estimatedRows: 2,
-      }))
-    }
+    const activity = buildTranscriptTurnActivityBlock(turn)
+    if (activity) blocks.push(activity)
   }
 
   return Object.freeze(blocks)

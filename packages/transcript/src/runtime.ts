@@ -3,7 +3,7 @@ import { appendTranscriptOrder, inheritTranscriptTextLengthIndex, inheritTranscr
 import { composeTranscriptGeometry, composeTranscriptWindowGeometry, emptyTranscriptGeometry, freezeBlockGeometry, geometryMatchesBlock, type BlockGeometry, type BlockMeasurementBase, type BlockMeasurementBatch, type LayoutResetReason, type TranscriptGeometry } from "./geometry"
 import { createHeightIndex, type TranscriptHeightIndex } from "./height-index"
 import { inheritTranscriptUrlIndex, inheritTranscriptUrlIndexChanges, primeTranscriptUrlIndex, type TranscriptUrlIndexDiagnostics } from "./application/transcript-url-index"
-import { appendTranscriptBlock, blockKey, buildTranscriptBlocks, buildTranscriptItemBlock, passThroughWindow, persistentTranscriptBlockPlan, planTranscriptWindow, pointIsMaterialized, replaceTranscriptBlock, transcriptPointBlockIndex, type TranscriptBlock, type TranscriptBlockPlanDiagnostics, type TranscriptItemBlock, type TranscriptWindow } from "./window"
+import { appendTranscriptBlock, blockKey, buildTranscriptBlocks, buildTranscriptItemBlock, buildTranscriptTurnActivityBlock, passThroughWindow, persistentTranscriptBlockPlan, planTranscriptWindow, pointIsMaterialized, replaceTranscriptBlock, transcriptPointBlockIndex, type TranscriptBlock, type TranscriptBlockPlanDiagnostics, type TranscriptItemBlock, type TranscriptWindow } from "./window"
 
 export type TranscriptDamage =
   | Readonly<{ kind: "none" }>
@@ -381,6 +381,75 @@ function isEmptyTailTurnAdmission(previous: TranscriptRuntimeInput, next: Transc
     && isConversationTurnUpdate(previous.conversation.turns, next.conversation.turns, turnId, undefined, turn))
 }
 
+function tailTurnCompletion(
+  previous: TranscriptRuntimeInput,
+  next: TranscriptRuntimeInput,
+): Readonly<{ turnId: TurnId; itemId?: ItemId }> | undefined {
+  if (previous.transcript !== next.transcript || previous.conversation.items !== next.conversation.items
+    || previous.conversation.turnIds !== next.conversation.turnIds) return undefined
+  const turnId = previous.conversation.activeTurnId
+  if (!turnId || previous.conversation.turnIds.at(-1) !== turnId || next.conversation.activeTurnId !== undefined) return undefined
+  const priorTurn = previous.conversation.turns[turnId]
+  const nextTurn = next.conversation.turns[turnId]
+  if (!priorTurn || priorTurn.status !== "running" || !nextTurn || nextTurn.status === "running"
+    || priorTurn.itemIds !== nextTurn.itemIds || priorTurn.itemIds.length > 1
+    || !isConversationTurnUpdate(previous.conversation.turns, next.conversation.turns,
+      turnId, priorTurn, nextTurn)) return undefined
+  const itemId = priorTurn.itemIds[0]
+  return Object.freeze({ turnId, ...(itemId ? { itemId } : {}) })
+}
+
+function presentationNeutralTurnUpdate(
+  previous: TranscriptRuntimeInput,
+  next: TranscriptRuntimeInput,
+  itemIds: readonly ItemId[],
+): boolean {
+  if (previous.conversation.turns === next.conversation.turns) return true
+  const turnIds = new Set<TurnId>()
+  for (const itemId of itemIds) {
+    const priorItem = previous.conversation.items[itemId]
+    const nextItem = next.conversation.items[itemId]
+    const turnId = nextItem?.turnId ?? priorItem?.turnId
+    if (!turnId || (priorItem && nextItem && priorItem.turnId !== nextItem.turnId)) return false
+    turnIds.add(turnId)
+  }
+  if (turnIds.size !== 1) return false
+  const turnId = [...turnIds][0]!
+  const priorTurn = previous.conversation.turns[turnId]
+  const nextTurn = next.conversation.turns[turnId]
+  return Boolean(priorTurn && nextTurn
+    && priorTurn.status === nextTurn.status
+    && priorTurn.itemIds === nextTurn.itemIds
+    && priorTurn.startedAt === nextTurn.startedAt
+    && priorTurn.completedAt === nextTurn.completedAt
+    && priorTurn.durationMs === nextTurn.durationMs
+    && isConversationTurnUpdate(previous.conversation.turns, next.conversation.turns,
+      turnId, priorTurn, nextTurn))
+}
+
+function activeTurnPresentationChanged(previous: TranscriptRuntimeInput, next: TranscriptRuntimeInput): boolean {
+  const turnId = previous.conversation.activeTurnId
+  if (!turnId) return false
+  const priorTurn = previous.conversation.turns[turnId]
+  const nextTurn = next.conversation.turns[turnId]
+  return Boolean(priorTurn && nextTurn && (
+    priorTurn.status !== nextTurn.status
+    || priorTurn.startedAt !== nextTurn.startedAt
+    || priorTurn.completedAt !== nextTurn.completedAt
+    || priorTurn.durationMs !== nextTurn.durationMs
+  ))
+}
+
+function unprovenTurnStructureChanged(
+  previous: TranscriptRuntimeInput,
+  next: TranscriptRuntimeInput,
+  itemIds: readonly ItemId[],
+): boolean {
+  if (previous.conversation.turnIds === next.conversation.turnIds) return false
+  if (isEmptyTailTurnAdmission(previous, next)) return false
+  return itemIds.length !== 1 || !isTailItemAdmission(previous, next, itemIds[0]!)
+}
+
 function isTailItemAdmission(previous: TranscriptRuntimeInput, next: TranscriptRuntimeInput, itemId: ItemId): boolean {
   const item = next.conversation.items[itemId]
   const turn = item && next.conversation.turns[item.turnId]
@@ -679,6 +748,70 @@ export class TranscriptRuntime {
     if (!this.windowPolicy || this.frame.displayedCanonicalRevision !== previousInput.canonicalRevision
       || previousInput.mode !== "follow" || input.mode !== "follow"
       || input.reveal || (input.presentationDamage && input.presentationDamage.kind !== "none")) return undefined
+    const completion = itemIds.length === 0 ? tailTurnCompletion(previousInput, input) : undefined
+    if (completion) {
+      if (this.excludedTurnIds.has(completion.turnId)) return undefined
+      const nextTurn = input.conversation.turns[completion.turnId]!
+      let blocks = this.frame.blocks
+      let index = this.heightIndex?.supports(blocks) ? this.heightIndex : undefined
+      if (!index) return undefined
+      let changed = false
+
+      if (completion.itemId) {
+        const position = this.itemBlockIndexes.get(completion.itemId)
+        const prior = position === undefined || position < 0 ? undefined : blocks[position]
+        const next = buildTranscriptItemBlock(input, completion.itemId)
+        if (this.diagnostics) this.diagnostics.changedItemBuilds += 1
+        if (!prior && next) return undefined
+        if (prior && (!next || !("projection" in prior) || prior.key.blockId !== "root"
+          || prior.turnId !== completion.turnId || position !== blocks.length - 1)) return undefined
+        if (prior && next && !sameBlock(prior, next)) {
+          const replaced = replaceTranscriptBlock(blocks, position!, prior, next, this.diagnostics)
+          if (!replaced) return undefined
+          const counters = { nodeVisits: 0, nodesCopied: 0 }
+          const replacedIndex = index.replaceBlock(replaced, prior, next,
+            this.frame.transcript.folded[completion.itemId] ? 1 : Math.max(1, next.estimatedRows), counters)
+          if (!replacedIndex) return undefined
+          blocks = replaced
+          index = replacedIndex
+          changed = true
+          if (this.diagnostics) {
+            this.diagnostics.heightIndexUpdates += 1
+            this.diagnostics.heightIndexNodeVisits += counters.nodeVisits
+            this.diagnostics.heightIndexNodesCopied += counters.nodesCopied
+          }
+        }
+      }
+
+      const activity = buildTranscriptTurnActivityBlock(nextTurn)
+      if (activity) {
+        const appended = appendTranscriptBlock(blocks, activity, this.diagnostics)
+        const counters = { nodeVisits: 0, nodesCopied: 0 }
+        const appendedIndex = index.appendBlock?.(appended, activity, Math.max(1, activity.estimatedRows), counters)
+        if (!appendedIndex) return undefined
+        blocks = appended
+        index = appendedIndex
+        changed = true
+        if (this.diagnostics) {
+          this.diagnostics.heightIndexUpdates += 1
+          this.diagnostics.heightIndexNodeVisits += counters.nodeVisits
+          this.diagnostics.heightIndexNodesCopied += counters.nodesCopied
+        }
+      }
+
+      return Object.freeze({
+        frame: Object.freeze({
+          ...this.frame,
+          displayedCanonicalRevision: input.canonicalRevision,
+          presentationRevision: this.frame.presentationRevision + 1,
+          blocks,
+          window: changed ? passThroughWindow(blocks) : this.frame.window,
+          damage: frozenDamage(damage),
+        }),
+        index,
+        ...(changed ? {} : { windowStable: true as const }),
+      })
+    }
     if (itemIds.length === 0) {
       if (!isEmptyTailTurnAdmission(previousInput, input)) return undefined
       const turnId = input.conversation.turnIds.at(-1)
@@ -875,7 +1008,9 @@ export class TranscriptRuntime {
   ): TranscriptFrame {
     this.hiddenDamage.reset()
     const structuralCandidate = Boolean(incrementalItemIds
-      && (incrementalItemIds.length === 0 || incrementalItemIds.some(itemId => !this.itemBlockIndexes.has(itemId))))
+      && (incrementalItemIds.length === 0
+        || incrementalItemIds.some(itemId => !this.itemBlockIndexes.has(itemId))
+        || !presentationNeutralTurnUpdate(previousInput, input, incrementalItemIds)))
     const incremental = reuse && incrementalItemIds
       ? structuralCandidate
         ? this.structuralTailFrame(previousInput, input, incrementalItemIds, damage)
@@ -933,7 +1068,14 @@ export class TranscriptRuntime {
     if (input.mode === "detached") {
       const detaching = priorFrame.mode !== "detached"
       if (detaching && revisionChanged) return this.rebuild(input, mergeDamage(canonicalDamage, presentationDamage), true, blockDamageIds(canonicalDamage), priorInput)
-      if (revisionChanged) this.hiddenDamage.add(canonicalDamage, this.diagnostics)
+      if (revisionChanged) {
+        const hiddenDamage = canonicalDamage.kind === "blocks"
+          && (activeTurnPresentationChanged(priorInput, input)
+            || unprovenTurnStructureChanged(priorInput, input, canonicalDamage.itemIds))
+          ? fullDamage
+          : canonicalDamage
+        this.hiddenDamage.add(hiddenDamage, this.diagnostics)
+      }
 
       if (revealIsNew) {
         const reveal = validReveal(input, this.diagnostics)

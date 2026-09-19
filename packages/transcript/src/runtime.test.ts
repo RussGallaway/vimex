@@ -299,6 +299,293 @@ test("validated empty-turn and item tail admissions append without rebuilding hi
   expect(diagnostics.blockPlanWindowSliceItems - beforeAppendCounters.blockPlanWindowSliceItems).toBeLessThanOrEqual(24)
 })
 
+test("validated tail completion replaces one item and appends source-less activity without rebuilding history", () => {
+  let source = fixture()
+  const diagnostics = runtimeDiagnostics()
+  const runtime = new TranscriptRuntime(input(source, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics,
+  })
+  const before = runtime.getSnapshot()
+  const baseline = { ...diagnostics }
+  let publications = 0
+  runtime.subscribe(() => { publications++ })
+
+  source = apply(source, {
+    type: "turn.completed", threadId: thread, turnId: turn, outcome: "complete", durationMs: 0,
+  })
+  const completed = runtime.update(input(source, "follow", { kind: "blocks", itemIds: [] }))
+  const reference = createTranscriptFrame(input(source, "follow", { kind: "full" }))
+
+  expect(publications).toBe(1)
+  expect(semanticFrame(completed).blocks).toEqual(semanticFrame(reference).blocks)
+  expect(completed.blocks.map(blockKey)).toEqual([`item:${answer}:root`, `turn-activity:${turn}`])
+  expect(completed.blocks[0]).not.toBe(before.blocks[0])
+  expect(completed.blocks[0] && "projection" in completed.blocks[0] ? completed.blocks[0].followedByActivity : false).toBe(true)
+  expect(completed.blocks[1]?.sourceSpan).toBeUndefined()
+  expect(completed.transcript).toBe(before.transcript)
+  expect(diagnostics.completePlanBuilds - baseline.completePlanBuilds).toBe(0)
+  expect(diagnostics.completePlanBlockVisits - baseline.completePlanBlockVisits).toBe(0)
+  expect(diagnostics.heightIndexBuilds - baseline.heightIndexBuilds).toBe(0)
+  expect(diagnostics.heightIndexBlockVisits - baseline.heightIndexBlockVisits).toBe(0)
+  expect(diagnostics.completeGeometryBlockVisits - baseline.completeGeometryBlockVisits).toBe(0)
+  expect(diagnostics.blockPlanUpdates - baseline.blockPlanUpdates).toBe(2)
+  expect(diagnostics.heightIndexUpdates - baseline.heightIndexUpdates).toBe(2)
+  expect(diagnostics.changedItemBuilds - baseline.changedItemBuilds).toBe(1)
+})
+
+test("tail completion without activity replaces status only; an empty failed turn appends activity only", () => {
+  let itemSource = fixture()
+  const itemDiagnostics = runtimeDiagnostics()
+  const itemRuntime = new TranscriptRuntime(input(itemSource, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics: itemDiagnostics,
+  })
+  const itemBaseline = { ...itemDiagnostics }
+  itemSource = apply(itemSource, {
+    type: "turn.completed", threadId: thread, turnId: turn, outcome: "complete",
+  })
+  const itemFrame = itemRuntime.update(input(itemSource, "follow", { kind: "blocks", itemIds: [] }))
+  expect(itemFrame.blocks.map(blockKey)).toEqual([`item:${answer}:root`])
+  expect(itemFrame.blocks[0] && "projection" in itemFrame.blocks[0] ? itemFrame.blocks[0].item.status : undefined).toBe("complete")
+  expect(itemDiagnostics.completePlanBuilds - itemBaseline.completePlanBuilds).toBe(0)
+  expect(itemDiagnostics.blockPlanUpdates - itemBaseline.blockPlanUpdates).toBe(1)
+  expect(itemDiagnostics.heightIndexUpdates - itemBaseline.heightIndexUpdates).toBe(1)
+
+  let emptySource: Source = { conversation: createConversation(thread), transcript: initialTranscript(), revision: 0 }
+  emptySource = apply(emptySource, { type: "turn.started", threadId: thread, turnId: turn })
+  const emptyDiagnostics = runtimeDiagnostics()
+  const emptyRuntime = new TranscriptRuntime(input(emptySource, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics: emptyDiagnostics,
+  })
+  const emptyBaseline = { ...emptyDiagnostics }
+  emptySource = apply(emptySource, {
+    type: "turn.completed", threadId: thread, turnId: turn, outcome: "failed",
+  })
+  const emptyFrame = emptyRuntime.update(input(emptySource, "follow", { kind: "blocks", itemIds: [] }))
+  expect(emptyFrame.blocks.map(blockKey)).toEqual([`turn-activity:${turn}`])
+  expect(emptyFrame.blocks[0]?.sourceSpan).toBeUndefined()
+  expect(emptyDiagnostics.completePlanBuilds - emptyBaseline.completePlanBuilds).toBe(0)
+  expect(emptyDiagnostics.blockPlanUpdates - emptyBaseline.blockPlanUpdates).toBe(1)
+  expect(emptyDiagnostics.heightIndexUpdates - emptyBaseline.heightIndexUpdates).toBe(1)
+  expect(emptyDiagnostics.changedItemBuilds - emptyBaseline.changedItemBuilds).toBe(0)
+})
+
+test("ambiguous multi-item and mixed item-plus-completion changes retain the full reference fallback", () => {
+  const initial = fixture()
+  const second = itemId("completion-second")
+  const multi = apply(initial, { type: "item.started", threadId: thread, item: {
+    id: second, turnId: turn, kind: "assistant", markdown: "second", status: "running",
+  } })
+  const multiDiagnostics = runtimeDiagnostics()
+  const multiRuntime = new TranscriptRuntime(input(multi, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics: multiDiagnostics,
+  })
+  const multiBaseline = { ...multiDiagnostics }
+  const multiCompleted = apply(multi, {
+    type: "turn.completed", threadId: thread, turnId: turn, outcome: "interrupted",
+  })
+  const multiFrame = multiRuntime.update(input(multiCompleted, "follow", { kind: "blocks", itemIds: [] }))
+  expect(semanticFrame(multiFrame).blocks).toEqual(semanticFrame(createTranscriptFrame(input(multiCompleted, "follow", { kind: "full" }))).blocks)
+  expect(multiDiagnostics.completePlanBuilds - multiBaseline.completePlanBuilds).toBe(1)
+
+  let mixed = apply(initial, { type: "item.delta", threadId: thread, itemId: answer, delta: " final" })
+  mixed = apply(mixed, { type: "turn.completed", threadId: thread, turnId: turn, outcome: "failed" })
+  const mixedDiagnostics = runtimeDiagnostics()
+  const mixedRuntime = new TranscriptRuntime(input(initial, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics: mixedDiagnostics,
+  })
+  const mixedBaseline = { ...mixedDiagnostics }
+  const mixedFrame = mixedRuntime.update(input(mixed, "follow", { kind: "blocks", itemIds: [answer] }))
+  expect(semanticFrame(mixedFrame).blocks).toEqual(semanticFrame(createTranscriptFrame(input(mixed, "follow", { kind: "full" }))).blocks)
+  expect(mixedDiagnostics.completePlanBuilds - mixedBaseline.completePlanBuilds).toBe(1)
+})
+
+test("detached structural completion intent survives prior item damage through reattach and missing-target reveal", () => {
+  const initial = fixture()
+  const hiddenDelta = apply(initial, {
+    type: "item.delta", threadId: thread, itemId: answer, delta: " hidden",
+  })
+  const completed = apply(hiddenDelta, {
+    type: "turn.completed", threadId: thread, turnId: turn, outcome: "failed", durationMs: 25,
+  })
+  const reference = createTranscriptFrame(input(completed, "follow", { kind: "full" }))
+
+  const reattachRuntime = new TranscriptRuntime(input(initial, "detached"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 },
+  })
+  const pinned = reattachRuntime.getSnapshot()
+  expect(reattachRuntime.update(input(hiddenDelta, "detached", {
+    kind: "blocks", itemIds: [answer],
+  }))).toBe(pinned)
+  expect(reattachRuntime.update(input(completed, "detached", {
+    kind: "blocks", itemIds: [],
+  }))).toBe(pinned)
+  let reattachPublications = 0
+  reattachRuntime.subscribe(() => { reattachPublications++ })
+  const reattached = reattachRuntime.update(input(completed, "follow"))
+  expect(reattachPublications).toBe(1)
+  expect(semanticFrame(reattached).blocks).toEqual(semanticFrame(reference).blocks)
+  expect(reattached.blocks.map(blockKey)).toEqual([`item:${answer}:root`, `turn-activity:${turn}`])
+
+  const revealRuntime = new TranscriptRuntime(input(initial, "detached"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 },
+  })
+  const revealPinned = revealRuntime.getSnapshot()
+  expect(revealRuntime.update(input(completed, "detached", {
+    kind: "blocks", itemIds: [answer],
+  }))).toBe(revealPinned)
+  const hiddenEnd = completed.transcript.projectionById[answer]!.sourceSpans.length
+  const revealed = revealRuntime.update(input(completed, "detached", { kind: "none" }, {
+    itemId: answer, graphemeOffset: hiddenEnd,
+  }))
+  expect(revealed.mode).toBe("detached")
+  expect(revealed.displayedCanonicalRevision).toBe(completed.revision)
+  expect(semanticFrame(revealed).blocks).toEqual(semanticFrame(reference).blocks)
+  expect(revealed.blocks.map(blockKey)).toEqual([`item:${answer}:root`, `turn-activity:${turn}`])
+
+  const retainedRuntime = new TranscriptRuntime(input(initial, "detached"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 },
+  })
+  const retainedPinned = retainedRuntime.getSnapshot()
+  expect(retainedRuntime.update(input(completed, "detached", {
+    kind: "blocks", itemIds: [answer],
+  }))).toBe(retainedPinned)
+  const retained = retainedRuntime.update(input(completed, "detached", { kind: "none" }, {
+    itemId: answer, graphemeOffset: 0,
+  }))
+  expect(retained.blocks).toBe(retainedPinned.blocks)
+  expect(retained.displayedCanonicalRevision).toBe(initial.revision)
+  const retainedReattached = retainedRuntime.update(input(completed, "follow"))
+  expect(semanticFrame(retainedReattached).blocks).toEqual(semanticFrame(reference).blocks)
+})
+
+test("detached mixed replay preserves activity for a turn admitted and completed within one batch", () => {
+  let initial = fixture()
+  initial = apply(initial, {
+    type: "turn.completed", threadId: thread, turnId: turn, outcome: "complete",
+  })
+  let replayed = apply(initial, { type: "item.completed", threadId: thread, item: {
+    id: answer, turnId: turn, kind: "assistant", markdown: "authoritative replay", status: "complete",
+  } })
+  const replayTurn = turnId("replay-empty-turn")
+  replayed = apply(replayed, { type: "turn.started", threadId: thread, turnId: replayTurn })
+  replayed = apply(replayed, {
+    type: "turn.completed", threadId: thread, turnId: replayTurn, outcome: "failed",
+  })
+  const reference = createTranscriptFrame(input(replayed, "follow", { kind: "full" }))
+
+  const reattachRuntime = new TranscriptRuntime(input(initial, "detached"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 },
+  })
+  const pinned = reattachRuntime.getSnapshot()
+  expect(reattachRuntime.update(input(replayed, "detached", {
+    kind: "blocks", itemIds: [answer],
+  }))).toBe(pinned)
+  const reattached = reattachRuntime.update(input(replayed, "follow"))
+  expect(semanticFrame(reattached).blocks).toEqual(semanticFrame(reference).blocks)
+  expect(reattached.blocks.map(blockKey)).toEqual([
+    `item:${answer}:root`, `turn-activity:${replayTurn}`,
+  ])
+
+  const revealRuntime = new TranscriptRuntime(input(initial, "detached"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 },
+  })
+  const revealPinned = revealRuntime.getSnapshot()
+  expect(revealRuntime.update(input(replayed, "detached", {
+    kind: "blocks", itemIds: [answer],
+  }))).toBe(revealPinned)
+  const revealed = revealRuntime.update(input(replayed, "detached", { kind: "none" }, {
+    itemId: answer, graphemeOffset: replayed.transcript.projectionById[answer]!.sourceSpans.length,
+  }))
+  expect(semanticFrame(revealed).blocks).toEqual(semanticFrame(reference).blocks)
+  expect(revealed.blocks.map(blockKey)).toContain(`turn-activity:${replayTurn}`)
+})
+
+test("detached mixed replay preserves an admitted activity while an older turn remains running", () => {
+  const initial = fixture()
+  let replayed = apply(initial, {
+    type: "item.delta", threadId: thread, itemId: answer, delta: " hidden replay",
+  })
+  const replayTurn = turnId("replay-after-active-turn")
+  replayed = apply(replayed, { type: "turn.started", threadId: thread, turnId: replayTurn })
+  replayed = apply(replayed, {
+    type: "turn.completed", threadId: thread, turnId: replayTurn, outcome: "failed",
+  })
+  const reference = createTranscriptFrame(input(replayed, "follow", { kind: "full" }))
+
+  for (const reveal of [false, true]) {
+    const runtime = new TranscriptRuntime(input(initial, "detached"), {
+      windowPolicy: { viewportRows: 12, overscanRows: 12 },
+    })
+    const pinned = runtime.getSnapshot()
+    expect(runtime.update(input(replayed, "detached", {
+      kind: "blocks", itemIds: [answer],
+    }))).toBe(pinned)
+    const adopted = reveal
+      ? runtime.update(input(replayed, "detached", { kind: "none" }, {
+          itemId: answer, graphemeOffset: replayed.transcript.projectionById[answer]!.sourceSpans.length,
+        }))
+      : runtime.update(input(replayed, "follow"))
+    expect(semanticFrame(adopted).blocks).toEqual(semanticFrame(reference).blocks)
+    expect(adopted.blocks.map(blockKey)).toContain(`turn-activity:${replayTurn}`)
+  }
+})
+
+test("tail completion requires unexcluded follow presentation and exact persistent turn lineage", () => {
+  const initial = fixture()
+  const completed = apply(initial, {
+    type: "turn.completed", threadId: thread, turnId: turn, outcome: "failed", durationMs: 1,
+  })
+
+  const excludedDiagnostics = runtimeDiagnostics()
+  const excludedRuntime = new TranscriptRuntime({ ...input(initial, "follow"), excludedTurnIds: [turn] }, {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics: excludedDiagnostics,
+  })
+  const excludedBaseline = { ...excludedDiagnostics }
+  const excluded = excludedRuntime.update({
+    ...input(completed, "follow", { kind: "blocks", itemIds: [] }), excludedTurnIds: [turn],
+  })
+  expect(excluded.blocks).toHaveLength(0)
+  expect(excludedDiagnostics.completePlanBuilds - excludedBaseline.completePlanBuilds).toBe(1)
+
+  const presentationDiagnostics = runtimeDiagnostics()
+  const presentationRuntime = new TranscriptRuntime(input(initial, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics: presentationDiagnostics,
+  })
+  const presentationBaseline = { ...presentationDiagnostics }
+  const presented = presentationRuntime.update({
+    ...input(completed, "follow", { kind: "blocks", itemIds: [] }),
+    presentationDamage: { kind: "view" },
+  })
+  expect(semanticFrame(presented).blocks)
+    .toEqual(semanticFrame(createTranscriptFrame(input(completed, "follow", { kind: "full" }))).blocks)
+  expect(presentationDiagnostics.completePlanBuilds - presentationBaseline.completePlanBuilds).toBe(1)
+
+  const revealDiagnostics = runtimeDiagnostics()
+  const revealRuntime = new TranscriptRuntime(input(initial, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics: revealDiagnostics,
+  })
+  const revealBaseline = { ...revealDiagnostics }
+  const revealed = revealRuntime.update(input(completed, "follow", { kind: "blocks", itemIds: [] }, {
+    itemId: answer, graphemeOffset: 0,
+  }))
+  expect(semanticFrame(revealed).blocks)
+    .toEqual(semanticFrame(createTranscriptFrame(input(completed, "follow", { kind: "full" }))).blocks)
+  expect(revealDiagnostics.completePlanBuilds - revealBaseline.completePlanBuilds).toBe(1)
+
+  const forgedDiagnostics = runtimeDiagnostics()
+  const forgedRuntime = new TranscriptRuntime(input(initial, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics: forgedDiagnostics,
+  })
+  const forgedBaseline = { ...forgedDiagnostics }
+  const forged = { ...completed, conversation: {
+    ...completed.conversation, turns: { ...completed.conversation.turns },
+  } }
+  const forgedFrame = forgedRuntime.update(input(forged, "follow", { kind: "blocks", itemIds: [] }))
+  expect(semanticFrame(forgedFrame).blocks)
+    .toEqual(semanticFrame(createTranscriptFrame(input(forged, "follow", { kind: "full" }))).blocks)
+  expect(forgedDiagnostics.completePlanBuilds - forgedBaseline.completePlanBuilds).toBe(1)
+})
+
 test("one batched tail turn and item admission publishes once; unproven order lineage rebuilds", () => {
   const initial = fixture()
   const nextTurn = turnId("batched-tail-turn"), nextItem = itemId("batched-tail-item")

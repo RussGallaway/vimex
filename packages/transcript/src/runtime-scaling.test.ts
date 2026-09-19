@@ -342,6 +342,122 @@ test("canonical structural tail admission stays logarithmic with bounded runtime
   }
 }, 30_000)
 
+test("tail turn completion and activity admission stay logarithmic with bounded runtime work at every scale", () => {
+  for (const blockCount of transcriptScalingBlockCounts) {
+    const fixture = buildTranscriptStructuralScalingFixture(blockCount)
+    transcriptTextLengthRange(fixture.before.transcript, 0, 0)
+    primeTranscriptUrlIndex(fixture.before.transcript)
+    const runtimeCounters = scalingRuntimeDiagnostics()
+    const runtime = new TranscriptRuntime(runtimeInput(fixture, fixture.before, "follow", {
+      canonicalDamage: { kind: "full" },
+    }), { windowPolicy: { viewportRows: 24, overscanRows: 24 }, diagnostics: runtimeCounters })
+
+    const turnConversation = reduceConversationWithDiagnostics(fixture.before.conversation, {
+      type: "turn.started", threadId: fixture.threadId, turnId: fixture.nextTurnId,
+    }, createConversationReductionDiagnostics())
+    const admittedItem = Object.freeze({
+      id: fixture.nextItemId, turnId: fixture.nextTurnId, kind: "assistant" as const,
+      markdown: "Terminal structural tail block.", status: "running" as const,
+    })
+    const itemConversation = reduceConversationWithDiagnostics(turnConversation, {
+      type: "item.started", threadId: fixture.threadId, item: admittedItem,
+    }, createConversationReductionDiagnostics())
+    const itemTranscript = syncTranscriptItem(fixture.before.transcript, admittedItem)
+    const setupSnapshot: TranscriptFixtureSnapshot = Object.freeze({
+      canonicalRevision: fixture.before.canonicalRevision + 2,
+      conversation: itemConversation,
+      transcript: itemTranscript,
+    })
+    runtime.update(runtimeInput(fixture, setupSnapshot, "follow", {
+      canonicalDamage: { kind: "blocks", itemIds: [fixture.nextItemId] },
+    }))
+    const before = runtime.getSnapshot()
+    const runtimeBaseline = { ...runtimeCounters }
+    const canonicalCounters = createConversationReductionDiagnostics()
+    let publications = 0
+    runtime.subscribe(() => { publications++ })
+
+    const completedConversation = reduceConversationWithDiagnostics(itemConversation, {
+      type: "turn.completed", threadId: fixture.threadId, turnId: fixture.nextTurnId,
+      outcome: "complete", durationMs: 0,
+    }, canonicalCounters)
+    const completedSnapshot: TranscriptFixtureSnapshot = Object.freeze({
+      canonicalRevision: setupSnapshot.canonicalRevision + 1,
+      conversation: completedConversation,
+      transcript: itemTranscript,
+    })
+    const completed = runtime.update(runtimeInput(fixture, completedSnapshot, "follow", {
+      canonicalDamage: { kind: "blocks", itemIds: [] },
+    }))
+    const reference = createTranscriptFrame(runtimeInput(fixture, completedSnapshot, "follow", {
+      canonicalDamage: { kind: "full" },
+    }))
+
+    expect(publications).toBe(1)
+    expect(completed.blocks.map(blockKey)).toEqual(reference.blocks.map(blockKey))
+    expect(semanticEvidence(completed.transcript, completedConversation))
+      .toEqual(semanticEvidence(itemTranscript, completedConversation))
+    expect(completed.blocks).toHaveLength(blockCount + 2)
+    expect(completed.window.blocks.length).toBeLessThanOrEqual(48)
+    expect(completed.blocks.slice(0, blockCount).every((block, index) => block === before.blocks[index])).toBe(true)
+    expect(completed.blocks[blockCount]).not.toBe(before.blocks[blockCount])
+    expect(completed.blocks[blockCount]?.key).toEqual({ kind: "item", itemId: fixture.nextItemId, blockId: "root" })
+    expect(completed.blocks.at(-1)?.key).toEqual({ kind: "turn-activity", turnId: fixture.nextTurnId })
+    expect(completed.blocks[blockCount]).toEqual(reference.blocks[blockCount])
+    expect(completed.blocks.at(-1)).toEqual(reference.blocks.at(-1))
+    expect(completed.transcript).toBe(before.transcript)
+    for (let index = 0; index < blockCount; index++) {
+      const itemId = fixture.before.transcript.order[index]!
+      const turnId = fixture.before.conversation.turnIds[index]!
+      expect(completedConversation.items[itemId]).toBe(fixture.before.conversation.items[itemId])
+      expect(completedConversation.turns[turnId]).toBe(fixture.before.conversation.turns[turnId])
+      expect(itemTranscript.projectionById[itemId]).toBe(fixture.before.transcript.projectionById[itemId])
+    }
+
+    expect(canonicalCounters.conversationTurnIdSequenceNormalizations).toBe(0)
+    expect(canonicalCounters.conversationTurnIdSequenceNormalizationVisits).toBe(0)
+    expect(canonicalCounters.conversationTurnItemIdSequenceNormalizations).toBe(0)
+    expect(canonicalCounters.conversationTurnItemIdSequenceNormalizationVisits).toBe(0)
+    expect(canonicalCounters.conversationTurnRecordNormalizations).toBe(0)
+    expect(canonicalCounters.conversationTurnRecordNormalizationVisits).toBe(0)
+    expect(canonicalCounters.conversationItemRecordNormalizations).toBe(0)
+    expect(canonicalCounters.conversationItemRecordNormalizationItemVisits).toBe(0)
+    expect(canonicalCounters.conversationTurnIdSequenceAppends).toBe(0)
+    expect(canonicalCounters.conversationTurnItemIdSequenceAppends).toBe(0)
+    expect(canonicalCounters.conversationItemRecordUpdates).toBe(0)
+    expect(canonicalCounters.conversationTurnRecordUpdates).toBe(1)
+    const logarithmicBound = 12 * (Math.ceil(Math.log2(blockCount + 2)) + 1)
+    expect(canonicalCounters.conversationTurnRecordLookups).toBeGreaterThan(0)
+    expect(canonicalCounters.conversationTurnRecordLookupNodeVisits).toBeLessThanOrEqual(logarithmicBound)
+    expect(canonicalCounters.conversationTurnRecordNodeVisits).toBeLessThanOrEqual(logarithmicBound)
+    expect(canonicalCounters.conversationTurnRecordNodesCopied).toBeLessThanOrEqual(logarithmicBound)
+
+    expect(runtimeCounters.completePlanBuilds - runtimeBaseline.completePlanBuilds).toBe(0)
+    expect(runtimeCounters.completePlanBlockVisits - runtimeBaseline.completePlanBlockVisits).toBe(0)
+    expect(runtimeCounters.heightIndexBuilds - runtimeBaseline.heightIndexBuilds).toBe(0)
+    expect(runtimeCounters.heightIndexBlockVisits - runtimeBaseline.heightIndexBlockVisits).toBe(0)
+    expect(runtimeCounters.completeGeometryBlockVisits - runtimeBaseline.completeGeometryBlockVisits).toBe(0)
+    expect(runtimeCounters.blockPlanUpdates - runtimeBaseline.blockPlanUpdates).toBe(2)
+    expect(runtimeCounters.blockPlanNodeVisits - runtimeBaseline.blockPlanNodeVisits).toBeLessThanOrEqual(logarithmicBound)
+    expect(runtimeCounters.blockPlanNodesCopied - runtimeBaseline.blockPlanNodesCopied).toBeLessThanOrEqual(logarithmicBound)
+    expect(runtimeCounters.heightIndexUpdates - runtimeBaseline.heightIndexUpdates).toBe(2)
+    expect(runtimeCounters.heightIndexNodeVisits - runtimeBaseline.heightIndexNodeVisits).toBeLessThanOrEqual(logarithmicBound)
+    expect(runtimeCounters.heightIndexNodesCopied - runtimeBaseline.heightIndexNodesCopied).toBeLessThanOrEqual(logarithmicBound)
+    expect(runtimeCounters.changedItemBuilds - runtimeBaseline.changedItemBuilds).toBe(1)
+    expect(runtimeCounters.orderIndexBuilds - runtimeBaseline.orderIndexBuilds).toBe(0)
+    expect(runtimeCounters.orderIndexItemVisits - runtimeBaseline.orderIndexItemVisits).toBe(0)
+    expect(runtimeCounters.textLengthIndexBuilds - runtimeBaseline.textLengthIndexBuilds).toBe(0)
+    expect(runtimeCounters.textLengthItemVisits - runtimeBaseline.textLengthItemVisits).toBe(0)
+    expect(runtimeCounters.textLengthIndexUpdates - runtimeBaseline.textLengthIndexUpdates).toBe(0)
+    expect(runtimeCounters.urlIndexBuilds - runtimeBaseline.urlIndexBuilds).toBe(0)
+    expect(runtimeCounters.urlIndexItemVisits - runtimeBaseline.urlIndexItemVisits).toBe(0)
+    expect(runtimeCounters.urlIndexUpdates - runtimeBaseline.urlIndexUpdates).toBe(0)
+    expect(runtimeCounters.windowGeometryBlockVisits - runtimeBaseline.windowGeometryBlockVisits).toBeLessThanOrEqual(48)
+    expect(runtimeCounters.blockPlanWindowSliceItems - runtimeBaseline.blockPlanWindowSliceItems).toBeLessThanOrEqual(48)
+    runtime.dispose()
+  }
+}, 30_000)
+
 test("detached unseen accumulation stays logarithmic and publishes no content frame at every scale", () => {
   for (const blockCount of transcriptScalingBlockCounts) {
     const fixture = buildTranscriptStructuralScalingFixture(blockCount)

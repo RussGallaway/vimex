@@ -107,6 +107,26 @@ test("structural damage accepts only a new empty tail turn and its first semanti
     type: "item.started", threadId: thread,
     item: { ...nextItem, id: itemId("non-tail"), turnId: firstTurn },
   })).toBeUndefined()
+
+  expect(incrementalConversationEventDamage(withTailTurn, {
+    type: "turn.completed", threadId: thread, turnId: nextTurn, outcome: "failed",
+  })).toEqual({ kind: "blocks", itemIds: [] })
+  const withTailItem = reduceConversation(withTailTurn, {
+    type: "item.started", threadId: thread, item: nextItem,
+  })
+  expect(incrementalConversationEventDamage(withTailItem, {
+    type: "turn.completed", threadId: thread, turnId: nextTurn, outcome: "complete", durationMs: 0,
+  })).toEqual({ kind: "blocks", itemIds: [] })
+  const withSecondItem = reduceConversation(withTailItem, {
+    type: "item.started", threadId: thread,
+    item: { ...nextItem, id: itemId("second-tail-item") },
+  })
+  expect(incrementalConversationEventDamage(withSecondItem, {
+    type: "turn.completed", threadId: thread, turnId: nextTurn, outcome: "complete",
+  })).toBeUndefined()
+  expect(incrementalConversationEventDamage(withTailTurn, {
+    type: "turn.completed", threadId: thread, turnId: firstTurn, outcome: "complete",
+  })).toBeUndefined()
 })
 
 test("direct structural tail admission advances an empty turn without rematerializing and appends one block", async () => {

@@ -68,6 +68,15 @@ export function incrementalConversationEventDamage(
       ? { kind: "blocks", itemIds: [event.item.id] }
       : undefined
   }
+  if (event.type === "turn.completed") {
+    const turn = conversation.turns[event.turnId]
+    return turn?.status === "running"
+      && conversation.activeTurnId === event.turnId
+      && conversation.turnIds.at(-1) === event.turnId
+      && turn.itemIds.length <= 1
+      ? { kind: "blocks", itemIds: [] }
+      : undefined
+  }
   if (event.type !== "item.completed") return undefined
   const existing = conversation.items[event.item.id]
   const turn = conversation.turns[event.item.turnId]

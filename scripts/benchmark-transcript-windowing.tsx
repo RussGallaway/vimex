@@ -58,7 +58,7 @@ import { useTranscriptRuntime } from "../packages/ui-opentui-react/src/transcrip
 import { useTranscriptLayout } from "../packages/ui-opentui-react/src/transcript/use-transcript-layout"
 import { useVisiblePresentationSnapshot } from "../packages/ui-opentui-react/src/side-chat/SideChatLayout"
 import { inertController } from "../packages/ui-opentui-react/src/contracts"
-import { captureWorkbenchPresentation, createWorkspace, initialWorkbench, workbenchPresentationChanged,
+import { captureWorkbenchPresentation, createWorkspace, incrementalConversationEventDamage, initialWorkbench, workbenchPresentationChanged,
   type WorkbenchPublicationHost, type WorkbenchState } from "@vimex/workbench"
 import { applyConversationEvent } from "../packages/workbench/src/application/conversation-projector"
 
@@ -329,6 +329,7 @@ function boundedCanonicalIngressBaseline(fixture: ReturnType<typeof buildTranscr
       },
       samples: { warmup: 0, measured: 1 },
     })
+
   } finally { runtime.dispose() }
 }
 
@@ -642,6 +643,151 @@ function structuralTailAdmissionBaseline(fixture: ReturnType<typeof buildTranscr
         itemSemanticProjection: Number(semanticProjection.milliseconds.toFixed(6)),
         itemRuntimeAppend: Number(itemRuntime.milliseconds.toFixed(6)),
         completeTwoEventSettlement: Number(completeSettlementMs.toFixed(6)),
+      },
+      samples: { warmup: 0, measured: 1 },
+    })
+  } finally { runtime.dispose() }
+}
+
+function tailTurnCompletionBaseline(fixture: ReturnType<typeof buildTranscriptStructuralScalingFixture>): void {
+  forceGc()
+  transcriptOrderIndex(fixture.before.transcript.order)
+  transcriptTextLengthRange(fixture.before.transcript, 0, 0)
+  primeTranscriptUrlIndex(fixture.before.transcript)
+  const runtimeDiagnostics = createRuntimeDiagnostics()
+  const runtime = new TranscriptRuntime(runtimeInput(fixture, fixture.before, "follow", {
+    canonicalDamage: { kind: "full" },
+  }), { windowPolicy: { viewportRows: 24, overscanRows: 24 }, diagnostics: runtimeDiagnostics })
+  try {
+    const runningItem = Object.freeze({
+      id: fixture.nextItemId, turnId: fixture.nextTurnId, kind: "assistant" as const,
+      markdown: "Terminal structural tail block.", status: "running" as const,
+    })
+    const withTurn = reduceConversationWithDiagnostics(fixture.before.conversation, {
+      type: "turn.started", threadId: fixture.threadId, turnId: fixture.nextTurnId,
+    }, createConversationReductionDiagnostics())
+    const withItem = reduceConversationWithDiagnostics(withTurn, {
+      type: "item.started", threadId: fixture.threadId, item: runningItem,
+    }, createConversationReductionDiagnostics())
+    const runningTranscript = syncTranscriptItem(fixture.before.transcript, runningItem)
+    const runningSnapshot: TranscriptFixtureSnapshot = Object.freeze({
+      canonicalRevision: fixture.before.canonicalRevision + 2,
+      conversation: withItem,
+      transcript: runningTranscript,
+    })
+    runtime.update(runtimeInput(fixture, runningSnapshot, "follow", {
+      canonicalDamage: { kind: "blocks", itemIds: [fixture.nextItemId] },
+    }))
+    const beforeCompletion = runtime.getSnapshot()
+    const runtimeBefore = { ...runtimeDiagnostics }
+    const canonicalDiagnostics = createConversationReductionDiagnostics()
+    const event = Object.freeze({
+      type: "turn.completed" as const, threadId: fixture.threadId, turnId: fixture.nextTurnId,
+      outcome: "complete" as const, durationMs: 0,
+    })
+    const damage = timed(() => incrementalConversationEventDamage(withItem, event))
+    assert.deepEqual(damage.value, { kind: "blocks", itemIds: [] })
+    const reduction = timed(() => reduceConversationWithDiagnostics(withItem, event, canonicalDiagnostics))
+    const completedSnapshot: TranscriptFixtureSnapshot = Object.freeze({
+      canonicalRevision: runningSnapshot.canonicalRevision + 1,
+      conversation: reduction.value,
+      transcript: runningTranscript,
+    })
+    let publications = 0
+    const stop = runtime.subscribe(() => { publications++ })
+    const reconciled = timed(() => runtime.update(runtimeInput(fixture, completedSnapshot, "follow", {
+      canonicalDamage: damage.value!,
+    })))
+    stop()
+    const reference = createTranscriptFrame(runtimeInput(fixture, completedSnapshot, "follow", {
+      canonicalDamage: { kind: "full" },
+    }))
+    assert.deepEqual(reconciled.value.blocks.map(blockKey), reference.blocks.map(blockKey))
+    assert.equal(reconciled.value.blocks.length, fixture.blockCount + 2)
+    assert(reconciled.value.window.blocks.length <= 48)
+    assert.equal(reconciled.value.transcript, beforeCompletion.transcript)
+    for (let index = 0; index < fixture.blockCount; index++) {
+      assert.equal(reconciled.value.blocks[index], beforeCompletion.blocks[index])
+    }
+    assert.notEqual(reconciled.value.blocks[fixture.blockCount], beforeCompletion.blocks[fixture.blockCount])
+    assert.deepEqual(reconciled.value.blocks.at(-1)?.key,
+      { kind: "turn-activity", turnId: fixture.nextTurnId })
+    assert.deepEqual(reconciled.value.blocks[fixture.blockCount], reference.blocks[fixture.blockCount])
+    assert.deepEqual(reconciled.value.blocks.at(-1), reference.blocks.at(-1))
+
+    const runtimeCounts = {
+      completePlanBuilds: runtimeDiagnostics.completePlanBuilds - runtimeBefore.completePlanBuilds,
+      completePlanBlockVisits: runtimeDiagnostics.completePlanBlockVisits - runtimeBefore.completePlanBlockVisits,
+      orderIndexBuilds: runtimeDiagnostics.orderIndexBuilds - runtimeBefore.orderIndexBuilds,
+      orderIndexItemVisits: runtimeDiagnostics.orderIndexItemVisits - runtimeBefore.orderIndexItemVisits,
+      heightIndexBuilds: runtimeDiagnostics.heightIndexBuilds - runtimeBefore.heightIndexBuilds,
+      heightIndexBlockVisits: runtimeDiagnostics.heightIndexBlockVisits - runtimeBefore.heightIndexBlockVisits,
+      completeGeometryBlockVisits: runtimeDiagnostics.completeGeometryBlockVisits - runtimeBefore.completeGeometryBlockVisits,
+      blockPlanUpdates: runtimeDiagnostics.blockPlanUpdates - runtimeBefore.blockPlanUpdates,
+      blockPlanNodeVisits: runtimeDiagnostics.blockPlanNodeVisits - runtimeBefore.blockPlanNodeVisits,
+      blockPlanNodesCopied: runtimeDiagnostics.blockPlanNodesCopied - runtimeBefore.blockPlanNodesCopied,
+      heightIndexUpdates: runtimeDiagnostics.heightIndexUpdates - runtimeBefore.heightIndexUpdates,
+      heightIndexNodeVisits: runtimeDiagnostics.heightIndexNodeVisits - runtimeBefore.heightIndexNodeVisits,
+      heightIndexNodesCopied: runtimeDiagnostics.heightIndexNodesCopied - runtimeBefore.heightIndexNodesCopied,
+      windowGeometryBlockVisits: runtimeDiagnostics.windowGeometryBlockVisits - runtimeBefore.windowGeometryBlockVisits,
+      blockPlanWindowSliceItems: runtimeDiagnostics.blockPlanWindowSliceItems - runtimeBefore.blockPlanWindowSliceItems,
+      changedItemBuilds: runtimeDiagnostics.changedItemBuilds - runtimeBefore.changedItemBuilds,
+      textLengthIndexBuilds: runtimeDiagnostics.textLengthIndexBuilds - runtimeBefore.textLengthIndexBuilds,
+      textLengthItemVisits: runtimeDiagnostics.textLengthItemVisits - runtimeBefore.textLengthItemVisits,
+      textLengthIndexUpdates: runtimeDiagnostics.textLengthIndexUpdates - runtimeBefore.textLengthIndexUpdates,
+      urlIndexBuilds: runtimeDiagnostics.urlIndexBuilds - runtimeBefore.urlIndexBuilds,
+      urlIndexItemVisits: runtimeDiagnostics.urlIndexItemVisits - runtimeBefore.urlIndexItemVisits,
+      urlIndexUpdates: runtimeDiagnostics.urlIndexUpdates - runtimeBefore.urlIndexUpdates,
+    }
+    assert.equal(publications, 1)
+    assert.equal(runtimeCounts.completePlanBuilds, 0)
+    assert.equal(runtimeCounts.completePlanBlockVisits, 0)
+    assert.equal(runtimeCounts.orderIndexBuilds, 0)
+    assert.equal(runtimeCounts.orderIndexItemVisits, 0)
+    assert.equal(runtimeCounts.heightIndexBuilds, 0)
+    assert.equal(runtimeCounts.heightIndexBlockVisits, 0)
+    assert.equal(runtimeCounts.completeGeometryBlockVisits, 0)
+    assert.equal(runtimeCounts.blockPlanUpdates, 2)
+    const logarithmicBound = 12 * (Math.ceil(Math.log2(fixture.blockCount + 2)) + 1)
+    assert(runtimeCounts.blockPlanNodeVisits <= logarithmicBound)
+    assert(runtimeCounts.blockPlanNodesCopied <= logarithmicBound)
+    assert.equal(runtimeCounts.heightIndexUpdates, 2)
+    assert(runtimeCounts.heightIndexNodeVisits <= logarithmicBound)
+    assert(runtimeCounts.heightIndexNodesCopied <= logarithmicBound)
+    assert.equal(runtimeCounts.changedItemBuilds, 1)
+    assert.equal(runtimeCounts.textLengthIndexBuilds, 0)
+    assert.equal(runtimeCounts.textLengthItemVisits, 0)
+    assert.equal(runtimeCounts.textLengthIndexUpdates, 0)
+    assert.equal(runtimeCounts.urlIndexBuilds, 0)
+    assert.equal(runtimeCounts.urlIndexItemVisits, 0)
+    assert.equal(runtimeCounts.urlIndexUpdates, 0)
+    assert(runtimeCounts.windowGeometryBlockVisits <= 48)
+    assert(runtimeCounts.blockPlanWindowSliceItems <= 48)
+
+    printResult({
+      fixtureVersion: fixture.fixtureVersion,
+      scenario: "tail-turn-completion-activity",
+      materialization: "windowed-production",
+      boundary: "workbench-damage-canonical-turn-runtime-window-publication",
+      blockCount: fixture.blockCount,
+      viewport: { width: 80, height: 24 },
+      mode: "follow",
+      fixture: { contentShape: "one-semantic-item-per-turn-plus-one-running-tail", contentHash: fixture.contentHash,
+        setupExcludedFromTiming: true, excludedSetup: "bulk fixture construction, tail admission, cold indexes, full reference, and identity audit" },
+      operationCounts: {
+        completeBlocksBefore: beforeCompletion.blocks.length,
+        completeBlocksAfter: reconciled.value.blocks.length,
+        mountedBlocksAfter: reconciled.value.window.blocks.length,
+        publications,
+        preservedHistoricalBlocks: fixture.blockCount,
+        workbenchDamageSelectionGate: "exact-result; timing diagnostic only",
+        canonical: canonicalDiagnostics,
+        runtime: runtimeCounts,
+      },
+      timingsMs: {
+        diagnosticWorkbenchDamageSelection: Number(damage.milliseconds.toFixed(6)),
+        canonicalTurnReduction: Number(reduction.milliseconds.toFixed(6)),
+        runtimeActivityReconciliation: Number(reconciled.milliseconds.toFixed(6)),
       },
       samples: { warmup: 0, measured: 1 },
     })
@@ -2022,6 +2168,108 @@ async function nativeStructuralAdmissionBaseline(
       await setup.flush(); await setup.renderOnce()
     })
 
+    const beforeCompletion = runtime.getSnapshot()
+    const rootsBeforeCompletion = mountedBlockRoots(scroll)
+    const completedSnapshot: TranscriptFixtureSnapshot = Object.freeze({
+      canonicalRevision: afterItem.canonicalRevision + 1,
+      conversation: reduceConversationWithDiagnostics(afterItem.conversation, Object.freeze({
+        type: "turn.completed" as const, threadId: fixture.threadId, turnId: fixture.nextTurnId,
+        outcome: "complete" as const, durationMs: 0,
+      }), createConversationReductionDiagnostics()),
+      transcript: afterItem.transcript,
+    })
+    let completionRuntimePublications = 0
+    const stopCompletionRuntime = runtime.subscribe(() => { completionRuntimePublications++ })
+    commits.length = 0
+    const completionStarted = performance.now()
+    let completionRuntimeUpdateMs = 0
+    await act(async () => {
+      const updateStarted = performance.now()
+      runtime.update(runtimeInput(fixture, completedSnapshot, "follow", {
+        canonicalDamage: { kind: "blocks", itemIds: [] },
+      }))
+      completionRuntimeUpdateMs = performance.now() - updateStarted
+      await setup.flush(); await setup.renderOnce()
+    })
+    const completionSettlementMs = performance.now() - completionStarted
+    stopCompletionRuntime()
+    const completionReactCommits = commits.length
+    const completionReactDurations = [...commits]
+    const completed = runtime.getSnapshot()
+    const rootsAfterCompletion = mountedBlockRoots(scroll)
+    assertMountedRoots(completed, rootsAfterCompletion)
+    assertBoundedNativeShape(completed.window.blocks.length, mountedTreeCounts(scroll))
+    let completionRetainedRoots = 0
+    for (const [id, root] of rootsBeforeCompletion) if (rootsAfterCompletion.get(id) === root) completionRetainedRoots++
+    const completionMountedRoots = rootsAfterCompletion.size - completionRetainedRoots
+    const completionUnmountedRoots = rootsBeforeCompletion.size - completionRetainedRoots
+    assert.equal(completionMountedRoots, 1)
+    assert.equal(completionUnmountedRoots, 0)
+    assert.equal(completionRuntimePublications, 1)
+    assert.equal(completionReactCommits, 1)
+
+    let completionMeasurementPublications = 0
+    const stopCompletionMeasurement = runtime.subscribe(() => { completionMeasurementPublications++ })
+    const completionMeasurementDiagnostics = createDiagnostics()
+    commits.length = 0
+    let completionMeasurement!: ReturnType<typeof timed<ReturnType<typeof measureRenderedTranscript>>>
+    await act(async () => {
+      completionMeasurement = timed(() => measureRenderedTranscript(setup.renderer, scroll, {
+        frame: completed, runtime, styleRevision, diagnostics: completionMeasurementDiagnostics,
+      }))
+      await setup.flush(); await setup.renderOnce()
+    })
+    stopCompletionMeasurement()
+    assert.equal(completionMeasurementDiagnostics.candidateBlocks, 2)
+    assert.equal(completionMeasurementDiagnostics.attemptedMeasurements, 2)
+    assert.equal(completionMeasurementDiagnostics.changedMeasurements, 2)
+    assert.equal(completionMeasurementDiagnostics.trackedMountedRoots, rootsAfterCompletion.size)
+    assert.equal(completionMeasurementPublications,
+      completionMeasurementDiagnostics.changedMeasurements > 0 ? 1 : 0)
+    await act(async () => {
+      const layout = measureRenderedTranscript(setup.renderer, scroll, {
+        frame: runtime.getSnapshot(), runtime, styleRevision,
+      })
+      assert(layout, "completion activity geometry must settle on its acknowledgement pass")
+      await setup.flush(); await setup.renderOnce()
+    })
+
+    printResult({
+      scenario: "tail-turn-completion-native-activity",
+      materialization: "windowed-production",
+      boundary: "runtime-react-native-root-and-measurement",
+      blockCount: fixture.blockCount,
+      viewport,
+      mode: "follow",
+      fixture: { contentShape: "one-semantic-item-per-turn-plus-one-running-tail", contentHash: fixture.contentHash,
+        setupExcludedFromTiming: true,
+        excludedSetup: "initial runtime/React/OpenTUI mount, tail admission, and settled native geometry" },
+      operationCounts: {
+        completeBlocksBefore: beforeCompletion.blocks.length,
+        completeBlocksAfter: completed.blocks.length,
+        mountedBlocksBefore: rootsBeforeCompletion.size,
+        mountedBlocksAfter: rootsAfterCompletion.size,
+        retainedRoots: completionRetainedRoots,
+        mountedRoots: completionMountedRoots,
+        unmountedRoots: completionUnmountedRoots,
+        runtimePublications: completionRuntimePublications,
+        reactCommits: completionReactCommits,
+        measurementPublications: completionMeasurementPublications,
+        measuredBlocks: completionMeasurementDiagnostics.attemptedMeasurements,
+        acceptedHeightCorrections: completionMeasurementDiagnostics.changedMeasurements,
+        candidateBlocks: completionMeasurementDiagnostics.candidateBlocks,
+        trackedMountedRoots: completionMeasurementDiagnostics.trackedMountedRoots,
+      },
+      timingsMs: {
+        runtimeUpdate: Number(completionRuntimeUpdateMs.toFixed(6)),
+        reactCommitDurations: stats(completionReactDurations),
+        postRuntimeReactNativeSettlement: Number((completionSettlementMs - completionRuntimeUpdateMs).toFixed(6)),
+        completeRuntimeReactNativeSettlement: Number(completionSettlementMs.toFixed(6)),
+        measurementPublication: Number(completionMeasurement.milliseconds.toFixed(6)),
+      },
+      samples: { warmup: 0, measured: 1 },
+    })
+
     printResult({
       scenario: "structural-tail-native-admission",
       materialization: "windowed-production",
@@ -2416,6 +2664,7 @@ for (const blockCount of requestedSizes) {
   boundedCanonicalIngressBaseline(fixture)
   const structuralFixture = buildTranscriptStructuralScalingFixture(blockCount)
   structuralTailAdmissionBaseline(structuralFixture)
+  tailTurnCompletionBaseline(structuralFixture)
   detachedUnseenAccumulationBaseline(structuralFixture)
   sideInheritedMembershipBaseline(blockCount)
   runtimeBaseline(fixture)
