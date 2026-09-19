@@ -45,7 +45,7 @@ The streaming-anchor acceptance test passes: the user can scroll back, write whi
 - Finish the versioned Codex transport and mapping layer.
 - Normalize threads, turns, messages, reasoning, commands, file changes, MCP calls, and unknown items.
 - Implement start, resume, list, switch, steer, interrupt, and status updates.
-- Render Markdown, reasoning, tool cards, commands, and responsive diffs.
+- Render Markdown, tool cards, commands, and responsive diffs; represent reasoning through turn-level activity while retaining it canonically for future inspection.
 - Populate thread name, model, effort, context, cwd, branch, and run state.
 
 ### Exit
@@ -140,7 +140,7 @@ Features that do not exercise this path should not delay validation of the trans
 These are follow-up candidates, not completed features or changes to v1 acceptance gates:
 
 - Collapsed tool summaries: show output line counts and preserve visible failure/status information so users can decide what to expand.
-- Code-block actions: keyboard copy for a complete fenced block, with clear confirmation; investigate independent fenced-block folding (currently folds apply to transcript tool/reasoning/edit items).
+- Code-block actions: keyboard copy for a complete fenced block, with clear confirmation; investigate independent fenced-block folding (currently folds apply to transcript tool/edit items).
 - Dedicated `/diff` and `:diff` review: source-labeled file/hunk navigation as described in `diff-review.md`.
 - Fold-aware semantic navigation: clarify whether word motions traverse hidden content or skip closed blocks. Current semantic navigation may reveal a closed target; avoid changing that behavior silently while repairing performance.
 - Large-history cold loading: keep the composer responsive while native Markdown geometry settles. Warm navigation improvements do not eliminate initial settlement work.

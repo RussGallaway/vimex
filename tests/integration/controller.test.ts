@@ -255,7 +255,7 @@ test("controller-owned transcript runtime freezes detached content and follows l
   const turn = turnId("runtime"), id = itemId("runtime-answer")
   h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
   h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id, turnId: turn, kind: "assistant", markdown: "visible", status: "running" } } })
-  expect(runtime.getSnapshot().damage.kind).toBe("full")
+  expect(runtime.getSnapshot().damage.kind).toBe("blocks")
   h.controller.transcript({ type: "cursor.move", target: { itemId: id, graphemeOffset: 2 }, preferredScreenRow: 3, extend: false })
   const pinned = runtime.getSnapshot()
   h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: id, delta: " hidden tail" } })
@@ -272,6 +272,43 @@ test("controller-owned transcript runtime freezes detached content and follows l
   expect(runtime.getSnapshot()).toBe(followed)
   await h.controller.close()
   expect(h.controller.transcriptRuntime("main")).toBeUndefined()
+})
+
+test("controller reasoning ingress is canonical but publishes no transcript frames while following or detached", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const runtime = h.controller.transcriptRuntime("main")!
+  const turn = turnId("reasoning-runtime"), visible = itemId("visible-answer")
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id: visible, turnId: turn, kind: "assistant", markdown: "visible", status: "complete" } } })
+
+  let notifications = 0
+  const unsubscribe = runtime.subscribe(() => { notifications++ })
+  const follow = runtime.getSnapshot()
+  const first = itemId("follow-reasoning")
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id: first, turnId: turn, kind: "reasoning", markdown: "private", status: "running" } } })
+  h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: first, delta: " thought" } })
+  h.emit({ type: "conversation", event: { type: "item.completed", threadId: a, item: { id: first, turnId: turn, kind: "reasoning", markdown: "private thought", status: "complete" } } })
+  await h.controller.settle()
+  expect(runtime.getSnapshot()).toBe(follow)
+  expect(notifications).toBe(0)
+
+  h.controller.transcript({ type: "cursor.move", target: { itemId: visible, graphemeOffset: 1 }, preferredScreenRow: 2, extend: false })
+  const detached = runtime.getSnapshot()
+  notifications = 0
+  const second = itemId("detached-reasoning")
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id: second, turnId: turn, kind: "reasoning", markdown: "hidden", status: "running" } } })
+  h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: second, delta: " detail" } })
+  h.emit({ type: "conversation", event: { type: "item.completed", threadId: a, item: { id: second, turnId: turn, kind: "reasoning", markdown: "hidden detail", status: "complete" } } })
+  await h.controller.settle()
+  const workspace = h.controller.getSnapshot().workspaces[a]!
+  expect(runtime.getSnapshot()).toBe(detached)
+  expect(notifications).toBe(0)
+  expect(workspace.conversation.items[first]).toBeDefined()
+  expect(workspace.conversation.items[second]).toBeDefined()
+  expect(workspace.transcript.order).toEqual([visible])
+  unsubscribe()
+  await h.controller.close()
 })
 
 test("detached copy, reference, and URL reads use the displayed presentation until follow", async () => {

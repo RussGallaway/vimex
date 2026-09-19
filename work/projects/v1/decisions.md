@@ -64,6 +64,12 @@ This is a lightweight decision log. Change a settled decision only through a new
 
 **Reason:** One terminal state may have multiple coherent presentations. This keeps navigation semantics independent of OpenTUI, prevents hidden streaming from invalidating a detached reader, supports revision-guarded incremental work with safe rebuilding, and establishes the Stage 5 render-block windowing seam without introducing another authority or package.
 
+### D-011: Reasoning is canonical but not primary transcript content
+
+**Decision:** Retain reasoning items in canonical `ConversationState`, but exclude them at the conversation-to-transcript projection boundary. Represent an active turn with one pane-level `Working · elapsed` heartbeat and a completed turn with one source-less `Worked for …` footer when observed timing exists. Reserve direct reasoning presentation for a future inspector rather than primary transcript rows.
+
+**Reason:** The primary transcript is the user's durable work record, not a lossless protocol dump. Excluding reasoning before semantic transcript state is created removes repetitive rows from navigation, search, selection, copying, unseen counts, geometry, and future window planning. Canonical retention preserves diagnostics and future inspection without introducing a second authority.
+
 ## Open decisions
 
 ### O-001: Insert-mode submit key

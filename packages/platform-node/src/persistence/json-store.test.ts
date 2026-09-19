@@ -30,7 +30,8 @@ test("corrupt state is surfaced rather than silently replacing the user's draft"
 test("config defaults and invalid settings", () => {
   expect(parseConfig({})).toEqual(defaultConfig)
   expect(parseConfig({ theme: "nord" }).theme).toBe("nord")
-  for (const bad of [{ version: 2 }, { insertEnter: "yes" }, { composerMaxHeight: 8 }, { foldTools: "true" }, { reducedColor: "yes" }, { surprise: true }, { keybindings: [] }]) {
+  expect(parseConfig({ foldReasoning: false }).foldReasoning).toBe(false)
+  for (const bad of [{ version: 2 }, { insertEnter: "yes" }, { composerMaxHeight: 8 }, { foldTools: "true" }, { foldReasoning: "false" }, { reducedColor: "yes" }, { surprise: true }, { keybindings: [] }]) {
     expect(() => parseConfig(bad)).toThrow()
   }
 })

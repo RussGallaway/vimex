@@ -7,19 +7,18 @@ import type { Overlay, Surface, VimMode } from "@vimex/interaction"
 import { VimexRoot } from "../index"
 import { inertController, type VimexUiController } from "../contracts"
 
-const thread = threadId("folds"), tool = itemId("fold-tool"), thought = itemId("fold-thought")
+const thread = threadId("folds"), tool = itemId("fold-tool")
 async function harness(mode: VimMode = "normal", surface: Surface = "transcript", overlay: Overlay = null, cursorId = tool) {
   let initial = transitionWorkbench(initialWorkbench(), { type: "thread.open", summary: { id: thread, title: "Folds", cwd: "/work", model: "test", reasoningEffort: "high", status: "idle" } }).state
   for (const item of [
     { id: itemId("message"), turnId: turnId("turn"), kind: "assistant" as const, markdown: "A message", status: "complete" as const },
     { id: tool, turnId: turnId("turn"), kind: "tool" as const, title: "Read files", detail: "Tool output", status: "complete" as const },
-    { id: thought, turnId: turnId("turn"), kind: "reasoning" as const, markdown: "Reasoning body", status: "complete" as const },
   ]) initial = transitionWorkbench(initial, { type: "conversation.event", event: { type: "item.started", threadId: thread, item } }).state
   const workspace = initial.workspaces[thread]!
   initial = { ...initial, workspaces: { ...initial.workspaces, [thread]: { ...workspace,
     interaction: { ...workspace.interaction, mode, surface, overlay },
     composer: { ...workspace.composer, text: "Keep this draft", cursorOffset: 4, revision: 1 },
-    transcript: { ...workspace.transcript, folded: { [tool]: true, [thought]: false }, cursor: { itemId: cursorId, graphemeOffset: 0 },
+    transcript: { ...workspace.transcript, folded: { [tool]: true }, cursor: { itemId: cursorId, graphemeOffset: 0 },
       viewport: { kind: "point", point: { itemId: tool, graphemeOffset: 0 }, preferredScreenRow: 0 },
       ...(mode === "visual" ? { selection: { anchor: { itemId: tool, graphemeOffset: 0 }, head: { itemId: tool, graphemeOffset: 3 }, shape: "character" as const } } : {}),
     },
@@ -46,11 +45,11 @@ test("typed uppercase zR/zM expand and collapse all without lowercase aliases", 
   const h = await harness()
   try {
     await h.keys("zR")
-    expect(h.workspace().transcript.folded).toMatchObject({ [tool]: false, [thought]: false })
+    expect(h.workspace().transcript.folded).toMatchObject({ [tool]: false })
     await h.keys("zM")
-    expect(h.workspace().transcript.folded).toMatchObject({ [tool]: true, [thought]: true })
+    expect(h.workspace().transcript.folded).toMatchObject({ [tool]: true })
     await h.keys("zr")
-    expect(h.workspace().transcript.folded).toMatchObject({ [tool]: true, [thought]: true })
+    expect(h.workspace().transcript.folded).toMatchObject({ [tool]: true })
   } finally { await h.close() }
 })
 
@@ -58,9 +57,9 @@ test("Enter toggles only the current transcript block", async () => {
   const h = await harness()
   try {
     await act(async () => { h.mockInput.pressKey("RETURN"); await h.flush() })
-    expect(h.workspace().transcript.folded).toMatchObject({ [tool]: false, [thought]: false })
+    expect(h.workspace().transcript.folded).toMatchObject({ [tool]: false })
     await act(async () => { h.mockInput.pressKey("RETURN"); await h.flush() })
-    expect(h.workspace().transcript.folded).toMatchObject({ [tool]: true, [thought]: false })
+    expect(h.workspace().transcript.folded).toMatchObject({ [tool]: true })
   } finally { await h.close() }
 })
 
@@ -74,7 +73,7 @@ for (const [mode, surface] of [["normal", "transcript"], ["visual", "transcript"
         await act(async () => { h.mockInput.pressKey("TAB", { shift: true }); await h.flush() })
         await act(async () => { await h.flush(); await h.renderOnce() })
         const after = h.workspace()
-        expect(after.transcript.folded).toMatchObject({ [tool]: folded, [thought]: folded })
+        expect(after.transcript.folded).toMatchObject({ [tool]: folded })
         expect(after.interaction).toEqual(before.interaction)
         expect(after.composer).toEqual(before.composer)
         expect(after.transcript.selection).toEqual(before.transcript.selection)

@@ -11,7 +11,6 @@ Vimex reads JSON from `$XDG_CONFIG_HOME/vimex/config.json`, or `~/.config/vimex/
   "insertEnter": "submit",
   "busySubmit": "queue",
   "foldTools": true,
-  "foldReasoning": true,
   "composerMaxHeight": 0.33,
   "keybindings": {},
   "codexExecutable": "codex"
@@ -27,7 +26,7 @@ Vimex reads JSON from `$XDG_CONFIG_HOME/vimex/config.json`, or `~/.config/vimex/
 | `insertEnter` | `submit`, `newline` | With `submit`, Enter sends and Shift+Enter inserts a newline. With `newline`, Enter inserts a newline; Escape then Enter sends from Normal mode. Ctrl+Enter also sends when reported distinctly. |
 | `busySubmit` | `queue`, `steer` | Sending during an active turn either queues the message for the next turn or steers the active turn. Ctrl+Enter explicitly steers in Insert mode. |
 | `foldTools` | boolean | Initially fold tool and command items. File-change diffs start expanded. |
-| `foldReasoning` | boolean | Initially fold reasoning items. |
+| `foldReasoning` | boolean | Deprecated v1 compatibility key. It is accepted and ignored because reasoning is excluded from the primary transcript. |
 | `composerMaxHeight` | `0.1` through `0.6` | Upper bound for the fixed input area relative to terminal height. Adding lines scrolls inside the input instead of growing it. |
 | `keybindings` | object | Maps a key sequence to a named Ex command. Overrides have priority over built-in bindings whenever no overlay is open. |
 | `codexExecutable` | nonempty string | Executable path or command used to start the Codex app server. |

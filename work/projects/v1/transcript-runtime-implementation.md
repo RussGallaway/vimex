@@ -389,6 +389,14 @@ packages/ui-opentui-react/src/
 - The connected-App profile passed 11 scenarios in an 80×24 terminal. Its navigation fixture contained 100 historical Markdown items with eight repeated paragraphs each; warm navigation settled in approximately 19–21 ms with 0.09–0.21 ms input dispatch and 0.45–0.51 ms React commits. Its detached fixture appended 1,200 Markdown paragraphs to a live answer; steady deltas settled in approximately 18–20 ms and navigation in approximately 52–57 ms with 0.22–0.30 ms React commits. The first large-frame materialization was approximately 228 ms.
 - These measurements do not justify a second presentation scheduler: bounded ingress and narrow publications remove token-cadence starvation, while remaining cost is primarily native frame and Markdown work. Stage 5 block windowing is the next topology-preserving scaling step.
 
+## Post-Stage 4 refinement — canonical reasoning projection
+
+Status: complete.
+
+Reasoning items remain canonical conversation data, but the primary transcript projection omits them. The active turn is represented by the existing pane-level `Working · elapsed` heartbeat; terminal turns retain the existing source-less `Worked for …`, failure, or interruption footer when authoritative outcome data exists. A future reasoning inspector may consume canonical items directly without granting them primary transcript semantics.
+
+The exclusion happens at `syncTranscriptItem`, so reasoning has no primary transcript order, projection, cursor, search, selection, copy, mark, jump, fold, unseen, block, geometry, or window identity. Item-local damage remains bounded, and `TranscriptRuntime` treats damage that resolves to no materialized block as a strict no-op. A reasoning-only start/delta/completion stream therefore publishes no transcript frames or native measurement work in follow or detached presentations. The v1 `foldReasoning` configuration key remains parser-compatible as a deprecated no-op.
+
 ### Performance closeout evidence
 
 Commit `ae73913` makes `bun run benchmark:transcript` emit reproducible JSONL for warm navigation, cold geometry, and follow reconciliation with fixture shape, dimensions, attachment mode, cache scope, warmup/sample counts, and min/median/p95/max/mean. Timings remain diagnostic rather than pass/fail thresholds. Streaming settlement remains a separate connected-App profile.
@@ -468,6 +476,7 @@ Add one row after each coherent implementation commit.
 | 2026-09-18 | Detached reads | `bf1b76a` | Typecheck; 150 focused controller, side-chat, reducer, App, and keymap tests; parallel review-and-repair | Detached reads publish no hidden-tail frame and add no scheduler | Copy, reference, URL picker/open, command yank, and side quote read the addressed presentation and mutate its resolved canonical workspace |
 | 2026-09-18 | Geometry equivalence | `1e69bde` | Typecheck; native scroll-layout suite; repeated parallel review runs | Incremental and full native measurements agree for every point and all eight motions | Changed middle block retains sibling geometry identity and recomposes downstream rows |
 | 2026-09-18 | Performance closeout | `ae73913` | Typecheck, boundaries, docs, 654-test repository run plus isolated tmux rerun; reproducible benchmark; connected-App profile 11/11; two benchmark review rounds | Warm 0.108/0.006/0.425 ms frame/layout/anchor medians; streaming steady 18.14–20.30 ms; cold 22.690/183.529 ms setup/geometry medians; follow update 0.217 ms median, 0.264 ms p95 | Three JSONL runtime paths carry fixture, dimensions, mode, cache scope, and sample counts; the separate streaming profile is documented at 80×24 with 12 timed deltas and no discarded warmup |
+| 2026-09-18 | Reasoning projection | `b40b6a6` | Typecheck; 112 focused transcript, runtime, workbench, and UI tests | Reasoning start/delta/completion publishes 0 transcript frames; block, window, and geometry identities remain stable | Canonical reasoning retained for future inspection; primary transcript uses one live heartbeat and one observed terminal footer |
 
 ## Deferred questions
 

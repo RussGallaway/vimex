@@ -301,7 +301,7 @@ export class TranscriptRuntime {
   private incrementalFrame(input: TranscriptRuntimeInput, itemIds: readonly ItemId[], damage: TranscriptDamage): TranscriptFrame | undefined {
     let nextBlocks: TranscriptBlock[] | undefined
     let materialized = false
-    const projections: Record<string, TranscriptItemBlock["projection"]> = { ...this.frame.transcript.projectionById }
+    let projections: Record<string, TranscriptItemBlock["projection"]> | undefined
     for (const itemId of itemIds) {
       const index = this.itemBlockIndexes.get(itemId)
       const prior = index === undefined || index < 0 ? undefined : this.frame.blocks[index]
@@ -309,6 +309,7 @@ export class TranscriptRuntime {
       if (!prior && !next) continue
       materialized = true
       if (!prior || !("projection" in prior) || !next || prior.turnId !== next.turnId) return undefined
+      projections ??= { ...this.frame.transcript.projectionById }
       projections[itemId] = next.projection
       if (sameBlock(prior, next)) continue
       nextBlocks ??= [...this.frame.blocks]
@@ -318,7 +319,7 @@ export class TranscriptRuntime {
     // transcript. Advancing them must not publish a frame or wake renderers.
     if (!materialized) return this.frame
     const blocks = nextBlocks ? Object.freeze(nextBlocks) : this.frame.blocks
-    const transcript = presentationTranscriptWithProjections(input.transcript, this.frame.transcript.order, Object.freeze(projections))
+    const transcript = presentationTranscriptWithProjections(input.transcript, this.frame.transcript.order, Object.freeze(projections!))
     return Object.freeze({
       threadId: input.threadId,
       canonicalGeneration: input.canonicalGeneration,

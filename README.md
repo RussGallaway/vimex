@@ -76,7 +76,6 @@ Configuration lives at `$XDG_CONFIG_HOME/vimex/config.json`, defaulting to `~/.c
   "insertEnter": "submit",
   "busySubmit": "queue",
   "foldTools": true,
-  "foldReasoning": true,
   "composerMaxHeight": 0.33,
   "keybindings": {}
 }

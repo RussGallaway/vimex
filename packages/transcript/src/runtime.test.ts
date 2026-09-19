@@ -224,6 +224,30 @@ test("canonical reasoning streams never publish or damage the semantic transcrip
   expect(notifications).toBe(1)
 })
 
+test("detached canonical reasoning stays silent and hidden-only reattachment retains presentation data", () => {
+  let source = fixture()
+  const reasoning = itemId("detached-reasoning")
+  const runtime = new TranscriptRuntime(input(source, "follow"))
+  runtime.update(input(source, "detached"))
+  const pinned = runtime.getSnapshot()
+  let notifications = 0
+  runtime.subscribe(() => { notifications++ })
+
+  source = apply(source, { type: "item.started", threadId: thread, item: { id: reasoning, turnId: turn, kind: "reasoning", markdown: "private", status: "running" } })
+  expect(runtime.update(input(source, "detached", { kind: "blocks", itemIds: [reasoning] }))).toBe(pinned)
+  source = apply(source, { type: "item.delta", threadId: thread, itemId: reasoning, delta: " thought" })
+  expect(runtime.update(input(source, "detached", { kind: "blocks", itemIds: [reasoning] }))).toBe(pinned)
+  expect(notifications).toBe(0)
+
+  const followed = runtime.update(input(source, "follow", { kind: "blocks", itemIds: [reasoning] }))
+  expect(notifications).toBe(1)
+  expect(followed.mode).toBe("follow")
+  expect(followed.blocks).toBe(pinned.blocks)
+  expect(followed.window).toBe(pinned.window)
+  expect(followed.geometry).toBe(pinned.geometry)
+  expect(followed.transcript.projectionById[reasoning]).toBeUndefined()
+})
+
 test("block damage updates one growing item without rebuilding a large historical plan", () => {
   let source = fixture()
   for (let index = 0; index < 300; index++) {

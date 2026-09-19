@@ -245,7 +245,39 @@ test("status-only item updates preserve projection identity while changed text i
   expect(changed.projectionById[item.id]!.revision).toBe(2)
   expect(selectedText(changed, "plain")).toBe("é")
   const reasoning = syncTranscriptItem(state, { ...item, kind: "reasoning" })
-  expect(reasoning).toBe(state)
+  expect(reasoning.order).toEqual([])
+  expect(reasoning.projectionById[item.id]).toBeUndefined()
+  expect(reasoning.cursor).toBeUndefined()
+  expect(reasoning.selection).toBeUndefined()
+  expect(reasoning.viewport).toEqual({ kind: "tail" })
+})
+
+test("authoritative suppression removes every stale location for a formerly visible item", () => {
+  const hidden = itemId("hidden"), visible = itemId("visible")
+  let state = syncTranscriptItem(initialTranscript(), message(hidden, "secret"))
+  state = syncTranscriptItem(state, message(visible, "answer"))
+  state = {
+    ...state,
+    cursor: { itemId: hidden, graphemeOffset: 2 },
+    selection: { anchor: { itemId: hidden, graphemeOffset: 0 }, head: { itemId: visible, graphemeOffset: 1 }, shape: "character" },
+    folded: { [hidden]: true },
+    viewport: { kind: "point", point: { itemId: hidden, graphemeOffset: 2 }, preferredScreenRow: 4 },
+    unseenEntries: 1,
+    unseenItemIds: [hidden],
+    jumps: { back: [{ point: { itemId: hidden, graphemeOffset: 1 }, preferredScreenRow: 2 }], forward: [] },
+    marks: { a: { point: { itemId: hidden, graphemeOffset: 1 }, preferredScreenRow: 2 } },
+  }
+  const next = syncTranscriptItem(state, { id: hidden, turnId: turnId("turn"), kind: "reasoning", markdown: "secret", status: "complete" })
+  expect(next.order).toEqual([visible])
+  expect(next.projectionById[hidden]).toBeUndefined()
+  expect(next.cursor).toEqual({ itemId: visible, graphemeOffset: 0 })
+  expect(next.selection).toBeUndefined()
+  expect(next.viewport).toEqual({ kind: "point", point: { itemId: visible, graphemeOffset: 0 }, preferredScreenRow: 4 })
+  expect(next.folded[hidden]).toBeUndefined()
+  expect(next.unseenEntries).toBe(0)
+  expect(next.unseenItemIds).toEqual([])
+  expect(next.jumps).toEqual({ back: [], forward: [] })
+  expect(next.marks).toEqual({})
 })
 
 test("reasoning remains outside every semantic transcript index", () => {

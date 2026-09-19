@@ -13,7 +13,7 @@ V1 must provide:
 3. Four user-visible Vim modes: Normal, Insert, Visual, and Command.
 4. Independent transcript navigation while a response is streaming and while a draft is being written.
 5. First-class keyboard selection, copying, URL navigation, folding, sessions, forks, and approvals.
-6. Markdown rendering for agent messages and appropriate renderers for tools, commands, reasoning, and file edits.
+6. Markdown rendering for agent messages and appropriate renderers for tools, commands, and file edits, with reasoning represented by turn-level activity rather than transcript rows.
 7. Persistent visibility of thread and workspace state.
 8. Native integration with Herdr without making Herdr a runtime requirement.
 
@@ -35,7 +35,7 @@ V1 must provide:
 - Start and initialize `codex app-server` over stdio.
 - Start, resume, list, switch, rename, and fork threads.
 - Start, steer, and interrupt turns.
-- Render streaming agent messages and reasoning.
+- Keep reasoning in canonical conversation state while representing live work with one pane heartbeat and completed observed work with one turn footer.
 - Render command executions, file changes, MCP calls, and agent activity.
 - Receive and resolve approval requests.
 - Recover gracefully from unknown notification and item variants.
@@ -90,7 +90,7 @@ The persistent status area must show, subject to responsive truncation:
 - Theme and syntax-theme selection.
 - Key overrides expressed in named commands rather than component callbacks.
 - Configurable submit/newline behavior in Insert mode.
-- Configurable tool and reasoning fold defaults.
+- Configurable tool fold defaults. The v1 `foldReasoning` key remains accepted as a deprecated no-op for compatibility.
 - Safe terminal restoration after normal exit, signals, and handled failures.
 
 ### Herdr integration

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { MarkdownRenderable, TextBufferRenderable, type ScrollBoxRenderable } from "@opentui/core"
 import { testRender } from "@opentui/react/test-utils"
 import { itemId, turnId } from "@vimex/conversation"
-import { initialTranscript, setFold, syncTranscriptItem, type TranscriptState } from "@vimex/transcript"
+import { initialTranscript, projectItem, setFold, syncTranscriptItem, type TranscriptState } from "@vimex/transcript"
 import { act, useState } from "react"
 import { createEmberTideSyntax } from "../theme"
 import { ReasoningBlock } from "./ReasoningBlock"
@@ -16,7 +16,9 @@ test("folding one item reuses and translates unchanged item geometry", async () 
     status: "complete" as const,
   }))
   let base = initialTranscript()
-  for (const item of items) base = syncTranscriptItem(base, item)
+  // Reasoning renderer geometry remains reusable by a future inspector even
+  // though primary transcript projection intentionally excludes these items.
+  for (const item of items) base = { ...base, order: [...base.order, item.id], projectionById: { ...base.projectionById, [item.id]: projectItem(item) } }
   let current: TranscriptState = base
   let toggleFold = () => {}
   const syntax = createEmberTideSyntax()

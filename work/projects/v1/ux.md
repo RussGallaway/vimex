@@ -18,7 +18,7 @@ Follow is also separate from mode. The transcript viewport is either attached to
 ```text
 ┌──────────────── transcript viewport ────────────────┐
 │                                                     │
-│ rendered messages, reasoning, tools, diffs          │
+│ rendered messages, tools, diffs, turn activity      │
 │                                                     │
 ├──────────────── composer / command line ────────────┤
 │ draft                                               │
@@ -165,7 +165,8 @@ Use OpenCode's density, whitespace, compact tool cards, responsive layout, and r
 - Ctrl-J focuses the composer; Ctrl-K focuses the transcript; Ctrl-W J/K remain aliases.
 - A precise transcript cursor is visible in Normal and Visual modes. Visual selection begins at that cursor and extends with character, word/WORD, and line motions.
 - Submitted text leaves the native composer immediately; outbox entries retain recoverable send failures independently of the next draft.
-- Activity indicators animate locally while connected work is active. Labels reflect actual reasoning, tool, response, approval, or waiting state; animation is not evidence of new server progress.
+- Activity indicators animate locally while connected work is active. One pane-level `Working · elapsed` heartbeat represents the active turn; animation is not evidence of new server progress.
+- Reasoning remains canonical diagnostic data but is omitted from the primary semantic transcript. It is not navigable, searchable, selectable, copyable, counted as unseen, measured, or windowed there. A completed turn with observed timing contributes one source-less `Worked for …` footer. A future inspector may expose reasoning without changing primary transcript semantics.
 
 - Insert-mode slash commands use a prompt-anchored drawer above the composer, while Ex commands continue to use the bottom strip.
 
