@@ -1,6 +1,6 @@
 # Transcript windowing implementation
 
-Status: Stages 5.0–5.3 are complete and verified. Stage 5.4 is in progress; cursor/message, selection/copy, and atomic search/mark/jump/history/thread target materialization are complete. Fold and URL preservation are next.
+Status: Stages 5.0–5.4 are complete and verified. Stage 5.5 follow, detachment, and multiple-presentation hardening is next.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
@@ -25,7 +25,7 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 | Stage 5a: pure window planner | Complete | Commit `4021939`; indexed height queries, bounded follow/detached/reveal windows, pass-through fallback, and evidence below |
 | Stage 5b: windowed mounting | Complete | Commit `3e24002`; bounded production runtime, React/native mounting, observer lifetime, scaling evidence, and review sign-off below |
 | Stage 5c: anchor correction | Complete | Commit `97f163f`; atomic height correction, window-local geometry, logical-anchor restoration, scaling evidence, and review sign-off below |
-| Stage 5d: off-window semantics | In progress | Commits `a24f5af`, `df243a1`, `9266837`; indexed target materialization, bounded selection clipping, canonical cross-window copy, atomic navigation settlement, and evidence below |
+| Stage 5d: off-window semantics | Complete | Commits `a24f5af`, `df243a1`, `9266837`, `0e1ad6d`; indexed target materialization and URL motion, bounded selection clipping, canonical cross-window copy, atomic navigation/fold/picker settlement, and evidence below |
 | Stage 5e: follow and detachment | Not started | — |
 | Stage 5f: stress, review, and evidence | Not started | — |
 
@@ -397,7 +397,7 @@ Exit criteria:
 - [x] Materialize search, mark, jump, history, and thread-navigation targets.
 - [x] Render selections whose logical endpoints span unmounted blocks.
 - [x] Copy source and rendered text across unmounted blocks from canonical projections.
-- [ ] Preserve folds and URL navigation across window changes.
+- [x] Preserve folds and URL navigation across window changes.
 - [x] Verify empty-source items and source-less activity at window boundaries.
 
 Exit criteria:
@@ -900,3 +900,44 @@ Search discovery itself still scans complete canonical text and grows with the n
 - Parallel architecture, correctness, and performance reviews ran before and after repair. Repairs normalized invalid and clamped locations, eliminated redundant fold/focus publications, routed reveals to exact presentations, staged history/thread state atomically, preferred restored viewports over stale cursors, preserved follow-tail restoration, added authoritative publication counts, and fixed real Visual search command-state cleanup. Final reviewers signed off with no blocker.
 
 The claim remains scoped to non-folded target settlement after semantic discovery. Fold and URL preservation, complete fold rebuild work, fold/unseen metadata cloning, complete reconciliation across lineage changes, and production sub-blocks for oversized Markdown, command output, and diffs remain open. Stage 5.4 and overall Stage 5 acceptance therefore remain open.
+
+### Stage 5.4d — persistent folds, indexed URLs, and owned picker settlement
+
+Implementation commit: `0e1ad6d` (`feat: preserve off-window folds and URLs`). This is the final Stage 5.4 vertical slice; all Stage 5.4 exit criteria pass.
+
+#### Semantic authority and disposable indexes
+
+- `TranscriptState.folded` remains the semantic fold authority and retains its record-shaped public contract. Its implementation is now an immutable persistent AVL-backed record: one explicit fold update path-copies logarithmically, preserves untouched identity, enumerates and serializes as ordinary record data, and accepts opaque item IDs under one locale-independent total ordering. Persisted and forked folds are filtered to known foldable semantic items; explicit `false` remains meaningful.
+- Default reasoning/tool fold policy is semantic state. A new reasoning/tool item consumes the configured policy in the same projection transaction that admits it, so admission no longer waits for a React effect or produces a second fold publication. Forks inherit the policy and explicit choices. Bulk default/fold-all operations intentionally remain complete semantic-output operations.
+- URL rank/select is a disposable persistent count index keyed by semantic order/projection identity. Warm motion performs logarithmic prefix/select work without visiting unrelated transcript items. Incremental projection updates inherit the index; exhaustive `urlCandidatesReference` and `moveByUrlReference` implementations remain the correctness oracles.
+- Candidate enumeration is proportional to the requested picker output, not unrelated history. Picker choice uses a controller-owned disposable identity/URL index plus exact semantic-scope validation, avoiding re-enumeration. Current-item and selection candidates remain logical projection ranges; native nodes are never consulted.
+
+#### Atomic routing, folds, and native work
+
+- URL motion, search/jump unfolds, and non-history cursor reveals reduce fold and logical target changes together. Fold-plus-view damage retains its exact fold IDs, one measured height replacement path-copies the height index, and unsupported or future multi-sub-block relationships fall back to the complete rebuild reference.
+- A fold update composes only the current and resulting bounded windows. Complete-plan identity is retained, complete geometry is not recomposed, and OpenTUI schedules fold measurement only for affected materialized item keys.
+- URL picker state owns its exact thread, presentation, displayed canonical revision, and semantic scope. Open, choose, cancel, thread switch, history navigation, restart, and fork transitions clear or replace picker state and overlay atomically. A stale candidate cannot open after same-revision cursor/selection movement or presentation changes.
+- Main and side runtimes remain independent. Fold/URL target settlement produces one authoritative-state publication and one addressed runtime publication with zero redundant main/side pane publications; picker open and choose each produce one owning-pane publication and no runtime publication.
+
+#### Deterministic fold and URL scaling
+
+The production-window workload primes URL and height indexes outside the timed operation, seeds a real eight-row unfolded native measurement, moves the fold target outside the mounted window, then combines a one-row fold with an explicit URL reveal. Tests hard-gate that the target is absent before and materialized afterward. Timings are diagnostic; operation counts and identity are the acceptance gates.
+
+| Complete blocks | Mounted before / after | URL builds / item visits / node visits | Height builds / block visits / visits=copies | Complete / window geometry visits | Publications | URL motion / fold publication |
+|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 67 / 55 | 0 / 0 / 24 | 0 / 0 / 8=8 | 0 / 122 | 1 | 0.122 / 0.198 ms |
+| 1k | 72 / 72 | 0 / 0 / 43 | 0 / 0 / 11=11 | 0 / 144 | 1 | 0.014 / 0.141 ms |
+| 10k | 72 / 72 | 0 / 0 / 54 | 0 / 0 / 15=15 | 0 / 144 | 1 | 0.017 / 0.277 ms |
+| 100k | 72 / 72 | 0 / 0 / 67 | 0 / 0 / 18=18 | 0 / 144 | 1 | 0.042 / 0.284 ms |
+
+Every scale retained complete-plan identity, performed one height-index update, built no complete plan or height index, visited no complete-plan blocks, composed no complete geometry, and published once. Mounted work stayed at or below 72 blocks; geometry work stayed at or below two bounded 72-block compositions. URL and height-tree work grew logarithmically rather than with total transcript size.
+
+#### Repository, PTY, and review gates
+
+- The final focused matrix passed 203 tests and 31,407 assertions with no failures across transcript semantics/navigation/scaling, Workbench/publications, controller/local-state integration, App, fold layout, and the rendered-layout scheduler. Typecheck and `git diff --check` passed.
+- `bun run check` passed typecheck, dependency boundaries, generated-doc validation, and every non-sandbox-sensitive test: 718 passed and 5 intentional profiling skips. Its only failure was the sandbox-denied isolated tmux socket; the other four real PTY cases passed in that run.
+- The complete terminal rerun outside the sandbox passed all five PTY/tmux cases. The isolated tmux case completed in 695 ms.
+- The executable 100/1k/10k/100k benchmark passed all identity, publication, logarithmic-index, absent-before/present-after, and bounded-window assertions shown above.
+- Parallel architecture, correctness, and performance reviews ran before implementation and again after the slice. Repairs unified opaque fold-key ordering; filtered invalid restored/forked folds; inherited fork defaults; preserved fold damage through reveals; made non-history cursor unfolds atomic; scheduled native fold measurements explicitly; fixed inclusive/reverse URL-selection boundaries; guarded stale current-item cursors; eliminated picker Enter/cancel/navigation double publications; added exact picker owner/scope validation and bounded membership lookup; and replaced the degenerate fold benchmark with a real measured height change. Final reviewers signed off with no blocker.
+
+Stage 5.4 is complete: semantic results retain exhaustive pass-through references, no target discovery depends on a native node, and explicit off-window materialization settles as one user-visible transition. Overall Stage 5 remains open. Search discovery, complete append/lineage reconciliation, persistence/global-fold enumeration, and individual-item URL/text work remain proportional to their semantic input or output; stable production sub-blocks for oversized Markdown, command output, and diffs remain required before the final Stage 5 acceptance claim.
