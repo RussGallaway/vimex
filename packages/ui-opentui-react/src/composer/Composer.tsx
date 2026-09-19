@@ -10,6 +10,7 @@ import { emberTide } from "../theme"
 export function Composer(props: {
   expanded?: boolean
   interactive?: boolean
+  visible?: boolean
   state: ComposerState
   mode: VimMode
   activeTurn: boolean
@@ -108,7 +109,7 @@ export function Composer(props: {
   const compact = dimensions.height < 18
   const showSendHint = dimensions.width >= 72
   useEffect(() => {
-    if (!props.expanded) return
+    if (!props.expanded || props.visible === false) return
     const measure = () => {
       const textarea = props.textareaRef.current
       // virtualLineCount covers only the native viewport; total includes offscreen wrapped rows.
@@ -118,7 +119,7 @@ export function Composer(props: {
     renderer.on(CliRenderEvents.FRAME, measure)
     renderer.requestRender()
     return () => { renderer.off(CliRenderEvents.FRAME, measure) }
-  }, [props.expanded, props.textareaRef, renderer])
+  }, [props.expanded, props.textareaRef, props.visible, renderer])
   const inputHeight = Math.max(1, Math.min(props.maxHeight, props.expanded ? Math.max(compact ? 2 : 3, wrappedRows) : compact ? 2 : 3))
   const queued = props.state.outbox.filter((message) => message.status === "queued").length
   const failed = props.state.outbox.filter((message) => message.status === "failed")

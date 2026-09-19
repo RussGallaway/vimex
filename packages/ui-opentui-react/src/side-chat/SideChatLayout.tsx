@@ -1,8 +1,8 @@
 import { useBindings } from "@opentui/keymap/react"
 import { flushSync, useTerminalDimensions } from "@opentui/react"
 import type { ThreadId } from "@vimex/conversation"
-import { captureWorkbenchLayout, type TranscriptPresentationId, type WorkbenchLayoutSnapshot, type WorkbenchPublicationHost } from "@vimex/workbench"
-import { useCallback, useSyncExternalStore, type ReactNode } from "react"
+import { captureWorkbenchLayout, type TranscriptPresentationId, type WorkbenchLayoutSnapshot, type WorkbenchPublicationHost, type WorkbenchState } from "@vimex/workbench"
+import { useCallback, useRef, useSyncExternalStore, type ReactNode } from "react"
 import { VimexApp } from "../app/App"
 import type { VimexAppProps, VimexUiController, VimexUiSettings } from "../contracts"
 import { emberTide, selectTheme } from "../theme"
@@ -33,11 +33,31 @@ function ConnectedPane(props: {
   presentationVisible: boolean
   paneLabel?: "MAIN" | "SIDE"
 }) {
-  const subscribe = useCallback((listener: () => void) => props.controller.subscribePresentation(props.presentationId, listener), [props.controller, props.presentationId])
-  const getSnapshot = useCallback(() => props.controller.getPresentationSnapshot(props.presentationId), [props.controller, props.presentationId])
-  const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+  const state = useVisiblePresentationSnapshot(props.controller, props.presentationId, props.presentationVisible)
   return <VimexApp state={state} controller={props.controller} settings={props.settings} interactive={props.interactive}
     presentationVisible={props.presentationVisible} paneLabel={props.paneLabel} presentationId={props.presentationId} />
+}
+
+/** Retains the last visible pane model without reconciling hidden publications. */
+export function useVisiblePresentationSnapshot(
+  controller: WorkbenchPublicationHost,
+  presentationId: TranscriptPresentationId,
+  visible: boolean,
+): WorkbenchState {
+  const subscribe = useCallback((listener: () => void) => visible
+    ? controller.subscribePresentation(presentationId, listener)
+    : () => {}, [controller, presentationId, visible])
+  const retained = useRef<{ presentationId: TranscriptPresentationId; state: WorkbenchState } | undefined>(undefined)
+  if (!retained.current || retained.current.presentationId !== presentationId || visible) {
+    retained.current = { presentationId, state: controller.getPresentationSnapshot(presentationId) }
+  }
+  const getSnapshot = useCallback(() => {
+    if (!visible) return retained.current!.state
+    const state = controller.getPresentationSnapshot(presentationId)
+    retained.current = { presentationId, state }
+    return state
+  }, [controller, presentationId, visible])
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
 interface PaneRenderProps {

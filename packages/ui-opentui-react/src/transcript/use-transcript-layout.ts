@@ -5,7 +5,7 @@ import { blockGraphemeRange, blockKey, type GeometryStyleRevision, type LogicalP
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react"
 import type { VimexUiController } from "../contracts"
 import { buildTranscriptLayout, type TranscriptLayout } from "./layout"
-import { measureRenderedTranscript, measuredPoint, topVisiblePoint, bottomVisiblePoint, rebaseTranscriptLayout, synchronizeRenderedTranscriptWindow, transcriptBlockRenderableId, transcriptItemRenderableId, translateTranscriptLayout } from "./rendered-layout"
+import { measureRenderedTranscript, measuredPoint, topVisiblePoint, bottomVisiblePoint, rebaseTranscriptLayout, releaseRenderedTranscriptLayout, transcriptBlockRenderableId, transcriptItemRenderableId, translateTranscriptLayout } from "./rendered-layout"
 
 /** Owns the volatile bridge between semantic anchors and terminal geometry. */
 export function useTranscriptLayout(options: {
@@ -52,14 +52,26 @@ export function useTranscriptLayout(options: {
     lastScrollTop.current = scrollRef.current?.scrollTop ?? 0
   }, [threadId])
   useLayoutEffect(() => {
+    if (options.visible !== false) return
+    // Native transcript roots are absent while the pane is hidden. Never let
+    // their last placement escape into input handling after a later reveal.
+    measuredLayout.current = undefined
+    currentMeasuredLayout.current = undefined
+    pendingAnchor.current = false
+    pendingRestore.current = false
+    lastScrollTop.current = 0
+  }, [options.visible])
+  useLayoutEffect(() => {
+    if (options.visible === false) return
     if (transcript.viewport.kind !== "tail") return
     pendingAnchor.current = false
     pendingRestore.current = false
     scrollRef.current?.scrollTo(Number.MAX_SAFE_INTEGER)
-  }, [threadId, transcript.viewport.kind, scrollRef])
+  }, [threadId, transcript.viewport.kind, scrollRef, options.visible])
   useLayoutEffect(() => {
+    if (options.visible === false) return
     if (transcript.viewport.kind === "point") pendingRestore.current = true
-  }, [width, height, transcript.order, transcript.projectionById, transcript.folded, transcript.viewport])
+  }, [width, height, transcript.order, transcript.projectionById, transcript.folded, transcript.viewport, options.visible])
 
   const captureScrolledAnchor = useCallback((): boolean => {
     const current = latest.current
@@ -111,14 +123,12 @@ export function useTranscriptLayout(options: {
   }, [scrollRef])
 
   useEffect(() => {
+    if (options.visible === false) return
+    const ownedScrollbox = scrollRef.current
     const measure = () => {
       const current = latest.current
       const scrollbox = scrollRef.current
       if (!scrollbox) return
-      if (current.visible === false) {
-        if (current.runtime && current.frame) synchronizeRenderedTranscriptWindow(scrollbox, current.frame)
-        return
-      }
       if (current.runtime && current.frame) {
         const configured = current.runtime.setWindowViewport(Math.max(1, scrollbox.viewport.height))
         if (configured !== current.frame) { renderer.requestRender(); return }
@@ -173,8 +183,11 @@ export function useTranscriptLayout(options: {
     }
     renderer.on(CliRenderEvents.FRAME, measure)
     renderer.requestRender()
-    return () => { renderer.off(CliRenderEvents.FRAME, measure) }
-  }, [captureScrolledAnchor, controller, prepositionWindowForPoint, renderer, scrollRef])
+    return () => {
+      renderer.off(CliRenderEvents.FRAME, measure)
+      if (ownedScrollbox) releaseRenderedTranscriptLayout(ownedScrollbox)
+    }
+  }, [captureScrolledAnchor, controller, options.visible, prepositionWindowForPoint, renderer, scrollRef])
   const enterVisibleTranscript = useCallback(() => {
     const scrollbox = scrollRef.current
     if (!scrollbox) return

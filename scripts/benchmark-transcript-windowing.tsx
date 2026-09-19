@@ -7,7 +7,7 @@
 //   VIMEX_WINDOWING_SIZES=100 VIMEX_WINDOWING_VIEWPORTS=80x24 \
 //   bun scripts/benchmark-transcript-windowing.tsx
 import assert from "node:assert/strict"
-import type { Renderable, ScrollBoxRenderable } from "@opentui/core"
+import { CliRenderEvents, type Renderable, type ScrollBoxRenderable } from "@opentui/core"
 import { testRender } from "@opentui/react/test-utils"
 import {
   appendTranscriptScalingTail,
@@ -39,12 +39,17 @@ import {
   type TranscriptFrame,
   type TranscriptRuntimeInput,
 } from "@vimex/transcript"
-import { act, createRef, Profiler, useSyncExternalStore, type RefObject } from "react"
+import { act, createRef, Profiler, useRef, useState, useSyncExternalStore, type RefObject } from "react"
 import { createEmberTideSyntax } from "../packages/ui-opentui-react/src/theme"
 import { blockNativeRevision } from "../packages/ui-opentui-react/src/transcript/measure-rendered-block"
 import { movePointInTranscript } from "../packages/ui-opentui-react/src/transcript/layout"
 import { measureRenderedTranscript, transcriptBlockRenderableId, type RenderedLayoutDiagnostics } from "../packages/ui-opentui-react/src/transcript/rendered-layout"
 import { TranscriptViewport } from "../packages/ui-opentui-react/src/transcript/TranscriptViewport"
+import { useTranscriptRuntime } from "../packages/ui-opentui-react/src/transcript/use-transcript-runtime"
+import { useTranscriptLayout } from "../packages/ui-opentui-react/src/transcript/use-transcript-layout"
+import { useVisiblePresentationSnapshot } from "../packages/ui-opentui-react/src/side-chat/SideChatLayout"
+import { inertController } from "../packages/ui-opentui-react/src/contracts"
+import { initialWorkbench, type WorkbenchPublicationHost, type WorkbenchState } from "@vimex/workbench"
 
 interface TimingStats {
   readonly count: number
@@ -576,6 +581,188 @@ function RuntimePublicationProbe(props: { runtime: TranscriptRuntime; commits: n
   return <Profiler id="runtime-publication" onRender={(_id, _phase, duration) => props.commits.push(duration)}>
     <RuntimePublicationProbeInner runtime={props.runtime} />
   </Profiler>
+}
+
+function HiddenPresentationProbeInner(props: {
+  runtime: TranscriptRuntime
+  syntax: ReturnType<typeof createEmberTideSyntax>
+  presentationHost: WorkbenchPublicationHost
+  control: { setVisible?: (visible: boolean) => void }
+  observe: { frame?: TranscriptFrame; renders?: number; presentation?: WorkbenchState }
+}) {
+  const [visible, setVisible] = useState(true)
+  const scrollRef = useRef<ScrollBoxRenderable>(null)
+  props.control.setVisible = setVisible
+  props.observe.presentation = useVisiblePresentationSnapshot(props.presentationHost, "main", visible)
+  const frame = useTranscriptRuntime({ transcriptRuntime: () => props.runtime }, "main", undefined, visible)
+  useTranscriptLayout({
+    threadId: frame.threadId,
+    transcript: frame.transcript,
+    frame,
+    runtime: props.runtime,
+    styleRevision,
+    width: primaryViewport.width,
+    height: 24,
+    scrollRef,
+    controller: inertController,
+    visible,
+  })
+  props.observe.frame = frame
+  props.observe.renders = (props.observe.renders ?? 0) + 1
+  return <box width={primaryViewport.width} height={24}>{visible
+    ? <TranscriptViewport window={frame.window} state={frame.transcript} surface="transcript" syntax={props.syntax} scrollRef={scrollRef} onManualScroll={() => {}} />
+    : <box id="hidden-presentation-retained-state" />}</box>
+}
+
+function HiddenPresentationProbe(props: Parameters<typeof HiddenPresentationProbeInner>[0] & { commits: number[] }) {
+  return <Profiler id="hidden-presentation" onRender={(_id, _phase, duration) => props.commits.push(duration)}>
+    <HiddenPresentationProbeInner {...props} />
+  </Profiler>
+}
+
+async function hiddenPresentationResourceBaseline(fixture: ReturnType<typeof buildTranscriptScalingFixture>): Promise<void> {
+  forceGc()
+  const runtime = new TranscriptRuntime(runtimeInput(fixture, fixture.before, "follow", { canonicalDamage: { kind: "full" } }), {
+    windowPolicy: { viewportRows: 24, overscanRows: 24 },
+  })
+  const originalSubscribe = runtime.subscribe
+  let activeRuntimeSubscriptions = 0
+  runtime.subscribe = listener => {
+    activeRuntimeSubscriptions++
+    const stop = originalSubscribe(listener)
+    return () => { activeRuntimeSubscriptions--; stop() }
+  }
+  const syntax = createEmberTideSyntax()
+  let presentationSnapshot: WorkbenchState = initialWorkbench()
+  const presentationListeners = new Set<() => void>()
+  let activePresentationSubscriptions = 0
+  let presentationNotifications = 0
+  const presentationHost: WorkbenchPublicationHost & { publishHidden(): void } = {
+    getLayoutSnapshot: () => { throw new Error("layout is outside this presentation visibility cell") },
+    subscribeLayout: () => () => {},
+    getPresentationSnapshot: () => presentationSnapshot,
+    subscribePresentation: (_presentationId, listener) => {
+      activePresentationSubscriptions++
+      presentationListeners.add(listener)
+      return () => { activePresentationSubscriptions--; presentationListeners.delete(listener) }
+    },
+    publishHidden: () => {
+      presentationSnapshot = { ...presentationSnapshot, error: "hidden publication" }
+      for (const listener of presentationListeners) { presentationNotifications++; listener() }
+    },
+  }
+  const originalReportMeasurements = runtime.reportMeasurements.bind(runtime)
+  let measurementReports = 0
+  runtime.reportMeasurements = batch => { measurementReports++; return originalReportMeasurements(batch) }
+  const commits: number[] = []
+  const control: { setVisible?: (visible: boolean) => void } = {}
+  const observe: { frame?: TranscriptFrame; renders?: number; presentation?: WorkbenchState } = {}
+  const setup = await testRender(<HiddenPresentationProbe runtime={runtime} syntax={syntax} presentationHost={presentationHost} control={control} observe={observe} commits={commits} />, primaryViewport)
+  const frameListeners = () => (setup.renderer as unknown as { listenerCount(event: string): number }).listenerCount(CliRenderEvents.FRAME)
+  const settle = async () => {
+    for (let index = 0; index < 4; index++) await act(async () => { await setup.flush(); await setup.renderOnce() })
+  }
+  try {
+    await settle()
+    const visibleScroll = setup.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable
+    const mountedBefore = mountedBlockRoots(visibleScroll).size
+    assert(mountedBefore > 0 && mountedBefore <= 48)
+    assert(measurementReports > 0)
+    assert.equal(activeRuntimeSubscriptions, 1)
+    assert.equal(activePresentationSubscriptions, 1)
+    assert.equal(frameListeners(), 1)
+
+    await act(async () => { control.setVisible!(false); await setup.flush(); await setup.renderOnce() })
+    const hiddenTranscriptRoots = setup.renderer.root.findDescendantById("transcript") ? 1 : 0
+    const hiddenScroll = setup.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable | undefined
+    const hiddenMountedBlocks = hiddenScroll ? mountedBlockRoots(hiddenScroll).size : 0
+    const hiddenSpacerRoots = ["transcript-top-spacer", "transcript-bottom-spacer"]
+      .filter(id => setup.renderer.root.findDescendantById(id)).length
+    const hiddenFrameListeners = frameListeners()
+    assert.equal(hiddenTranscriptRoots, 0)
+    assert.equal(hiddenMountedBlocks, 0)
+    assert.equal(hiddenSpacerRoots, 0)
+    assert.equal(hiddenFrameListeners, 0)
+    assert.equal(activeRuntimeSubscriptions, 0)
+    assert.equal(activePresentationSubscriptions, 0)
+    const hiddenRenders = observe.renders
+    const hiddenMeasurementReportsBefore = measurementReports
+    commits.length = 0
+    let runtimePublications = 0
+    const stopPublication = runtime.subscribe(() => { runtimePublications++ })
+    const hiddenStarted = performance.now()
+    await act(async () => {
+      runtime.update(runtimeInput(fixture, fixture.afterTailDelta, "follow", {
+        canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
+      }))
+      presentationHost.publishHidden()
+      await setup.flush()
+      await setup.renderOnce()
+    })
+    const hiddenSettlementMs = performance.now() - hiddenStarted
+    stopPublication()
+    const hiddenMeasurementReports = measurementReports - hiddenMeasurementReportsBefore
+    const hiddenReactCommits = commits.length
+    const hiddenPresentationSubscriptions = activePresentationSubscriptions
+    const hiddenRuntimeSubscriptions = activeRuntimeSubscriptions
+    assert.equal(runtimePublications, 1)
+    assert.equal(presentationNotifications, 0)
+    assert.equal(hiddenRuntimeSubscriptions, 0)
+    assert.equal(hiddenPresentationSubscriptions, 0)
+    assert.equal(observe.renders, hiddenRenders)
+    const hiddenRuntimeRenders = (observe.renders ?? 0) - (hiddenRenders ?? 0)
+    assert.equal(setup.renderer.root.findDescendantById("transcript"), undefined)
+    assert.equal(hiddenMeasurementReports, 0)
+    assert.equal(hiddenReactCommits, 0)
+    assert.equal(frameListeners(), 0)
+
+    const latest = runtime.getSnapshot()
+    const retainedRuntime = runtime
+    await act(async () => { control.setVisible!(true); await setup.flush(); await setup.renderOnce() })
+    await settle()
+    const revealedScroll = setup.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable
+    const mountedAfter = mountedBlockRoots(revealedScroll).size
+    assert(mountedAfter > 0 && mountedAfter <= 48)
+    assert.equal(observe.frame?.displayedCanonicalRevision, latest.displayedCanonicalRevision)
+    assert.equal(observe.presentation?.error, "hidden publication")
+    assert.equal(activeRuntimeSubscriptions, 1)
+    assert.equal(activePresentationSubscriptions, 1)
+    assert.equal(frameListeners(), 1)
+    const runtimeIdentityRetained = retainedRuntime === runtime ? 1 : 0
+    const latestRevisionOnReveal = observe.frame?.displayedCanonicalRevision === latest.displayedCanonicalRevision ? 1 : 0
+    printResult({
+      scenario: "hidden-presentation-resources",
+      materialization: "production-window",
+      boundary: "react-native-visibility",
+      blockCount: fixture.blockCount,
+      viewport: primaryViewport,
+      mode: "follow",
+      operationCounts: {
+        mountedBefore,
+        hiddenTranscriptRoots,
+        hiddenMountedBlocks,
+        hiddenSpacerRoots,
+        hiddenFrameListeners,
+        hiddenMeasurementReports,
+        hiddenPresentationSubscriptions,
+        hiddenRuntimeSubscriptions,
+        hiddenPresentationNotifications: presentationNotifications,
+        retainedRuntimePublications: runtimePublications,
+        hiddenReactCommits,
+        hiddenReactRenders: hiddenRuntimeRenders,
+        mountedAfter,
+        runtimeIdentityRetained,
+        latestRevisionOnReveal,
+      },
+      timingsMs: { hiddenRuntimePublicationAndReactFlush: Number(hiddenSettlementMs.toFixed(6)) },
+      samples: { warmup: 0, measured: 1 },
+    })
+  } finally {
+    syntax.destroy()
+    await act(async () => setup.renderer.destroy())
+    assert.equal(activeRuntimeSubscriptions, 0)
+    runtime.dispose()
+  }
 }
 
 async function reactPublicationBaseline(fixture: ReturnType<typeof buildTranscriptScalingFixture>): Promise<void> {
@@ -1296,6 +1483,7 @@ for (const blockCount of requestedSizes) {
   runtimeBaseline(fixture)
   boundedFollowRuntimeBaseline(fixture)
   await reactPublicationBaseline(fixture)
+  await hiddenPresentationResourceBaseline(fixture)
   runtimeCorrectionBaseline(fixture)
   offWindowTargetBaseline(fixture)
   indexedUrlAndFoldBaseline(fixture)

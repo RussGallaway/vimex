@@ -81,7 +81,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
     canonicalDamage: { kind: "full" },
     excludedTurnIds: inheritedTurnIds,
   } : undefined, [inheritedTurnIds, state.activeThreadId, workspace])
-  const transcriptFrame = useTranscriptRuntime(controller, presentationId, runtimeInput)
+  const transcriptFrame = useTranscriptRuntime(controller, presentationId, runtimeInput, presentationVisible)
   const transcriptRuntime = controller.transcriptRuntime(presentationId)
   const transcript = workspace ? transcriptFrame.transcript : blankTranscript
   const transcriptWindow = workspace ? transcriptFrame.window : blankTranscriptWindow
@@ -232,7 +232,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
     }
   }, [interactive, interaction.mode, interaction.overlay, interaction.surface, jumpActive])
   useEffect(() => {
-    if (!interactive || jumpActive || interaction.surface !== "transcript" || interaction.overlay || (interaction.mode !== "normal" && interaction.mode !== "visual")) return
+    if (!presentationVisible || !interactive || jumpActive || interaction.surface !== "transcript" || interaction.overlay || (interaction.mode !== "normal" && interaction.mode !== "visual")) return
     const updateCursor = () => {
       const target = transcript.selection?.head ?? transcript.cursor
       const scrollbox = scrollRef.current
@@ -264,9 +264,9 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
       renderer.off(CliRenderEvents.FRAME, updateCursor)
       renderer.setCursorPosition(0, 0, false)
     }
-  }, [interactive, jumpActive, interaction.mode, interaction.overlay, interaction.surface, layout, renderer, transcript.cursor, transcript.selection, transcriptRuntime, transcriptStyleRevision])
+  }, [interactive, jumpActive, interaction.mode, interaction.overlay, interaction.surface, layout, presentationVisible, renderer, transcript.cursor, transcript.selection, transcriptRuntime, transcriptStyleRevision])
   useEffect(() => {
-    if (!interactive) return
+    if (!presentationVisible || !interactive) return
     const updateSelection = () => {
       const runtimeFrame = transcriptRuntime?.getSnapshot()
       const selectionTranscript = runtimeFrame?.transcript ?? transcript
@@ -327,10 +327,17 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
     }
     updateSelection()
     renderer.on(CliRenderEvents.FRAME, updateSelection)
-    return () => { renderer.off(CliRenderEvents.FRAME, updateSelection) }
-  }, [interactive, jumpActive, interaction.surface, layout, renderer, transcript.cursor, transcript.selection, transcriptRuntime, transcriptStyleRevision])
+    return () => {
+      renderer.off(CliRenderEvents.FRAME, updateSelection)
+      // This effect is the sole owner of the renderer-global native selection
+      // while its pane is interactive. Release destroyed transcript targets on
+      // focus loss, hide, or unmount; semantic selection remains authoritative.
+      if (appliedNativeSelection.current && renderer.getSelection()) renderer.clearSelection()
+      appliedNativeSelection.current = undefined
+    }
+  }, [interactive, jumpActive, interaction.surface, layout, presentationVisible, renderer, transcript.cursor, transcript.selection, transcriptRuntime, transcriptStyleRevision])
   useEffect(() => {
-    if (!interactive || interaction.surface !== "transcript" || transcript.viewport.kind === "tail" || !transcript.cursor) return
+    if (!presentationVisible || !interactive || interaction.surface !== "transcript" || transcript.viewport.kind === "tail" || !transcript.cursor) return
     const scrollbox = scrollRef.current
     if (!scrollbox) return
     const point = measuredPoint(measuredLayout.current ?? layout, transcript.cursor)
@@ -346,7 +353,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
     } else if (point.screenY > bottom) {
       scrollbox.scrollBy(point.screenY - bottom, "step")
     }
-  }, [transcript.cursor?.itemId, transcript.cursor?.graphemeOffset, transcriptRuntime])
+  }, [interactive, interaction.surface, layout, presentationVisible, transcript.cursor?.itemId, transcript.cursor?.graphemeOffset, transcript.viewport.kind, transcriptRuntime])
 
   const dispatchMotion = useCallback((motion: Motion, repeat = 1) => {
     const activeLayout = measuredLayout.current ?? layout
@@ -622,13 +629,14 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   return (
     <FullscreenShell paneLabel={paneLabel} title={summary?.title} parentTitle={parentTitle} connection={state.connection} working={activity.working} activityLabel={activityLabel} activityStartedAt={activity.startedAt} waiting={Boolean(pendingApproval || pendingQuestion)} presentationVisible={presentationVisible}
       notice={interactive ? <NoticeStrip message={state.error} /> : undefined}
-      transcript={<TranscriptViewport window={transcriptWindow} state={transcript} surface={interaction.surface} syntax={syntax} scrollRef={scrollRef} onManualScroll={onManualScroll} />}
+      transcript={presentationVisible ? <TranscriptViewport window={transcriptWindow} state={transcript} surface={interaction.surface} syntax={syntax} scrollRef={scrollRef} onManualScroll={onManualScroll} /> : undefined}
       commandLine={interactive && !jumpActive && interaction.mode === "command" ? <CommandLine currentTitle={summary?.title} sessionIds={state.threadOrder} currentModel={summary?.model} models={state.availableModels} value={interaction.commandLine} inputRef={commandRef} controller={controller} onSubmit={(line) => {
         commandHistoryRef.current = recordCommand(commandHistoryRef.current, line)
         controller.executeCommand(line, presentationId)
       }} /> : undefined}
       composer={<Composer
         interactive={interactive}
+        visible={presentationVisible}
         expanded={composerExpanded}
         key={state.activeThreadId}
         state={composer}

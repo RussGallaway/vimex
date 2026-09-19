@@ -149,6 +149,13 @@ export function synchronizeRenderedTranscriptWindow(
   synchronizeMeasurementSchedule(scrollbox, frame, diagnostics)
 }
 
+/** Release all renderer-side presentation caches owned by an unmounted transcript root. */
+export function releaseRenderedTranscriptLayout(scrollbox: ScrollBoxRenderable): void {
+  measurementSchedules.delete(scrollbox)
+  layoutCache.delete(scrollbox)
+  legacyGeometryCache.delete(scrollbox)
+}
+
 export function transcriptBlockRenderableId(block: Pick<TranscriptBlock, "key">): string {
   return block.key.kind === "item"
     ? transcriptItemRenderableId(block.key.itemId, block.key.blockId)

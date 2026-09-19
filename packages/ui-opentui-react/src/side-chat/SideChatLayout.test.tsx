@@ -2,10 +2,11 @@ import { expect, spyOn, test } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
 import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
 import { act, useMemo, useState } from "react"
-import { itemId, threadId, turnId } from "@vimex/conversation"
-import { initialWorkbench, transitionWorkbench, type WorkbenchCommand } from "@vimex/workbench"
-import { VimexRoot } from "../index"
+import { itemId, threadId, turnId, type ConversationGateway, type ThreadSummary } from "@vimex/conversation"
+import { initialWorkbench, transitionWorkbench, VimexController, type RuntimeConnection, type WorkbenchCommand, type WorkbenchPublicationHost, type WorkbenchState } from "@vimex/workbench"
+import { ConnectedVimexRoot, VimexRoot } from "../index"
 import { inertController, type VimexUiController } from "../contracts"
+import { useVisiblePresentationSnapshot } from "./SideChatLayout"
 
 const parent = threadId("parent"), child = threadId("side")
 async function harness(width = 140, height = 36, initiallyOpen = true) {
@@ -121,6 +122,37 @@ test("Flash labels use side-local coordinates and jumping preserves the other pa
   } finally { await h.close() }
 })
 
+test("hiding a pane releases native transcript selection but preserves semantic selection", async () => {
+  const h = await harness()
+  try {
+    await h.windowKey("h")
+    await act(async () => {
+      h.update({ type: "interaction.command", threadId: parent, command: { type: "focus.set", surface: "transcript" } })
+      h.update({ type: "transcript.command", threadId: parent, command: { type: "cursor.move", point: { itemId: itemId("parent-answer"), graphemeOffset: 0 }, preferredScreenRow: 2 } })
+      h.update({ type: "transcript.command", threadId: parent, command: { type: "selection.begin", shape: "character" } })
+      h.update({ type: "transcript.command", threadId: parent, command: { type: "cursor.move", point: { itemId: itemId("parent-answer"), graphemeOffset: 5 }, preferredScreenRow: 2 } })
+      h.update({ type: "interaction.command", threadId: parent, command: { type: "mode.visual" } })
+      await h.flush(); await h.renderOnce()
+    })
+    await h.settle()
+    expect(h.renderer.getSelection()).not.toBeNull()
+    const semantic = h.state().workspaces[parent]!.transcript.selection
+    expect(semantic).toBeDefined()
+
+    await h.windowKey("l")
+    await h.windowKey("|")
+    expect(h.renderer.root.findDescendantById("main-pane")!.findDescendantById("transcript")).toBeUndefined()
+    expect(h.renderer.getSelection()).toBeNull()
+    expect(h.state().workspaces[parent]!.transcript.selection).toEqual(semantic)
+
+    await h.windowKey("h")
+    await h.settle()
+    expect(h.renderer.root.findDescendantById("main-pane")!.findDescendantById("transcript")).toBeDefined()
+    expect(h.state().workspaces[parent]!.transcript.selection).toEqual(semantic)
+    expect(h.renderer.getSelection()).not.toBeNull()
+  } finally { await h.close() }
+})
+
 
 test("pane focus retains composer Visual selection and Ex history", async () => {
   const h = await harness()
@@ -149,15 +181,165 @@ test("pane focus retains composer Visual selection and Ex history", async () => 
 test("short terminals maximize active pane while retaining live parent status", async () => {
   const h = await harness(80, 16)
   try {
-    expect(h.renderer.root.findDescendantById("main-pane")!.visible).toBe(false)
+    const hiddenMain = h.renderer.root.findDescendantById("main-pane")!
+    expect(hiddenMain.visible).toBe(false)
+    expect(hiddenMain.findDescendantById("transcript")).toBeUndefined()
+    const parentComposer = hiddenMain.findDescendantById("composer")
+    expect(parentComposer).toBeDefined()
     const side = h.renderer.root.findDescendantById("side-pane")!
     expect(side.visible).toBe(true)
     expect(side.findDescendantById("transcript")!.height).toBeGreaterThan(0)
     expect(h.captureCharFrame()).toContain("Main:")
     await h.windowKey("h")
-    expect(h.renderer.root.findDescendantById("main-pane")!.visible).toBe(true)
-    expect(h.renderer.root.findDescendantById("side-pane")!.visible).toBe(false)
+    const visibleMain = h.renderer.root.findDescendantById("main-pane")!
+    const hiddenSide = h.renderer.root.findDescendantById("side-pane")!
+    expect(visibleMain.visible).toBe(true)
+    expect(visibleMain.findDescendantById("transcript")).toBeDefined()
+    expect(visibleMain.findDescendantById("composer")).toBe(parentComposer)
+    expect(hiddenSide.visible).toBe(false)
+    expect(hiddenSide.findDescendantById("transcript")).toBeUndefined()
+    expect(hiddenSide.findDescendantById("composer")).toBeDefined()
+
+    await h.key("v")
+    await h.key("l")
+    const composer = visibleMain.findDescendantById("composer") as TextareaRenderable
+    const selection = composer.getSelection()
+    expect(selection).not.toBeNull()
+    await h.windowKey("l")
+    expect(h.renderer.root.findDescendantById("main-pane")!.findDescendantById("transcript")).toBeUndefined()
+    expect(h.renderer.root.findDescendantById("main-pane")!.findDescendantById("composer")).toBe(composer)
+    expect(composer.getSelection()).toEqual(selection)
+    await h.windowKey("h")
+    expect(h.renderer.root.findDescendantById("main-pane")!.findDescendantById("composer")).toBe(composer)
+    expect(composer.getSelection()).toEqual(selection)
   } finally { await h.close() }
+})
+
+test("a hidden connected presentation retains its snapshot and refreshes directly on reveal", async () => {
+  let snapshot: WorkbenchState = { ...initialWorkbench(), error: "visible" }
+  const listeners = new Set<() => void>()
+  let activeSubscriptions = 0
+  const host: WorkbenchPublicationHost = {
+    getLayoutSnapshot: () => { throw new Error("layout is outside this focused bridge test") },
+    subscribeLayout: () => () => {},
+    getPresentationSnapshot: () => snapshot,
+    subscribePresentation: (_presentationId, listener) => {
+      activeSubscriptions++
+      listeners.add(listener)
+      return () => { activeSubscriptions--; listeners.delete(listener) }
+    },
+  }
+  let setVisible!: (visible: boolean) => void
+  let rerenderParent!: () => void
+  let observed: WorkbenchState | undefined
+  function Harness() {
+    const [visible, updateVisible] = useState(true)
+    const [, updateParent] = useState(0)
+    setVisible = updateVisible
+    rerenderParent = () => updateParent(value => value + 1)
+    observed = useVisiblePresentationSnapshot(host, "main", visible)
+    return <text>{observed.error}</text>
+  }
+  const setup = await testRender(<Harness />, { width: 20, height: 2 })
+  try {
+    await act(async () => setup.flush())
+    expect(activeSubscriptions).toBe(1)
+    expect(observed?.error).toBe("visible")
+    await act(async () => { setVisible(false); await setup.flush() })
+    expect(activeSubscriptions).toBe(0)
+    snapshot = { ...snapshot, error: "hidden update" }
+    await act(async () => { rerenderParent(); await setup.flush() })
+    expect(observed?.error).toBe("visible")
+
+    await act(async () => { setVisible(true); await setup.flush() })
+    expect(activeSubscriptions).toBe(1)
+    expect(observed?.error).toBe("hidden update")
+  } finally { await act(async () => setup.renderer.destroy()) }
+  expect(activeSubscriptions).toBe(0)
+})
+
+test("connected maximize and close suspend both pane publications and runtime subscriptions", async () => {
+  const summary = (id: typeof parent): ThreadSummary => ({ id, title: id, cwd: "/tmp", model: "test", reasoningEffort: "medium", status: "idle" })
+  const backend: ConversationGateway & RuntimeConnection = {
+    connect: async () => {}, restart: async () => {}, close: async () => {}, subscribe: () => () => {},
+    listThreads: async () => [summary(parent)], startThread: async () => ({ summary: summary(parent), events: [] }),
+    resumeThread: async id => ({ summary: summary(id), events: [] }), forkThread: async () => ({ summary: summary(child), events: [] }),
+    forkSideThread: async () => ({ summary: summary(child), events: [] }), retireThread: async () => {}, startTurn: async () => [],
+    steerTurn: async () => {}, interruptTurn: async () => {}, renameThread: async () => {}, updateSettings: async () => {},
+  }
+  const controller = new VimexController({
+    conversation: backend,
+    connection: backend,
+    approvals: { resolveApproval: async () => {} },
+    models: { listModels: async () => [] },
+    resolveDirectory: value => value,
+    clipboard: { writeText: async () => {} },
+    openUrl: async () => {},
+    quit: () => {},
+  })
+  await controller.initialize("/tmp")
+  controller.sideChat("open")
+  await controller.settle()
+  const mainRuntime = controller.transcriptRuntime("main")!
+  const sideRuntime = controller.transcriptRuntime("side")!
+  const runtimeSubscriptions = { main: 0, side: 0 }
+  for (const [id, runtime] of [["main", mainRuntime], ["side", sideRuntime]] as const) {
+    const original = runtime.subscribe
+    runtime.subscribe = listener => {
+      runtimeSubscriptions[id]++
+      const stop = original(listener)
+      return () => { runtimeSubscriptions[id]--; stop() }
+    }
+  }
+  const presentationSubscriptions = { main: 0, side: 0 }
+  const originalPresentationSubscribe = controller.subscribePresentation
+  controller.subscribePresentation = (id, listener) => {
+    presentationSubscriptions[id]++
+    const stop = originalPresentationSubscribe(id, listener)
+    return () => { presentationSubscriptions[id]--; stop() }
+  }
+  const setup = await testRender(<ConnectedVimexRoot controller={controller} />, { width: 140, height: 36 })
+  const settle = async () => act(async () => { await setup.flush(); await setup.renderOnce() })
+  const update = async (operation: () => void) => act(async () => { operation(); await setup.flush(); await setup.renderOnce() })
+  try {
+    await settle()
+    expect(presentationSubscriptions).toEqual({ main: 1, side: 1 })
+    expect(runtimeSubscriptions).toEqual({ main: 1, side: 1 })
+    const mainPane = setup.renderer.root.findDescendantById("main-pane")!
+    const mainComposer = mainPane.findDescendantById("composer")
+
+    await update(() => controller.sideChat("maximize"))
+    expect(presentationSubscriptions).toEqual({ main: 0, side: 1 })
+    expect(runtimeSubscriptions).toEqual({ main: 0, side: 1 })
+    expect(mainPane.findDescendantById("transcript")).toBeUndefined()
+    expect(mainPane.findDescendantById("composer")).toBe(mainComposer)
+    expect(controller.transcriptRuntime("main")).toBe(mainRuntime)
+
+    await update(() => { mainRuntime.resetLayout("width") })
+    expect(runtimeSubscriptions.main).toBe(0)
+    await update(() => controller.sideChat("parent"))
+    expect(presentationSubscriptions).toEqual({ main: 1, side: 0 })
+    expect(runtimeSubscriptions).toEqual({ main: 1, side: 0 })
+    expect(mainPane.findDescendantById("transcript")).toBeDefined()
+    expect(controller.transcriptRuntime("main")!.getSnapshot()).toBe(mainRuntime.getSnapshot())
+
+    await update(() => controller.sideChat("reset"))
+    expect(presentationSubscriptions).toEqual({ main: 1, side: 1 })
+    expect(runtimeSubscriptions).toEqual({ main: 1, side: 1 })
+    const sideComposer = setup.renderer.root.findDescendantById("side-pane")!.findDescendantById("composer")
+    await update(() => controller.sideChat("close"))
+    const retainedSide = setup.renderer.root.findDescendantById("side-pane")!
+    expect(presentationSubscriptions).toEqual({ main: 1, side: 0 })
+    expect(runtimeSubscriptions).toEqual({ main: 1, side: 0 })
+    expect(retainedSide.findDescendantById("transcript")).toBeUndefined()
+    expect(retainedSide.findDescendantById("composer")).toBe(sideComposer)
+    expect(controller.transcriptRuntime("side")).toBe(sideRuntime)
+  } finally {
+    await act(async () => setup.renderer.destroy())
+    await controller.close()
+  }
+  expect(presentationSubscriptions).toEqual({ main: 0, side: 0 })
+  expect(runtimeSubscriptions).toEqual({ main: 0, side: 0 })
 })
 
 test("a maximized layout schedules no heartbeat for its mounted hidden pane", async () => {

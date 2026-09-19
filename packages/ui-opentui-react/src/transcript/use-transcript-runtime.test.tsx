@@ -72,3 +72,56 @@ test("uses a stateless empty frame until ownership appears without retaining a R
     owned.dispose()
   }
 })
+
+test("suspends hidden runtime publications and reads the latest owned frame on reveal", async () => {
+  const owned = new TranscriptRuntime(runtimeInput("suspended-owner"))
+  const originalSubscribe = owned.subscribe
+  const dispose = spyOn(TranscriptRuntime.prototype, "dispose")
+  let activeSubscriptions = 0
+  owned.subscribe = listener => {
+    activeSubscriptions++
+    const stop = originalSubscribe(listener)
+    return () => { activeSubscriptions--; stop() }
+  }
+  let setVisible!: (visible: boolean) => void
+  let rerenderParent!: () => void
+  let latest: TranscriptFrame | undefined
+  let renders = 0
+  function Harness() {
+    const [visible, updateVisible] = useState(true)
+    const [, updateParent] = useState(0)
+    setVisible = updateVisible
+    rerenderParent = () => updateParent(value => value + 1)
+    latest = useTranscriptRuntime({ transcriptRuntime: () => owned }, "main", runtimeInput("ignored"), visible)
+    renders++
+    return <text>{latest.presentationRevision}</text>
+  }
+  const setup = await testRender(<Harness />, { width: 20, height: 2 })
+  let destroyed = false
+  try {
+    await act(async () => setup.flush())
+    expect(activeSubscriptions).toBe(1)
+    await act(async () => { setVisible(false); await setup.flush() })
+    expect(activeSubscriptions).toBe(0)
+    const hiddenRenders = renders
+    const newest = owned.resetLayout("width")
+    await act(async () => setup.flush())
+    expect(renders).toBe(hiddenRenders)
+    expect(latest).not.toBe(newest)
+    await act(async () => { rerenderParent(); await setup.flush() })
+    expect(renders).toBe(hiddenRenders + 1)
+    expect(latest).not.toBe(newest)
+
+    await act(async () => { setVisible(true); await setup.flush() })
+    expect(activeSubscriptions).toBe(1)
+    expect(latest).toBe(newest)
+    await act(async () => setup.renderer.destroy())
+    destroyed = true
+    expect(activeSubscriptions).toBe(0)
+    expect(dispose).not.toHaveBeenCalled()
+  } finally {
+    if (!destroyed) await act(async () => setup.renderer.destroy())
+    dispose.mockRestore()
+    owned.dispose()
+  }
+})
