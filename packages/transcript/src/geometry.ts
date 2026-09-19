@@ -135,10 +135,44 @@ export function composeTranscriptGeometry(
   width?: number,
   styleRevision?: GeometryStyleRevision,
 ): TranscriptGeometry {
+  return composeGeometry(blocks, foldedByItem, byBlockKey, generation, revision, 0, undefined, width, styleRevision)
+}
+
+/**
+ * Compose detailed geometry only for one materialized window while retaining
+ * global row coordinates and the complete estimated/measured transcript
+ * extent. Native point and line maps are presentation resources, so they do
+ * not need to grow with every window a presentation has visited.
+ */
+export function composeTranscriptWindowGeometry(
+  blocks: readonly TranscriptBlock[],
+  foldedByItem: Readonly<Record<string, boolean>>,
+  byBlockKey: Readonly<Record<string, BlockGeometry>>,
+  generation: number,
+  revision: number,
+  firstRow: number,
+  totalRows: number,
+  width?: number,
+  styleRevision?: GeometryStyleRevision,
+): TranscriptGeometry {
+  return composeGeometry(blocks, foldedByItem, byBlockKey, generation, revision, firstRow, totalRows, width, styleRevision)
+}
+
+function composeGeometry(
+  blocks: readonly TranscriptBlock[],
+  foldedByItem: Readonly<Record<string, boolean>>,
+  byBlockKey: Readonly<Record<string, BlockGeometry>>,
+  generation: number,
+  revision: number,
+  firstRow: number,
+  completeTotalRows: number | undefined,
+  width?: number,
+  styleRevision?: GeometryStyleRevision,
+): TranscriptGeometry {
   const retained: Record<string, BlockGeometry> = {}
   const rowByBlockKey: Record<string, number> = {}
   const blockRows: TranscriptBlockRows[] = []
-  let row = 0
+  let row = firstRow
   let measuredBlockCount = 0
   let totalPoints = 0
   for (const block of blocks) {
@@ -168,7 +202,7 @@ export function composeTranscriptGeometry(
     byBlockKey: Object.freeze(retained),
     rowByBlockKey: Object.freeze(rowByBlockKey),
     blockRows: Object.freeze(blockRows),
-    totalRows: row,
+    totalRows: completeTotalRows ?? row,
     measuredBlockCount,
     totalPoints,
   })

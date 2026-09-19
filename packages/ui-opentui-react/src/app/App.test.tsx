@@ -383,7 +383,7 @@ describe("Vimex OpenTUI shell", () => {
         await setup.flush()
         await setup.renderOnce()
       })
-      expect(transcriptCommands).toContainEqual({ type: "viewport.scroll", direction: "down", amount: "line" })
+      expect(transcriptCommands.some(command => command.type === "viewport.scroll")).toBe(false)
       const anchor = transcriptCommands.find((command) => command.type === "viewport.anchor")
       expect(anchor?.type).toBe("viewport.anchor")
       if (anchor?.type === "viewport.anchor") expect(anchor.preferredScreenRow).toBeGreaterThanOrEqual(0)
@@ -407,9 +407,8 @@ describe("Vimex OpenTUI shell", () => {
       await setup.mockInput.typeText("3")
       setup.mockInput.pressKey("e", { ctrl: true })
       await act(async () => setup.flush())
-      expect(transcriptCommands.filter((command) => command.type === "viewport.scroll")).toEqual([
-        { type: "viewport.scroll", direction: "down", amount: "line" },
-      ])
+      expect(transcriptCommands.filter((command) => command.type === "viewport.scroll")).toEqual([])
+      expect(transcriptCommands.filter((command) => command.type === "viewport.anchor").length).toBeLessThanOrEqual(1)
       expect(interactionCommands.at(-1)).toEqual({ type: "count.clear" })
     } finally { await act(async () => setup.renderer.destroy()) }
   })

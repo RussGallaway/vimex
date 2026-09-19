@@ -246,11 +246,12 @@ async function run(): Promise<void> {
     let changedBlocks = 0
     let measuredBlocks = 0
     let retainedMountedRoots = 0
+    const afterWindowKeys = new Set(after.window.blocks.map(blockKey))
     for (let index = 0; index < blockCount; index++) {
       const block = after.blocks[index]!
       if (block !== before.blocks[index]) changedBlocks++
       const key = blockKey(block)
-      if (after.geometry.byBlockKey[key] !== before.geometry.byBlockKey[key]) measuredBlocks++
+      if (afterWindowKeys.has(key) && after.geometry.byBlockKey[key] !== before.geometry.byBlockKey[key]) measuredBlocks++
       const id = transcriptBlockRenderableId(block)
       const root = rootsAfter.get(id)
       if (root && root === rootsBefore.get(id)) retainedMountedRoots++

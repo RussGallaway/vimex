@@ -5,7 +5,7 @@ import type { GeometryStyleRevision, LogicalPoint, TranscriptFrame, TranscriptRu
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react"
 import type { VimexUiController } from "../contracts"
 import { buildTranscriptLayout, type TranscriptLayout } from "./layout"
-import { measureRenderedTranscript, measuredPoint, topVisiblePoint, bottomVisiblePoint, rebaseTranscriptLayout, synchronizeRenderedTranscriptWindow, transcriptItemRenderableId } from "./rendered-layout"
+import { measureRenderedTranscript, measuredPoint, topVisiblePoint, bottomVisiblePoint, rebaseTranscriptLayout, synchronizeRenderedTranscriptWindow, transcriptItemRenderableId, translateTranscriptLayout } from "./rendered-layout"
 
 /** Owns the volatile bridge between semantic anchors and terminal geometry. */
 export function useTranscriptLayout(options: {
@@ -30,6 +30,7 @@ export function useTranscriptLayout(options: {
   const [, publishPlacement] = useState(0)
   const pendingAnchor = useRef(false)
   const pendingRestore = useRef(false)
+  const lastScrollTop = useRef(0)
   const hasRuntimeGeometry = Boolean(options.frame && options.frame.geometry.measuredBlockCount > 0)
   const estimatedTranscript = useMemo(() => {
     if (!options.runtime || !options.frame) return transcript
@@ -48,6 +49,7 @@ export function useTranscriptLayout(options: {
     measuredLayout.current = undefined
     pendingAnchor.current = false
     pendingRestore.current = transcript.viewport.kind === "point"
+    lastScrollTop.current = scrollRef.current?.scrollTop ?? 0
   }, [threadId])
   useLayoutEffect(() => {
     if (transcript.viewport.kind !== "tail") return
@@ -55,9 +57,29 @@ export function useTranscriptLayout(options: {
     pendingRestore.current = false
     scrollRef.current?.scrollTo(Number.MAX_SAFE_INTEGER)
   }, [threadId, transcript.viewport.kind, scrollRef])
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (transcript.viewport.kind === "point") pendingRestore.current = true
-  }, [width, height, transcript.order, transcript.projectionById, transcript.folded])
+  }, [width, height, transcript.order, transcript.projectionById, transcript.folded, transcript.viewport])
+
+  const captureScrolledAnchor = useCallback((): boolean => {
+    const current = latest.current
+    const scrollbox = scrollRef.current
+    const prior = measuredLayout.current
+    if (!scrollbox || !prior) return false
+    const deltaY = lastScrollTop.current - scrollbox.scrollTop
+    const translated = translateTranscriptLayout(prior, 0, deltaY)
+    const anchor = topVisiblePoint(translated, scrollbox)
+    if (!anchor) return false
+    measuredLayout.current = translated
+    lastScrollTop.current = scrollbox.scrollTop
+    pendingAnchor.current = false
+    pendingRestore.current = false
+    const point = { itemId: anchor.itemId, graphemeOffset: anchor.graphemeOffset }
+    const row = anchor.screenY - scrollbox.viewport.screenY
+    if (current.onAnchor) current.onAnchor(point, row)
+    else controller.transcript({ type: "viewport.anchor", point, preferredScreenRow: row })
+    return true
+  }, [controller, scrollRef])
 
   const onManualScroll = useCallback(() => {
     pendingAnchor.current = true
@@ -78,6 +100,11 @@ export function useTranscriptLayout(options: {
         const configured = current.runtime.setWindowViewport(Math.max(1, scrollbox.viewport.height))
         if (configured !== current.frame) { renderer.requestRender(); return }
       }
+      // A manual scroll establishes semantic meaning before dirty native
+      // reflow is allowed to publish corrected heights around the old anchor.
+      if (pendingAnchor.current && measuredLayout.current && lastScrollTop.current !== scrollbox.scrollTop) {
+        if (captureScrolledAnchor()) { renderer.requestRender(); return }
+      }
       const next = measureRenderedTranscript(renderer, scrollbox, current.frame
         ? { frame: current.frame, runtime: current.runtime, styleRevision: current.styleRevision ?? "default" }
         : current.transcript)
@@ -96,6 +123,7 @@ export function useTranscriptLayout(options: {
         // after each real geometry revision so async reflow cannot move it.
         if (geometryChanged && current.transcript.viewport.kind === "point" && !pendingAnchor.current) pendingRestore.current = true
       }
+      lastScrollTop.current = scrollbox.scrollTop
       if (pendingAnchor.current) {
         pendingAnchor.current = false
         pendingRestore.current = false
@@ -113,13 +141,13 @@ export function useTranscriptLayout(options: {
           pendingRestore.current = false
           const delta = anchor.screenY - scrollbox.viewport.screenY - viewport.preferredScreenRow
           if (delta) scrollbox.scrollBy(delta, "step")
-        } else scrollbox.scrollChildIntoView(transcriptItemRenderableId(viewport.point.itemId))
+        } else if (!current.runtime) scrollbox.scrollChildIntoView(transcriptItemRenderableId(viewport.point.itemId))
       }
     }
     renderer.on(CliRenderEvents.FRAME, measure)
     renderer.requestRender()
     return () => { renderer.off(CliRenderEvents.FRAME, measure) }
-  }, [controller, renderer, scrollRef])
+  }, [captureScrolledAnchor, controller, renderer, scrollRef])
   const enterVisibleTranscript = useCallback(() => {
     const scrollbox = scrollRef.current
     if (!scrollbox) return

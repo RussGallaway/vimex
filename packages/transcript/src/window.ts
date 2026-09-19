@@ -49,7 +49,13 @@ export interface TranscriptWindow {
 
 export type TranscriptWindowAttachment =
   | Readonly<{ kind: "tail" }>
-  | Readonly<{ kind: "point"; point: LogicalPoint; preferredScreenRow: number }>
+  | Readonly<{
+      kind: "point"
+      point: LogicalPoint
+      preferredScreenRow: number
+      /** Disposable measured row within the owning render block. */
+      blockLocalRow?: number
+    }>
 
 /** Optional deterministic counters for target-resolution tests and diagnostics. */
 export interface TranscriptWindowDiagnostics {
@@ -288,16 +294,22 @@ export function planTranscriptWindow(input: PlanTranscriptWindowInput): Transcri
   let focusIndex: number | undefined
   let preferredScreenRow = 0
   if (input.attachment.kind === "point") {
-    if (!Number.isSafeInteger(input.attachment.preferredScreenRow)) return passThroughWindow(blocks)
+    if (!Number.isSafeInteger(input.attachment.preferredScreenRow)
+      || (input.attachment.blockLocalRow !== undefined
+        && (!Number.isSafeInteger(input.attachment.blockLocalRow) || input.attachment.blockLocalRow < 0))) return passThroughWindow(blocks)
     focusIndex = pointBlockIndex(blocks, heights, input.attachment.point, input.diagnostics)
     if (focusIndex === undefined) return passThroughWindow(blocks)
     preferredScreenRow = clamp(input.attachment.preferredScreenRow, 0, input.viewportRows - 1)
   }
 
   const maximumVisibleStart = Math.max(0, heights.totalRows - input.viewportRows)
+  const focusRange = input.attachment.kind === "point" ? heights.rowRange(focusIndex!, focusIndex! + 1) : undefined
+  if (input.attachment.kind === "point" && !focusRange) return passThroughWindow(blocks)
+  const blockLocalRow = input.attachment.kind === "point"
+    ? clamp(input.attachment.blockLocalRow ?? 0, 0, Math.max(0, focusRange!.rows - 1)) : 0
   let visibleStart = input.attachment.kind === "tail"
     ? maximumVisibleStart
-    : clamp(heights.prefixRows(focusIndex!) - Math.min(preferredScreenRow, input.viewportRows - 1), 0, maximumVisibleStart)
+    : clamp(focusRange!.start + blockLocalRow - Math.min(preferredScreenRow, input.viewportRows - 1), 0, maximumVisibleStart)
   let visibleEnd = Math.min(heights.totalRows, visibleStart + input.viewportRows)
   let plannedFrom = Math.max(0, visibleStart - input.overscanRows)
   let plannedTo = input.attachment.kind === "tail"

@@ -130,6 +130,32 @@ test("half-open row boundaries include only intersecting blocks", () => {
   }
 })
 
+test("a measured block-local anchor row plans around the exact logical point", () => {
+  const before = Array.from({ length: 10 }, (_, index) => item(`before-${index}`))
+  const target = item("tall-anchor", 20, "abcdefghijklmnopqrst")
+  const after = Array.from({ length: 10 }, (_, index) => item(`after-${index}`))
+  const blocks = Object.freeze([...before, target, ...after])
+  const heights = heightIndex(blocks)
+  const window = planTranscriptWindow({
+    blocks,
+    heights,
+    viewportRows: 5,
+    overscanRows: 2,
+    attachment: { kind: "point", point: point(target, 15), preferredScreenRow: 2, blockLocalRow: 15 },
+  })
+
+  expect(window.blocks[0]).toBe(target)
+  expect(window.topSpacerRows).toBe(10)
+  expect(pointIsMaterialized(window.blocks, point(target, 15))).toBe(true)
+  expect(planTranscriptWindow({
+    blocks,
+    heights,
+    viewportRows: 5,
+    overscanRows: 2,
+    attachment: { kind: "point", point: point(target), preferredScreenRow: 2, blockLocalRow: -1 },
+  }).blocks).toBe(blocks)
+})
+
 test("negative semantic screen rows clamp the physical hint without abandoning bounded planning", () => {
   const blocks = Object.freeze(Array.from({ length: 40 }, (_, index) => item(`negative-row-${index}`)))
   const heights = heightIndex(blocks)

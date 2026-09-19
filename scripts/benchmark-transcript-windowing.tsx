@@ -309,6 +309,74 @@ async function reactPublicationBaseline(fixture: ReturnType<typeof buildTranscri
   }
 }
 
+function runtimeCorrectionBaseline(fixture: ReturnType<typeof buildTranscriptScalingFixture>): void {
+  forceGc()
+  const runtime = new TranscriptRuntime(runtimeInput(fixture, fixture.before, "follow", { canonicalDamage: { kind: "full" } }), {
+    windowPolicy: { viewportRows: 24, overscanRows: 24 },
+  })
+  try {
+    const before = runtime.getSnapshot()
+    const block = before.window.blocks.at(-1)!
+    const base = runtime.measurementBase(before)
+    const measurement: BlockGeometry = Object.freeze({
+      key: Object.freeze({
+        blockKey: blockKey(block),
+        contentRevision: block.contentRevision,
+        width: 80,
+        styleRevision: "stage-5.3-correction",
+        folded: block.key.kind === "item" && Boolean(before.transcript.folded[block.key.itemId]),
+      }),
+      nativeRevision: 1,
+      rows: 4,
+      pointCount: 1,
+      points: sharedPoint,
+      pointOffsetsByRow: sharedOffsets,
+      lines: sharedLines,
+      lineByRow: sharedLineByRow,
+    })
+    let publications = 0
+    const unsubscribe = runtime.subscribe(() => { publications++ })
+    const corrected = timed(() => runtime.reportMeasurements({ ...base, measurements: [measurement] }))
+    assert.equal(publications, 1)
+    assert.equal(corrected.value.geometry.totalRows, fixture.blockCount + 3)
+    assert.equal(corrected.value.geometry.blockRows.length, corrected.value.window.blocks.length)
+    assert(corrected.value.window.blocks.length <= 48)
+    assert(Object.keys(corrected.value.geometry.byBlockKey).length <= corrected.value.window.blocks.length)
+    const replay = timed(() => runtime.reportMeasurements({ ...base, measurements: [{ ...measurement, nativeRevision: 2 }] }))
+    assert.equal(replay.value, corrected.value)
+    assert.equal(publications, 1)
+    unsubscribe()
+    printResult({
+      scenario: "runtime-height-correction",
+      materialization: "windowed-production",
+      boundary: "runtime-index-window-geometry-publication",
+      blockCount: fixture.blockCount,
+      viewport: { width: 80, height: 24 },
+      mode: "follow",
+      fixture: { contentShape: "mixed-semantic-root-blocks", contentHash: fixture.contentHash, setupExcludedFromTiming: true },
+      operationCounts: {
+        completeBlocks: fixture.blockCount,
+        mountedBlocksBefore: before.window.blocks.length,
+        mountedBlocksAfter: corrected.value.window.blocks.length,
+        acceptedMeasurements: 1,
+        changedHeights: 1,
+        publications,
+        staleReplayPublications: 0,
+        geometryBlocksComposed: corrected.value.geometry.blockRows.length,
+        retainedDetailedGeometry: Object.keys(corrected.value.geometry.byBlockKey).length,
+        totalRowDelta: corrected.value.geometry.totalRows - before.geometry.totalRows,
+      },
+      timingsMs: {
+        atomicCorrectionPublication: Number(corrected.milliseconds.toFixed(6)),
+        staleReplay: Number(replay.milliseconds.toFixed(6)),
+      },
+      samples: { warmup: 0, measured: 1 },
+    })
+  } finally {
+    runtime.dispose()
+  }
+}
+
 function RuntimeNativeMountProbeInner(props: {
   runtime: TranscriptRuntime
   scrollRef: RefObject<ScrollBoxRenderable | null>
@@ -386,14 +454,11 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
     const scroll = scrollRef.current
     assert(scroll, "TranscriptViewport did not mount its scrollbox")
     const rootsBefore = mountedBlockRoots(scroll)
+    let steadyRoots = rootsBefore
     const nativeTreeBefore = mountedTreeCounts(scroll)
     assertMountedRoots(frame, rootsBefore)
     assertBoundedNativeShape(frame.window.blocks.length, nativeTreeBefore)
     if (process.env.VIMEX_WINDOWING_GEOMETRY_BASELINE === "1") {
-      const revisionsBefore = new Map(frame.window.blocks.map(block => {
-        const root = rootsBefore.get(transcriptBlockRenderableId(block))!
-        return [blockKey(block), blockNativeRevision(root)] as const
-      }))
       let measurementPublications = 0
       const unsubscribeMeasurement = runtime.subscribe(() => { measurementPublications++ })
       let measurement!: ReturnType<typeof timed<ReturnType<typeof measureRenderedTranscript>>>
@@ -407,12 +472,10 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
       unsubscribeMeasurement()
       assert.equal(measurement.value, undefined, "the first scheduler pass must publish geometry before returning a layout")
       const measuredFrame = runtime.getSnapshot()
-      const measuredBlocks = measuredFrame.window.blocks.filter(block => {
-        const root = rootsBefore.get(transcriptBlockRenderableId(block))!
-        return blockNativeRevision(root) > (revisionsBefore.get(blockKey(block)) ?? 0)
-      }).length
+      const measuredBlocks = diagnostics.changedMeasurements
       assert.equal(measuredBlocks, frame.window.blocks.length)
-      assert.equal(measuredFrame.geometry.measuredBlockCount, frame.window.blocks.length)
+      assert(measuredFrame.geometry.measuredBlockCount <= measuredFrame.window.blocks.length)
+      assert.equal(measuredFrame.geometry.blockRows.length, measuredFrame.window.blocks.length)
       assert.equal(diagnostics.attemptedMeasurements, frame.window.blocks.length)
       assert.equal(diagnostics.trackedMountedRoots, frame.window.blocks.length)
       assert.equal(diagnostics.visibleBeforeOverscan, true)
@@ -420,8 +483,11 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
       let settledLayout: ReturnType<typeof measureRenderedTranscript>
       await act(async () => {
         settledLayout = measureRenderedTranscript(setup.renderer, scroll, { frame: measuredFrame, runtime, styleRevision })
+        await setup.flush(); await setup.renderOnce()
       })
       assert(settledLayout, "published native geometry must build a layout on the next scheduler pass")
+      steadyRoots = mountedBlockRoots(scroll)
+      assertMountedRoots(runtime.getSnapshot(), steadyRoots)
       const blocksWithPoints = Object.values(measuredFrame.geometry.byBlockKey).filter(geometry => (geometry.pointCount ?? Object.keys(geometry.points).length) > 0).length
       printResult({
         scenario: "native-geometry-measurement",
@@ -431,13 +497,14 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
         viewport,
         mode: "follow",
         fixture: { contentShape: "rendered-mixed-semantic-root-blocks", contentHash: fixture.contentHash, setupExcludedFromTiming: true },
-        operationCounts: { mountedBlocks: rootsBefore.size, measuredBlocks, changedBlocks: 0, publications: measurementPublications,
-          materializedWindowBlocks: measuredFrame.window.blocks.length, acceptedMeasurements: measuredFrame.geometry.measuredBlockCount,
+        operationCounts: { mountedBlocksBeforeCorrection: rootsBefore.size, measuredBlocks, changedBlocks: 0, publications: measurementPublications,
+          materializedWindowBlocksAfterCorrection: measuredFrame.window.blocks.length, acceptedHeightCorrections: diagnostics.changedMeasurements,
+          retainedDetailedGeometryAfterCorrection: measuredFrame.geometry.measuredBlockCount,
           candidateBlocks: diagnostics.candidateBlocks, visibleCandidates: diagnostics.visibleCandidates,
           overscanCandidates: diagnostics.overscanCandidates, attemptedMeasurements: diagnostics.attemptedMeasurements,
           trackedMountedRoots: diagnostics.trackedMountedRoots, pendingMeasurementAcknowledgements: diagnostics.pendingAfter,
-          mountedNativeDescendants: nativeTreeBefore.descendants, stableSpacerRoots: nativeTreeBefore.spacers,
-          blocksWithPoints, zeroPointMeasurements: measuredFrame.geometry.measuredBlockCount - blocksWithPoints,
+          mountedNativeDescendantsBeforeCorrection: nativeTreeBefore.descendants, stableSpacerRoots: nativeTreeBefore.spacers,
+          blocksWithPoints, retainedZeroPointGeometry: measuredFrame.geometry.measuredBlockCount - blocksWithPoints,
           measuredPoints: measuredFrame.geometry.totalPoints },
         timingsMs: { measurementSchedulerAndGeometryPublication: Number(measurement.milliseconds.toFixed(6)) },
         samples: { warmup: 0, measured: 1 },
@@ -459,10 +526,11 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
     const endToEndFollowSettlementMs = performance.now() - settlementStarted
     unsubscribe()
     const rootsAfter = mountedBlockRoots(scroll)
+    let settledFollowRoots = rootsAfter
     assertMountedRoots(runtime.getSnapshot(), rootsAfter)
     let retainedBlockRoots = 0
-    for (const [id, root] of rootsBefore) if (rootsAfter.get(id) === root) retainedBlockRoots++
-    assert.equal(retainedBlockRoots, rootsBefore.size)
+    for (const [id, root] of steadyRoots) if (rootsAfter.get(id) === root) retainedBlockRoots++
+    assert.equal(retainedBlockRoots, steadyRoots.size)
     assert.equal(runtimePublications, 1)
     assert.equal(commits.length, 1)
     printResult({
@@ -473,9 +541,9 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
       viewport,
       mode: "follow",
       fixture: { contentShape: "rendered-mixed-semantic-root-blocks", contentHash: fixture.contentHash, setupExcludedFromTiming: false },
-      operationCounts: { mountedBlocks: rootsBefore.size, measuredBlocks: 0, changedBlocks: 1, publications: runtimePublications,
-        completeBlocks: frame.blocks.length, materializedWindowBlocks: frame.window.blocks.length, observedMountedBlockRoots: rootsBefore.size,
-        retainedBlockRoots, mountedRootsDuringFollow: rootsAfter.size - retainedBlockRoots, unmountedRootsDuringFollow: rootsBefore.size - retainedBlockRoots,
+      operationCounts: { mountedBlocks: steadyRoots.size, measuredBlocks: 0, changedBlocks: 1, publications: runtimePublications,
+        completeBlocks: frame.blocks.length, materializedWindowBlocks: runtime.getSnapshot().window.blocks.length, observedMountedBlockRoots: steadyRoots.size,
+        retainedBlockRoots, mountedRootsDuringFollow: rootsAfter.size - retainedBlockRoots, unmountedRootsDuringFollow: steadyRoots.size - retainedBlockRoots,
         runtimePublications, reactCommits: commits.length },
       timingsMs: { testRendererReactSetupAndNativeMount: Number(nativeMountAndLayoutMs.toFixed(6)), runtimeUpdate: Number(runtimeUpdateMs.toFixed(6)),
         postUpdateReactAndNativeFrame: Number((endToEndFollowSettlementMs - runtimeUpdateMs).toFixed(6)), presentationSettlement: Number(endToEndFollowSettlementMs.toFixed(6)),
@@ -511,8 +579,11 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
       let followedLayout: ReturnType<typeof measureRenderedTranscript>
       await act(async () => {
         followedLayout = measureRenderedTranscript(setup.renderer, scroll, { frame: followMeasuredFrame, runtime, styleRevision })
+        await setup.flush(); await setup.renderOnce()
       })
       assert(followedLayout, "changed tail geometry must settle on the next scheduler pass")
+      settledFollowRoots = mountedBlockRoots(scroll)
+      assertMountedRoots(runtime.getSnapshot(), settledFollowRoots)
       printResult({
         scenario: "follow-tail-native-measurement",
         materialization: "windowed-production",
@@ -548,7 +619,7 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
     const detachedRootsBefore = mountedBlockRoots(scroll)
     assertMountedRoots(runtime.getSnapshot(), detachedRootsBefore)
     let overlap = 0
-    for (const [id, root] of rootsAfter) if (detachedRootsBefore.get(id) === root) overlap++
+    for (const [id, root] of settledFollowRoots) if (detachedRootsBefore.get(id) === root) overlap++
     const targetBlock = runtime.getSnapshot().window.blocks.find(block => block.key.kind === "item" && block.key.itemId === fixture.targets.middle)
       ?? runtime.getSnapshot().window.blocks[Math.floor(runtime.getSnapshot().window.blocks.length / 2)]!
     const targetRoot = detachedRootsBefore.get(transcriptBlockRenderableId(targetBlock))!
@@ -571,24 +642,32 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
       await setup.flush(); await setup.renderOnce()
     })
     const measurementPublicationMs = performance.now() - shiftStarted
-    const shiftedFrame = runtime.getSnapshot()
-    const settledDiagnostics = createDiagnostics()
-    await act(async () => {
-      const layout = measureRenderedTranscript(setup.renderer, scroll, {
-        frame: shiftedFrame, runtime, styleRevision, diagnostics: settledDiagnostics,
+    let settledDiagnostics = createDiagnostics()
+    let settlementPasses = 0
+    for (; settlementPasses < 4; settlementPasses++) {
+      settledDiagnostics = createDiagnostics()
+      await act(async () => {
+        const layout = measureRenderedTranscript(setup.renderer, scroll, {
+          frame: runtime.getSnapshot(), runtime, styleRevision, diagnostics: settledDiagnostics,
+        })
+        assert(layout, "detached movement geometry must settle on an acknowledgement pass")
+        await setup.flush(); await setup.renderOnce()
       })
-      assert(layout, "detached movement geometry must settle on the acknowledgement pass")
-    })
+      if (settledDiagnostics.pendingAfter === 0) break
+    }
+    settlementPasses++
     unsubscribeMovement()
     const shiftSettlementMs = performance.now() - movementStarted
     assert.equal(shiftDiagnostics.trackedMountedRoots, detachedRootsBefore.size)
-    assert.equal(shiftDiagnostics.prunedRoots, rootsAfter.size - overlap)
+    assert.equal(shiftDiagnostics.prunedRoots, settledFollowRoots.size - overlap)
     assert(shiftDiagnostics.attemptedMeasurements <= detachedRootsBefore.size)
     assert.equal(shiftDiagnostics.visibleCandidates, independentlyVisibleKeys.length)
     assert.deepEqual(shiftDiagnostics.attemptedKeys?.slice(0, independentlyVisibleKeys.length), independentlyVisibleKeys)
     assert.equal(shiftDiagnostics.visibleBeforeOverscan, true)
     assert.equal(settledDiagnostics.pendingAfter, 0)
     const pinned = runtime.getSnapshot()
+    const pinnedRoots = mountedBlockRoots(scroll)
+    assertMountedRoots(pinned, pinnedRoots)
     printResult({
       scenario: "detached-window-movement",
       materialization: "windowed-production",
@@ -601,10 +680,11 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
         mountedBlocks: detachedRootsBefore.size, measuredBlocks: shiftDiagnostics.changedMeasurements,
         changedBlocks: 0, publications: movementPublications,
         retainedBlockRoots: overlap, mountedRootsDuringMove: detachedRootsBefore.size - overlap,
-        unmountedRootsDuringMove: rootsAfter.size - overlap, candidateBlocks: shiftDiagnostics.candidateBlocks,
+        unmountedRootsDuringMove: settledFollowRoots.size - overlap, candidateBlocks: shiftDiagnostics.candidateBlocks,
         attemptedMeasurements: shiftDiagnostics.attemptedMeasurements, trackedMountedRoots: shiftDiagnostics.trackedMountedRoots,
         prunedRoots: shiftDiagnostics.prunedRoots, visibleCandidates: shiftDiagnostics.visibleCandidates,
         overscanCandidates: shiftDiagnostics.overscanCandidates, pendingMeasurementsAfterAcknowledgement: settledDiagnostics.pendingAfter,
+        acknowledgementPasses: settlementPasses,
         mountedNativeDescendants: mountedTreeCounts(scroll).descendants, stableSpacerRoots: mountedTreeCounts(scroll).spacers,
       },
       timingsMs: { runtimeReactNativeRoot: Number(runtimeReactNativeRootMs.toFixed(6)),
@@ -629,8 +709,8 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
     const detachedRootsAfter = mountedBlockRoots(scroll)
     assertMountedRoots(pinned, detachedRootsAfter)
     let detachedRetainedRoots = 0
-    for (const [id, root] of detachedRootsBefore) if (detachedRootsAfter.get(id) === root) detachedRetainedRoots++
-    assert.equal(detachedRetainedRoots, detachedRootsBefore.size)
+    for (const [id, root] of pinnedRoots) if (detachedRootsAfter.get(id) === root) detachedRetainedRoots++
+    assert.equal(detachedRetainedRoots, pinnedRoots.size)
     assert.equal(detachedPublications, 0)
     assert.equal(commits.length, 0)
     printResult({
@@ -641,7 +721,7 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
       viewport,
       mode: "detached",
       fixture: { contentShape: "rendered-mixed-semantic-root-blocks", contentHash: fixture.contentHash, setupExcludedFromTiming: true },
-      operationCounts: { mountedBlocks: detachedRootsBefore.size, measuredBlocks: 0, changedBlocks: 0, publications: detachedPublications,
+      operationCounts: { mountedBlocks: pinnedRoots.size, measuredBlocks: 0, changedBlocks: 0, publications: detachedPublications,
         canonicalChangedBlocks: 1, retainedBlockRoots: detachedRetainedRoots, mountedRootsDuringHiddenDelta: 0,
         unmountedRootsDuringHiddenDelta: 0, runtimePublications: detachedPublications, reactCommits: commits.length },
       timingsMs: { hiddenDeltaPresentationSettlement: Number(detachedSettlementMs.toFixed(6)) },
@@ -672,6 +752,7 @@ for (const blockCount of requestedSizes) {
   const fixture = buildTranscriptScalingFixture(blockCount)
   runtimeBaseline(fixture)
   await reactPublicationBaseline(fixture)
+  runtimeCorrectionBaseline(fixture)
   if (process.env.VIMEX_WINDOWING_NATIVE_BASELINE === "1") {
     for (const viewport of requestedNativeViewports) await nativeMountBaseline(fixture, viewport)
   }

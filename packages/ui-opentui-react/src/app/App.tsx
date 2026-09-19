@@ -395,7 +395,6 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
     const repeat = explicitCount ?? 1
     scrollRef.current?.scrollBy(delta * repeat * (effectiveAmount === "line" ? 1 : effectiveAmount === "half-page" ? 0.5 : 1), effectiveAmount === "line" ? "step" : "viewport")
     onManualScroll()
-    controller.transcript({ type: "viewport.scroll", direction, amount: effectiveAmount })
     countRef.current = ""
     if (explicitCount !== undefined) controller.dispatchInteraction({ type: "count.clear" })
   }, [controller, onManualScroll])

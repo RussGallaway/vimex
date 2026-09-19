@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
-import { act, useState } from "react"
+import { act, useEffect, useState } from "react"
 import type { ScrollBoxRenderable } from "@opentui/core"
 import { createConversation, itemId, reduceConversation, threadId, turnId, type ConversationEvent, type ConversationItem } from "@vimex/conversation"
 import { blockKey, initialTranscript, syncTranscriptItem, TranscriptRuntime, type TranscriptState } from "@vimex/transcript"
@@ -299,6 +299,7 @@ test("window movement measures visible roots first and releases every departed s
   let shift!: () => void
   function Harness() {
     const [frame, setFrame] = useState(runtime.getSnapshot())
+    useEffect(() => runtime.subscribe(() => setFrame(runtime.getSnapshot())), [])
     shift = () => {
       const target = { itemId: fixture.targets.quarter, graphemeOffset: 0 }
       const transcript = Object.freeze({
@@ -324,13 +325,16 @@ test("window movement measures visible roots first and releases every departed s
     expect(initialDiagnostics.trackedMountedRoots).toBe(16)
     expect(initialDiagnostics.visibleBeforeOverscan).toBe(true)
     measureRenderedTranscript(setup.renderer, scroll, { frame: runtime.getSnapshot(), runtime, styleRevision: "window-test" })
+    const beforeShift = runtime.getSnapshot()
 
     await act(async () => { shift(); await setup.flush(); await setup.renderOnce() })
     const shifted = runtime.getSnapshot()
     expect(shifted.window.blocks).toHaveLength(24)
     const cleanupDiagnostics = { prunedRoots: 0, pendingAfter: 0, trackedMountedRoots: 0 } as RenderedLayoutDiagnostics
     synchronizeRenderedTranscriptWindow(scroll, shifted, cleanupDiagnostics)
-    expect(cleanupDiagnostics.prunedRoots).toBe(16)
+    const shiftedKeys = new Set(shifted.window.blocks.map(blockKey))
+    const expectedDeparted = beforeShift.window.blocks.filter(block => !shiftedKeys.has(blockKey(block))).length
+    expect(cleanupDiagnostics.prunedRoots).toBe(expectedDeparted)
     expect(cleanupDiagnostics.trackedMountedRoots).toBe(0)
     expect(cleanupDiagnostics.pendingAfter).toBe(24)
     const shiftDiagnostics = { attemptedKeys: [] } as unknown as RenderedLayoutDiagnostics
@@ -385,7 +389,9 @@ test("a drop-only window change cannot reuse native placements from the wider ma
 
     await act(async () => { shrink(); await setup.flush(); await setup.renderOnce() })
     const narrowed = runtime.getSnapshot()
-    expect(narrowed.geometry).toBe(measured.geometry)
+    expect(narrowed.geometry).not.toBe(measured.geometry)
+    expect(narrowed.geometry.blockRows).toHaveLength(narrowed.window.blocks.length)
+    expect(Object.keys(narrowed.geometry.byBlockKey).length).toBeLessThanOrEqual(narrowed.window.blocks.length)
     const layout = measureRenderedTranscript(setup.renderer, scroll, { frame: narrowed, runtime, styleRevision: "cache-window-test" })!
     expect(layout).not.toBe(wider)
     expect(layout.materializedBlocks).toBe(narrowed.window.blocks)

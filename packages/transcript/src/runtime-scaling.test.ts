@@ -245,3 +245,202 @@ test("production window policy bounds initial, detached, reveal, and measured ma
     detached.dispose()
   }
 }, 15_000)
+
+test("accepted height correction is atomic, window-local, immutable, and bounded at every scale", () => {
+  for (const blockCount of transcriptScalingBlockCounts) {
+    const fixture = buildTranscriptScalingFixture(blockCount)
+    const runtime = new TranscriptRuntime(runtimeInput(fixture, fixture.before, "follow", {
+      canonicalDamage: { kind: "full" },
+    }), { windowPolicy: { viewportRows: 24, overscanRows: 24 } })
+    const before = runtime.getSnapshot()
+    const block = before.window.blocks.at(-1)!
+    const key = blockKey(block)
+    const base = runtime.measurementBase(before)
+    let publications = 0
+    runtime.subscribe(() => { publications++ })
+    const corrected = runtime.reportMeasurements({ ...base, measurements: [Object.freeze({
+      key: Object.freeze({
+        blockKey: key,
+        contentRevision: block.contentRevision,
+        width: 80,
+        styleRevision: "correction-scaling",
+        folded: block.key.kind === "item" && Boolean(before.transcript.folded[block.key.itemId]),
+      }),
+      nativeRevision: 1,
+      rows: 4,
+      pointCount: 1,
+      points: point,
+      pointOffsetsByRow: offsets,
+      lines,
+      lineByRow,
+    })] })
+
+    expect(publications).toBe(1)
+    expect(corrected).not.toBe(before)
+    expect(before.geometry.totalRows).toBe(blockCount)
+    expect(before.geometry.byBlockKey[key]).toBeUndefined()
+    expect(corrected.geometry.totalRows).toBe(blockCount + 3)
+    expect(corrected.geometry.blockRows).toHaveLength(corrected.window.blocks.length)
+    expect(Object.keys(corrected.geometry.byBlockKey).length).toBeLessThanOrEqual(corrected.window.blocks.length)
+    expect(corrected.window.blocks.length).toBeLessThanOrEqual(48)
+    expect(corrected.blocks).toBe(before.blocks)
+    expect(corrected.transcript).toBe(before.transcript)
+    expect(runtime.reportMeasurements({ ...base, measurements: [] })).toBe(corrected)
+    expect(runtime.reportMeasurements({ ...base, measurements: [Object.freeze({
+      ...corrected.geometry.byBlockKey[key]!,
+      nativeRevision: 2,
+    })] })).toBe(corrected)
+    expect(publications).toBe(1)
+
+    const reset = runtime.resetLayout("width")
+    expect(publications).toBe(2)
+    expect(reset.geometry.measuredBlockCount).toBe(0)
+    expect(reset.geometry.totalRows).toBe(blockCount)
+    expect(reset.window.blocks.length).toBe(48)
+    runtime.dispose()
+  }
+})
+
+test("an equal-height native revision publishes once and its acknowledgement is a no-op", () => {
+  const fixture = buildTranscriptScalingFixture(100)
+  const runtime = new TranscriptRuntime(runtimeInput(fixture, fixture.before, "follow", {
+    canonicalDamage: { kind: "full" },
+  }), { windowPolicy: { viewportRows: 12, overscanRows: 12 } })
+  const before = runtime.getSnapshot()
+  const block = before.window.blocks.at(-1)!
+  const geometry = Object.freeze({
+    key: Object.freeze({
+      blockKey: blockKey(block),
+      contentRevision: block.contentRevision,
+      width: 80,
+      styleRevision: "equal-height-reflow",
+      folded: block.key.kind === "item" && Boolean(before.transcript.folded[block.key.itemId]),
+    }),
+    nativeRevision: 1,
+    rows: block.estimatedRows,
+    pointCount: 1,
+    points: point,
+    pointOffsetsByRow: offsets,
+    lines,
+    lineByRow,
+  })
+  let publications = 0
+  runtime.subscribe(() => { publications++ })
+
+  const accepted = runtime.reportMeasurements({ ...runtime.measurementBase(before), measurements: [geometry] })
+  expect(accepted).not.toBe(before)
+  expect(accepted.geometry.totalRows).toBe(before.geometry.totalRows)
+  expect(accepted.geometry.byBlockKey[geometry.key.blockKey]?.nativeRevision).toBe(1)
+  expect(publications).toBe(1)
+
+  expect(runtime.reportMeasurements({ ...runtime.measurementBase(accepted), measurements: [geometry] })).toBe(accepted)
+  expect(publications).toBe(1)
+  runtime.dispose()
+})
+
+test("detached correction replans from the measured row inside the logical anchor block", () => {
+  const fixture = buildTranscriptScalingFixture(100)
+  const projection = fixture.before.transcript.projectionById[fixture.targets.middle]!
+  const anchor = Object.freeze({
+    itemId: fixture.targets.middle,
+    graphemeOffset: Math.min(5, projection.sourceSpans.length),
+  })
+  const transcript = Object.freeze({
+    ...fixture.before.transcript,
+    cursor: anchor,
+    viewport: Object.freeze({ kind: "point" as const, point: anchor, preferredScreenRow: 2 }),
+  })
+  const snapshot = Object.freeze({ ...fixture.before, transcript })
+  const runtime = new TranscriptRuntime(runtimeInput(fixture, snapshot, "detached", {
+    canonicalDamage: { kind: "full" },
+  }), { windowPolicy: { viewportRows: 8, overscanRows: 8 } })
+  const before = runtime.getSnapshot()
+  const block = before.window.blocks.find(candidate => candidate.key.kind === "item" && candidate.key.itemId === anchor.itemId)!
+  const key = blockKey(block)
+  const corrected = runtime.reportMeasurements({ ...runtime.measurementBase(before), measurements: [Object.freeze({
+    key: Object.freeze({
+      blockKey: key,
+      contentRevision: block.contentRevision,
+      width: 80,
+      styleRevision: "anchor-correction",
+      folded: false,
+    }),
+    nativeRevision: 1,
+    rows: 10,
+    points: Object.freeze({
+      [anchor.graphemeOffset]: Object.freeze({ graphemeOffset: anchor.graphemeOffset, x: 0, y: 6, row: 6, column: 0 }),
+    }),
+    lines: Object.freeze([{ from: anchor.graphemeOffset, to: anchor.graphemeOffset, row: 6 }]),
+  })] })
+
+  expect(corrected.transcript.viewport).toEqual(before.transcript.viewport)
+  expect(corrected.window.topSpacerRows).toBeGreaterThan(before.window.topSpacerRows)
+  expect(pointIsMaterialized(corrected.window.blocks, anchor)).toBe(true)
+  expect(corrected.geometry.rowByBlockKey[key]! + 6 - 2 - 8).toBe(corrected.window.topSpacerRows)
+  expect(corrected.geometry.byBlockKey[key]?.points[anchor.graphemeOffset]?.row).toBe(6)
+  expect(before.window.topSpacerRows).toBeLessThan(corrected.window.topSpacerRows)
+  runtime.dispose()
+})
+
+test("a mixed invalid windowed batch cannot leak a staged height replacement", () => {
+  const fixture = buildTranscriptScalingFixture(100)
+  const runtime = new TranscriptRuntime(runtimeInput(fixture, fixture.before, "follow", {
+    canonicalDamage: { kind: "full" },
+  }), { windowPolicy: { viewportRows: 8, overscanRows: 8 } })
+  const before = runtime.getSnapshot()
+  const [first, second] = before.window.blocks.slice(-2)
+  const geometry = (block: typeof first, rows: number, contentRevision = block!.contentRevision): BlockGeometry => ({
+    key: {
+      blockKey: blockKey(block!),
+      contentRevision,
+      width: 80,
+      styleRevision: "atomic-correction",
+      folded: block!.key.kind === "item" && Boolean(before.transcript.folded[block!.key.itemId]),
+    },
+    nativeRevision: 1,
+    rows,
+    points: point,
+    lines,
+  })
+  const base = runtime.measurementBase(before)
+  expect(runtime.reportMeasurements({ ...base, measurements: [
+    geometry(first, 7),
+    geometry(second, 3, second!.contentRevision + 1),
+  ] })).toBe(before)
+  const accepted = runtime.reportMeasurements({ ...base, measurements: [geometry(first, 2)] })
+  expect(accepted.geometry.totalRows).toBe(101)
+  expect(before.geometry.totalRows).toBe(100)
+  runtime.dispose()
+})
+
+test("a fold transition discards the incompatible measured height before replanning", () => {
+  const fixture = buildTranscriptScalingFixture(100)
+  const runtime = new TranscriptRuntime(runtimeInput(fixture, fixture.before, "follow", {
+    canonicalDamage: { kind: "full" },
+  }), { windowPolicy: { viewportRows: 12, overscanRows: 12 } })
+  const before = runtime.getSnapshot()
+  const block = before.window.blocks.find(candidate => candidate.key.kind === "item"
+    && !before.transcript.folded[candidate.key.itemId])!
+  expect(block).toBeDefined()
+  const key = blockKey(block)
+  const measured = runtime.reportMeasurements({ ...runtime.measurementBase(before), measurements: [{
+    key: { blockKey: key, contentRevision: block.contentRevision, width: 80, styleRevision: "fold-height", folded: false },
+    nativeRevision: 1,
+    rows: 8,
+    points: point,
+    lines,
+  }] })
+  expect(measured.geometry.totalRows).toBe(107)
+
+  const foldedTranscript = Object.freeze({
+    ...fixture.before.transcript,
+    folded: Object.freeze({ ...fixture.before.transcript.folded, [block.key.kind === "item" ? block.key.itemId : ""]: true }),
+  })
+  const foldedSnapshot = Object.freeze({ ...fixture.before, transcript: foldedTranscript })
+  const folded = runtime.update(runtimeInput(fixture, foldedSnapshot, "follow", {
+    presentationDamage: { kind: "view" },
+  }))
+  expect(folded.geometry.totalRows).toBe(100)
+  expect(folded.geometry.byBlockKey[key]).toBeUndefined()
+  runtime.dispose()
+})

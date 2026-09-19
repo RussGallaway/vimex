@@ -223,8 +223,13 @@ function geometryLineAtRow(layout: TranscriptLayout, row: number): VisualLine | 
 }
 
 function geometryLineFrom(layout: TranscriptLayout, row: number, direction: -1 | 1): VisualLine | undefined {
-  const limit = layout.geometry?.totalRows ?? 0
-  for (let current = row; current >= 0 && current < limit; current += direction) {
+  const rows = layout.geometry?.blockRows
+  if (!rows?.length) return undefined
+  const minimum = rows[0]!.start
+  const last = rows.at(-1)!
+  const maximum = last.start + last.rows
+  const firstRow = direction > 0 ? Math.max(row, minimum) : Math.min(row, maximum - 1)
+  for (let current = firstRow; current >= minimum && current < maximum; current += direction) {
     const line = geometryLineAtRow(layout, current)
     if (line) return line
   }

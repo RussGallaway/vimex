@@ -167,6 +167,12 @@ function translatedLayout(layout: TranscriptLayout, x: number, y: number): Trans
   return Object.freeze(translated)
 }
 
+/** Translate cached native placement after a scroll without measuring roots. */
+export function translateTranscriptLayout(layout: TranscriptLayout, deltaX: number, deltaY: number): TranscriptLayout {
+  if (!deltaX && !deltaY) return layout
+  return translatedLayout(layout, (layout.screenOffset?.x ?? 0) + deltaX, (layout.screenOffset?.y ?? 0) + deltaY)
+}
+
 function findBlockRenderable(scrollbox: ScrollBoxRenderable, block: TranscriptBlock): Renderable | undefined {
   return scrollbox.getRenderable(transcriptBlockRenderableId(block))
     ?? (block.key.kind === "item" ? scrollbox.getRenderable(legacyRenderableId(block.key.itemId)) : undefined)
