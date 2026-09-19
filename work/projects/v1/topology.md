@@ -252,9 +252,9 @@ The tree describes ownership, not a demand for empty packages. Start with the ve
 
 ## Current transcript coordination
 
-Before the transcript-runtime migration, `packages/ui-opentui-react/src/transcript/use-transcript-layout.ts` coordinates frame measurement and reading-anchor restoration, `rendered-layout.ts` maps native cells, `layout.ts` provides visual-row navigation, and `TranscriptViewport.tsx` owns native scrolling input. `app/App.tsx` composes these capabilities rather than owning their geometry lifecycle. Pure semantic navigation and viewport anchors remain under `packages/transcript/src/application`.
+`packages/transcript/src/runtime.ts` owns each presentation frame, geometry generation, accepted block measurements, and follow/detached policy. `packages/transcript/src/geometry.ts` owns renderer-neutral immutable block geometry and global row composition. Pure semantic navigation and viewport anchors remain under `packages/transcript/src/application`.
 
-This describes the current implementation, not the final ownership boundary. It remains valid until Stages 2 and 3 replace it incrementally; it must not become a second geometry or presentation authority alongside `TranscriptRuntime`.
+Within the OpenTUI adapter, `measure-rendered-block.ts` is the single module allowed to inspect private native text, Markdown, table, and diff state. `rendered-layout.ts` owns dirty-block scheduling, native placement, and cached scroll translation; it reports guarded batches to the runtime rather than keeping a competing production geometry cache. `layout.ts` reads runtime indexes for visual-row navigation, `use-transcript-layout.ts` restores semantic anchors, and `TranscriptViewport.tsx` owns native scrolling input and stable render-block roots. `app/App.tsx` composes these capabilities and refreshes cached viewport translation before hardware-cursor visibility decisions.
 
 ## Transcript runtime target topology
 
@@ -295,7 +295,7 @@ Workbench owns a `TranscriptRuntime` for each stable presentation identity, such
 
 The React bridge subscribes to cached frame snapshots, sends semantic commands through workbench, and reports renderer measurements. Measurement feedback may change disposable layout knowledge; it may not mutate canonical conversation data or semantic positions. A thread change within a presentation causes a guarded full presentation rebuild rather than reusing revision relationships across threads.
 
-Migration proceeds by vertical slice: Stage 2 introduces a pass-through runtime and keeps all blocks materialized; Stage 3 moves native measurement behind `measure-rendered-block.ts`. At no point may the legacy layout hook and the runtime both claim authority for the same presentation revision or geometry cache.
+Stages 2 and 3 are complete: the runtime still uses a pass-through window, while native measurement now sits behind `measure-rendered-block.ts`. Geometry retains one current immutable variant per materialized block, and width/style/syntax/renderer uncertainty resets the layout generation. Stage 5 may replace the pass-through planner with block windowing without changing the renderer contract: stable block IDs, render payloads, half-open source spans, activity footprints, spacers, overscan, and logical target materialization are already explicit.
 
 
 File-change presentation remains under `packages/ui-opentui-react/src/transcript/`: `FileChange.tsx` renders per-file patches, `diff-summary.ts` owns presentation counts and native language names, and `diff-layout.test.tsx` validates source-to-screen mapping through `rendered-layout.ts`. Server metadata mapping remains in the Codex adapter; no Git or filesystem responsibility is added to transcript rendering.

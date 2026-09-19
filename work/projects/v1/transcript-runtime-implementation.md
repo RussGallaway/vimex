@@ -20,7 +20,7 @@ Stages 1–4 are the current delivery target. Stage 5 contracts must be supporte
 | Baseline profiling | Complete | Measurements recorded below |
 | Stage 1: compact activity | Complete | Commit `7a4209d`; full gate plus isolated tmux rerun |
 | Stage 2: ingress and detachment | Complete | Stage 2a `07678c4`; Stage 2b `28cc24d` |
-| Stage 3: block-local geometry | Not started | — |
+| Stage 3: block-local geometry | Complete | Commit `f71cba9`; full gate plus isolated tmux rerun |
 | Stage 4: narrow observation | Not started | — |
 | Stage 5: block windowing | Contract only | Deferred |
 
@@ -265,29 +265,34 @@ packages/ui-opentui-react/src/transcript/
   rendered-layout.ts
   layout.ts
   use-transcript-layout.ts
+
+packages/transcript/src/
+  geometry.ts
+  runtime.ts
+  window.ts
 ```
 
 ### Work
 
-- [ ] Extract OpenTUI-native text, Markdown, table, and diff measurement.
-- [ ] Key geometry by block identity, content revision, width, style revision, and fold state.
-- [ ] Store points and lines in block-local coordinates.
-- [ ] Compose global rows and screen coordinates through accessors.
-- [ ] Stop mutating points belonging to a previously published layout.
-- [ ] Reuse unchanged block indexes without cloning.
-- [ ] Treat scroll-only motion as a viewport translation.
-- [ ] Commit measurement batches only when base revisions still match.
-- [ ] Fall back after width, theme, syntax, or uncertain native changes.
-- [ ] Add a cache budget or reset policy for unusually large blocks.
+- [x] Extract OpenTUI-native text, Markdown, table, and diff measurement.
+- [x] Key geometry by block identity, content revision, width, style revision, and fold state.
+- [x] Store points and lines in block-local coordinates.
+- [x] Compose global rows and screen coordinates through accessors.
+- [x] Stop mutating points belonging to a previously published layout.
+- [x] Reuse unchanged block indexes without cloning.
+- [x] Treat scroll-only motion as a viewport translation.
+- [x] Commit measurement batches only when base revisions still match.
+- [x] Fall back after width, theme, syntax, or uncertain native changes.
+- [x] Retain at most one complete geometry variant per materialized block and replace it atomically; Stage 5 bounds the materialized block set.
 
 ### Tests
 
-- [ ] Measurement covers plain text, Markdown, tables, diffs, wide graphemes, concealment, folds, and asynchronous parser settlement.
-- [ ] Updating the last block preserves historical geometry identities.
-- [ ] Reflow restores a logical anchor to its preferred screen row.
-- [ ] Prior layouts remain immutable after later measurement.
-- [ ] Incremental and full layout construction yield equivalent navigation.
-- [ ] Existing visual selection and cursor tests pass.
+- [x] Measurement covers plain text, Markdown, tables, diffs, wide graphemes, concealment, folds, and asynchronous parser settlement.
+- [x] Updating the last block preserves historical geometry identities.
+- [x] Reflow restores a logical anchor to its preferred screen row.
+- [x] Prior layouts remain immutable after later measurement.
+- [x] Incremental and full layout construction yield equivalent navigation.
+- [x] Existing visual selection and cursor tests pass.
 
 ### Exit criteria
 
@@ -301,6 +306,18 @@ packages/ui-opentui-react/src/transcript/
 - Unmounting off-window blocks.
 - Persistent geometry.
 - Background history paging.
+
+### Verification evidence
+
+- Commit `f71cba9` introduces renderer-neutral immutable `BlockGeometry`, guarded runtime measurement batches, block-local row indexes, native placement composition, and a pure scroll-translation fast path.
+- OpenTUI-private text, Markdown, table, and diff inspection is contained in `measure-rendered-block.ts`; `rendered-layout.ts` schedules dirty blocks and composes runtime geometry without owning a second cache.
+- Changed-tail measurement retains exact historical block geometry identities. Navigation indexes rows without flattening historical point maps; folded blocks retain only visible points and boundary sentinels.
+- Geometry retention is one complete current variant per materialized block. A 10,000-point revision replaced by a 12,000-point revision reports 12,000 retained points rather than accumulating 22,000; width, style, syntax, and uncertain renderer changes reset the whole layout generation.
+- Stage 5 contracts now include stable render-block IDs, render payloads, half-open source spans with final document-end ownership, source-less activity footprints, block-to-item routing, and spacer/overscan fields. No block windowing is implemented yet.
+- Retained-history tail work remained approximately flat while historical geometry grew from 1,000 to 495,000 points: approximately 0.064–0.080 ms for a ten-point changed tail. Navigation at the bottom of one 500,000-point block measured approximately 0.12–0.26 ms for edge lookup and 0.010–0.016 ms for a downward motion.
+- The 135,389-character renderer benchmark measured 0.022–0.030 ms for cached measurement, 0.554–0.809 ms for anchor work, and 0.142–0.177 ms for a native frame across repeated runs.
+- Full repository gate: typecheck, dependency boundaries, and documentation generation pass; 622 tests pass with 5 intentional performance skips. The managed sandbox removed the tmux socket, and the exact isolated tmux scenario passed outside it.
+- Final transcript/UI review set: 343 pass with 5 intentional performance skips. Three parallel architecture, correctness, and test/performance review tracks reported no remaining Stage 3 blockers after repair.
 
 ## Stage 4 — narrow observation and cadence isolation
 
@@ -354,7 +371,7 @@ packages/ui-opentui-react/src/
 
 ## Stage 5 — render-block windowing
 
-Status: deferred implementation; contracts established in Stage 2.
+Status: deferred implementation; contracts established in Stages 2–3.
 
 ### Future outcome
 
