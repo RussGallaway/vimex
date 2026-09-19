@@ -17,13 +17,23 @@ import {
   type TranscriptFixtureSnapshot,
 } from "@vimex/testkit"
 import {
+  conversationItemAt,
+  reduceConversationReference,
+  reduceConversationWithDiagnostics,
+  type ConversationItemRecordDiagnostics,
+} from "@vimex/conversation"
+import {
   blockKey,
   createTranscriptFrame,
   moveByUrl,
   moveByUrlReference,
   passThroughWindow,
   pointIsMaterialized,
+  primeTranscriptUrlIndex,
   setTranscriptFoldValue,
+  syncTranscriptItem,
+  transcriptOrderIndex,
+  transcriptTextLengthRange,
   TranscriptRuntime,
   type BlockGeometry,
   type TranscriptFrame,
@@ -144,6 +154,146 @@ function createRuntimeDiagnostics() {
     heightIndexBuilds: 0, heightIndexBlockVisits: 0, heightIndexUpdates: 0, heightIndexNodeVisits: 0, heightIndexNodesCopied: 0,
     completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0, blockPlanWindowSliceItems: 0, changedItemBuilds: 0,
   }
+}
+
+function createConversationItemDiagnostics(): ConversationItemRecordDiagnostics {
+  return {
+    conversationItemRecordNormalizations: 0,
+    conversationItemRecordNormalizationItemVisits: 0,
+    conversationItemRecordLookups: 0,
+    conversationItemRecordLookupNodeVisits: 0,
+    conversationItemRecordUpdates: 0,
+    conversationItemRecordNodeVisits: 0,
+    conversationItemRecordNodesCopied: 0,
+  }
+}
+
+function boundedCanonicalIngressBaseline(fixture: ReturnType<typeof buildTranscriptScalingFixture>): void {
+  forceGc()
+  const before = fixture.before
+  // Bulk fixture construction and disposable-index priming are explicit setup,
+  // not part of steady-state ingress. Real incrementally-built states inherit
+  // these indexes from their predecessor after every item projection.
+  transcriptOrderIndex(before.transcript.order)
+  transcriptTextLengthRange(before.transcript, 0, 0)
+  primeTranscriptUrlIndex(before.transcript)
+
+  const runtimeDiagnostics = createRuntimeDiagnostics()
+  const runtime = new TranscriptRuntime(runtimeInput(fixture, before, "follow", { canonicalDamage: { kind: "full" } }), {
+    windowPolicy: { viewportRows: 24, overscanRows: 24 }, diagnostics: runtimeDiagnostics,
+  })
+  try {
+    const itemDiagnostics = createConversationItemDiagnostics()
+    const syncDiagnostics = createRuntimeDiagnostics()
+    const event = Object.freeze({ type: "item.delta" as const, threadId: fixture.threadId,
+      itemId: fixture.tailItemId, delta: fixture.tailDelta })
+    const reduced = timed(() => reduceConversationWithDiagnostics(before.conversation, event, itemDiagnostics))
+    const changedItem = timed(() => conversationItemAt(reduced.value.items, fixture.tailItemId, itemDiagnostics))
+    assert(changedItem.value)
+    const projected = timed(() => syncTranscriptItem(before.transcript, changedItem.value!, syncDiagnostics))
+    const snapshot = Object.freeze({ canonicalRevision: before.canonicalRevision + 1,
+      conversation: reduced.value, transcript: projected.value })
+
+    assert.equal(itemDiagnostics.conversationItemRecordNormalizations, 0)
+    assert.equal(itemDiagnostics.conversationItemRecordNormalizationItemVisits, 0)
+    assert.equal(itemDiagnostics.conversationItemRecordLookups, 2)
+    assert.equal(itemDiagnostics.conversationItemRecordUpdates, 1)
+    const logarithmicBound = Math.ceil(Math.log2(fixture.blockCount + 1)) + 1
+    assert(itemDiagnostics.conversationItemRecordLookupNodeVisits <= 2 * logarithmicBound)
+    assert(itemDiagnostics.conversationItemRecordNodeVisits <= logarithmicBound)
+    assert(itemDiagnostics.conversationItemRecordNodesCopied <= 2 * logarithmicBound)
+
+    assert.equal(syncDiagnostics.projectionRecordUpdates, 1)
+    assert(syncDiagnostics.projectionRecordNodeVisits <= logarithmicBound)
+    assert(syncDiagnostics.projectionRecordNodesCopied <= 2 * logarithmicBound)
+    assert.equal(syncDiagnostics.textLengthIndexBuilds, 0)
+    assert.equal(syncDiagnostics.textLengthItemVisits, 0)
+    assert.equal(syncDiagnostics.textLengthIndexUpdates, 1)
+    assert(syncDiagnostics.textLengthNodeVisits <= logarithmicBound)
+    assert.equal(syncDiagnostics.urlIndexBuilds, 0)
+    assert.equal(syncDiagnostics.urlIndexItemVisits, 0)
+    assert.equal(syncDiagnostics.urlIndexUpdates, 1)
+    assert(syncDiagnostics.urlIndexNodeVisits <= logarithmicBound)
+    assert.equal(syncDiagnostics.orderIndexBuilds, 0)
+    assert.equal(syncDiagnostics.orderIndexItemVisits, 0)
+
+    let publications = 0
+    const unsubscribe = runtime.subscribe(() => { publications++ })
+    const beforeRuntime = { ...runtimeDiagnostics }
+    const reconciled = timed(() => runtime.update(runtimeInput(fixture, snapshot, "follow", {
+      canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
+    })))
+    unsubscribe()
+    const runtimeCounts = Object.fromEntries(Object.entries(runtimeDiagnostics)
+      .map(([name, value]) => [name, value - beforeRuntime[name as keyof typeof beforeRuntime]])) as typeof runtimeDiagnostics
+    assert.equal(publications, 1)
+    assert(reconciled.value.window.blocks.length <= 48)
+    assert.equal(runtimeCounts.completePlanBuilds, 0)
+    assert.equal(runtimeCounts.completePlanBlockVisits, 0)
+    assert.equal(runtimeCounts.heightIndexBuilds, 0)
+    assert.equal(runtimeCounts.heightIndexBlockVisits, 0)
+    assert.equal(runtimeCounts.completeGeometryBlockVisits, 0)
+    assert(runtimeCounts.blockPlanWindowSliceItems <= 48)
+    assert(runtimeCounts.windowGeometryBlockVisits <= 48)
+
+    // Exhaustive equivalence and identity checks are evidence outside timings
+    // and deliberately run only after the measured ingress has settled.
+    const reference = reduceConversationReference(before.conversation, event)
+    assert.equal(JSON.stringify(reduced.value), JSON.stringify(reference))
+    assert.equal(JSON.stringify(snapshot), JSON.stringify(fixture.afterTailDelta))
+    assert.equal(projected.value.order, before.transcript.order)
+    let preservedCanonicalItems = 0, preservedProjections = 0
+    for (const id of before.transcript.order) {
+      if (id === fixture.tailItemId) continue
+      if (snapshot.conversation.items[id] === before.conversation.items[id]) preservedCanonicalItems++
+      if (snapshot.transcript.projectionById[id] === before.transcript.projectionById[id]) preservedProjections++
+    }
+    assert.equal(preservedCanonicalItems, fixture.blockCount - 1)
+    assert.equal(preservedProjections, fixture.blockCount - 1)
+
+    printResult({
+      scenario: "bounded-canonical-tail-ingress",
+      materialization: "windowed-production",
+      boundary: "canonical-reducer-semantic-projection-runtime-publication",
+      blockCount: fixture.blockCount,
+      viewport: { width: 80, height: 24 },
+      mode: "follow",
+      fixture: { contentShape: "one-running-tail-item", contentHash: fixture.contentHash, setupExcludedFromTiming: true,
+        excludedSetup: "bulk canonical snapshot construction, cold persistent normalization, disposable-index priming, and exhaustive equivalence checks" },
+      operationCounts: {
+        completeBlocks: fixture.blockCount,
+        mountedBlocks: reconciled.value.window.blocks.length,
+        publications,
+        preservedCanonicalItems,
+        preservedProjections,
+        canonicalItems: itemDiagnostics,
+        semanticProjection: {
+          projectionRecordUpdates: syncDiagnostics.projectionRecordUpdates,
+          projectionRecordNodeVisits: syncDiagnostics.projectionRecordNodeVisits,
+          projectionRecordNodesCopied: syncDiagnostics.projectionRecordNodesCopied,
+          textLengthIndexBuilds: syncDiagnostics.textLengthIndexBuilds,
+          textLengthItemVisits: syncDiagnostics.textLengthItemVisits,
+          textLengthIndexUpdates: syncDiagnostics.textLengthIndexUpdates,
+          textLengthNodeVisits: syncDiagnostics.textLengthNodeVisits,
+          urlIndexBuilds: syncDiagnostics.urlIndexBuilds,
+          urlIndexItemVisits: syncDiagnostics.urlIndexItemVisits,
+          urlIndexUpdates: syncDiagnostics.urlIndexUpdates,
+          urlIndexNodeVisits: syncDiagnostics.urlIndexNodeVisits,
+          orderIndexBuilds: syncDiagnostics.orderIndexBuilds,
+          orderIndexItemVisits: syncDiagnostics.orderIndexItemVisits,
+        },
+        runtime: runtimeCounts,
+      },
+      timingsMs: {
+        canonicalReduction: Number(reduced.milliseconds.toFixed(6)),
+        changedItemLookup: Number(changedItem.milliseconds.toFixed(6)),
+        semanticProjection: Number(projected.milliseconds.toFixed(6)),
+        runtimeReconciliation: Number(reconciled.milliseconds.toFixed(6)),
+        completeIngressSettlement: Number((reduced.milliseconds + changedItem.milliseconds + projected.milliseconds + reconciled.milliseconds).toFixed(6)),
+      },
+      samples: { warmup: 0, measured: 1 },
+    })
+  } finally { runtime.dispose() }
 }
 
 function boundedFollowRuntimeBaseline(fixture: ReturnType<typeof buildTranscriptScalingFixture>): void {
@@ -1142,6 +1292,7 @@ if (process.env.VIMEX_WINDOWING_NATIVE_BASELINE === "1" && !process.env.VIMEX_WI
 for (const blockCount of requestedSizes) {
   assert(transcriptScalingBlockCounts.includes(blockCount as typeof transcriptScalingBlockCounts[number]), `unsupported block count ${blockCount}`)
   const fixture = buildTranscriptScalingFixture(blockCount)
+  boundedCanonicalIngressBaseline(fixture)
   runtimeBaseline(fixture)
   boundedFollowRuntimeBaseline(fixture)
   await reactPublicationBaseline(fixture)

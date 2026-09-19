@@ -1,5 +1,7 @@
 import {
   itemId,
+  persistentConversationItems,
+  setConversationItem,
   threadId,
   turnId,
   type ConversationItem,
@@ -8,7 +10,7 @@ import {
   type ThreadId,
   type TurnId,
 } from "@vimex/conversation"
-import { initialTranscript, projectItem, type SourceSpan, type TranscriptState } from "@vimex/transcript"
+import { initialTranscript, persistentTranscriptFolds, persistentTranscriptProjections, projectItem, setTranscriptProjection, type SourceSpan, type TranscriptState } from "@vimex/transcript"
 
 /** Deterministic transcript fixtures shared by domain and renderer tests. */
 export function assistantMessage(id: string, markdown: string, status: "running" | "complete" = "complete"): ConversationItem {
@@ -76,8 +78,8 @@ function freezeTranscript(state: TranscriptState): TranscriptState {
   return Object.freeze({
     ...state,
     order: Object.isFrozen(state.order) ? state.order : Object.freeze([...state.order]),
-    projectionById: Object.isFrozen(state.projectionById) ? state.projectionById : Object.freeze({ ...state.projectionById }),
-    folded: Object.isFrozen(state.folded) ? state.folded : Object.freeze({ ...state.folded }),
+    projectionById: persistentTranscriptProjections(state.projectionById),
+    folded: persistentTranscriptFolds(state.folded),
     viewport: Object.isFrozen(state.viewport) ? state.viewport : Object.freeze({ ...state.viewport }),
     unseenItemIds: Object.isFrozen(state.unseenItemIds) ? state.unseenItemIds : Object.freeze([...state.unseenItemIds]),
     jumps: Object.isFrozen(state.jumps) ? state.jumps : Object.freeze({ back: Object.freeze([...state.jumps.back]), forward: Object.freeze([...state.jumps.forward]) }),
@@ -157,7 +159,7 @@ export function buildTranscriptScalingFixture(blockCount: number): TranscriptSca
     threadId: fixtureThread,
     turnIds: Object.freeze([historyTurn, fixtureTurn]),
     turns: Object.freeze({ [historyTurn]: completedTurn, [fixtureTurn]: turn }),
-    items: Object.freeze(items),
+    items: persistentConversationItems(Object.freeze(items)),
     activeTurnId: fixtureTurn,
   })
   const transcript = freezeTranscript({
@@ -196,16 +198,11 @@ export function appendTranscriptScalingTail(snapshot: TranscriptFixtureSnapshot,
   const prior = snapshot.conversation.items[tailItemId]
   if (!prior || !("markdown" in prior)) throw new Error(`Missing Markdown tail item ${tailItemId}`)
   const item = Object.freeze({ ...prior, markdown: prior.markdown + delta })
-  const conversation = Object.freeze({
-    ...snapshot.conversation,
-    items: Object.freeze({ ...snapshot.conversation.items, [tailItemId]: item }),
-  })
+  const conversation = Object.freeze({ ...snapshot.conversation, items: setConversationItem(snapshot.conversation.items, item) })
   const transcript = freezeTranscript({
     ...snapshot.transcript,
-    projectionById: Object.freeze({
-      ...snapshot.transcript.projectionById,
-      [tailItemId]: projectItem(item, snapshot.transcript.projectionById[tailItemId]),
-    }),
+    projectionById: setTranscriptProjection(snapshot.transcript.projectionById, tailItemId,
+      projectItem(item, snapshot.transcript.projectionById[tailItemId])),
   })
   return Object.freeze({ canonicalRevision: snapshot.canonicalRevision + 1, conversation, transcript })
 }

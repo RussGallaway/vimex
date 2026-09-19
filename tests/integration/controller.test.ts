@@ -1,11 +1,12 @@
 import { test, expect } from "bun:test"
-import { VimexController } from "@vimex/workbench"
+import { incrementalConversationEventDamage, VimexController } from "@vimex/workbench"
 import type { RuntimeEvent, RuntimeConnection, ModelCatalog, PreferenceStore, ConversationIngressScheduler, WorkbenchLifecycleSnapshot, WorkbenchState } from "@vimex/workbench"
 import type { SessionSnapshot, ConversationGateway } from "@vimex/conversation"
 import type { ApprovalGateway } from "@vimex/approvals"
 import { resolve } from "node:path"
 type TestRuntime = ConversationGateway & ApprovalGateway & RuntimeConnection & ModelCatalog
 import { threadId, turnId, itemId, type ConversationEvent, type ThreadSummary } from "@vimex/conversation"
+import { createConversation, reduceConversation } from "@vimex/conversation"
 import type { LocalState } from "@vimex/workbench"
 import { pointIsMaterialized, selectedText } from "@vimex/transcript"
 
@@ -49,6 +50,29 @@ function manualIngressScheduler() {
   } }
   return { scheduler, tasks, runNext() { const entry = tasks.shift(); if (entry && !entry.cancelled) entry.task() } }
 }
+
+test("incremental completion damage requires exact pre-event item chronology", () => {
+  const thread = threadId("damage"), turn = turnId("damage-turn"), id = itemId("damage-item")
+  const running = { id, turnId: turn, kind: "assistant" as const, markdown: "partial", status: "running" as const }
+  let conversation = reduceConversation(createConversation(thread), { type: "turn.started", threadId: thread, turnId: turn })
+  conversation = reduceConversation(conversation, { type: "item.started", threadId: thread, item: running })
+  const completion = { type: "item.completed" as const, threadId: thread,
+    item: { ...running, markdown: "complete", status: "complete" as const } }
+
+  expect(incrementalConversationEventDamage(conversation, completion)).toEqual({ kind: "blocks", itemIds: [id] })
+  expect(incrementalConversationEventDamage(conversation, {
+    type: "item.delta", threadId: thread, itemId: id, delta: " more",
+  })).toEqual({ kind: "blocks", itemIds: [id] })
+  expect(incrementalConversationEventDamage({
+    ...conversation,
+    turns: { ...conversation.turns, [turn]: { ...conversation.turns[turn]!, itemIds: [] } },
+  }, completion)).toBeUndefined()
+  expect(incrementalConversationEventDamage({ ...conversation, turns: {} }, completion)).toBeUndefined()
+  expect(incrementalConversationEventDamage({
+    ...conversation,
+    items: { ...conversation.items, [id]: { ...running, turnId: turnId("other") } },
+  }, completion)).toBeUndefined()
+})
 
 test("initializes session catalog without selecting background sessions; restores drafts on round-trip", async () => {
   const h = harness()

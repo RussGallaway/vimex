@@ -21,6 +21,7 @@ import { createRpcEventReplay } from "./rpc-event-replay"
 import { NavigationHistory, navigationLocation, restoreNavigationLocation, hasRecordedJump, type NavigationLocation } from "./navigation-history"
 import { invalidateRuntimeState } from "./runtime-recovery"
 import { ConversationIngress, type ConversationIngressScheduler } from "./conversation-ingress"
+import type { ConversationState } from "@vimex/conversation"
 
 export interface ControllerPorts {
   conversation: ConversationGateway
@@ -46,6 +47,20 @@ interface TranscriptRuntimeHint {
   canonicalDamageByThread?: Readonly<Record<string, TranscriptDamage>>
   reveal?: { threadId: ThreadId; presentationId: TranscriptPresentationId; request: TranscriptRevealRequest }
   foldItemIds?: readonly ItemId[]
+}
+
+/** Returns bounded item damage only when the pre-event chronology proves structure is unchanged. */
+export function incrementalConversationEventDamage(
+  conversation: ConversationState | undefined,
+  event: ConversationEvent,
+): Extract<TranscriptDamage, { kind: "blocks" }> | undefined {
+  if (event.type === "item.delta") return { kind: "blocks", itemIds: [event.itemId] }
+  if (event.type !== "item.completed" || !conversation) return undefined
+  const existing = conversation.items[event.item.id]
+  const turn = conversation.turns[event.item.turnId]
+  return existing?.turnId === event.item.turnId && turn?.itemIds.includes(event.item.id)
+    ? { kind: "blocks", itemIds: [event.item.id] }
+    : undefined
 }
 
 export class VimexController implements WorkbenchActions, TranscriptPresentationHost, WorkbenchPublicationHost {
@@ -433,13 +448,13 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
       const before = state
       const result = transitionWorkbench(before, { type: "conversation.event", event })
       if (result.state !== before) {
-        if (event.type === "turn.started" || event.type === "turn.completed" || event.type === "item.started"
-          || (event.type === "item.completed" && !before.workspaces[event.threadId]?.conversation.items[event.item.id])) {
+        const incrementalDamage = incrementalConversationEventDamage(before.workspaces[event.threadId]?.conversation, event)
+        if (!incrementalDamage) {
           fullDamage.add(event.threadId)
           damagedItems.delete(event.threadId)
-        } else if (!fullDamage.has(event.threadId) && (event.type === "item.delta" || event.type === "item.completed")) {
+        } else if (!fullDamage.has(event.threadId)) {
           const ids = damagedItems.get(event.threadId) ?? new Set<ItemId>()
-          ids.add(event.type === "item.delta" ? event.itemId : event.item.id)
+          ids.add(incrementalDamage.itemIds[0]!)
           damagedItems.set(event.threadId, ids)
         }
       }
@@ -517,8 +532,14 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     const explicitFoldItem = transcriptCommand?.type === "fold.set" || transcriptCommand?.type === "fold.toggle" ? transcriptCommand.itemId : undefined
     const revealedFoldItem = revealPoint && priorTranscript?.folded[revealPoint.itemId] && !nextTranscript?.folded[revealPoint.itemId]
       ? revealPoint.itemId : undefined
+    const directConversationDamage = command.type === "conversation.event"
+      ? incrementalConversationEventDamage(before.workspaces[command.event.threadId]?.conversation, command.event)
+      : undefined
     const hint: TranscriptRuntimeHint = {
       ...((explicitFoldItem || revealedFoldItem) ? { foldItemIds: [explicitFoldItem ?? revealedFoldItem!] } : {}),
+      ...(command.type === "conversation.event" && directConversationDamage
+        ? { canonicalDamageByThread: { [command.event.threadId]: directConversationDamage } }
+        : {}),
       ...(revealThread && revealPoint && presentationId ? { reveal: { threadId: revealThread, presentationId,
         request: { id: ++this.revealRevision, point: revealPoint, reason: revealReason } } } : {}),
     }

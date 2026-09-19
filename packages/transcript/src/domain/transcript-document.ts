@@ -365,11 +365,13 @@ function updateTextLengthNode(
   to: number,
   index: number,
   value: number,
+  diagnostics?: TranscriptTextLengthIndexDiagnostics,
 ): TextLengthNode {
+  if (diagnostics) diagnostics.textLengthNodeVisits += 1
   if (to - from === 1) return Object.freeze({ sum: value })
   const middle = (from + to) >>> 1
-  const left = index < middle ? updateTextLengthNode(node?.left, from, middle, index, value) : node?.left
-  const right = index >= middle ? updateTextLengthNode(node?.right, middle, to, index, value) : node?.right
+  const left = index < middle ? updateTextLengthNode(node?.left, from, middle, index, value, diagnostics) : node?.left
+  const right = index >= middle ? updateTextLengthNode(node?.right, middle, to, index, value, diagnostics) : node?.right
   return Object.freeze({ sum: (left?.sum ?? 0) + (right?.sum ?? 0), left, right })
 }
 
@@ -379,17 +381,19 @@ export function inheritTranscriptTextLengthIndex(
   next: TranscriptState,
   changedItemId: ItemId,
   appended: boolean,
+  diagnostics?: TranscriptTextLengthIndexDiagnostics & TranscriptOrderIndexDiagnostics,
 ): void {
-  const prior = textLengthIndex(previous)
+  const prior = textLengthIndex(previous, diagnostics)
   let root = prior.root
   let capacity = prior.capacity
-  const position = appended ? prior.size : transcriptOrderIndex(previous.order).get(changedItemId)
+  const position = appended ? prior.size : transcriptOrderIndex(previous.order, diagnostics).get(changedItemId)
   if (position === undefined) return
   if (appended && prior.size === capacity) {
     root = Object.freeze({ sum: root?.sum ?? 0, left: root })
     capacity *= 2
   }
-  root = updateTextLengthNode(root, 0, capacity, position, next.projectionById[changedItemId]?.sourceSpans.length ?? 0)
+  root = updateTextLengthNode(root, 0, capacity, position, next.projectionById[changedItemId]?.sourceSpans.length ?? 0, diagnostics)
+  if (diagnostics) diagnostics.textLengthIndexUpdates += 1
   textLengthIndexes.set(next.projectionById, Object.freeze({ order: next.order, root, size: next.order.length, capacity }))
 }
 

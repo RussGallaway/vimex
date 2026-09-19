@@ -1,5 +1,5 @@
 import type { ItemId } from "@vimex/conversation"
-import { transcriptOrderIndex, type LinkTarget, type LogicalPoint, type TranscriptState } from "../domain/transcript-document"
+import { transcriptOrderIndex, type LinkTarget, type LogicalPoint, type TranscriptOrderIndexDiagnostics, type TranscriptState } from "../domain/transcript-document"
 
 interface UrlCountNode {
   readonly count: number
@@ -80,11 +80,13 @@ export function primeTranscriptUrlIndex(state: TranscriptState, diagnostics?: Tr
   indexFor(state, diagnostics)
 }
 
-function updateNode(current: UrlCountNode | undefined, from: number, to: number, index: number, count: number): UrlCountNode {
+function updateNode(current: UrlCountNode | undefined, from: number, to: number, index: number, count: number,
+  diagnostics?: TranscriptUrlIndexDiagnostics): UrlCountNode {
+  if (diagnostics) diagnostics.urlIndexNodeVisits += 1
   if (to - from === 1) return node(count)
   const middle = (from + to) >>> 1
-  const left = index < middle ? updateNode(current?.left, from, middle, index, count) : current?.left
-  const right = index >= middle ? updateNode(current?.right, middle, to, index, count) : current?.right
+  const left = index < middle ? updateNode(current?.left, from, middle, index, count, diagnostics) : current?.left
+  const right = index >= middle ? updateNode(current?.right, middle, to, index, count, diagnostics) : current?.right
   return node((left?.count ?? 0) + (right?.count ?? 0), left, right)
 }
 
@@ -109,17 +111,19 @@ function itemAtOrdinal(nodeValue: UrlCountNode | undefined, from: number, to: nu
 }
 
 /** Inherit the disposable URL-count index through one semantic projection update. */
-export function inheritTranscriptUrlIndex(previous: TranscriptState, next: TranscriptState, changedItemId: ItemId, appended: boolean): void {
-  const prior = indexFor(previous)
+export function inheritTranscriptUrlIndex(previous: TranscriptState, next: TranscriptState, changedItemId: ItemId, appended: boolean,
+  diagnostics?: TranscriptUrlIndexDiagnostics & TranscriptOrderIndexDiagnostics): void {
+  const prior = indexFor(previous, diagnostics)
   let root = prior.root
   let capacity = prior.capacity
-  const position = appended ? prior.size : transcriptOrderIndex(previous.order).get(changedItemId)
+  const position = appended ? prior.size : transcriptOrderIndex(previous.order, diagnostics).get(changedItemId)
   if (position === undefined) return
   if (appended && prior.size === capacity) {
     root = node(root?.count ?? 0, root)
     capacity *= 2
   }
-  root = updateNode(root, 0, capacity, position, next.projectionById[changedItemId]?.links.length ?? 0)
+  root = updateNode(root, 0, capacity, position, next.projectionById[changedItemId]?.links.length ?? 0, diagnostics)
+  if (diagnostics) diagnostics.urlIndexUpdates += 1
   urlIndexes.set(next.projectionById, Object.freeze({ order: next.order, root, size: next.order.length, capacity }))
 }
 

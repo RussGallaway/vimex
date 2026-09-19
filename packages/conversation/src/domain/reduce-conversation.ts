@@ -2,7 +2,10 @@ import type { ConversationEvent } from "./events"
 import type { ConversationItem } from "./item"
 import type { ThreadId } from "./identifiers"
 import type { ConversationState } from "./thread"
-export function createConversation(thread: ThreadId): ConversationState { return { threadId: thread, turnIds: [], turns: {}, items: {} } }
+import { conversationItemAt, persistentConversationItems, setConversationItem, type ConversationItemRecordDiagnostics } from "./conversation-items"
+export function createConversation(thread: ThreadId): ConversationState {
+  return { threadId: thread, turnIds: [], turns: {}, items: persistentConversationItems() }
+}
 function appendDelta(item: ConversationItem, delta: string): ConversationItem {
   switch (item.kind) {
     case "user": case "assistant": case "reasoning": return { ...item, markdown: item.markdown + delta }
@@ -10,7 +13,12 @@ function appendDelta(item: ConversationItem, delta: string): ConversationItem {
     case "command": case "tool": case "agent": case "unknown": return { ...item, detail: item.detail + delta }
   }
 }
-export function reduceConversation(state: ConversationState, event: ConversationEvent): ConversationState {
+function reduce(
+  state: ConversationState,
+  event: ConversationEvent,
+  diagnostics?: ConversationItemRecordDiagnostics,
+  writeItem: typeof setConversationItem = setConversationItem,
+): ConversationState {
   if (event.threadId !== state.threadId) return state
   switch (event.type) {
     case "turn.started": {
@@ -45,20 +53,48 @@ export function reduceConversation(state: ConversationState, event: Conversation
     }
     case "item.started": {
       const turn = state.turns[event.item.turnId] ?? { id: event.item.turnId, status: "running" as const, itemIds: [] }
-      const existing = state.items[event.item.id]
+      const existing = conversationItemAt(state.items, event.item.id, diagnostics)
       const linked = turn.itemIds.includes(event.item.id)
-      return { ...state, turnIds: state.turns[event.item.turnId] ? state.turnIds : [...state.turnIds, event.item.turnId], turns: { ...state.turns, [event.item.turnId]: { ...turn, itemIds: linked ? turn.itemIds : [...turn.itemIds, event.item.id] } }, items: { ...state.items, [event.item.id]: existing && existing.status !== "running" ? existing : event.item } }
+      return { ...state, turnIds: state.turns[event.item.turnId] ? state.turnIds : [...state.turnIds, event.item.turnId], turns: { ...state.turns, [event.item.turnId]: { ...turn, itemIds: linked ? turn.itemIds : [...turn.itemIds, event.item.id] } }, items: writeItem(state.items, existing && existing.status !== "running" ? existing : event.item, diagnostics) }
     }
     case "item.delta": {
-      const current = state.items[event.itemId]
-      return !current || current.status !== "running" ? state : { ...state, items: { ...state.items, [event.itemId]: appendDelta(current, event.delta) } }
+      const current = conversationItemAt(state.items, event.itemId, diagnostics)
+      return !current || current.status !== "running" ? state : { ...state, items: writeItem(state.items, appendDelta(current, event.delta), diagnostics) }
     }
     case "item.completed": {
-      const existing = state.items[event.item.id]
+      const existing = conversationItemAt(state.items, event.item.id, diagnostics)
       const turn = state.turns[event.item.turnId] ?? { id: event.item.turnId, status: "running" as const, itemIds: [] }
       const linked = turn.itemIds.includes(event.item.id)
       if (existing && existing.status !== "running" && linked) return state
-      return { ...state, turnIds: state.turns[event.item.turnId] ? state.turnIds : [...state.turnIds, event.item.turnId], turns: { ...state.turns, [event.item.turnId]: { ...turn, itemIds: linked ? turn.itemIds : [...turn.itemIds, event.item.id] } }, items: { ...state.items, [event.item.id]: existing && existing.status !== "running" ? existing : event.item } }
+      return { ...state, turnIds: state.turns[event.item.turnId] ? state.turnIds : [...state.turnIds, event.item.turnId], turns: { ...state.turns, [event.item.turnId]: { ...turn, itemIds: linked ? turn.itemIds : [...turn.itemIds, event.item.id] } }, items: writeItem(state.items, existing && existing.status !== "running" ? existing : event.item, diagnostics) }
     }
   }
+}
+
+export function reduceConversation(state: ConversationState, event: ConversationEvent): ConversationState {
+  return reduce(state, event)
+}
+
+/** Instrumented reducer entry point kept separate so Array.reduce cannot pass its numeric index as diagnostics. */
+export function reduceConversationWithDiagnostics(
+  state: ConversationState,
+  event: ConversationEvent,
+  diagnostics: ConversationItemRecordDiagnostics,
+): ConversationState {
+  return reduce(state, event, diagnostics)
+}
+
+function denseSetConversationItem(
+  value: Readonly<Record<string, ConversationItem>>,
+  item: ConversationItem,
+): Readonly<Record<string, ConversationItem>> {
+  if (Object.hasOwn(value, item.id) && value[item.id] === item) return value
+  const next = Object.assign(Object.create(null), value) as Record<string, ConversationItem>
+  next[item.id] = item
+  return Object.freeze(next)
+}
+
+/** Dense full-copy semantic oracle retained as the reference for the incremental item record. */
+export function reduceConversationReference(state: ConversationState, event: ConversationEvent): ConversationState {
+  return reduce(state, event, undefined, denseSetConversationItem)
 }

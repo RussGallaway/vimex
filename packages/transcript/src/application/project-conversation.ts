@@ -1,7 +1,10 @@
 import type { ConversationItem } from "@vimex/conversation"
 import { projectMarkdown, projectPlainText } from "../domain/markdown-source-map"
-import { inheritTranscriptTextLengthIndex, persistentTranscriptFolds, setTranscriptFoldValue, setTranscriptProjection, type LogicalPoint, type TextProjection, type TranscriptState } from "../domain/transcript-document"
-import { inheritTranscriptUrlIndex } from "./transcript-url-index"
+import { inheritTranscriptTextLengthIndex, persistentTranscriptFolds, setTranscriptFoldValue, setTranscriptProjection, type LogicalPoint, type TextProjection, type TranscriptOrderIndexDiagnostics, type TranscriptProjectionRecordDiagnostics, type TranscriptState, type TranscriptTextLengthIndexDiagnostics } from "../domain/transcript-document"
+import { inheritTranscriptUrlIndex, type TranscriptUrlIndexDiagnostics } from "./transcript-url-index"
+
+export interface TranscriptItemSyncDiagnostics extends TranscriptProjectionRecordDiagnostics,
+  TranscriptTextLengthIndexDiagnostics, TranscriptOrderIndexDiagnostics, TranscriptUrlIndexDiagnostics {}
 function sourceOf(item: ConversationItem): string {
   switch (item.kind) {
     case "user": case "assistant": case "reasoning": return item.markdown
@@ -20,7 +23,11 @@ export function projectItem(item: ConversationItem, previous?: TextProjection): 
   if (previous?.source === source && previous.nodeKind === nodeKind) return previous
   return { ...project(source), nodeKind, revision: (previous?.revision ?? 0) + 1 }
 }
-export function syncTranscriptItem(state: TranscriptState, item: ConversationItem): TranscriptState {
+export function syncTranscriptItem(
+  state: TranscriptState,
+  item: ConversationItem,
+  diagnostics?: TranscriptItemSyncDiagnostics,
+): TranscriptState {
   if (item.kind === "unknown" && item.transcript === "diagnostic") return state
   if (item.kind === "agent" && (item.action === "activity" || item.action === "wait" || item.action === "list") && !item.detail) return state
   const previous = state.projectionById[item.id]
@@ -41,7 +48,7 @@ export function syncTranscriptItem(state: TranscriptState, item: ConversationIte
   let next = clampTranscript({
     ...state,
     order: isNew ? [...state.order, item.id] : state.order,
-    projectionById: setTranscriptProjection(state.projectionById, item.id, projection),
+    projectionById: setTranscriptProjection(state.projectionById, item.id, projection, diagnostics),
     cursor: state.cursor ? reproject(state.cursor) : undefined,
     selection: state.selection ? { ...state.selection, anchor: reproject(state.selection.anchor), head: reproject(state.selection.head) } : undefined,
     viewport: state.viewport.kind === "point" ? { ...state.viewport, point: reproject(state.viewport.point) } : state.viewport,
@@ -55,8 +62,8 @@ export function syncTranscriptItem(state: TranscriptState, item: ConversationIte
       || (next.foldDefaults.tools && projection.nodeKind === "tool"))) {
     next = { ...next, folded: setTranscriptFoldValue(next.folded, item.id, true) }
   }
-  inheritTranscriptTextLengthIndex(state, next, item.id, isNew)
-  inheritTranscriptUrlIndex(state, next, item.id, isNew)
+  inheritTranscriptTextLengthIndex(state, next, item.id, isNew, diagnostics)
+  inheritTranscriptUrlIndex(state, next, item.id, isNew, diagnostics)
   return next
 }
 export function clampTranscript(state: TranscriptState): TranscriptState {
