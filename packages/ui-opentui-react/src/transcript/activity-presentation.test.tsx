@@ -116,7 +116,7 @@ test("empty terminal turns retain chronology before later transcript content", a
   try {
     await act(async () => { await setup.flush(); await setup.renderOnce() })
     const footer = setup.renderer.root.findDescendantById(`decoration:turn:${empty}`)!
-    const row = setup.renderer.root.findDescendantById("transcript-item:later-answer")!
+    const row = setup.renderer.root.findDescendantById("transcript-block:later-answer:root")!
     expect(footer).toBeDefined()
     expect(row).toBeDefined()
     expect(footer.y).toBeLessThan(row.y)

@@ -1,630 +1,385 @@
-import { DiffRenderable, MarkdownRenderable, TextBufferRenderable, TextTableRenderable, type BlockState, type CliRenderer, type Renderable, type ScrollBoxRenderable, type TextBufferView } from "@opentui/core"
-import type { ItemId } from "@vimex/conversation"
-import { graphemes, projectMarkdown, type LogicalPoint, type TranscriptState } from "@vimex/transcript"
-import type { MeasuredPoint, TranscriptLayout, VisualLine } from "./layout"
-import { graphemeCellWidth } from "./layout"
+import type { CliRenderer, Renderable, ScrollBoxRenderable } from "@opentui/core"
+import type { ConversationItem, ItemId, TurnId } from "@vimex/conversation"
+import {
+  blockKey,
+  blockGraphemeRange,
+  composeTranscriptGeometry,
+  type BlockGeometry,
+  type GeometryStyleRevision,
+  type LogicalPoint,
+  type TranscriptBlock,
+  type TranscriptFrame,
+  type TranscriptItemBlock,
+  type TranscriptRuntime,
+  type TranscriptState,
+} from "@vimex/transcript"
+import { blockRefForPoint, pointInLayout, type MeasuredPoint, type TranscriptLayout, type VisualLine } from "./layout"
+import { measureRenderedBlock, takeDirtyRenderedBlocks } from "./measure-rendered-block"
 
-interface ScreenCell { char: string; x: number; y: number }
-const blockProjectionCache = new WeakMap<object, { raw: string; plain: string }>()
-type LayoutFingerprint = readonly unknown[]
-const renderedLayoutCache = new WeakMap<ScrollBoxRenderable, { fingerprint: LayoutFingerprint; layout: TranscriptLayout; originX: number; originY: number }>()
-interface ItemGeometryCache {
-  fingerprint: LayoutFingerprint
-  points: Readonly<Record<number, MeasuredPoint>>
-  originX: number
-  originY: number
-  itemX: number
-  itemY: number
+export interface RuntimeLayoutSource {
+  readonly frame: TranscriptFrame
+  readonly runtime?: TranscriptRuntime
+  readonly styleRevision: GeometryStyleRevision
 }
-const itemGeometryCache = new WeakMap<Renderable, ItemGeometryCache>()
 
-function cellsIn(renderer: CliRenderer, renderable: Renderable): ScreenCell[] {
-  const measured: ScreenCell[] = []
-  const visit = (current: Renderable) => {
-    if (current.id.startsWith("decoration:")) return
-    if (current instanceof TextBufferRenderable) {
-      const lines = current.plainText.split("\n")
-      const info = current.lineInfo
-      const visualsBySource = new Map<number, number[]>()
-      info.lineSources.forEach((source, index) => {
-        const candidates = visualsBySource.get(source) ?? []
-        candidates.push(index)
-        visualsBySource.set(source, candidates)
-      })
-      for (let sourceRow = 0; sourceRow < lines.length; sourceRow += 1) {
-        let column = 0
-        const candidates = visualsBySource.get(sourceRow) ?? []
-        let candidateIndex = 0
-        for (const part of graphemes(lines[sourceRow] ?? "")) {
-          while (candidateIndex + 1 < candidates.length && (info.lineStartCols[candidates[candidateIndex + 1]!] ?? 0) <= column) candidateIndex += 1
-          const visual = candidates[candidateIndex] ?? sourceRow
-          const start = info.lineStartCols[visual] ?? 0
-          // Native text keeps its full logical content when the visible header
-          // is truncated. Hidden graphemes share the last visible cell rather
-          // than producing a cursor outside the renderable (or terminal).
-          if (current.width > 0 && current.height > 0) measured.push({
-            char: [...part][0] ?? part,
-            x: current.screenX + Math.max(0, Math.min(column - start, current.width - 1)),
-            y: current.screenY + Math.max(0, Math.min(visual, current.height - 1)),
-          })
-          column += graphemeCellWidth(part)
-        }
-      }
-    }
-    for (const child of current.getChildren()) if ("screenX" in child) visit(child as Renderable)
+interface LayoutCache {
+  readonly geometry: TranscriptFrame["geometry"]
+  readonly originX: number
+  readonly originY: number
+  readonly layout: TranscriptLayout
+}
+
+const layoutCache = new WeakMap<ScrollBoxRenderable, LayoutCache>()
+const legacyGeometryCache = new WeakMap<ScrollBoxRenderable, {
+  order: TranscriptState["order"]
+  projectionById: TranscriptState["projectionById"]
+  folded: TranscriptState["folded"]
+  width: number
+  measurements: readonly BlockGeometry[]
+  geometry: TranscriptFrame["geometry"]
+}>()
+interface MeasurementSchedule {
+  threadId?: string
+  canonicalGeneration?: number
+  geometryGeneration?: number
+  windowBlocks?: readonly TranscriptBlock[]
+  readonly pending: Set<string>
+  readonly indexByKey: Map<string, number>
+  readonly keysByItem: Map<string, readonly string[]>
+  readonly renderableByKey: Map<string, Renderable>
+}
+const measurementSchedules = new WeakMap<ScrollBoxRenderable, MeasurementSchedule>()
+
+function scheduleFor(scrollbox: ScrollBoxRenderable): MeasurementSchedule {
+  let schedule = measurementSchedules.get(scrollbox)
+  if (!schedule) {
+    schedule = { pending: new Set(), indexByKey: new Map(), keysByItem: new Map(), renderableByKey: new Map() }
+    measurementSchedules.set(scrollbox, schedule)
   }
-  visit(renderable)
-  if (measured.length) return measured.sort((a, b) => a.y - b.y || a.x - b.x)
-
-  const buffer = renderer.currentRenderBuffer
-  const cells: ScreenCell[] = []
-  const left = Math.max(0, renderable.screenX)
-  const top = Math.max(0, renderable.screenY)
-  const right = Math.min(buffer.width, renderable.screenX + renderable.width)
-  const bottom = Math.min(buffer.height, renderable.screenY + renderable.height)
-  const lines = buffer.getSpanLines()
-  for (let y = top; y < bottom; y += 1) {
-    let x = 0
-    for (const span of lines[y]?.spans ?? []) {
-      const spanStart = x
-      let localX = 0
-      for (const part of graphemes(span.text)) {
-        const cellX = spanStart + localX
-        if (cellX >= left && cellX < right) cells.push({ char: [...part][0] ?? part, x: cellX, y })
-        localX += graphemeCellWidth(part)
-      }
-      x = spanStart + span.width
-    }
-  }
-  return cells
+  return schedule
 }
 
-function sameCell(grapheme: string, cell: ScreenCell): boolean {
-  if (/\s/u.test(grapheme)) return /\s/u.test(cell.char)
-  if (grapheme === "|" && cell.char === "│") return true
-  return [...grapheme][0] === cell.char
+function indexBlocks(schedule: MeasurementSchedule, blocks: readonly TranscriptBlock[]): void {
+  schedule.indexByKey.clear()
+  schedule.keysByItem.clear()
+  blocks.forEach((block, index) => {
+    const key = blockKey(block)
+    schedule.indexByKey.set(key, index)
+    if (block.key.kind === "item") schedule.keysByItem.set(block.key.itemId, Object.freeze([...(schedule.keysByItem.get(block.key.itemId) ?? []), key]))
+  })
 }
 
-function measureRaw(renderer: CliRenderer, renderable: Renderable, itemId: ItemId, text: string): Record<number, MeasuredPoint> {
-  const cells = cellsIn(renderer, renderable)
-  const parts = graphemes(text)
-  const result: Record<number, MeasuredPoint> = {}
-  let cellIndex = 0
-  let last: ScreenCell | undefined
-  let firstRow = cells[0]?.y ?? renderable.screenY
-  if (parts.length === 0 && cells[0]) {
-    const cell = cells[0]
-    result[0] = { itemId, graphemeOffset: 0, row: 0, column: cell.x - renderable.screenX, screenX: cell.x, screenY: cell.y }
-    return result
-  }
-  for (let offset = 0; offset < parts.length; offset += 1) {
-    const part = parts[offset] ?? ""
-    if (part === "\n") {
-      let next: ScreenCell | undefined
-      for (let index = cellIndex; index < cells.length; index += 1) {
-        if (!last || cells[index]!.y > last.y) { next = cells[index]; break }
-      }
-      if (next) {
-        result[offset] = { itemId, graphemeOffset: offset, row: next.y - firstRow, column: 0, screenX: next.x, screenY: next.y }
-        last = next
-      }
-      continue
-    }
-    let found = -1
-    for (let index = cellIndex; index < cells.length; index += 1) {
-      if (sameCell(part, cells[index]!)) { found = index; break }
-    }
-    if (found < 0) continue
-    const cell = cells[found]!
-    if (offset === 0) firstRow = cell.y
-    result[offset] = {
-      itemId,
-      graphemeOffset: offset,
-      row: cell.y - firstRow,
-      column: cell.x - renderable.screenX,
-      screenX: cell.x,
-      screenY: cell.y,
-    }
-    cellIndex = found + 1
-    last = cell
-  }
-  if (last) result[parts.length] = {
-    itemId,
-    graphemeOffset: parts.length,
-    row: last.y - firstRow,
-    column: last.x - renderable.screenX + 1,
-    screenX: last.x + 1,
-    screenY: last.y,
-  }
-  return result
+export function transcriptBlockRenderableId(block: Pick<TranscriptBlock, "key">): string {
+  return block.key.kind === "item"
+    ? transcriptItemRenderableId(block.key.itemId, block.key.blockId)
+    : `transcript-block:turn-activity:${block.key.turnId}`
 }
 
-function fillPointGaps(itemId: ItemId, text: string, points: Record<number, MeasuredPoint>): Record<number, MeasuredPoint> {
-  const length = graphemes(text).length
-  const known = Object.keys(points).map(Number).sort((a, b) => a - b)
-  if (known.length === 0) return points
-  let nextIndex = 0
-  for (let offset = 0; offset <= length; offset += 1) {
-    if (points[offset]) continue
-    while (nextIndex < known.length && known[nextIndex]! < offset) nextIndex += 1
-    const previousOffset = nextIndex > 0 ? known[nextIndex - 1] : undefined
-    const nextOffset = known[nextIndex]
-    const previous = previousOffset === undefined ? undefined : points[previousOffset]
-    const next = nextOffset === undefined ? undefined : points[nextOffset]
-    let basis = previous ?? next
-    if (previous && next) {
-      if (previous.screenY === next.screenY) {
-        const ratio = (offset - previousOffset!) / (nextOffset! - previousOffset!)
-        const screenX = Math.round(previous.screenX + (next.screenX - previous.screenX) * ratio)
-        points[offset] = { itemId, graphemeOffset: offset, row: previous.row, column: previous.column + screenX - previous.screenX, screenX, screenY: previous.screenY }
-        continue
-      }
-      basis = offset - previousOffset! <= nextOffset! - offset ? previous : next
-    }
-    if (basis) points[offset] = { ...basis, itemId, graphemeOffset: offset }
-  }
-  return points
+export function transcriptItemRenderableId(itemId: ItemId, blockId = "root"): string {
+  return `transcript-block:${itemId}:${blockId}`
 }
 
-function markdownBlocks(markdown: MarkdownRenderable): readonly BlockState[] {
-  return (markdown as unknown as { _blockStates?: readonly BlockState[] })._blockStates ?? []
+export function transcriptRenderableIdForPoint(layout: TranscriptLayout, point: LogicalPoint): string {
+  return transcriptItemRenderableId(point.itemId, blockRefForPoint(layout, point)?.blockId ?? "root")
 }
 
-interface TableLayout { columnOffsets: readonly number[]; rowOffsets: readonly number[] }
-interface TableCell { textBufferView: TextBufferView }
-interface TableRuntime { _layout?: TableLayout; _cells?: readonly (readonly TableCell[])[] }
-
-// OpenTUI emits this event after text replacement, asynchronous highlighting /
-// concealment and resize. Track it for the renderable's lifetime: a late parser
-// result must invalidate geometry even after arbitrarily many unchanged frames.
-interface TextGeometryCache { dirty: boolean; configuration: LayoutFingerprint; fingerprint: LayoutFingerprint; text: string }
-const textGeometryCache = new WeakMap<TextBufferRenderable, TextGeometryCache>()
-function appendTextGeometry(fingerprint: unknown[], view: TextBufferRenderable, includeContent: boolean) {
-  let cached = textGeometryCache.get(view)
-  if (!cached) {
-    cached = { dirty: true, configuration: [], fingerprint: [], text: "" }
-    textGeometryCache.set(view, cached)
-    const tracked = cached
-    view.on("line-info-change", () => { tracked.dirty = true })
-  }
-  const configuration = [view.width, view.height, view.wrapMode, view.truncate, view.scrollX, view.scrollY]
-  if (cached.dirty || !sameFingerprint(cached.configuration, configuration)) {
-    const next: unknown[] = []
-    appendLineInfo(next, view, false)
-    cached.text = view.plainText
-    if (!sameFingerprint(cached.fingerprint, next)) cached.fingerprint = next
-    cached.configuration = configuration
-    cached.dirty = false
-  }
-  fingerprint.push(view, cached.fingerprint)
-  // Outside native Markdown the canonical projection already versions text.
-  // Decorative spinners must not invalidate geometry for same-width animation.
-  if (includeContent) fingerprint.push(cached.text)
+function legacyRenderableId(itemId: ItemId): string {
+  return `transcript-item:${itemId}`
 }
 
-function appendLineInfo(fingerprint: unknown[], view: TextBufferRenderable | TextBufferView, includeContent = true) {
-  const info = view.lineInfo
-  if (includeContent) fingerprint.push(view instanceof TextBufferRenderable ? view.plainText : view.getPlainText())
-  fingerprint.push(info.lineSources.length, ...info.lineSources, info.lineStartCols.length, ...info.lineStartCols)
+function translatedLayout(layout: TranscriptLayout, x: number, y: number): TranscriptLayout {
+  const translated = Object.create(Object.getPrototypeOf(layout)) as TranscriptLayout
+  const descriptors = Object.getOwnPropertyDescriptors(layout)
+  delete descriptors.screenOffset
+  Object.defineProperties(translated, descriptors)
+  Object.defineProperty(translated, "screenOffset", { enumerable: true, configurable: false, value: Object.freeze({ x, y }) })
+  return Object.freeze(translated)
 }
 
-function localPosition(renderable: Renderable, originX: number, originY: number): { x: number; y: number } {
-  const native = renderable as Renderable & { _x?: number; _y?: number }
-  return { x: native._x ?? renderable.screenX - originX, y: native._y ?? renderable.screenY - originY }
+function findBlockRenderable(scrollbox: ScrollBoxRenderable, block: TranscriptBlock): Renderable | undefined {
+  return scrollbox.getRenderable(transcriptBlockRenderableId(block))
+    ?? (block.key.kind === "item" ? scrollbox.getRenderable(legacyRenderableId(block.key.itemId)) : undefined)
 }
 
-function appendNativeFingerprint(fingerprint: unknown[], renderable: Renderable, seen: Set<Renderable>, originX: number, originY: number, includeContent = false, includePosition = true) {
-  if (seen.has(renderable)) return
-  seen.add(renderable)
-  // Viewport culling may freeze offscreen screen coordinates while the scroll
-  // origin moves. Yoga-local coordinates describe actual content geometry and
-  // remain stable across a pure scroll translation.
-  const position = localPosition(renderable, originX, originY)
-  if (includePosition) fingerprint.push(position.x, position.y)
-  fingerprint.push(renderable.width, renderable.height)
-  if (renderable instanceof TextBufferRenderable) appendTextGeometry(fingerprint, renderable, includeContent)
-  if (renderable instanceof MarkdownRenderable) {
-    const runtime = renderable as unknown as { _stableBlockCount?: number }
-    fingerprint.push(runtime._stableBlockCount, markdownBlocks(renderable).length)
-    for (const block of markdownBlocks(renderable)) {
-      fingerprint.push(block.tokenRaw)
-      appendNativeFingerprint(fingerprint, block.renderable, seen, renderable.screenX, renderable.screenY, true)
-    }
-  }
-  if (renderable instanceof TextTableRenderable) {
-    const runtime = renderable as unknown as TableRuntime
-    if (runtime._layout) fingerprint.push(...runtime._layout.columnOffsets, ...runtime._layout.rowOffsets)
-    for (const row of runtime._cells ?? []) for (const cell of row) appendLineInfo(fingerprint, cell.textBufferView)
-  }
-  for (const child of renderable.getChildren()) if ("screenX" in child) appendNativeFingerprint(fingerprint, child as Renderable, seen, renderable.screenX, renderable.screenY, includeContent)
+function syntheticBlocks(state: TranscriptState): readonly TranscriptItemBlock[] {
+  return state.order.flatMap((id) => {
+    const projection = state.projectionById[id]
+    if (!projection) return []
+    const item = { id, turnId: "__geometry__" as TurnId, kind: "assistant", markdown: projection.source, status: "complete" } as ConversationItem
+    return [{
+      key: { kind: "item" as const, itemId: id, blockId: "root" },
+      turnId: "__geometry__" as TurnId,
+      item,
+      renderItem: item,
+      projection,
+      sourceSpan: { from: 0, to: projection.source.length },
+      contentRevision: projection.revision,
+      estimatedRows: 1,
+    } satisfies TranscriptItemBlock]
+  })
 }
 
-function layoutFingerprint(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, state: TranscriptState, itemFingerprints: Map<ItemId, LayoutFingerprint>): LayoutFingerprint {
-  const fingerprint: unknown[] = [
-    renderer.currentRenderBuffer.width,
-    renderer.currentRenderBuffer.height,
-    scrollbox.viewport.screenX,
-    scrollbox.viewport.screenY,
-    scrollbox.viewport.width,
-    scrollbox.viewport.height,
-    state.order,
-    state.projectionById,
-    state.folded,
-  ]
-  for (const itemId of state.order) {
-    const projection = state.projectionById[itemId]
-    fingerprint.push(itemId, projection, projection?.revision, state.folded[itemId])
-    const item = scrollbox.getRenderable(`transcript-item:${itemId}`)
-    if (item) {
-      const position = localPosition(item, scrollbox.viewport.screenX - scrollbox.scrollLeft, scrollbox.viewport.screenY - scrollbox.scrollTop)
-      fingerprint.push(position.x, position.y)
-      const itemFingerprint: unknown[] = [projection, projection?.revision, state.folded[itemId]]
-      appendNativeFingerprint(itemFingerprint, item, new Set(), scrollbox.viewport.screenX - scrollbox.scrollLeft, scrollbox.viewport.screenY - scrollbox.scrollTop, false, false)
-      itemFingerprints.set(itemId, itemFingerprint)
-      fingerprint.push(itemFingerprint.length, ...itemFingerprint)
-    }
-  }
-  return fingerprint
-}
-
-function sameFingerprint(left: LayoutFingerprint, right: LayoutFingerprint): boolean {
-  return left.length === right.length && left.every((value, index) => Object.is(value, right[index]))
-}
-
-function translateItemPoints(
-  cached: ItemGeometryCache,
-  originX: number,
-  originY: number,
-  itemX: number,
-  itemY: number,
-): Record<number, MeasuredPoint> {
-  const deltaX = originX + itemX - cached.originX - cached.itemX
-  const deltaY = originY + itemY - cached.originY - cached.itemY
-  const translated: Record<number, MeasuredPoint> = {}
-  for (const offset in cached.points) {
-    const point = cached.points[offset]!
-    translated[Number(offset)] = { ...point, screenX: point.screenX + deltaX, screenY: point.screenY + deltaY }
-  }
-  return translated
-}
-
-function cacheItemPoints(
-  item: Renderable,
-  fingerprint: LayoutFingerprint,
-  points: Record<number, MeasuredPoint>,
-  originX: number,
-  originY: number,
-  itemX: number,
-  itemY: number,
-): Record<number, MeasuredPoint> {
-  const cached = { fingerprint, points, originX, originY, itemX, itemY }
-  itemGeometryCache.set(item, cached)
-  // Line construction below assigns absolute rows. Keep the cached geometry
-  // private so rebuilding one item can never mutate a layout already returned
-  // to the viewport.
-  return translateItemPoints(cached, originX, originY, itemX, itemY)
-}
-
-function cellPoint(view: TextBufferView, originX: number, originY: number, sourceOffset: number): { x: number; y: number } {
-  const parts = graphemes(view.getPlainText())
-  let column = 0
-  for (let index = 0; index < Math.min(sourceOffset, parts.length); index += 1) column += graphemeCellWidth(parts[index]!)
-  const info = view.lineInfo
-  const candidates = info.lineSources.flatMap((source, index) => source === 0 ? [index] : [])
-  const visual = candidates.filter((index) => (info.lineStartCols[index] ?? 0) <= column).at(-1) ?? candidates[0] ?? 0
-  return { x: originX + column - (info.lineStartCols[visual] ?? 0), y: originY + visual }
-}
-
-function measureTable(table: TextTableRenderable, itemId: ItemId, text: string): Record<number, MeasuredPoint> {
-  const runtime = table as unknown as TableRuntime
-  const layout = runtime._layout
-  const cells = runtime._cells
-  if (!layout || !cells) return {}
-  const result: Record<number, MeasuredPoint> = {}
-  const outer = table.outerBorder ? 1 : 0
-  let logicalLineStart = 0
-  const logicalLines = text.split("\n")
-  for (let row = 0; row < Math.min(logicalLines.length, cells.length); row += 1) {
-    const line = graphemes(logicalLines[row] ?? "")
-    const pipes = line.flatMap((part, index) => part === "|" ? [index] : [])
-    const rowY = table.screenY + outer + (layout.rowOffsets[row] ?? row) + table.cellPaddingY
-    for (let boundary = 0; boundary < pipes.length; boundary += 1) {
-      const offset = logicalLineStart + pipes[boundary]!
-      const x = table.screenX + (layout.columnOffsets[Math.min(boundary, layout.columnOffsets.length - 1)] ?? 0)
-      result[offset] = { itemId, graphemeOffset: offset, row, column: x - table.screenX, screenX: x, screenY: rowY }
-    }
-    for (let columnIndex = 0; columnIndex < Math.min(cells[row]!.length, Math.max(0, pipes.length - 1)); columnIndex += 1) {
-      const from = pipes[columnIndex]! + 1
-      const to = pipes[columnIndex + 1]!
-      const segment = line.slice(from, to)
-      const leading = segment.findIndex((part) => !/^\s$/u.test(part))
-      if (leading < 0) continue
-      const trailing = segment.findLastIndex((part) => !/^\s$/u.test(part))
-      const logical = segment.slice(leading, trailing + 1)
-      const view = cells[row]![columnIndex]!.textBufferView
-      const source = graphemes(view.getPlainText())
-      let sourceOffset = 0
-      for (let local = 0; local < logical.length; local += 1) {
-        const found = source.findIndex((part, index) => index >= sourceOffset && sameCell(logical[local]!, { char: [...part][0] ?? part, x: 0, y: 0 }))
-        if (found < 0) continue
-        const originX = table.screenX + outer + (layout.columnOffsets[columnIndex] ?? 0) + table.cellPaddingX
-        const point = cellPoint(view, originX, rowY, found)
-        const graphemeOffset = logicalLineStart + from + leading + local
-        result[graphemeOffset] = { itemId, graphemeOffset, row, column: point.x - table.screenX, screenX: point.x, screenY: point.y }
-        sourceOffset = found + 1
-      }
-    }
-    logicalLineStart += line.length + 1
-  }
-  return fillPointGaps(itemId, text, result)
-}
-
-function measureMarkdown(renderer: CliRenderer, markdown: MarkdownRenderable, itemId: ItemId, text: string): Record<number, MeasuredPoint> {
-  const result: Record<number, MeasuredPoint> = {}
-  let sourceCursor = 0
-  let logicalCursor = 0
-  for (const block of markdownBlocks(markdown)) {
-    const cached = blockProjectionCache.get(block as object)
-    const projected = cached?.raw === block.tokenRaw ? cached.plain : projectMarkdown(block.tokenRaw).plain
-    if (!cached || cached.raw !== block.tokenRaw) blockProjectionCache.set(block as object, { raw: block.tokenRaw, plain: projected })
-    const core = projected.replace(/\n+$/u, "")
-    if (!core) continue
-    const start = text.indexOf(core, sourceCursor)
-    if (start < 0) continue
-    logicalCursor += graphemes(text.slice(sourceCursor, start)).length
-    const logicalStart = logicalCursor
-    const measured = block.renderable instanceof TextTableRenderable
-      ? measureTable(block.renderable, itemId, core)
-      : measureRaw(renderer, block.renderable, itemId, core)
-    for (const localOffset in measured) {
-      const graphemeOffset = logicalStart + Number(localOffset)
-      result[graphemeOffset] = { ...measured[localOffset]!, graphemeOffset }
-    }
-    sourceCursor = start + core.length
-    logicalCursor += graphemes(core).length
-  }
-  return fillPointGaps(itemId, text, result)
-}
-
-interface DiffRuntime {
-  diff: string
-  leftCodeRenderable?: TextBufferRenderable | null
-  rightCodeRenderable?: TextBufferRenderable | null
-}
-
-function measureDiff(renderer: CliRenderer, diff: DiffRenderable, itemId: ItemId): Record<number, MeasuredPoint> {
-  const runtime = diff as unknown as DiffRuntime
-  const sides = {
-    left: runtime.leftCodeRenderable ?? undefined,
-    right: runtime.rightCodeRenderable ?? undefined,
-  }
-  const sideState = Object.fromEntries(Object.entries(sides).map(([name, side]) => {
-    const lines = side?.plainText.split("\n") ?? []
-    const starts: number[] = []
-    let offset = 0
-    for (const line of lines) { starts.push(offset); offset += graphemes(line).length + 1 }
-    return [name, { side, lines, starts, cursor: 0, points: side ? measureRaw(renderer, side, itemId, side.plainText) : {} }]
-  })) as Record<"left" | "right", { side?: TextBufferRenderable; lines: string[]; starts: number[]; cursor: number; points: Record<number, MeasuredPoint> }>
-  const result: Record<number, MeasuredPoint> = {}
-  const sourceLines = runtime.diff.split("\n")
-  const sourceOffsets: number[] = []
-  let sourceOffset = 0
-  for (const line of sourceLines) { sourceOffsets.push(sourceOffset); sourceOffset += graphemes(line).length + 1 }
-  let inHunk = false
-  let oldRemaining = 0
-  let newRemaining = 0
-  const consume = (sideName: "left" | "right", content: string, at: number, map: boolean) => {
-    const side = sideState[sideName].side ? sideState[sideName] : sideState.left
-    let row = -1
-    for (let index = side.cursor; index < side.lines.length; index++) {
-      if (side.lines[index] === content) { row = index; break }
-    }
-    if (row < 0) return
-    side.cursor = row + 1
-    if (!map) return
-    const base = side.starts[row]!
-    const contentLength = graphemes(content).length
-    const visualRow = side.side?.lineInfo.lineSources.findIndex(source => source === row) ?? -1
-    const first = side.points[base] ?? (side.side && visualRow >= 0 ? {
-      itemId, graphemeOffset: base, row: visualRow, column: 0,
-      screenX: side.side.screenX, screenY: side.side.screenY + visualRow,
-    } : undefined)
-    if (first) result[at] = { ...first, graphemeOffset: at }
-    for (let local = 0; local < contentLength; local++) {
-      const point = side.points[base + local]
-      if (point) result[at + 1 + local] = { ...point, graphemeOffset: at + 1 + local }
-    }
-  }
-  for (let lineIndex = 0; lineIndex < sourceLines.length; lineIndex++) {
-    const line = sourceLines[lineIndex]!
-    const header = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))?/.exec(line)
-    if (header) {
-      inHunk = true
-      oldRemaining = Number(header[1] ?? 1)
-      newRemaining = Number(header[2] ?? 1)
-      continue
-    }
-    if (!inHunk) continue
-    const marker = line[0]
-    if (marker === " ") {
-      const content = line.slice(1)
-      consume("left", content, sourceOffsets[lineIndex]!, true)
-      if (sideState.right.side) consume("right", content, sourceOffsets[lineIndex]!, false)
-      oldRemaining--
-      newRemaining--
-    } else if (marker === "+" || marker === "-") {
-      if (!sideState.right.side) {
-        consume("left", line.slice(1), sourceOffsets[lineIndex]!, true)
-        if (marker === "+") newRemaining--
-        else oldRemaining--
-      } else {
-        // OpenTUI aligns each contiguous remove/add group to its longest side
-        // and pads the shorter pane with empty native rows. Consume the whole
-        // group before synchronizing cursors so a later blank changed line
-        // cannot bind to one of those padding rows.
-        while (lineIndex < sourceLines.length && (oldRemaining > 0 || newRemaining > 0)) {
-          const changed = sourceLines[lineIndex]!
-          const changedMarker = changed[0]
-          if (changedMarker !== "+" && changedMarker !== "-") break
-          consume(changedMarker === "+" ? "right" : "left", changed.slice(1), sourceOffsets[lineIndex]!, true)
-          if (changedMarker === "+") newRemaining--
-          else oldRemaining--
-          lineIndex++
-        }
-        lineIndex--
-        const aligned = Math.max(sideState.left.cursor, sideState.right.cursor)
-        sideState.left.cursor = aligned
-        sideState.right.cursor = aligned
-      }
-    }
-    if (oldRemaining <= 0 && newRemaining <= 0) inHunk = false
-  }
-  return fillPointGaps(itemId, runtime.diff, result)
-}
-
-function diffRenderables(renderable: Renderable): DiffRenderable[] {
-  const result: DiffRenderable[] = []
-  const visit = (current: Renderable) => {
-    if (current instanceof DiffRenderable) result.push(current)
-    else for (const child of current.getChildren()) if ("screenX" in child) visit(child as Renderable)
-  }
-  visit(renderable)
-  return result
-}
-
-function measureItem(renderer: CliRenderer, renderable: Renderable, itemId: ItemId, text: string): Record<number, MeasuredPoint> {
-  const markdown = renderable.getRenderable(`markdown:${itemId}`)
-  if (markdown instanceof MarkdownRenderable) return measureMarkdown(renderer, markdown, itemId, text)
-  const diffs = diffRenderables(renderable)
-  if (diffs.length) {
-    const result: Record<number, MeasuredPoint> = {}
-    let sourceCursor = 0
-    let logicalCursor = 0
-    for (const diff of diffs) {
-      const source = (diff as unknown as DiffRuntime).diff
-      const start = text.indexOf(source, sourceCursor)
-      if (start < 0) continue
-      logicalCursor += graphemes(text.slice(sourceCursor, start)).length
-      for (const [offset, point] of Object.entries(measureDiff(renderer, diff, itemId))) {
-        const graphemeOffset = logicalCursor + Number(offset)
-        result[graphemeOffset] = { ...point, graphemeOffset }
-      }
-      sourceCursor = start + source.length
-      logicalCursor += graphemes(source).length
-    }
-    return fillPointGaps(itemId, text, result)
-  }
-  return fillPointGaps(itemId, text, measureRaw(renderer, renderable, itemId, text))
-}
-
-export function measureRenderedTranscript(
-  renderer: CliRenderer,
-  scrollbox: ScrollBoxRenderable,
-  state: TranscriptState,
-): TranscriptLayout | undefined {
-  const itemFingerprints = new Map<ItemId, LayoutFingerprint>()
-  const fingerprint = layoutFingerprint(renderer, scrollbox, state, itemFingerprints)
-  const cached = renderedLayoutCache.get(scrollbox)
-  const originX = scrollbox.viewport.screenX - scrollbox.scrollLeft
-  const originY = scrollbox.viewport.screenY - scrollbox.scrollTop
-  if (cached && sameFingerprint(cached.fingerprint, fingerprint)) {
-    const offset = { x: originX - cached.originX, y: originY - cached.originY }
-    if (offset.x === (cached.layout.screenOffset?.x ?? 0) && offset.y === (cached.layout.screenOffset?.y ?? 0)) return cached.layout
-    const translated = { ...cached.layout, screenOffset: offset }
-    renderedLayoutCache.set(scrollbox, { ...cached, layout: translated })
-    return translated
-  }
-  const points: Record<string, Record<number, MeasuredPoint>> = {}
+function linesFor(geometry: TranscriptFrame["geometry"], blocks: readonly TranscriptBlock[]): { lines: readonly VisualLine[]; linesByItem: Readonly<Record<string, readonly VisualLine[]>> } {
   const lines: VisualLine[] = []
   const linesByItem: Record<string, VisualLine[]> = {}
-  let absoluteRow = 0
-  for (const itemId of state.order) {
-    const item = scrollbox.getRenderable(`transcript-item:${itemId}`)
-    const projection = state.projectionById[itemId]
-    if (!item || !projection) continue
-    const itemPosition = localPosition(item, originX, originY)
-    const itemFingerprint = itemFingerprints.get(itemId)!
-    const cachedItem = itemGeometryCache.get(item)
-    let itemPoints: Record<number, MeasuredPoint>
-    if (cachedItem && sameFingerprint(cachedItem.fingerprint, itemFingerprint)) {
-      itemPoints = translateItemPoints(cachedItem, originX, originY, itemPosition.x, itemPosition.y)
-    } else {
-      const measured = measureItem(renderer, item, itemId, projection.plain)
-      if (state.folded[itemId]) {
-        const visible = Object.values(measured).sort((a, b) => a.graphemeOffset - b.graphemeOffset)
-        const fallback = visible[0]
-        if (fallback) {
-          const length = graphemes(projection.plain).length
-          for (let offset = 0; offset <= length; offset += 1) {
-            measured[offset] ??= { ...fallback, graphemeOffset: offset, hidden: true }
-          }
-        }
-      }
-      itemPoints = cacheItemPoints(item, itemFingerprint, measured, originX, originY, itemPosition.x, itemPosition.y)
-    }
-    points[itemId] = itemPoints
-    const byRow = new Map<number, MeasuredPoint[]>()
-    for (const point of Object.values(itemPoints)) {
-      const list = byRow.get(point.screenY) ?? []
-      list.push(point)
-      byRow.set(point.screenY, list)
-    }
-    const itemLines: VisualLine[] = []
-    for (const rowPoints of [...byRow.values()].sort((a, b) => a[0]!.screenY - b[0]!.screenY)) {
-      rowPoints.sort((a, b) => a.column - b.column)
-      const line = { itemId, from: rowPoints[0]!.graphemeOffset, to: rowPoints.at(-1)!.graphemeOffset, row: absoluteRow++ }
-      itemLines.push(line)
-      lines.push(line)
-      for (const point of rowPoints) point.row = line.row
-    }
-    linesByItem[itemId] = itemLines
+  for (const block of blocks) {
+    if (!("projection" in block)) continue
+    const key = blockKey(block)
+    const start = geometry.rowByBlockKey[key] ?? 0
+    const itemLines = (geometry.byBlockKey[key]?.lines ?? []).map(line => ({ itemId: block.key.itemId, from: line.from, to: line.to, row: start + line.row }))
+    linesByItem[block.key.itemId] = [...(linesByItem[block.key.itemId] ?? []), ...itemLines]
+    lines.push(...itemLines)
   }
-  if (!lines.length) return undefined
-  const layout = { width: scrollbox.viewport.width, lines, linesByItem, points }
-  renderedLayoutCache.set(scrollbox, { fingerprint, layout, originX, originY })
+  return { lines: Object.freeze(lines), linesByItem: Object.freeze(linesByItem) }
+}
+
+function lazyPoints(layout: TranscriptLayout, blocks: readonly TranscriptBlock[]): TranscriptLayout["points"] {
+  const itemBlocks = blocks.filter((block): block is TranscriptItemBlock => "projection" in block)
+  const itemRecords = new Map<string, object>()
+  return new Proxy(Object.create(null) as Record<string, Readonly<Record<number, MeasuredPoint>>>, {
+    ownKeys: () => itemBlocks.map(block => block.key.itemId),
+    getOwnPropertyDescriptor: (_target, property) => typeof property === "string" && itemBlocks.some(block => block.key.itemId === property)
+      ? { enumerable: true, configurable: true } : undefined,
+    get: (_target, property) => {
+      if (typeof property !== "string") return undefined
+      const cached = itemRecords.get(property)
+      if (cached) return cached
+      const blocksForItem = itemBlocks.filter(candidate => candidate.key.itemId === property)
+      if (!blocksForItem.length) return undefined
+      const offsets = [...new Set(blocksForItem.flatMap(block => Object.keys(layout.geometry?.byBlockKey[blockKey(block)]?.points ?? {})))].sort((left, right) => Number(left) - Number(right))
+      const record = new Proxy(Object.create(null) as Record<number, MeasuredPoint>, {
+        ownKeys: () => offsets,
+        getOwnPropertyDescriptor: (_inner, offset) => typeof offset === "string" && offsets.includes(offset)
+          ? { enumerable: true, configurable: true } : undefined,
+        get: (_inner, offset) => {
+          if (typeof offset !== "string") return undefined
+          return pointInLayout(layout, { itemId: blocksForItem[0]!.key.itemId, graphemeOffset: Number(offset) })
+        },
+      })
+      itemRecords.set(property, record)
+      return record
+    },
+  })
+}
+
+function buildLayout(scrollbox: ScrollBoxRenderable, blocks: readonly TranscriptBlock[], geometry: TranscriptFrame["geometry"]): TranscriptLayout {
+  const placementByBlockKey: Record<string, { screenX: number; screenY: number }> = {}
+  const blockKeyByItem: Record<string, string> = {}
+  const blockKeysByItem: Record<string, { blockKey: string; blockId: string; from: number; to: number }[]> = {}
+  for (const block of blocks) {
+    const renderable = findBlockRenderable(scrollbox, block)
+    if (!renderable) continue
+    const key = blockKey(block)
+    placementByBlockKey[key] = { screenX: renderable.screenX, screenY: renderable.screenY }
+    if (!("projection" in block)) continue
+    blockKeyByItem[block.key.itemId] ??= key
+    const { from, to } = blockGraphemeRange(block)
+    ;(blockKeysByItem[block.key.itemId] ??= []).push({ blockKey: key, blockId: block.key.blockId, from, to })
+  }
+  const layout = {
+    width: scrollbox.viewport.width,
+    geometry,
+    placementByBlockKey: Object.freeze(placementByBlockKey),
+    blockKeysByItem: Object.freeze(Object.fromEntries(Object.entries(blockKeysByItem).map(([itemId, refs]) => [itemId, Object.freeze(refs.map(ref => Object.freeze(ref)))]))),
+    blockKeyByItem: Object.freeze(blockKeyByItem),
+    screenBlockRows: Object.freeze(geometry.blockRows.flatMap(row => {
+      const placement = placementByBlockKey[row.blockKey]
+      return row.itemId && placement ? [Object.freeze({ blockKey: row.blockKey, itemId: row.itemId as ItemId, screenY: placement.screenY, rows: row.rows })] : []
+    })),
+  } as TranscriptLayout
+  let indexed: ReturnType<typeof linesFor> | undefined
+  const indexes = () => indexed ??= linesFor(geometry, blocks)
+  Object.defineProperty(layout, "lines", { enumerable: true, configurable: false, get: () => indexes().lines })
+  Object.defineProperty(layout, "linesByItem", { enumerable: true, configurable: false, get: () => indexes().linesByItem })
+  Object.defineProperty(layout, "points", { enumerable: true, configurable: false, value: lazyPoints(layout, blocks) })
+  return Object.freeze(layout)
+}
+
+function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, source: RuntimeLayoutSource | TranscriptState): { blocks: readonly TranscriptBlock[]; geometry: TranscriptFrame["geometry"] } {
+  const runtimeSource = "frame" in source ? source : undefined
+  const frame = runtimeSource?.frame
+  const blocks: readonly TranscriptBlock[] = frame?.blocks ?? syntheticBlocks(source as TranscriptState)
+  const state = frame?.transcript ?? source as TranscriptState
+  const width = Math.max(1, scrollbox.viewport.width)
+  const styleRevision = runtimeSource?.styleRevision ?? "legacy"
+  if (runtimeSource?.runtime && frame!.geometry.width !== undefined
+    && (frame!.geometry.width !== width || frame!.geometry.styleRevision !== styleRevision)) {
+    runtimeSource.runtime.resetLayout(frame!.geometry.width !== width ? "width" : "style")
+    return { blocks, geometry: frame!.geometry }
+  }
+  const schedule = scheduleFor(scrollbox)
+  const candidates = new Set<string>()
+  if (!runtimeSource?.runtime) {
+    for (const block of blocks) if ("projection" in block) candidates.add(blockKey(block))
+  } else {
+    const lineageChanged = schedule.threadId !== frame!.threadId || schedule.canonicalGeneration !== frame!.canonicalGeneration
+    const layoutReset = schedule.geometryGeneration !== frame!.geometry.generation
+    if (lineageChanged || layoutReset || frame!.damage.kind === "full" || frame!.damage.kind === "layout") {
+      schedule.pending.clear()
+      schedule.renderableByKey.clear()
+      indexBlocks(schedule, blocks)
+      for (const block of blocks) candidates.add(blockKey(block))
+    } else if (frame!.damage.kind === "blocks") {
+      const missing = new Set<string>()
+      for (const itemId of frame!.damage.itemIds) {
+        const keys = schedule.keysByItem.get(itemId)
+        if (keys?.length) for (const key of keys) candidates.add(key)
+        else missing.add(itemId)
+      }
+      // Existing streaming items stay O(changed). A newly appended semantic
+      // item is absent from the prior index, so discover only missing IDs once.
+      if (missing.size) {
+        const discovered = new Map<string, string[]>()
+        blocks.forEach((block, index) => {
+          if (block.key.kind !== "item" || !missing.has(block.key.itemId)) return
+          const key = blockKey(block)
+          schedule.indexByKey.set(key, index)
+          let keys = discovered.get(block.key.itemId)
+          if (!keys) {
+            keys = []
+            discovered.set(block.key.itemId, keys)
+          }
+          keys.push(key)
+          candidates.add(key)
+        })
+        for (const [itemId, keys] of discovered) schedule.keysByItem.set(itemId, Object.freeze(keys))
+      }
+    }
+    if (schedule.windowBlocks !== frame!.window.blocks && frame!.damage.kind === "view") {
+      // Reattachment and explicit reveals can replace a pinned plan under view
+      // damage. The transition is infrequent (and Stage 5 bounds the window),
+      // so recover every newly materialized or geometry-invalidated block.
+      for (const block of frame!.window.blocks) {
+        const key = blockKey(block)
+        if (!schedule.indexByKey.has(key) || !frame!.geometry.byBlockKey[key]) candidates.add(key)
+      }
+    }
+    for (const dirty of takeDirtyRenderedBlocks()) {
+      if (dirty.blockKey && schedule.renderableByKey.get(dirty.blockKey) === dirty.renderable) candidates.add(dirty.blockKey)
+    }
+    for (const key of schedule.pending) {
+      candidates.add(key)
+    }
+    schedule.threadId = frame!.threadId
+    schedule.canonicalGeneration = frame!.canonicalGeneration
+    schedule.geometryGeneration = frame!.geometry.generation
+    schedule.windowBlocks = frame!.window.blocks
+  }
+  const measurementBase = runtimeSource?.runtime?.measurementBase(frame)
+  const measured: BlockGeometry[] = []
+  for (const key of candidates) {
+    const index = schedule.indexByKey.get(key)
+    const block = index === undefined ? blocks.find(candidate => blockKey(candidate) === key) : blocks[index]
+    if (!block) continue
+    const renderable = findBlockRenderable(scrollbox, block)
+    if (!renderable) continue
+    schedule.renderableByKey.set(key, renderable)
+    const next = measureRenderedBlock({ renderer, renderable, block, width, styleRevision,
+      folded: block.key.kind === "item" && Boolean(state.folded[block.key.itemId]) })
+    const prior = frame?.geometry.byBlockKey[blockKey(block)]
+    if (!prior || prior.nativeRevision !== next.nativeRevision || prior.key.contentRevision !== next.key.contentRevision
+      || prior.key.width !== next.key.width || prior.key.styleRevision !== next.key.styleRevision || prior.key.folded !== next.key.folded) measured.push(next)
+    else schedule.pending.delete(key)
+  }
+  if (runtimeSource?.runtime && measured.length) {
+    for (const geometry of measured) schedule.pending.add(geometry.key.blockKey)
+    runtimeSource.runtime.reportMeasurements({ ...measurementBase!, measurements: measured })
+    return { blocks, geometry: frame!.geometry }
+  }
+  if (frame && runtimeSource?.runtime) return { blocks, geometry: frame.geometry }
+  const legacy = legacyGeometryCache.get(scrollbox)
+  if (legacy && legacy.order === state.order && legacy.projectionById === state.projectionById && legacy.folded === state.folded
+    && legacy.width === width && legacy.measurements.length === measured.length
+    && measured.every((geometry, index) => geometry === legacy.measurements[index])) return { blocks, geometry: legacy.geometry }
+  const byBlockKey = Object.fromEntries(measured.map(geometry => [geometry.key.blockKey, geometry]))
+  const geometry = composeTranscriptGeometry(blocks, state.folded, byBlockKey, 0, 1, width, styleRevision)
+  legacyGeometryCache.set(scrollbox, { order: state.order, projectionById: state.projectionById, folded: state.folded, width, measurements: measured, geometry })
+  return { blocks, geometry }
+}
+
+export function measureRenderedTranscript(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, source: RuntimeLayoutSource | TranscriptState): TranscriptLayout | undefined {
+  const { blocks, geometry } = currentGeometry(renderer, scrollbox, source)
+  if (geometry.measuredBlockCount === 0) return undefined
+  const originX = scrollbox.viewport.screenX - scrollbox.scrollLeft
+  const originY = scrollbox.viewport.screenY - scrollbox.scrollTop
+  const cached = layoutCache.get(scrollbox)
+  if (cached?.geometry === geometry) {
+    const offset = { x: originX - cached.originX, y: originY - cached.originY }
+    if (offset.x === (cached.layout.screenOffset?.x ?? 0) && offset.y === (cached.layout.screenOffset?.y ?? 0)) return cached.layout
+    const translated = translatedLayout(cached.layout, offset.x, offset.y)
+    layoutCache.set(scrollbox, { ...cached, layout: translated })
+    return translated
+  }
+  const layout = buildLayout(scrollbox, blocks, geometry)
+  layoutCache.set(scrollbox, { geometry, originX, originY, layout })
   return layout
 }
 
-function translatedPoint(layout: TranscriptLayout, point: MeasuredPoint | undefined): MeasuredPoint | undefined {
-  if (!point || !layout.screenOffset || (!layout.screenOffset.x && !layout.screenOffset.y)) return point
-  return { ...point, screenX: point.screenX + layout.screenOffset.x, screenY: point.screenY + layout.screenOffset.y }
-}
-
 export function measuredPoint(layout: TranscriptLayout, point: LogicalPoint | undefined): MeasuredPoint | undefined {
-  return translatedPoint(layout, point ? layout.points?.[point.itemId]?.[point.graphemeOffset] : undefined)
+  return pointInLayout(layout, point)
 }
 
-const visibleRowIndex = new WeakMap<object, readonly MeasuredPoint[]>()
-function viewportEdgePoint(layout: TranscriptLayout, scrollbox: ScrollBoxRenderable, edge: "top" | "bottom"): MeasuredPoint | undefined {
-  const points = layout.points
-  if (!points) return undefined
-  let rows = visibleRowIndex.get(points)
-  if (!rows) {
-    const firstByRow = new Map<number, MeasuredPoint>()
-    for (const item of Object.values(points)) for (const point of Object.values(item)) {
-      const first = firstByRow.get(point.screenY)
-      if (!first || point.screenX < first.screenX) firstByRow.set(point.screenY, point)
-    }
-    rows = [...firstByRow.values()].sort((a, b) => a.screenY - b.screenY)
-    visibleRowIndex.set(points, rows)
-  }
-  const top = scrollbox.viewport.screenY - (layout.screenOffset?.y ?? 0)
-  let low = 0, high = rows.length
+/** Current runtime geometry with the last known native placements; never exposes stale block geometry. */
+export function rebaseTranscriptLayout(layout: TranscriptLayout, geometry: TranscriptFrame["geometry"]): TranscriptLayout {
+  const screenBlockRows = geometry.blockRows.flatMap(row => {
+    const placement = layout.placementByBlockKey?.[row.blockKey]
+    return row.itemId && placement ? [Object.freeze({ blockKey: row.blockKey, itemId: row.itemId as ItemId, screenY: placement.screenY, rows: row.rows })] : []
+  })
+  return Object.freeze({
+    width: layout.width,
+    lines: Object.freeze([]),
+    linesByItem: Object.freeze({}),
+    geometry,
+    placementByBlockKey: layout.placementByBlockKey,
+    blockKeysByItem: layout.blockKeysByItem,
+    blockKeyByItem: layout.blockKeyByItem,
+    screenBlockRows: Object.freeze(screenBlockRows),
+    screenOffset: layout.screenOffset,
+  })
+}
+
+export function visibleMeasuredPoints(layout: TranscriptLayout, viewport: { screenY: number; height: number }): readonly MeasuredPoint[] {
+  if (!layout.geometry || !layout.screenBlockRows) return Object.values(layout.points ?? {}).flatMap(points => Object.values(points))
+  const result: MeasuredPoint[] = []
+  const offsetY = layout.screenOffset?.y ?? 0
+  const top = viewport.screenY - offsetY
+  const bottom = top + viewport.height
+  let low = 0, high = layout.screenBlockRows.length
   while (low < high) {
     const middle = (low + high) >>> 1
-    if (rows[middle]!.screenY < top) low = middle + 1
+    const block = layout.screenBlockRows[middle]!
+    if (block.screenY + block.rows <= top) low = middle + 1
     else high = middle
   }
-  if (edge === "top") return translatedPoint(layout, rows[low])
-  const bottom = top + scrollbox.viewport.height
-  let end = rows.length
-  while (low < end) {
-    const middle = (low + end) >>> 1
-    if (rows[middle]!.screenY < bottom) low = middle + 1
-    else end = middle
+  for (let index = low; index < layout.screenBlockRows.length; index++) {
+    const block = layout.screenBlockRows[index]!
+    if (block.screenY >= bottom) break
+    const geometry = layout.geometry.byBlockKey[block.blockKey]
+    if (!geometry) continue
+    const fromRow = Math.max(0, Math.floor(top - block.screenY))
+    const toRow = Math.min(block.rows, Math.ceil(bottom - block.screenY))
+    for (let row = fromRow; row < toRow; row++) {
+      const offsets = geometry.pointOffsetsByRow?.[row]
+        ?? Object.values(geometry.points).filter(point => point.row === row).map(point => point.graphemeOffset)
+      for (const graphemeOffset of offsets) {
+        const point = pointInLayout(layout, { itemId: block.itemId, graphemeOffset })
+        if (point) result.push(point)
+      }
+    }
   }
-  const point = rows[low - 1]
-  return point && point.screenY >= top ? translatedPoint(layout, point) : undefined
+  return result
+}
+
+function viewportEdgePoint(layout: TranscriptLayout, scrollbox: ScrollBoxRenderable, edge: "top" | "bottom"): MeasuredPoint | undefined {
+  const top = scrollbox.viewport.screenY
+  const bottom = top + scrollbox.viewport.height
+  let candidate: MeasuredPoint | undefined
+  for (const point of visibleMeasuredPoints(layout, scrollbox.viewport)) {
+    if (point.hidden || point.screenY < top || point.screenY >= bottom) continue
+    if (!candidate || (edge === "top" ? point.screenY < candidate.screenY : point.screenY > candidate.screenY)
+      || (point.screenY === candidate.screenY && point.screenX < candidate.screenX)) candidate = point
+  }
+  return candidate
 }
 
 export function topVisiblePoint(layout: TranscriptLayout, scrollbox: ScrollBoxRenderable): MeasuredPoint | undefined {

@@ -3,7 +3,7 @@ import type { InputRenderable, ScrollBoxRenderable } from "@opentui/core"
 import { useBindings } from "@opentui/keymap/react"
 import { flushSync, useRenderer } from "@opentui/react"
 import { useEffect, useRef, useState, type RefObject } from "react"
-import type { TranscriptState } from "@vimex/transcript"
+import type { GeometryStyleRevision, TranscriptFrame, TranscriptRuntime, TranscriptState } from "@vimex/transcript"
 import type { VimexUiController } from "../contracts"
 import type { TranscriptLayout } from "./layout"
 import { flashTargets, type FlashTarget } from "./flash-targets"
@@ -13,6 +13,7 @@ import { emberTide } from "../theme"
 /** Transient prompt: labels decorate native cells without changing transcript source. */
 export function FlashJump(props: {
   transcript: TranscriptState; layout: TranscriptLayout; scrollRef: RefObject<ScrollBoxRenderable | null>
+  frame?: TranscriptFrame; runtime?: TranscriptRuntime; styleRevision?: GeometryStyleRevision
   controller: VimexUiController; extend: boolean; fromComposer: boolean; onClose(): void
 }) {
   const renderer = useRenderer()
@@ -27,7 +28,14 @@ export function FlashJump(props: {
     const scroll = props.scrollRef.current
     if (!target || !scroll) return
     // Resolve again at key time; a stream/reflow must never jump to an old screen cell.
-    const current = measureRenderedTranscript(renderer, scroll, props.transcript)
+    const sourceFrame = props.runtime?.getSnapshot() ?? props.frame
+    let current = measureRenderedTranscript(renderer, scroll, sourceFrame
+      ? { frame: sourceFrame, runtime: props.runtime, styleRevision: props.styleRevision ?? "default" }
+      : props.transcript)
+    const latestFrame = props.runtime?.getSnapshot()
+    if (latestFrame && latestFrame !== sourceFrame) current = measureRenderedTranscript(renderer, scroll, {
+      frame: latestFrame, runtime: props.runtime, styleRevision: props.styleRevision ?? "default",
+    })
     const point = current && measuredPoint(current, target)
     if (!point || point.screenY < scroll.viewport.screenY || point.screenY >= scroll.viewport.screenY + scroll.viewport.height) return
     const origin = props.fromComposer && current ? bottomVisiblePoint(current, scroll) : undefined

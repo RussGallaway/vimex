@@ -17,7 +17,7 @@ import { useTranscriptLayout } from "../transcript/use-transcript-layout"
 import { TranscriptViewport } from "../transcript/TranscriptViewport"
 import { defaultVimexUiSettings, type VimexAppProps } from "../contracts"
 import { movePoint } from "../transcript/layout"
-import { measuredPoint } from "../transcript/rendered-layout"
+import { measureRenderedTranscript, measuredPoint, transcriptRenderableIdForPoint } from "../transcript/rendered-layout"
 import { createEmberTideSyntax, selectTheme } from "../theme"
 import { commonBindings } from "../keymap/common-bindings"
 import { normalBindings } from "../keymap/normal-bindings"
@@ -82,10 +82,12 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
     excludedTurnIds: inheritedTurnIds,
   } : undefined, [inheritedTurnIds, state.activeThreadId, workspace])
   const transcriptFrame = useTranscriptRuntime(controller, presentationId, runtimeInput)
+  const transcriptRuntime = controller.transcriptRuntime(presentationId)
   const transcript = workspace ? transcriptFrame.transcript : blankTranscript
   const transcriptWindow = workspace ? transcriptFrame.window : blankTranscriptWindow
   const blocks = transcriptWindow.blocks
-  const items = useMemo(() => blocks.flatMap(block => "item" in block ? [block.item] : []), [blocks])
+  const items = useMemo(() => [...new Map(blocks.flatMap(block => "item" in block ? [[block.item.id, block.item] as const] : [])).values()], [blocks])
+  const transcriptStyleRevision = `${settings.theme}:${settings.syntaxTheme}:${settings.reducedColor ? 1 : 0}`
   const syntax = useMemo(() => createEmberTideSyntax(settings.syntaxTheme === "theme" ? settings.theme : settings.syntaxTheme, settings.reducedColor), [settings.reducedColor, settings.syntaxTheme, settings.theme])
   const scrollRef = useRef<ScrollBoxRenderable>(null)
   const textareaRef = useRef<TextareaRenderable>(null)
@@ -113,7 +115,18 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   const composerThreadRef = useRef(state.activeThreadId)
   composerInteractionRef.current = interaction
   const initializedFolds = useRef(new Set<string>())
-  const { layout, measuredLayout, onManualScroll, enterVisibleTranscript } = useTranscriptLayout({ threadId: state.activeThreadId, transcript, width: dimensions.width, height: dimensions.height, scrollRef, controller, onAnchor: paneLabel || !interactive ? (point, row) => { if (state.activeThreadId) controller.anchorThread(state.activeThreadId, point, row) } : undefined })
+  const { layout, measuredLayout, onManualScroll, enterVisibleTranscript } = useTranscriptLayout({
+    threadId: state.activeThreadId,
+    transcript,
+    frame: transcriptFrame,
+    runtime: transcriptRuntime,
+    styleRevision: transcriptStyleRevision,
+    width: dimensions.width,
+    height: dimensions.height,
+    scrollRef,
+    controller,
+    onAnchor: paneLabel || !interactive ? (point, row) => { if (state.activeThreadId) controller.anchorThread(state.activeThreadId, point, row) } : undefined,
+  })
   const busy = activeTurn(interaction, workspace?.conversation.activeTurnId)
   const pendingApproval = state.approvals.order
     .map((id) => state.approvals.byId[id])
@@ -215,8 +228,23 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   useEffect(() => {
     if (!interactive || jumpActive || interaction.surface !== "transcript" || interaction.overlay || (interaction.mode !== "normal" && interaction.mode !== "visual")) return
     const updateCursor = () => {
-      const point = measuredPoint(measuredLayout.current ?? layout, transcript.selection?.head ?? transcript.cursor)
-      const viewport = scrollRef.current?.viewport
+      const target = transcript.selection?.head ?? transcript.cursor
+      const scrollbox = scrollRef.current
+      let activeLayout = measuredLayout.current ?? layout
+      const viewport = scrollbox?.viewport
+      // The native viewport may move after the hook's frame listener. Refresh
+      // the O(1) cached translation before deciding cursor visibility; clean
+      // blocks are neither scanned nor remeasured on this path.
+      if (target && scrollbox && transcriptRuntime) {
+        const refreshed = measureRenderedTranscript(renderer, scrollbox, {
+          frame: transcriptRuntime.getSnapshot(), runtime: transcriptRuntime, styleRevision: transcriptStyleRevision,
+        })
+        if (refreshed) {
+          measuredLayout.current = refreshed
+          activeLayout = refreshed
+        }
+      }
+      const point = measuredPoint(activeLayout, target)
       const visible = Boolean(point && viewport && point.screenX >= viewport.screenX && point.screenX < viewport.screenX + viewport.width
         && point.screenY >= viewport.screenY && point.screenY < viewport.screenY + viewport.height)
       if (!point || !visible) { renderer.setCursorPosition(0, 0, false); return }
@@ -230,7 +258,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
       renderer.off(CliRenderEvents.FRAME, updateCursor)
       renderer.setCursorPosition(0, 0, false)
     }
-  }, [interactive, jumpActive, interaction.mode, interaction.overlay, interaction.surface, layout, renderer, transcript.cursor, transcript.selection])
+  }, [interactive, jumpActive, interaction.mode, interaction.overlay, interaction.surface, layout, renderer, transcript.cursor, transcript.selection, transcriptRuntime, transcriptStyleRevision])
   useEffect(() => {
     if (!interactive) return
     if (jumpActive || interaction.surface !== "transcript" || !transcript.selection) {
@@ -243,8 +271,8 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
     const head = measuredPoint(layout, headPoint)
     const scrollbox = scrollRef.current
     if (!anchor || !head || !scrollbox) return
-    const anchorItem = scrollbox.getRenderable(`transcript-item:${anchor.itemId}`)
-    const headItem = scrollbox.getRenderable(`transcript-item:${head.itemId}`)
+    const anchorItem = scrollbox.getRenderable(transcriptRenderableIdForPoint(layout, anchor))
+    const headItem = scrollbox.getRenderable(transcriptRenderableIdForPoint(layout, head))
     const anchorTarget = anchorItem ? selectableAt(anchorItem, anchor.screenX, anchor.screenY) : undefined
     const headTarget = headItem ? selectableAt(headItem, head.screenX, head.screenY) : undefined
     if (!anchorTarget || !headTarget) return
@@ -256,19 +284,26 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
     const scrollbox = scrollRef.current
     if (!scrollbox) return
     const point = measuredPoint(measuredLayout.current ?? layout, transcript.cursor)
-    if (!point) { scrollbox.scrollChildIntoView(`transcript-item:${transcript.cursor.itemId}`); return }
+    if (!point) {
+      scrollbox.scrollChildIntoView(transcriptRenderableIdForPoint(layout, transcript.cursor))
+      return
+    }
     const top = scrollbox.viewport.screenY
     const bottom = top + scrollbox.viewport.height - 1
     // Reveal the logical cell rather than a potentially thousand-row item.
-    if (point.screenY < top) scrollbox.scrollBy(point.screenY - top, "step")
-    else if (point.screenY > bottom) scrollbox.scrollBy(point.screenY - bottom, "step")
+    if (point.screenY < top) {
+      scrollbox.scrollBy(point.screenY - top, "step")
+    } else if (point.screenY > bottom) {
+      scrollbox.scrollBy(point.screenY - bottom, "step")
+    }
   }, [transcript.cursor?.itemId, transcript.cursor?.graphemeOffset])
 
   const dispatchMotion = useCallback((motion: Motion, repeat = 1) => {
+    const activeLayout = measuredLayout.current ?? layout
     let point = transcript.cursor
     let result: ReturnType<typeof movePoint>
     for (let index = 0; index < repeat; index += 1) {
-      result = movePoint(layout, point, motion)
+      result = movePoint(activeLayout, point, motion)
       if (!result) return
       point = result.point
     }
@@ -276,7 +311,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
       type: motion === "first" || motion === "last" ? "jump" : "cursor.move",
       target: result.point,
       preferredScreenRow: (() => {
-        const measured = measuredPoint(layout, result.point)
+        const measured = measuredPoint(activeLayout, result.point)
         return measured && scrollRef.current ? Math.max(0, Math.min(scrollRef.current.viewport.height - 1, measured.screenY - scrollRef.current.viewport.screenY)) : result.preferredScreenRow
       })(),
       extend: interaction.mode === "visual",
@@ -556,7 +591,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
         pendingQuestions={Object.keys(state.questions).length}
         activeTurn={busy}
       />}
-      overlay={interactive ? <>{jumpActive ? <FlashJump fromComposer={interaction.surface === "composer"} transcript={transcript} layout={layout} scrollRef={scrollRef} controller={controller} extend={interaction.mode === "visual" && interaction.surface === "transcript"} onClose={() => setJumpOpen(false)} /> : null}<OverlayLayer
+      overlay={interactive ? <>{jumpActive ? <FlashJump fromComposer={interaction.surface === "composer"} transcript={transcript} frame={transcriptFrame} runtime={transcriptRuntime} styleRevision={transcriptStyleRevision} layout={layout} scrollRef={scrollRef} controller={controller} extend={interaction.mode === "visual" && interaction.surface === "transcript"} onClose={() => setJumpOpen(false)} /> : null}<OverlayLayer
         models={state.availableModels}
         modelCatalogError={state.modelCatalogError}
         modelPicker={modelPicker}

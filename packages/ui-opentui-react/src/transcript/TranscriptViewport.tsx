@@ -7,6 +7,7 @@ import { selectedRangeForItem } from "./layout"
 import { emberTide } from "../theme"
 import { TranscriptNode } from "./TranscriptNode"
 import { TurnActivity } from "./TurnActivity"
+import { transcriptBlockRenderableId } from "./rendered-layout"
 
 export function TranscriptViewport(props: {
   window: TranscriptWindow
@@ -50,14 +51,17 @@ export function TranscriptViewport(props: {
       ) : null}
       {props.window.topSpacerRows > 0 ? <box id="transcript-top-spacer" height={props.window.topSpacerRows} flexShrink={0} /> : null}
       {props.window.blocks.map((block, index) => {
-        if ("turn" in block) return <TurnActivity key={`turn:${block.key.turnId}`} turn={block.turn} />
+        if ("turn" in block) return <box key={`turn:${block.key.turnId}`} id={transcriptBlockRenderableId(block)} flexShrink={0}>
+          <TurnActivity turn={block.turn} />
+          <box height={1} flexShrink={0} />
+        </box>
         if (!("item" in block)) return null
         const folded = Boolean(props.state.folded[block.key.itemId])
         const current = cursorId === block.key.itemId && props.interaction.surface === "transcript"
         const selected = Boolean(selectedRangeForItem(props.state, block.key.itemId))
         const next = props.window.blocks[index + 1]
         const followedByActivity = Boolean(next && "turn" in next && next.key.turnId === block.turnId)
-        return <TranscriptRow key={`item:${block.key.itemId}:${block.key.blockId}`} item={block.item} folded={folded} current={current} selected={selected} followedByActivity={followedByActivity} syntax={props.syntax} />
+        return <TranscriptRow key={`item:${block.key.itemId}:${block.key.blockId}`} renderableId={transcriptBlockRenderableId(block)} item={block.renderItem} folded={folded} current={current} selected={selected} followedByActivity={followedByActivity} syntax={props.syntax} />
       })}
       {props.window.bottomSpacerRows > 0 ? <box id="transcript-bottom-spacer" height={props.window.bottomSpacerRows} flexShrink={0} /> : null}
     </scrollbox>
@@ -66,6 +70,7 @@ export function TranscriptViewport(props: {
 
 // Stable historical rows skip Markdown reconciliation during typing and scrolling.
 const TranscriptRow = memo(function TranscriptRow(props: {
+  renderableId: string
   item: ConversationItem
   folded: boolean
   current: boolean
@@ -74,10 +79,12 @@ const TranscriptRow = memo(function TranscriptRow(props: {
   syntax: SyntaxStyle
 }) {
   return (
-    <box id={`transcript-item:${props.item.id}`} flexShrink={0} marginBottom={props.followedByActivity ? 0 : 1}
-      border={["left"]} borderColor={props.selected ? emberTide.amber : props.current ? emberTide.blueBright : emberTide.borderMuted}
-      paddingLeft={2} paddingRight={props.item.kind === "user" ? 2 : 0} paddingY={props.item.kind === "user" ? 1 : 0} backgroundColor={props.item.kind === "user" ? emberTide.backgroundPanel : emberTide.background}>
-      <TranscriptNode item={props.item} folded={props.folded} syntax={props.syntax} />
+    <box id={props.renderableId} flexShrink={0}>
+      <box flexShrink={0} border={["left"]} borderColor={props.selected ? emberTide.amber : props.current ? emberTide.blueBright : emberTide.borderMuted}
+        paddingLeft={2} paddingRight={props.item.kind === "user" ? 2 : 0} paddingY={props.item.kind === "user" ? 1 : 0} backgroundColor={props.item.kind === "user" ? emberTide.backgroundPanel : emberTide.background}>
+        <TranscriptNode item={props.item} folded={props.folded} syntax={props.syntax} />
+      </box>
+      {props.followedByActivity ? null : <box height={1} flexShrink={0} />}
     </box>
   )
 })

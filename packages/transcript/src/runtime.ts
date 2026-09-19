@@ -1,5 +1,6 @@
 import type { ConversationState, ItemId, ThreadId, TurnId } from "@vimex/conversation"
 import type { LogicalPoint, TranscriptState } from "./domain/transcript-document"
+import { composeTranscriptGeometry, emptyTranscriptGeometry, freezeBlockGeometry, geometryMatchesBlock, type BlockMeasurementBase, type BlockMeasurementBatch, type LayoutResetReason, type TranscriptGeometry } from "./geometry"
 import { blockKey, buildTranscriptBlocks, buildTranscriptItemBlock, passThroughWindow, type TranscriptBlock, type TranscriptItemBlock, type TranscriptWindow } from "./window"
 
 export type TranscriptDamage =
@@ -32,6 +33,8 @@ export interface TranscriptRuntimeInput {
 }
 
 export interface TranscriptFrame {
+  readonly threadId: ThreadId
+  readonly canonicalGeneration: number
   /** Canonical revision represented by blocks, not the latest hidden revision. */
   readonly displayedCanonicalRevision: number
   readonly presentationRevision: number
@@ -40,6 +43,8 @@ export interface TranscriptFrame {
   readonly transcript: TranscriptState
   readonly blocks: readonly TranscriptBlock[]
   readonly window: TranscriptWindow
+  /** Renderer-neutral, immutable block-local geometry for this presentation. */
+  readonly geometry: TranscriptGeometry
   readonly damage: TranscriptDamage
 }
 
@@ -86,7 +91,13 @@ function shallowRecordEqual(left: object, right: object): boolean {
 
 function sameBlock(left: TranscriptBlock, right: TranscriptBlock): boolean {
   if (left.key.kind !== right.key.kind || blockKey(left) !== blockKey(right) || left.contentRevision !== right.contentRevision) return false
-  if ("projection" in left && "projection" in right) return left.projection === right.projection && shallowRecordEqual(left.item, right.item)
+  if (left.estimatedRows !== right.estimatedRows) return false
+  if ("projection" in left && "projection" in right) return left.turnId === right.turnId
+    && left.projection === right.projection
+    && left.sourceSpan.from === right.sourceSpan.from
+    && left.sourceSpan.to === right.sourceSpan.to
+    && shallowRecordEqual(left.item, right.item)
+    && shallowRecordEqual(left.renderItem, right.renderItem)
   if (!("turn" in left) || !("turn" in right)) return false
   return left.turn.status === right.turn.status
     && left.turn.startedAt === right.turn.startedAt
@@ -188,17 +199,27 @@ function revealIsMaterialized(input: TranscriptRuntimeInput, blocks: readonly Tr
   if (!latest) return false
   const offset = sourceOffset(latest, point.graphemeOffset)
   return itemBlocks(blocks).some(block => block.key.itemId === point.itemId
-    && offset >= block.sourceSpan.from && offset <= block.sourceSpan.to)
+    && offset >= block.sourceSpan.from
+    && (offset < block.sourceSpan.to
+      || (block.sourceSpan.to === latest.source.length && offset === block.sourceSpan.to)))
 }
 
-function frameFor(input: TranscriptRuntimeInput, blocks: readonly TranscriptBlock[], displayedCanonicalRevision: number, revision: number, damage: TranscriptDamage): TranscriptFrame {
+function reconciledGeometry(previous: TranscriptGeometry | undefined, input: TranscriptRuntimeInput, blocks: readonly TranscriptBlock[]): TranscriptGeometry {
+  if (!previous) return composeTranscriptGeometry(blocks, input.transcript.folded, {}, 0, 0)
+  return composeTranscriptGeometry(blocks, input.transcript.folded, previous.byBlockKey, previous.generation, previous.revision, previous.width, previous.styleRevision)
+}
+
+function frameFor(input: TranscriptRuntimeInput, blocks: readonly TranscriptBlock[], displayedCanonicalRevision: number, revision: number, damage: TranscriptDamage, previousGeometry?: TranscriptGeometry): TranscriptFrame {
   return Object.freeze({
+    threadId: input.threadId,
+    canonicalGeneration: input.canonicalGeneration,
     displayedCanonicalRevision,
     presentationRevision: revision,
     mode: input.mode,
     transcript: presentationTranscript(input.transcript, blocks),
     blocks,
     window: passThroughWindow(blocks),
+    geometry: reconciledGeometry(previousGeometry, input, blocks),
     damage: frozenDamage(damage),
   })
 }
@@ -206,7 +227,7 @@ function frameFor(input: TranscriptRuntimeInput, blocks: readonly TranscriptBloc
 function buildFrame(input: TranscriptRuntimeInput, previous: TranscriptFrame | undefined, revision: number, damage: TranscriptDamage): TranscriptFrame {
   const planned = buildTranscriptBlocks({ conversation: input.conversation, transcript: input.transcript, excludedTurnIds: input.excludedTurnIds })
   const blocks = previous ? reconcileBlocks(previous.blocks, planned) : planned
-  return frameFor(input, blocks, input.canonicalRevision, revision, damage)
+  return frameFor(input, blocks, input.canonicalRevision, revision, damage, previous?.geometry)
 }
 
 /** Stateless full-rebuild fallback for inert renderers; it owns no runtime lifetime. */
@@ -238,6 +259,13 @@ export class TranscriptRuntime {
 
   getSnapshot = (): TranscriptFrame => this.frame
   getThreadId = (): ThreadId => this.latestInput.threadId
+  measurementBase = (frame: TranscriptFrame = this.frame): Readonly<BlockMeasurementBase> => Object.freeze({
+    threadId: frame.threadId,
+    canonicalGeneration: frame.canonicalGeneration,
+    displayedCanonicalRevision: frame.displayedCanonicalRevision,
+    basePresentationRevision: frame.presentationRevision,
+    geometryGeneration: frame.geometry.generation,
+  })
 
   subscribe = (listener: () => void): (() => void) => {
     if (this.disposed) return () => {}
@@ -287,24 +315,96 @@ export class TranscriptRuntime {
     const blocks = nextBlocks ? Object.freeze(nextBlocks) : this.frame.blocks
     const transcript = presentationTranscriptWithProjections(input.transcript, this.frame.transcript.order, Object.freeze(projections))
     return Object.freeze({
+      threadId: input.threadId,
+      canonicalGeneration: input.canonicalGeneration,
       displayedCanonicalRevision: input.canonicalRevision,
       presentationRevision: this.frame.presentationRevision + 1,
       mode: input.mode,
       transcript,
       blocks,
       window: passThroughWindow(blocks),
+      geometry: reconciledGeometry(this.frame.geometry, input, blocks),
       damage: frozenDamage(damage),
     })
   }
 
   private presentationFrame(input: TranscriptRuntimeInput, damage: TranscriptDamage): TranscriptFrame {
+    const geometry = shallowRecordEqual(input.transcript.folded, this.frame.transcript.folded)
+      ? this.frame.geometry : reconciledGeometry(this.frame.geometry, input, this.frame.blocks)
     return Object.freeze({
       ...this.frame,
       presentationRevision: this.frame.presentationRevision + 1,
       mode: input.mode,
       transcript: presentationTranscriptWithProjections(input.transcript, this.frame.transcript.order, this.frame.transcript.projectionById),
+      geometry,
       damage: frozenDamage(damage),
     })
+  }
+
+  /**
+   * Atomically accepts one renderer measurement batch when every captured base
+   * revision still describes this exact presentation. Stale native work is a
+   * strict no-op and can never partially replace newer geometry.
+   */
+  reportMeasurements(batch: BlockMeasurementBatch): TranscriptFrame {
+    if (this.disposed || this.notifying || !batch.measurements.length) return this.frame
+    if (batch.threadId !== this.latestInput.threadId
+      || batch.canonicalGeneration !== this.latestInput.canonicalGeneration
+      || batch.displayedCanonicalRevision !== this.frame.displayedCanonicalRevision
+      || batch.basePresentationRevision !== this.frame.presentationRevision
+      || batch.geometryGeneration !== this.frame.geometry.generation) return this.frame
+
+    const blocks = new Map(this.frame.blocks.map(block => [blockKey(block), block]))
+    const measuredKeys = new Set<string>()
+    for (const measurement of batch.measurements) {
+      if (measuredKeys.has(measurement.key.blockKey)) return this.frame
+      measuredKeys.add(measurement.key.blockKey)
+      const block = blocks.get(measurement.key.blockKey)
+      if (!block || !geometryMatchesBlock(measurement, block,
+        block.key.kind === "item" && Boolean(this.frame.transcript.folded[block.key.itemId]))) return this.frame
+      if (!Number.isInteger(measurement.nativeRevision) || measurement.nativeRevision < 0
+        || !Number.isInteger(measurement.rows) || measurement.rows < 1
+        || !Number.isInteger(measurement.key.width) || measurement.key.width < 1) return this.frame
+      const prior = this.frame.geometry.byBlockKey[measurement.key.blockKey]
+      if (prior && measurement.nativeRevision <= prior.nativeRevision) return this.frame
+    }
+    const first = batch.measurements[0]!
+    if (batch.measurements.some(measurement => measurement.key.width !== first.key.width
+      || measurement.key.styleRevision !== first.key.styleRevision)) return this.frame
+    if (this.frame.geometry.width !== undefined && (this.frame.geometry.width !== first.key.width
+      || this.frame.geometry.styleRevision !== first.key.styleRevision)) return this.frame
+
+    // Geometry retention is deliberately budgeted to one complete variant per
+    // materialized block. Replacing the keyed value releases the prior large
+    // variant atomically; partial point eviction would corrupt navigation.
+    const nextByKey: Record<string, import("./geometry").BlockGeometry> = { ...this.frame.geometry.byBlockKey }
+    let changed = false
+    for (const measurement of batch.measurements) {
+      const frozen = freezeBlockGeometry(measurement)
+      nextByKey[measurement.key.blockKey] = frozen
+      changed = true
+    }
+    if (!changed) return this.frame
+    const geometry = composeTranscriptGeometry(this.frame.blocks, this.frame.transcript.folded, nextByKey,
+      this.frame.geometry.generation, this.frame.geometry.revision + 1, first.key.width, first.key.styleRevision)
+    return this.publish(Object.freeze({
+      ...this.frame,
+      presentationRevision: this.frame.presentationRevision + 1,
+      geometry,
+      damage: noneDamage,
+    }))
+  }
+
+  /** Invalidate the active layout generation so late native results are rejected. */
+  resetLayout(_reason: LayoutResetReason): TranscriptFrame {
+    if (this.disposed || this.notifying) return this.frame
+    const geometry = emptyTranscriptGeometry(this.frame.geometry.generation + 1, this.frame.geometry.revision + 1)
+    return this.publish(Object.freeze({
+      ...this.frame,
+      presentationRevision: this.frame.presentationRevision + 1,
+      geometry,
+      damage: Object.freeze({ kind: "layout" as const }),
+    }))
   }
 
   private rebuild(input: TranscriptRuntimeInput, damage: TranscriptDamage, reuse = true, incrementalItemIds?: readonly ItemId[]): TranscriptFrame {

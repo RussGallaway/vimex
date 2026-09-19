@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
-import { act } from "react"
+import { act, useState } from "react"
 import type { ScrollBoxRenderable } from "@opentui/core"
-import { itemId, turnId } from "@vimex/conversation"
-import { initialTranscript, syncTranscriptItem } from "@vimex/transcript"
+import { createConversation, itemId, reduceConversation, threadId, turnId } from "@vimex/conversation"
+import { initialTranscript, syncTranscriptItem, TranscriptRuntime } from "@vimex/transcript"
 import { ToolCall } from "./ToolCall"
 import { measureRenderedTranscript, measuredPoint, topVisiblePoint } from "./rendered-layout"
 import { createEmberTideSyntax } from "../theme"
@@ -100,5 +100,49 @@ test("cached native text avoids repeated reads and observes late equal-height re
     expect(changed.points).not.toBe(first.points)
     expect(measuredPoint(changed, point)!.screenY).toBe(1)
     expect(measuredPoint(first, point)!.screenY).toBe(0)
+  } finally { await act(async () => h.renderer.destroy()) }
+})
+
+test("a block-damage append is discovered after an initially empty render plan", async () => {
+  const thread = threadId("append-thread")
+  const turn = turnId("append-turn")
+  const item = { id: itemId("appended"), turnId: turn, kind: "assistant" as const, markdown: "new answer", status: "running" as const }
+  let conversation = createConversation(thread)
+  let transcript = initialTranscript()
+  let revision = 0
+  const runtime = new TranscriptRuntime({
+    threadId: thread, canonicalGeneration: 0, canonicalRevision: revision,
+    conversation, transcript, mode: "follow", canonicalDamage: { kind: "none" },
+  })
+  let mount = () => {}
+  function Harness() {
+    const [visible, setVisible] = useState(false)
+    mount = () => setVisible(true)
+    return <scrollbox id="scroll" width={40} height={8}>{visible
+      ? <box id={`transcript-block:${item.id}:root`} width={40} height={1}><text>{item.markdown}</text></box>
+      : null}</scrollbox>
+  }
+  const h = await testRender(<Harness />, { width: 40, height: 8 })
+  try {
+    await act(async () => { await h.flush(); await h.renderOnce() })
+    const scroll = h.renderer.root.findDescendantById("scroll") as ScrollBoxRenderable
+    expect(measureRenderedTranscript(h.renderer, scroll, { frame: runtime.getSnapshot(), runtime, styleRevision: "test" })).toBeUndefined()
+
+    conversation = reduceConversation(conversation, { type: "turn.started", threadId: thread, turnId: turn })
+    revision++
+    conversation = reduceConversation(conversation, { type: "item.started", threadId: thread, item })
+    revision++
+    transcript = syncTranscriptItem(transcript, conversation.items[item.id]!)
+    const appended = runtime.update({
+      threadId: thread, canonicalGeneration: 0, canonicalRevision: revision,
+      conversation, transcript, mode: "follow", canonicalDamage: { kind: "blocks", itemIds: [item.id] },
+    })
+    await act(async () => { mount(); await h.flush(); await h.renderOnce(); await h.renderOnce() })
+    expect(measureRenderedTranscript(h.renderer, scroll, { frame: appended, runtime, styleRevision: "test" })).toBeUndefined()
+    const measured = runtime.getSnapshot()
+    expect(Object.keys(measured.geometry.byBlockKey)).toEqual([`item:${item.id}:root`])
+    expect(measured.geometry.byBlockKey[`item:${item.id}:root`]?.key.contentRevision).toBe(appended.blocks[0]?.contentRevision)
+    expect(measured.geometry.totalPoints).toBeGreaterThan(0)
+    expect(measureRenderedTranscript(h.renderer, scroll, { frame: measured, runtime, styleRevision: "test" })).toBeDefined()
   } finally { await act(async () => h.renderer.destroy()) }
 })

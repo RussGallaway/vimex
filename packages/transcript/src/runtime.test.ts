@@ -4,6 +4,7 @@ import { syncTranscriptItem } from "./application/project-conversation"
 import { initialTranscript, type TranscriptState } from "./domain/transcript-document"
 import { TranscriptRuntime, type TranscriptDamage, type TranscriptRuntimeInput } from "./runtime"
 import { blockKey } from "./window"
+import type { BlockGeometry, BlockMeasurementBatch } from "./geometry"
 
 interface Source {
   conversation: ReturnType<typeof createConversation>
@@ -46,6 +47,122 @@ function semanticFrame(frame: ReturnType<TranscriptRuntime["getSnapshot"]>) {
     window: { topSpacerRows: frame.window.topSpacerRows, bottomSpacerRows: frame.window.bottomSpacerRows, overscanRows: frame.window.overscanRows },
   }
 }
+
+function measurement(runtime: TranscriptRuntime, key: string, options: Partial<BlockGeometry["key"]> & { nativeRevision?: number } = {}): BlockGeometry {
+  const frame = runtime.getSnapshot()
+  const block = frame.blocks.find(candidate => blockKey(candidate) === key)!
+  return {
+    key: {
+      blockKey: key,
+      contentRevision: options.contentRevision ?? block.contentRevision,
+      width: options.width ?? 80,
+      styleRevision: options.styleRevision ?? "default",
+      folded: options.folded ?? false,
+    },
+    nativeRevision: options.nativeRevision ?? 1,
+    rows: 1,
+    points: { 0: { graphemeOffset: 0, x: 0, y: 0, row: 0, column: 0 } },
+    lines: [{ from: 0, to: 0, row: 0 }],
+  }
+}
+
+function batch(runtime: TranscriptRuntime, measurements: readonly BlockGeometry[]): BlockMeasurementBatch {
+  const frame = runtime.getSnapshot()
+  return {
+    threadId: runtime.getThreadId(),
+    canonicalGeneration: 0,
+    displayedCanonicalRevision: frame.displayedCanonicalRevision,
+    basePresentationRevision: frame.presentationRevision,
+    geometryGeneration: frame.geometry.generation,
+    measurements,
+  }
+}
+
+test("commits a current geometry batch atomically and rejects a mixed stale batch", () => {
+  let source = fixture()
+  const history = itemId("geometry-history")
+  source = apply(source, { type: "item.started", threadId: thread, item: { id: history, turnId: turn, kind: "assistant", markdown: "history", status: "complete" } })
+  const runtime = new TranscriptRuntime(input(source, "follow"))
+  const keys = runtime.getSnapshot().blocks.filter(block => block.key.kind === "item").map(blockKey)
+  let notifications = 0
+  runtime.subscribe(() => { notifications++ })
+  const committed = runtime.reportMeasurements(batch(runtime, keys.map(key => measurement(runtime, key))))
+  expect(notifications).toBe(1)
+  expect(Object.keys(committed.geometry.byBlockKey)).toEqual(keys)
+  expect(Object.isFrozen(committed.geometry.byBlockKey[keys[0]!]!.points)).toBe(true)
+
+  const before = runtime.getSnapshot()
+  const stale = measurement(runtime, keys[1]!, { contentRevision: 999, nativeRevision: 2 })
+  const current = measurement(runtime, keys[0]!, { nativeRevision: 2 })
+  expect(runtime.reportMeasurements(batch(runtime, [current, stale]))).toBe(before)
+  expect(notifications).toBe(1)
+})
+
+test("geometry guards reject old presentation and layout generations", () => {
+  const runtime = new TranscriptRuntime(input(fixture(), "follow"))
+  const key = blockKey(runtime.getSnapshot().blocks.find(block => block.key.kind === "item")!)
+  const oldBatch = batch(runtime, [measurement(runtime, key)])
+  const reset = runtime.resetLayout("width")
+  expect(runtime.reportMeasurements(oldBatch)).toBe(reset)
+  const currentBatch = batch(runtime, [measurement(runtime, key, { width: 40 })])
+  const committed = runtime.reportMeasurements(currentBatch)
+  expect(committed.geometry.width).toBe(40)
+  expect(runtime.reportMeasurements(currentBatch)).toBe(committed)
+})
+
+test("retains one complete geometry variant per block instead of accumulating large revisions", () => {
+  const runtime = new TranscriptRuntime(input(fixture(), "follow"))
+  const key = blockKey(runtime.getSnapshot().blocks.find(block => block.key.kind === "item")!)
+  const large = (nativeRevision: number, count: number): BlockGeometry => ({
+    ...measurement(runtime, key, { nativeRevision }),
+    points: Object.fromEntries(Array.from({ length: count }, (_, offset) => [offset, {
+      graphemeOffset: offset, x: offset, y: 0, row: 0, column: offset,
+    }])),
+    lines: [{ from: 0, to: count - 1, row: 0 }],
+  })
+  const first = runtime.reportMeasurements(batch(runtime, [large(1, 10_000)]))
+  const prior = first.geometry.byBlockKey[key]
+  const second = runtime.reportMeasurements(batch(runtime, [large(2, 12_000)]))
+  expect(Object.keys(second.geometry.byBlockKey)).toEqual([key])
+  expect(second.geometry.byBlockKey[key]).not.toBe(prior)
+  expect(second.geometry.totalPoints).toBe(12_000)
+})
+
+test("tail geometry updates retain historical block-local identities", () => {
+  let source = fixture()
+  const history = itemId("measured-history")
+  source = apply(source, { type: "item.started", threadId: thread, item: { id: history, turnId: turn, kind: "assistant", markdown: "settled", status: "complete" } })
+  const runtime = new TranscriptRuntime(input(source, "follow"))
+  const keys = runtime.getSnapshot().blocks.filter(block => block.key.kind === "item").map(blockKey)
+  runtime.reportMeasurements(batch(runtime, keys.map(key => measurement(runtime, key))))
+  const historicalGeometry = runtime.getSnapshot().geometry.byBlockKey[`item:${history}:root`]
+  source = apply(source, { type: "item.delta", threadId: thread, itemId: answer, delta: " tail" })
+  runtime.update(input(source, "follow", { kind: "blocks", itemIds: [answer] }))
+  expect(runtime.getSnapshot().geometry.byBlockKey[`item:${history}:root`]).toBe(historicalGeometry)
+  expect(runtime.getSnapshot().geometry.byBlockKey[`item:${answer}:root`]).toBeUndefined()
+  runtime.reportMeasurements(batch(runtime, [measurement(runtime, `item:${answer}:root`, { nativeRevision: 2 })]))
+  expect(runtime.getSnapshot().geometry.byBlockKey[`item:${history}:root`]).toBe(historicalGeometry)
+})
+
+test("presentation-only navigation retains the exact geometry snapshot", () => {
+  const source = fixture()
+  const runtime = new TranscriptRuntime(input(source, "follow"))
+  const key = blockKey(runtime.getSnapshot().blocks.find(block => block.key.kind === "item")!)
+  runtime.reportMeasurements(batch(runtime, [measurement(runtime, key)]))
+  const measured = runtime.getSnapshot()
+  const transcript = {
+    ...source.transcript,
+    cursor: { itemId: answer, graphemeOffset: 2 },
+    viewport: { kind: "point" as const, point: { itemId: answer, graphemeOffset: 2 }, preferredScreenRow: 3 },
+  }
+  const moved = runtime.update({
+    ...input({ ...source, transcript }, "follow"),
+    presentationDamage: { kind: "view" },
+  })
+  expect(moved).not.toBe(measured)
+  expect(moved.geometry).toBe(measured.geometry)
+  expect(moved.geometry.byBlockKey[key]).toBe(measured.geometry.byBlockKey[key])
+})
 
 test("returns one cached immutable snapshot until selected frame data changes", () => {
   const source = fixture()

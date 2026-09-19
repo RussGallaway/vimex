@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { itemId } from "@vimex/conversation"
-import { graphemeCount, initialTranscript, projectMarkdown, type TranscriptState } from "@vimex/transcript"
-import { buildTranscriptLayout, graphemeCellWidth, movePoint, selectedRangeForItem } from "./layout"
+import { composeTranscriptGeometry, graphemeCount, initialTranscript, projectMarkdown, type BlockGeometry, type TranscriptState } from "@vimex/transcript"
+import { blockRefForPoint, buildTranscriptLayout, graphemeCellWidth, movePoint, pointInLayout, selectedRangeForItem } from "./layout"
 
 const first = itemId("first")
 const second = itemId("second")
@@ -121,4 +121,85 @@ test("measured inclusive row endpoints retain their own row for horizontal motio
   expect(movePoint(layout, point, "left")?.point.graphemeOffset).toBe(0)
   expect(movePoint(layout, point, "line-start")?.point.graphemeOffset).toBe(0)
   expect(movePoint(layout, point, "line-end")?.point.graphemeOffset).toBe(1)
+})
+
+test("block-local geometry composes navigation without cloning historical points", () => {
+  const make = (id: typeof first, text: string, rows: readonly (readonly number[])[]): BlockGeometry => {
+    const points = Object.fromEntries(rows.flatMap((offsets, row) => offsets.map((offset, column) => [offset, {
+      graphemeOffset: offset, x: column, y: row, row, column,
+    }])))
+    return Object.freeze({
+      key: Object.freeze({ blockKey: `item:${id}:root`, contentRevision: 1, width: 10, styleRevision: "test", folded: false }),
+      nativeRevision: 1,
+      rows: rows.length,
+      points: Object.freeze(points),
+      lines: Object.freeze(rows.map((offsets, row) => Object.freeze({ from: offsets[0]!, to: offsets.at(-1)!, row }))),
+    })
+  }
+  const state = stateFor("abcd", "ef")
+  const firstGeometry = make(first, "abcd", [[0, 1], [2, 3]])
+  const secondGeometry = make(second, "ef", [[0, 1]])
+  const blocks = [
+    { key: { kind: "item" as const, itemId: first, blockId: "root" }, contentRevision: 1, estimatedRows: 1 },
+    { key: { kind: "item" as const, itemId: second, blockId: "root" }, contentRevision: 1, estimatedRows: 1 },
+  ] as never
+  const geometry = composeTranscriptGeometry(blocks, state.folded, {
+    [`item:${first}:root`]: firstGeometry,
+    [`item:${second}:root`]: secondGeometry,
+  }, 0, 1, 10, "test")
+  const layout = {
+    width: 10, lines: [], linesByItem: {}, geometry,
+    blockKeyByItem: { [first]: `item:${first}:root`, [second]: `item:${second}:root` },
+    placementByBlockKey: {
+      [`item:${first}:root`]: { screenX: 4, screenY: 8 },
+      [`item:${second}:root`]: { screenX: 4, screenY: 10 },
+    },
+  }
+  expect(movePoint(layout, { itemId: first, graphemeOffset: 1 }, "down")?.point).toEqual({ itemId: first, graphemeOffset: 3 })
+  expect(movePoint(layout, { itemId: first, graphemeOffset: 3 }, "down")?.point).toEqual({ itemId: second, graphemeOffset: 1 })
+  expect(movePoint(layout, { itemId: second, graphemeOffset: 0 }, "first")?.point).toEqual({ itemId: first, graphemeOffset: 0 })
+  expect(geometry.byBlockKey[`item:${first}:root`]!.points).toBe(firstGeometry.points)
+})
+
+test("one semantic item navigates across multiple render blocks", () => {
+  const make = (blockId: string, offsets: readonly number[]): BlockGeometry => Object.freeze({
+    key: Object.freeze({ blockKey: `item:${first}:${blockId}`, contentRevision: 1, width: 10, styleRevision: "test", folded: false }),
+    nativeRevision: 1,
+    rows: 1,
+    pointCount: offsets.length,
+    points: Object.freeze(Object.fromEntries(offsets.map((offset, column) => [offset, Object.freeze({
+      graphemeOffset: offset, x: column, y: 0, row: 0, column,
+    })]))),
+    pointOffsetsByRow: Object.freeze({ 0: Object.freeze([...offsets]) }),
+    lines: Object.freeze([Object.freeze({ from: offsets[0]!, to: offsets.at(-1)!, row: 0 })]),
+    lineByRow: Object.freeze({ 0: Object.freeze({ from: offsets[0]!, to: offsets.at(-1)!, row: 0 }) }),
+  })
+  const state = stateFor("abcdef")
+  const firstBlock = { key: { kind: "item" as const, itemId: first, blockId: "a" }, contentRevision: 1, estimatedRows: 1 }
+  const secondBlock = { key: { kind: "item" as const, itemId: first, blockId: "b" }, contentRevision: 1, estimatedRows: 1 }
+  const a = make("a", [0, 1, 2])
+  const b = make("b", [3, 4, 5])
+  const geometry = composeTranscriptGeometry([firstBlock, secondBlock] as never, state.folded, {
+    [`item:${first}:a`]: a,
+    [`item:${first}:b`]: b,
+  }, 0, 1, 10, "test")
+  const layout = {
+    width: 10,
+    lines: [],
+    linesByItem: {},
+    geometry,
+    blockKeysByItem: { [first]: [
+      { blockKey: `item:${first}:a`, blockId: "a", from: 0, to: 3 },
+      { blockKey: `item:${first}:b`, blockId: "b", from: 3, to: 6 },
+    ] },
+    placementByBlockKey: {
+      [`item:${first}:a`]: { screenX: 0, screenY: 0 },
+      [`item:${first}:b`]: { screenX: 0, screenY: 1 },
+    },
+  }
+  expect(movePoint(layout, { itemId: first, graphemeOffset: 1 }, "down")?.point).toEqual({ itemId: first, graphemeOffset: 4 })
+  expect(movePoint(layout, { itemId: first, graphemeOffset: 2 }, "right")?.point).toEqual({ itemId: first, graphemeOffset: 3 })
+  expect(movePoint(layout, { itemId: first, graphemeOffset: 3 }, "left")?.point).toEqual({ itemId: first, graphemeOffset: 2 })
+  expect(blockRefForPoint(layout, { itemId: first, graphemeOffset: 3 })?.blockId).toBe("b")
+  expect(pointInLayout(layout, { itemId: first, graphemeOffset: 4 })?.screenY).toBe(1)
 })

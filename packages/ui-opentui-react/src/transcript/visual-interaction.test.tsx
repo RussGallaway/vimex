@@ -1,6 +1,6 @@
 import { measureRenderedTranscript, measuredPoint } from "./rendered-layout"
 import { expect, test } from "bun:test"
-import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
+import type { Renderable, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
 import { testRender } from "@opentui/react/test-utils"
 import { act, useSyncExternalStore } from "react"
 import { itemId, threadId, turnId, type ConversationGateway } from "@vimex/conversation"
@@ -8,6 +8,7 @@ import type { ApprovalGateway } from "@vimex/approvals"
 import { VimexController, type ModelCatalog, type RuntimeConnection, type RuntimeEvent } from "@vimex/workbench"
 import { selectedText } from "@vimex/transcript"
 import { VimexRoot } from "../index"
+import { blockNativeRevision } from "./measure-rendered-block"
 
 const thread = threadId("visual-thread")
 const answer = itemId("visual-answer")
@@ -427,6 +428,8 @@ async function flashKey(h: Awaited<ReturnType<typeof visualHarness>>, key: strin
 test("Flash jumps from Insert composer to labeled transcript text, preserving draft and supporting jump-back", async () => {
   const h = await visualHarness()
   try {
+    const transcriptBlock = h.renderer.root.findDescendantById(`transcript-block:${answer}:root`) as Renderable
+    const nativeRevision = blockNativeRevision(transcriptBlock)
     await h.keys("i")
     await h.keys("Draft untouched")
     await flashKey(h, "g", true)
@@ -440,6 +443,7 @@ test("Flash jumps from Insert composer to labeled transcript text, preserving dr
     expect(h.workspace().interaction).toMatchObject({ mode: "normal", surface: "transcript" })
     expect(h.workspace().transcript.cursor).toEqual({ itemId: answer, graphemeOffset: 6 })
     expect(h.workspace().composer.text).toBe("Draft untouched")
+    expect(blockNativeRevision(transcriptBlock)).toBe(nativeRevision)
     await flashKey(h, "o", true)
     expect(h.workspace().transcript.cursor?.graphemeOffset).not.toBe(6)
     await flashKey(h, "TAB")

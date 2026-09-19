@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { createConversation, itemId, reduceConversation, threadId, turnId, type ConversationEvent } from "@vimex/conversation"
 import { initialTranscript } from "./domain/transcript-document"
 import { syncTranscriptItem } from "./application/project-conversation"
-import { blockKey, buildTranscriptBlocks, passThroughWindow, pointIsMaterialized, type TranscriptItemBlock } from "./window"
+import { blockGraphemeRange, blockKey, buildTranscriptBlocks, passThroughWindow, pointIsMaterialized, type TranscriptItemBlock } from "./window"
 
 function fixture() {
   const thread = threadId("thread")
@@ -135,11 +135,21 @@ test("extensible item block identities and source spans address sub-block materi
   const prefix: TranscriptItemBlock = Object.freeze({
     ...root,
     key: Object.freeze({ kind: "item", itemId: firstItem, blockId: "markdown:paragraph:0" }),
+    renderItem: Object.freeze({ ...root.renderItem, markdown: "f" }),
     sourceSpan: Object.freeze({ from: 0, to: 1 }),
+  })
+  const suffix: TranscriptItemBlock = Object.freeze({
+    ...root,
+    key: Object.freeze({ kind: "item", itemId: firstItem, blockId: "markdown:paragraph:1" }),
+    renderItem: Object.freeze({ ...root.renderItem, markdown: root.projection.source.slice(1) }),
+    sourceSpan: Object.freeze({ from: 1, to: root.projection.source.length }),
   })
 
   expect(blockKey(prefix)).toBe(`item:${firstItem}:markdown:paragraph:0`)
+  expect(blockGraphemeRange(prefix)).toEqual({ from: 0, to: 1 })
+  expect(prefix.renderItem).not.toBe(prefix.item)
   expect(pointIsMaterialized([prefix], { itemId: firstItem, graphemeOffset: 0 })).toBe(true)
-  expect(pointIsMaterialized([prefix], { itemId: firstItem, graphemeOffset: 1 })).toBe(true)
+  expect(pointIsMaterialized([prefix], { itemId: firstItem, graphemeOffset: 1 })).toBe(false)
+  expect(pointIsMaterialized([prefix, suffix], { itemId: firstItem, graphemeOffset: 1 })).toBe(true)
   expect(pointIsMaterialized([prefix], { itemId: firstItem, graphemeOffset: 2 })).toBe(false)
 })

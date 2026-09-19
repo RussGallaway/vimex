@@ -1,11 +1,10 @@
 import { graphemes, type TextProjection, type TranscriptState } from "@vimex/transcript"
 import type { MeasuredPoint, TranscriptLayout } from "./layout"
-import { measuredPoint } from "./rendered-layout"
+import { measuredPoint, visibleMeasuredPoints } from "./rendered-layout"
 
 export interface FlashTarget extends MeasuredPoint { label?: string }
 export interface FlashViewport { screenX: number; screenY: number; width: number; height: number }
 const textCache = new WeakMap<TextProjection, readonly string[]>()
-const pointCache = new WeakMap<object, readonly MeasuredPoint[]>()
 const alphabet = "asdfghjklqwertyuiopzxcvbnm"
 export function flashTargets(state: TranscriptState, layout: TranscriptLayout, viewport: FlashViewport, query: string, page = 0) {
   const needle = graphemes(query)
@@ -16,24 +15,9 @@ export function flashTargets(state: TranscriptState, layout: TranscriptLayout, v
   const continuations = new Set<string>()
   const cells = new Set<string>()
   if (!needle.length) return { matches, labels: matches, pages: 1 }
-  const native = layout.points
-  if (!native) return { matches, labels: matches, pages: 1 }
-  let index = pointCache.get(native)
-  if (!index) {
-    index = Object.values(native).flatMap(points => Object.values(points)).filter(point => !point.hidden).sort((a, b) => a.screenY - b.screenY || a.screenX - b.screenX)
-    pointCache.set(native, index)
-  }
-  const top = viewport.screenY - (layout.screenOffset?.y ?? 0)
-  let low = 0, high = index.length
-  while (low < high) {
-    const mid = (low + high) >>> 1
-    if (index[mid]!.screenY < top) low = mid + 1
-    else high = mid
-  }
-  for (let offset = low; offset < index.length; offset++) {
-    const raw = index[offset]!
-    if (raw.screenY >= top + viewport.height) break
-    const point = measuredPoint(layout, raw)
+  const index = visibleMeasuredPoints(layout, viewport).filter(point => !point.hidden).sort((a, b) => a.screenY - b.screenY || a.screenX - b.screenX)
+  for (const raw of index) {
+    const point = raw
     if (!visible(point)) continue
     const projection = state.projectionById[raw.itemId]
     if (!projection) continue

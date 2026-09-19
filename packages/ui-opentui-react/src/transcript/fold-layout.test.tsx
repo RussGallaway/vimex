@@ -99,7 +99,8 @@ test("folded point fallback reads a large projection a bounded number of times",
   try {
     await act(async () => { await h.flush(); await h.renderOnce() })
     const layout = measureRenderedTranscript(h.renderer, h.renderer.root.findDescendantById("scroll") as ScrollBoxRenderable, state)!
-    expect(Object.keys(layout.points![item.id]!)).toHaveLength(projection.sourceSpans.length + 1)
+    expect(Object.keys(layout.points![item.id]!).length).toBeLessThan(32)
+    expect(layout.points![item.id]![projection.sourceSpans.length]?.hidden).toBe(true)
     expect(reads).toBeLessThan(10)
   } finally {
     await act(async () => h.renderer.destroy())

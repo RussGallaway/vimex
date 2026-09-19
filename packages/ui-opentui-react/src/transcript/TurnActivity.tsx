@@ -12,7 +12,7 @@ export const TurnActivity = memo(function TurnActivity({ turn }: { turn: Turn })
   const label = turn.status === "complete" ? duration ? `Worked for ${duration}` : "Worked"
     : turn.status === "failed" ? duration ? `Failed after ${duration}` : "Failed"
       : duration ? `Stopped after ${duration}` : "Stopped"
-  return <box id={`decoration:turn:${turn.id}`} height={1} flexDirection="row" gap={1} paddingLeft={2} marginBottom={1} flexShrink={0}>
+  return <box id={`decoration:turn:${turn.id}`} height={1} flexDirection="row" gap={1} paddingLeft={2} flexShrink={0}>
     <text fg={turn.status === "failed" ? emberTide.red : turn.status === "interrupted" ? emberTide.amber : emberTide.blueBright}>{turn.status === "complete" ? "✓" : turn.status === "failed" ? "×" : "■"}</text>
     <text fg={emberTide.textMuted}>{label}</text>
   </box>

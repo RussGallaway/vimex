@@ -16,8 +16,10 @@ export type TranscriptBlockProjection = Immutable<TextProjection>
 export interface TranscriptItemBlock {
   readonly key: Readonly<{ kind: "item"; itemId: ItemId; blockId: string }>
   readonly turnId: TurnId
-  /** Render-ready payload for sourceSpan. Stage 2 publishes the complete item. */
+  /** Immutable canonical item metadata shared by every block of this item. */
   readonly item: TranscriptBlockItem
+  /** Render-ready payload for sourceSpan. Stage 2 publishes the complete item. */
+  readonly renderItem: TranscriptBlockItem
   /** Immutable semantic projection used to address sourceSpan and logical points. */
   readonly projection: TranscriptBlockProjection
   readonly sourceSpan: Readonly<SourceSpan>
@@ -130,6 +132,7 @@ export function buildTranscriptItemBlock(input: Pick<BuildTranscriptBlocksInput,
     key: Object.freeze({ kind: "item" as const, itemId, blockId: "root" }),
     turnId: item.turnId,
     item: itemSnapshot,
+    renderItem: itemSnapshot,
     projection: projectionSnapshot,
     sourceSpan: Object.freeze({ from: 0, to: projectionSnapshot.source.length }),
     contentRevision: itemContentRevision(item, status, projection),
@@ -166,7 +169,7 @@ export function buildTranscriptBlocks(input: BuildTranscriptBlocksInput): readon
         key: Object.freeze({ kind: "turn-activity" as const, turnId }),
         turn: snapshotTurn(turn),
         contentRevision: turnActivityRevision(turn),
-        estimatedRows: 1,
+        estimatedRows: 2,
       }))
     }
   }
@@ -185,12 +188,25 @@ export function blockKey(block: TranscriptBlock): string {
     : `turn-activity:${block.key.turnId}`
 }
 
+/** Inclusive/exclusive logical grapheme range addressed by an item render block. */
+export function blockGraphemeRange(block: TranscriptItemBlock): Readonly<{ from: number; to: number }> {
+  const spans = block.projection.sourceSpans
+  let from = spans.findIndex(span => span.to > block.sourceSpan.from)
+  if (from < 0) from = spans.length
+  let to = spans.findLastIndex(span => span.from < block.sourceSpan.to)
+  if (to < 0) to = from
+  else to += 1
+  return Object.freeze({ from, to })
+}
+
 /** Source-less activity decoration can never satisfy a logical item target. */
 export function pointIsMaterialized(blocks: readonly TranscriptBlock[], point: LogicalPoint): boolean {
   if (!Number.isInteger(point.graphemeOffset) || point.graphemeOffset < 0) return false
   return blocks.some(block => {
     if (!("projection" in block) || block.key.itemId !== point.itemId || point.graphemeOffset > block.projection.sourceSpans.length) return false
     const sourceOffset = block.projection.sourceSpans[point.graphemeOffset]?.from ?? block.projection.source.length
-    return sourceOffset >= block.sourceSpan.from && sourceOffset <= block.sourceSpan.to
+    const ownsEnd = block.sourceSpan.to === block.projection.source.length
+    return sourceOffset >= block.sourceSpan.from
+      && (sourceOffset < block.sourceSpan.to || (ownsEnd && sourceOffset === block.sourceSpan.to))
   })
 }

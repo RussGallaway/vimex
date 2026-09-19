@@ -1,16 +1,19 @@
 import { CliRenderEvents, type ScrollBoxRenderable } from "@opentui/core"
 import { useRenderer } from "@opentui/react"
 import type { ThreadId } from "@vimex/conversation"
-import type { LogicalPoint, TranscriptState } from "@vimex/transcript"
+import type { GeometryStyleRevision, LogicalPoint, TranscriptFrame, TranscriptRuntime, TranscriptState } from "@vimex/transcript"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react"
 import type { VimexUiController } from "../contracts"
 import { buildTranscriptLayout, type TranscriptLayout } from "./layout"
-import { measureRenderedTranscript, measuredPoint, topVisiblePoint, bottomVisiblePoint } from "./rendered-layout"
+import { measureRenderedTranscript, measuredPoint, topVisiblePoint, bottomVisiblePoint, rebaseTranscriptLayout, transcriptItemRenderableId } from "./rendered-layout"
 
 /** Owns the volatile bridge between semantic anchors and terminal geometry. */
 export function useTranscriptLayout(options: {
   threadId?: ThreadId
   transcript: TranscriptState
+  frame?: TranscriptFrame
+  runtime?: TranscriptRuntime
+  styleRevision?: GeometryStyleRevision
   width: number
   height: number
   scrollRef: RefObject<ScrollBoxRenderable | null>
@@ -22,14 +25,15 @@ export function useTranscriptLayout(options: {
   const latest = useRef(options)
   latest.current = options
   const measuredLayout = useRef<TranscriptLayout | undefined>(undefined)
-  const [rendered, setRendered] = useState<{ threadId?: ThreadId; layout: TranscriptLayout }>()
+  const currentMeasuredLayout = useRef<TranscriptLayout | undefined>(undefined)
+  const [, publishPlacement] = useState(0)
   const pendingAnchor = useRef(false)
   const pendingRestore = useRef(false)
-  const hasMeasuredLayout = rendered !== undefined && rendered.threadId === threadId
+  const hasRuntimeGeometry = Boolean(options.frame && options.frame.geometry.measuredBlockCount > 0)
   // Estimated wrapping is only a startup fallback. Rewrapping the whole history
   // on each fold wastes work once native geometry is available.
-  const estimated = useMemo(() => hasMeasuredLayout ? undefined : buildTranscriptLayout(transcript, Math.max(8, width - 7)),
-    [hasMeasuredLayout, transcript.order, transcript.projectionById, transcript.folded, width])
+  const estimated = useMemo(() => hasRuntimeGeometry ? undefined : buildTranscriptLayout(transcript, Math.max(8, width - 7)),
+    [hasRuntimeGeometry, transcript.order, transcript.projectionById, transcript.folded, width])
   useLayoutEffect(() => {
     measuredLayout.current = undefined
     pendingAnchor.current = false
@@ -56,14 +60,19 @@ export function useTranscriptLayout(options: {
       const current = latest.current
       const scrollbox = scrollRef.current
       if (!scrollbox) return
-      const next = measureRenderedTranscript(renderer, scrollbox, current.transcript)
+      const next = measureRenderedTranscript(renderer, scrollbox, current.frame
+        ? { frame: current.frame, runtime: current.runtime, styleRevision: current.styleRevision ?? "default" }
+        : current.transcript)
       if (!next) return
       // Measurement owns a geometry cache. Its stable identity avoids serializing
       // every logical point merely to discover that a frame has not changed.
       if (next !== measuredLayout.current) {
-        const geometryChanged = next.points !== measuredLayout.current?.points
+        const hadLayout = measuredLayout.current !== undefined
+        const geometryChanged = next.geometry !== measuredLayout.current?.geometry
         measuredLayout.current = next
-        setRendered({ threadId: current.threadId, layout: next })
+        // Geometry remains runtime-owned; this tick only exposes a newly
+        // measured native placement to render-time consumers such as Flash.
+        if (!hadLayout || geometryChanged) publishPlacement(value => value + 1)
         // Markdown and table renderables can settle over later native frames
         // without changing transcript state. Reapply a detached logical anchor
         // after each real geometry revision so async reflow cannot move it.
@@ -86,7 +95,7 @@ export function useTranscriptLayout(options: {
           pendingRestore.current = false
           const delta = anchor.screenY - scrollbox.viewport.screenY - viewport.preferredScreenRow
           if (delta) scrollbox.scrollBy(delta, "step")
-        } else scrollbox.scrollChildIntoView(`transcript-item:${viewport.point.itemId}`)
+        } else scrollbox.scrollChildIntoView(transcriptItemRenderableId(viewport.point.itemId))
       }
     }
     renderer.on(CliRenderEvents.FRAME, measure)
@@ -98,7 +107,9 @@ export function useTranscriptLayout(options: {
     if (!scrollbox) return
     // Measure at key time: scrolling may have occurred since the last frame.
     const current = latest.current
-    const next = measureRenderedTranscript(renderer, scrollbox, current.transcript)
+    const next = measureRenderedTranscript(renderer, scrollbox, current.frame
+      ? { frame: current.frame, runtime: current.runtime, styleRevision: current.styleRevision ?? "default" }
+      : current.transcript)
     if (!next) return
     const point = bottomVisiblePoint(next, scrollbox)
     if (!point) return
@@ -107,5 +118,13 @@ export function useTranscriptLayout(options: {
     pendingRestore.current = false
     controller.transcript({ type: "cursor.move", target: { itemId: point.itemId, graphemeOffset: point.graphemeOffset }, preferredScreenRow: point.screenY - scrollbox.viewport.screenY, extend: false })
   }, [controller, renderer, scrollRef])
-  return { enterVisibleTranscript, layout: hasMeasuredLayout ? rendered!.layout : estimated!, measuredLayout, onManualScroll }
+  const currentLayout = !options.runtime || measuredLayout.current?.geometry === options.frame?.geometry ? measuredLayout.current : undefined
+  const rebased = !currentLayout && options.frame && measuredLayout.current
+    ? rebaseTranscriptLayout(measuredLayout.current, options.frame.geometry)
+    : undefined
+  const layout = currentLayout ?? rebased ?? estimated ?? buildTranscriptLayout(transcript, Math.max(8, width - 7))
+  // Input consumers must never bypass the current runtime frame by reading an
+  // older native layout during the remeasurement frame.
+  currentMeasuredLayout.current = currentLayout ?? rebased
+  return { enterVisibleTranscript, layout, measuredLayout: currentMeasuredLayout, onManualScroll }
 }

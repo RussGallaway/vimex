@@ -94,7 +94,8 @@ for (const folded of [false, true]) test(`truncated long tool title keeps every 
     const projection = transcript.projectionById[item.id]!
     const layout = measureRenderedTranscript(h.renderer, h.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable, transcript)!
     const points = layout.points![item.id]!
-    expect(Object.keys(points)).toHaveLength(graphemes(projection.plain).length + 1)
+    if (folded) expect(Object.keys(points).length).toBeLessThan(graphemes(projection.plain).length)
+    else expect(Object.keys(points)).toHaveLength(graphemes(projection.plain).length + 1)
     expect(Object.values(points).every(point => point.screenX >= 0 && point.screenX < 50)).toBe(true)
     expect(projection.source).toBe([item.title, item.executionCommand, item.detail].join("\n"))
     if (!folded) {
