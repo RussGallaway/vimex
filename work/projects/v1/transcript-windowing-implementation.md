@@ -1,6 +1,6 @@
 # Transcript windowing implementation
 
-Status: Stages 5.0–5.4 are complete and verified. Stage 5.5 is in progress; bounded same-item follow and reattachment are complete.
+Status: Stages 5.0–5.4 are complete and verified. Stage 5.5 is in progress; bounded same-item follow, reattachment, and canonical ingress are complete.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
@@ -26,7 +26,7 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 | Stage 5b: windowed mounting | Complete | Commit `3e24002`; bounded production runtime, React/native mounting, observer lifetime, scaling evidence, and review sign-off below |
 | Stage 5c: anchor correction | Complete | Commit `97f163f`; atomic height correction, window-local geometry, logical-anchor restoration, scaling evidence, and review sign-off below |
 | Stage 5d: off-window semantics | Complete | Commits `a24f5af`, `df243a1`, `9266837`, `0e1ad6d`; indexed target materialization and URL motion, bounded selection clipping, canonical cross-window copy, atomic navigation/fold/picker settlement, and evidence below |
-| Stage 5e: follow and detachment | In progress | Stage 5.5a commit `9e8974e`; bounded same-item follow/reattach runtime reconciliation and evidence below |
+| Stage 5e: follow and detachment | In progress | Stage 5.5a commit `9e8974e` and Stage 5.5b commit `e5dfc61`; bounded same-item canonical ingress, follow/reattach runtime reconciliation, and evidence below |
 | Stage 5f: stress, review, and evidence | Not started | — |
 
 “Complete” means the slice's exit criteria pass, evidence is recorded here, and the implementation is committed. Partial working-tree changes do not count as complete.
@@ -976,3 +976,39 @@ Every cell builds exactly one changed item, performs one projection update, one 
 - Parallel architecture, correctness, and performance reviews ran before implementation and after the initial slice. The repair round restored the distinct dense reference, hardened proxy reflection and integrity operations, added exact replacement-lineage proof, rejected future sub-block ambiguity, counted complete geometry at its real boundary, separated point-update work from bounded window slicing, observed hidden publications instead of printing a literal, and made AVL allocation/bounds evidence truthful. All three final reviewers signed off with no blocker.
 
 Stage 5.5a is complete for the explicitly scoped production runtime boundary. It does not claim bounded canonical ingress: `ConversationState.items` still uses a complete record copy for a delta, and changed individual Markdown/tool content is still projected as one content-sized item. New tail items and turn-activity structure still select the full rebuild, and hidden/maximized panes still retain React/native resources. Those remain required before Stage 5.5 or overall Stage 5 can be marked complete.
+
+### Stage 5.5b — bounded canonical same-item ingress
+
+Implementation commit: `e5dfc61` (`perf: bound canonical transcript ingress`). This slice closes the historical-size copy in the canonical `item.delta` path and measures one real steady-state tail delta from canonical reduction through semantic projection/index inheritance and production runtime publication. Structural tail insertion, detached unseen-item accumulation, hidden-pane native suspension, and oversized-item production sub-blocks remain later slices.
+
+#### Canonical authority, compatibility, and fallback
+
+- `ConversationState.items` remains the sole canonical item authority. Its record-shaped representation is now an immutable persistent AVL: one item replacement path-copies one logarithmic path while the previous state and every unrelated item identity remain unchanged. This is a representation of canonical state, not a second transcript store or presentation cache.
+- Plain/restored records normalize lazily on the first real mutation. Wrong-thread, missing-item, and terminal-item deltas retain exact state identity and perform no normalization. Forked conversations normalize before publication so their first later delta does not pay an unexpected complete copy.
+- The public `Readonly<Record<string, ConversationItem>>` behavior preserves ordinary numeric-key ordering followed by named-key insertion order, `Object.keys`/entries/values, spread, JSON, own descriptors, and opaque IDs including `__proto__`, `constructor`, and `toString`. Mutation, prototype, and integrity operations are rejected without poisoning later reads.
+- `reduceConversation` retains its exact two-argument shape and remains safe as an `Array.reduce` callback. The separately named diagnostic reducer cannot accidentally receive an array index as counters. A dense full-copy writer behind the shared semantic reducer remains the equivalence oracle.
+- Both scheduled ingress and direct conversation dispatch share one damage predicate. Existing-item completion uses bounded block damage only when the pre-event item, item turn, turn record, and turn membership prove chronology is unchanged. Missing, unlinked, or cross-turn relationships select the exact full-rebuild fallback.
+- Semantic text-length, URL-count, and logical-order indexes are primed on the exact input snapshot outside measured steady state and inherit through the projection update. Diagnostics are attached at their actual build and update boundaries, so a lost cache would fail deterministic zero-build/item-visit assertions instead of hiding in a timing curve.
+
+#### Deterministic canonical-ingress scaling
+
+The production cell applies one identical running-tail `item.delta` at 100, 1k, 10k, and 100k render blocks. It times canonical reduction, the Workbench-style changed-item lookup, semantic projection, and runtime reconciliation separately. Bulk fixture construction, cold persistent normalization, disposable-index priming, the dense oracle, JSON equivalence, and exhaustive `N - 1` identity checks are explicitly outside timing.
+
+| Complete blocks | Mounted / publications | Canonical lookup visits (2 lookups) | Canonical update visits=copies | Semantic projection visits=copies | Text / URL builds, item visits, updates, path visits | Runtime complete-plan / height-build / complete-geometry visits | Window slice / geometry visits | Complete ingress settlement |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 48 / 1 | 12 | 6=6 | 6=6 | 0,0,1,8 / 0,0,1,8 | 0 / 0 / 0 | 48 / 48 | 1.336 ms |
+| 1k | 48 / 1 | 18 | 9=9 | 9=9 | 0,0,1,11 / 0,0,1,11 | 0 / 0 / 0 | 48 / 48 | 0.234 ms |
+| 10k | 48 / 1 | 26 | 13=13 | 13=13 | 0,0,1,15 / 0,0,1,15 | 0 / 0 / 0 | 48 / 48 | 0.381 ms |
+| 100k | 48 / 1 | 32 | 16=16 | 16=16 | 0,0,1,18 / 0,0,1,18 | 0 / 0 / 0 | 48 / 48 | 0.520 ms |
+
+Every cell preserves `N - 1` canonical item identities and `N - 1` semantic projection identities. Canonical and semantic record work follows logarithmic paths; text-length and URL indexes perform one logarithmic update each with zero builds and zero complete item visits. The runtime then performs the already verified one projection, block-plan, and height-index update, composes exactly 48 window blocks, and publishes once. Timings are diagnostic curves; identity, semantic equivalence, zero complete work, logarithmic paths, and fixed mounted/window work are the gates.
+
+#### Repository, PTY, benchmark, and review gates
+
+- The broad focused matrix passed 273 tests and 21,330 assertions across conversation, testkit, transcript, Workbench, controller, and side-chat integration. Additional deterministic coverage exercises a 10k monotonic insertion lineage, first/middle/last replacements, dense-reducer equivalence, ordinary reflection and special keys, old-snapshot identity, failed integrity operations, lazy normalization, fork isolation, and exact damage fallback.
+- `bun run check` passed typecheck, dependency boundaries, generated-doc validation, and every non-sandbox-sensitive test: 731 passed and 5 intentional profiling skips. Its only failure was the sandbox-denied isolated tmux socket; the other four real PTY cases passed.
+- The exact isolated rerun outside the sandbox passed: `bun test tests/terminal/terminal.test.ts --test-name-pattern "isolated tmux"` — 1 passed in 785 ms.
+- The executable 100/1k/10k/100k benchmark passed every canonical-update, semantic-index, identity, publication, complete-work-zero, and bounded-window assertion shown above. `git diff --check` passed.
+- Parallel architecture, correctness, and performance reviews ran before implementation and after the slice. Repairs preserved named-key insertion order, separated the diagnostic reducer from `Array.reduce`, made lookup and cold-normalization counters truthful, moved exhaustive evidence after measured settlement, added sequential-AVL evidence, and forced ambiguous completion chronology to the full fallback. All three final reviewers signed off with no blocker.
+
+Stage 5.5b is complete for steady same-item follow-tail ingress. It removes total-history record copies from canonical reduction and makes the complete reducer → semantic projection → runtime publication boundary executable at every required scale. It does not claim constant changed-item parsing: Markdown/tool projection remains proportional to that item's own content. Detached `unseenItemIds` membership/copy, new item and turn structure, hidden/maximized pane resources, cross-presentation reentrancy, and stable production sub-blocks for oversized Markdown, command output, and diffs remain open before Stage 5.5 and overall Stage 5 can be marked complete.
