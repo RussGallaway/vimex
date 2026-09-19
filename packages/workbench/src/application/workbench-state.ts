@@ -65,8 +65,7 @@ export type WorkbenchCommand =
   | { type: "conversation.event"; event: ConversationEvent }
   | { type: "interaction.command"; threadId?: ThreadId; command: InteractionCommand }
   | { type: "transcript.command"; threadId?: ThreadId; command: TranscriptCommand }
-  | { type: "transcript.yank"; threadId?: ThreadId; format: "plain" | "source" }
-  | { type: "transcript.url.open"; threadId?: ThreadId }
+  | { type: "transcript.yank"; threadId: ThreadId; text: string; shape: "character" | "line" }
   | { type: "composer.change"; threadId?: ThreadId; text: string; cursorOffset?: number }
   | { type: "composer.submit"; threadId?: ThreadId; intent: SubmissionIntent; clientMessageId: string }
   | { type: "composer.ack"; threadId: ThreadId; clientMessageId: string; turnId?: TurnId }

@@ -7,7 +7,7 @@ export function visualBindings(ctx: VimBindingContext): UiBinding[] {
   return [
     { key: ":", cmd: () => ctx.controller.dispatchInteraction({ type: "mode.command" }) },
     { key: "o", cmd: () => ctx.interaction.surface === "transcript" && ctx.controller.transcript({ type: "selection.swap" }) },
-    ...(ctx.interaction.surface === "transcript" ? [{ key: "gx", cmd: () => ctx.controller.transcript({ type: "url.open" }) }] : []),
+    ...(ctx.interaction.surface === "transcript" ? [{ key: "gx", cmd: () => ctx.controller.transcript({ type: "url.open", presentationId: ctx.presentationId }) }] : []),
     { key: "escape", cmd: () => {
       if (ctx.interaction.surface === "composer") ctx.runComposerKey("escape")
       else {
@@ -24,8 +24,8 @@ export function visualBindings(ctx: VimBindingContext): UiBinding[] {
         ]),
     { key: "y", cmd: () => {
       if (ctx.interaction.surface === "composer") ctx.runComposerKey("y")
-      else ctx.controller.transcript({ type: "copy", format: "plain" })
+      else ctx.controller.transcript({ type: "copy", format: "plain", presentationId: ctx.presentationId })
     } },
-    { key: "shift+y", cmd: () => ctx.interaction.surface === "transcript" && ctx.controller.transcript({ type: "copy", format: "source" }) },
+    { key: "shift+y", cmd: () => ctx.interaction.surface === "transcript" && ctx.controller.transcript({ type: "copy", format: "source", presentationId: ctx.presentationId }) },
   ]
 }

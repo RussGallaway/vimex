@@ -1,4 +1,4 @@
-import { referenceText } from "@vimex/transcript"
+import { referenceText, type TranscriptState } from "@vimex/transcript"
 import type { ThreadId, TurnId, SessionSnapshot } from "@vimex/conversation"
 import type { WorkbenchState } from "./workbench-state"
 export interface SideChat {
@@ -66,6 +66,7 @@ interface SideChatHost {
   retire(id: ThreadId): Promise<void>
   send(id: ThreadId, text: string): void
   quote(id: ThreadId, text: string): void
+  presentedTranscript(id: ThreadId): TranscriptState | undefined
   notice(message: string): void
   launch(operation: () => Promise<void>): void
 }
@@ -131,7 +132,7 @@ export class SideChatCoordinator {
       const target = action === "cycle" && active === side.threadId ? side.parentId : side.threadId
       if (target) this.host.focus(target)
     } else if (action === "quote" && side.threadId) {
-      const transcript = state.workspaces[side.threadId]?.transcript
+      const transcript = this.host.presentedTranscript(side.threadId)
       const text = transcript && referenceText(transcript)
       if (!text) { this.host.notice("Select text or place the side transcript cursor on a block to quote"); return }
       this.host.quote(side.parentId, text)

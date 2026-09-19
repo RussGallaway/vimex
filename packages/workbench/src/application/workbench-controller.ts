@@ -1,7 +1,7 @@
 import { compactionBlockReason } from "./compaction"
 import { executeGoalCommand } from "./goal-command"
 import { SideChatCoordinator, currentSideChat, sideChatForChild, sideChatForThread, type SideChatAction } from "./side-chat"
-import { adjacentSearchMatch, findSearchMatches, firstContentPoint, moveByWord, moveBySemanticBlock, moveByUrl, referenceText, urlAt, urlCandidates, graphemeCount, TranscriptRuntime, type LogicalPoint, type TranscriptDamage, type TranscriptRevealRequest, type TranscriptRuntimeInput } from "@vimex/transcript"
+import { adjacentSearchMatch, findSearchMatches, firstContentPoint, moveByWord, moveBySemanticBlock, moveByUrl, referenceText, selectedText, urlAt, urlCandidates, graphemeCount, TranscriptRuntime, type LogicalPoint, type TranscriptDamage, type TranscriptRevealRequest, type TranscriptRuntimeInput, type TranscriptState } from "@vimex/transcript"
 import { isThemeName, themeNames, type PreferenceStore } from "./display-preferences"
 import { parseCommand, validateCommand, resolveCommandName, commandDescriptors, type ExCommand } from "@vimex/interaction"
 import { captureLocalState, emptyLocalState, localViewChanged, restoreThreadView, type LocalState, type SavedThreadView } from "./local-state"
@@ -131,6 +131,10 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
       this.dispatch({ type: "composer.change", threadId: id, text: next, cursorOffset: next.length })
       this.dispatch({ type: "interaction.command", threadId: id, command: { type: "focus.set", surface: "composer" } })
     },
+    presentedTranscript: id => {
+      const context = this.presentationContext("side")
+      return context?.threadId === id ? context.transcript : undefined
+    },
     notice: message => this.notice(message),
     launch: operation => { this.launch(operation) },
   })
@@ -256,6 +260,66 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
       this.transcriptRuntimes.set(presentationId, runtime)
     }
     return runtime
+  }
+
+  /** Resolves presentation-owned reads without moving authority into React. */
+  private presentationContext(presentationId: TranscriptPresentationId): {
+    threadId: ThreadId
+    workspace: ThreadWorkspace
+    transcript: TranscriptState
+  } | undefined {
+    const threadId = this.presentationThread(this.state, presentationId)
+    const workspace = threadId ? this.state.workspaces[threadId] : undefined
+    const runtime = this.transcriptRuntime(presentationId)
+    if (!threadId || !workspace || runtime?.getThreadId() !== threadId) return undefined
+    const frame = runtime.getSnapshot()
+    return { threadId, workspace, transcript: frame.transcript }
+  }
+
+  private activeTranscriptPresentation(): TranscriptPresentationId | undefined {
+    const active = this.state.activeThreadId
+    if (!active) return undefined
+    if (this.presentationThread(this.state, "side") === active) return "side"
+    if (this.presentationThread(this.state, "main") === active) return "main"
+    return undefined
+  }
+
+  private readTranscript(command: Extract<TranscriptAction, { type: "reference" | "copy" | "url.open" }>): void {
+    const context = this.presentationContext(command.presentationId)
+    if (!context) return
+    const { threadId, workspace, transcript } = context
+    if (command.type === "reference") {
+      const text = referenceText(transcript, "source")
+      if (!text) { this.notice("No transcript content selected"); return }
+      const draft = [workspace.composer.text, text.split("\n").map(line => `> ${line}`).join("\n")].filter(Boolean).join("\n\n") + "\n\n"
+      this.dispatch({ type: "composer.change", threadId, text: draft, cursorOffset: graphemeCount(draft) })
+      this.dispatch({ type: "interaction.command", threadId, command: { type: "mode.insert" } })
+      return
+    }
+    if (command.type === "copy") {
+      const text = selectedText(transcript, command.format)
+      if (text === undefined) return
+      const shape = transcript.selection?.shape === "line" ? "line" : "character"
+      this.dispatch({ type: "transcript.yank", threadId, text, shape })
+      return
+    }
+
+    const selected = transcript.selection ? urlCandidates(transcript, "selection") : []
+    const underCursor = selected.length ? undefined : urlAt(transcript)
+    const candidates = selected.length ? selected : urlCandidates(transcript, "current-item")
+    if (command.url && !candidates.some(candidate => candidate.url === command.url)) {
+      this.notice("That URL is no longer available in the active picker")
+      return
+    }
+    const url = command.url ?? (selected.length === 1 ? selected[0]?.url : underCursor) ?? (candidates.length === 1 ? candidates[0]?.url : undefined)
+    if (url) {
+      this.setState({ ...this.state, urlChoices: undefined })
+      this.dispatch({ type: "interaction.command", threadId, command: { type: "overlay.close" } })
+      this.launch(() => this.ports.openUrl(url))
+    } else if (candidates.length > 1) {
+      this.setState({ ...this.state, urlChoices: candidates })
+      this.dispatch({ type: "interaction.command", threadId, command: { type: "overlay.open", overlay: "urls" } })
+    } else this.notice("No URL at this transcript position")
   }
 
   private setState(state: WorkbenchState, hint: TranscriptRuntimeHint = {}): void {
@@ -787,6 +851,10 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     })
   }
   transcript = (command: TranscriptAction): void => {
+    if (command.type === "reference" || command.type === "copy" || command.type === "url.open") {
+      this.readTranscript(command)
+      return
+    }
     const workspace = activeWorkspace(this.state)
     if (!workspace) return
     const move = (point?: LogicalPoint, record = true) => {
@@ -849,14 +917,6 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
         break
       }
       case "selection.swap": this.dispatch({ type: "transcript.command", command }); break
-      case "reference": {
-        const text = referenceText(workspace.transcript, "source")
-        if (!text) { this.notice("No transcript content selected"); break }
-        const draft = [workspace.composer.text, text.split("\n").map(line => `> ${line}`).join("\n")].filter(Boolean).join("\n\n") + "\n\n"
-        this.changeDraft(draft, graphemeCount(draft))
-        this.dispatchInteraction({ type: "mode.insert" })
-        break
-      }
       case "cursor.move": this.dispatch({ type: "transcript.command", command: { type: "cursor.move", point: command.target, preferredScreenRow: command.preferredScreenRow } }); break
       case "jump": {
         if (!workspace.transcript.projectionById[command.target.itemId]) break
@@ -906,36 +966,18 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
         break
       }
       case "fold.set": case "fold.all": this.dispatch({ type: "transcript.command", command }); break
-      case "copy": this.dispatch({ type: "transcript.yank", format: command.format }); break
-      case "url.open": {
-        const selected = workspace.transcript.selection ? urlCandidates(workspace.transcript, "selection") : []
-        const underCursor = selected.length ? undefined : urlAt(workspace.transcript)
-        const candidates = selected.length ? selected : urlCandidates(workspace.transcript, "current-item")
-        const allowed = this.state.urlChoices ?? candidates
-        if (command.url && !allowed.some(candidate => candidate.url === command.url)) {
-          this.notice("That URL is no longer available in the active picker")
-          break
-        }
-        const url = command.url ?? (selected.length === 1 ? selected[0]?.url : underCursor) ?? (candidates.length === 1 ? candidates[0]?.url : undefined)
-        if (url) {
-          this.setState({ ...this.state, urlChoices: undefined })
-          this.dispatchInteraction({ type: "overlay.close" })
-          this.launch(() => this.ports.openUrl(url))
-        } else if (candidates.length > 1) {
-          this.setState({ ...this.state, urlChoices: candidates })
-          this.dispatchInteraction({ type: "overlay.open", overlay: "urls" })
-        } else this.notice("No URL at this transcript position")
-        break
-      }
       case "fork": this.requestFork(command.itemId); break
     }
   }
-  executeCommand = (line: string): void => {
-    this.dispatchInteraction({ type: "mode.normal" })
+  executeCommand = (line: string, presentationId?: TranscriptPresentationId): void => {
+    if (presentationId) {
+      const context = this.presentationContext(presentationId)
+      if (context) this.dispatch({ type: "interaction.command", threadId: context.threadId, command: { type: "mode.normal" } })
+    } else this.dispatchInteraction({ type: "mode.normal" })
     if (/^[/?]/.test(line)) { this.transcript({ type: "search", query: line.slice(1), direction: line[0] === "/" ? "forward" : "backward" }); return }
-    this.runCommand(parseCommand(line))
+    this.runCommand(parseCommand(line), presentationId)
   }
-  executeNamedCommand = (name: string): void => this.runCommand(parseCommand(name))
+  executeNamedCommand = (name: string, presentationId?: TranscriptPresentationId): void => this.runCommand(parseCommand(name), presentationId)
   private savePreferences(next: DisplayPreferences): void {
     const revision = ++this.preferenceRevision
     this.desiredPreferences = next
@@ -964,12 +1006,13 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
       finally { if (this.threadMutations.get(id) === pending) this.threadMutations.delete(id) }
     })
   }
-  private runCommand(parsed: ExCommand): void {
+  private runCommand(parsed: ExCommand, presentationId?: TranscriptPresentationId): void {
     if (parsed.kind === "empty") return
     if (parsed.kind === "unknown") { this.notice(`Unknown command: ${parsed.name}`); return }
     const invalid = validateCommand(parsed)
     if (invalid) { this.notice(invalid); return }
     const { name: command, argument } = parsed
+    const transcriptPresentation = presentationId ?? this.activeTranscriptPresentation()
     switch (command) {
       case "compact": {
         const id = this.state.activeThreadId
@@ -1125,15 +1168,16 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
       case "fork": this.transcript({ type: "fork" }); break
       case "fold": case "unfold": this.transcript({ type: "fold.all", folded: command === "fold" }); break
       case "yank": {
-        const transcript = activeWorkspace(this.state)?.transcript
+        const context = transcriptPresentation ? this.presentationContext(transcriptPresentation) : undefined
+        const transcript = context?.transcript
         const format = argument === "markdown" ? "source" : "plain"
-        if (transcript?.selection) this.transcript({ type: "copy", format })
+        if (transcript?.selection && transcriptPresentation) this.transcript({ type: "copy", format, presentationId: transcriptPresentation })
         else {
           const id = transcript?.cursor?.itemId ?? transcript?.order.at(-1)
           const projection = id ? transcript?.projectionById[id] : undefined
           if (!projection) { this.notice("No transcript content to copy"); break }
           const text = format === "source" ? projection.source : projection.plain
-          this.dispatchInteraction({ type: "register.set", register: { text, shape: "character" } })
+          this.dispatch({ type: "interaction.command", threadId: context!.threadId, command: { type: "register.set", register: { text, shape: "character" } } })
           this.copyText(text)
           this.notice("Copied current transcript block")
         }
@@ -1143,7 +1187,7 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
         if (argument) {
           this.setState({ ...this.state, urlChoices: undefined })
           this.launch(() => this.ports.openUrl(argument))
-        } else this.transcript({ type: "url.open" })
+        } else if (transcriptPresentation) this.transcript({ type: "url.open", presentationId: transcriptPresentation })
         break
       }
       case "rename": {

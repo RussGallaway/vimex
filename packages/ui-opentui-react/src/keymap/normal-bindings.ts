@@ -43,7 +43,7 @@ export function normalBindings(ctx: VimBindingContext): UiBinding[] {
     { key: "a", cmd: () => ctx.interaction.surface === "composer" ? ctx.runComposerKey("a") : ctx.openOverlay("approvals") },
     ...(ctx.interaction.surface === "transcript" ? [
       { key: "ga", cmd: () => ctx.openOverlay("agents") },
-      { key: "gx", cmd: () => ctx.controller.transcript({ type: "url.open" }) },
+      { key: "gx", cmd: () => ctx.controller.transcript({ type: "url.open", presentationId: ctx.presentationId }) },
     ] satisfies UiBinding[] : []),
     { key: "f", cmd: () => ctx.controller.requestFork(ctx.transcript.cursor?.itemId) },
     ...vimFoldBindings(ctx),

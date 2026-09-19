@@ -28,7 +28,7 @@ export function transcriptBindings(ctx: VimBindingContext): UiBinding[] {
     { key: "/", cmd: () => search("/") }, { key: "?", cmd: () => search("?") },
     { key: "n", cmd: () => repeatSearch() },
     { key: "shift+n", cmd: () => repeatSearch(true) },
-    { key: "r", cmd: () => ctx.controller.transcript({ type: "reference" }) },
+    { key: "r", cmd: () => ctx.controller.transcript({ type: "reference", presentationId: ctx.presentationId }) },
     { key: "ctrl+f", cmd: () => { ctx.scroll("down", "page") } },
     { key: "ctrl+b", cmd: () => { ctx.scroll("up", "page") } },
     { key: "h", cmd: () => ctx.countedMotion("left") }, { key: "j", cmd: () => ctx.countedMotion("down") },

@@ -274,6 +274,55 @@ test("controller-owned transcript runtime freezes detached content and follows l
   expect(h.controller.transcriptRuntime("main")).toBeUndefined()
 })
 
+test("detached copy, reference, and URL reads use the displayed presentation until follow", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const runtime = h.controller.transcriptRuntime("main")!
+  const turn = turnId("displayed-reads"), id = itemId("displayed-answer")
+  const visible = "visible [shown](https://shown.test) and [second](https://second.test)"
+  const latest = `${visible} hidden [secret](https://secret.test)`
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: {
+    id, turnId: turn, kind: "assistant", markdown: visible, status: "running",
+  } } })
+  h.controller.transcript({ type: "cursor.move", target: { itemId: id, graphemeOffset: 0 }, preferredScreenRow: 2, extend: false })
+  h.controller.transcript({ type: "selection.begin", shape: "character" })
+  h.controller.transcript({ type: "cursor.move", target: { itemId: id, graphemeOffset: 6 }, preferredScreenRow: 2, extend: true })
+  const pinnedRevision = runtime.getSnapshot().displayedCanonicalRevision
+
+  h.emit({ type: "conversation", event: { type: "item.completed", threadId: a, item: {
+    id, turnId: turn, kind: "assistant", markdown: latest, status: "complete",
+  } } })
+  expect(h.controller.getSnapshot().workspaces[a]?.transcript.projectionById[id]?.source).toBe(latest)
+  expect(runtime.getSnapshot().transcript.projectionById[id]?.source).toBe(visible)
+
+  h.controller.transcript({ type: "copy", format: "plain", presentationId: "main" })
+  await h.controller.settle()
+  expect(h.copied.at(-1)).toBe("visible")
+  h.controller.executeCommand("copy markdown", "main")
+  await h.controller.settle()
+  expect(h.copied.at(-1)).toBe(visible)
+
+  h.controller.changeDraft("note", 4)
+  h.controller.transcript({ type: "reference", presentationId: "main" })
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe(`note\n\n> ${visible}\n\n`)
+  h.controller.transcript({ type: "url.open", presentationId: "main" })
+  expect(h.controller.getSnapshot().urlChoices?.map(choice => choice.url)).toEqual(["https://shown.test", "https://second.test"])
+  expect(h.controller.getSnapshot().urlChoices?.some(choice => choice.url === "https://secret.test")).toBe(false)
+  h.controller.transcript({ type: "url.open", url: "https://second.test", presentationId: "main" })
+  await h.controller.settle()
+  expect(h.opened).toEqual(["https://second.test"])
+  expect(h.controller.getSnapshot().urlChoices).toBeUndefined()
+  expect(runtime.getSnapshot()).toMatchObject({ mode: "detached", displayedCanonicalRevision: pinnedRevision })
+  expect(runtime.getSnapshot().transcript.projectionById[id]?.source).toBe(visible)
+
+  h.controller.transcript({ type: "viewport.tail" })
+  h.controller.executeCommand("copy markdown", "main")
+  await h.controller.settle()
+  expect(h.copied.at(-1)).toBe(latest)
+  expect(runtime.getSnapshot().transcript.projectionById[id]?.source).toBe(latest)
+  await h.controller.close()
+})
+
 test("explicit navigation materializes an item created beyond a detached frame", async () => {
   const h = harness()
   await h.controller.initialize("/tmp")
@@ -656,13 +705,13 @@ test("semantic search unfolds its target, URL choice resolves through the port, 
   expect(transcript.search).toEqual({ query: "needle", direction: "forward" })
   expect(transcript.cursor?.graphemeOffset).toBe(17)
   expect(transcript.folded[id]).toBe(false)
-  h.controller.transcript({ type: "url.open" })
+  h.controller.transcript({ type: "url.open", presentationId: "main" })
   expect(h.controller.getSnapshot().urlChoices?.map(candidate => candidate.url)).toEqual(["https://one.test", "https://two.test"])
-  h.controller.transcript({ type: "url.open", url: "https://two.test" })
+  h.controller.transcript({ type: "url.open", url: "https://two.test", presentationId: "main" })
   await h.controller.settle()
   expect(h.opened).toEqual(["https://two.test"])
   h.controller.changeDraft("My note", 7)
-  h.controller.transcript({ type: "reference" })
+  h.controller.transcript({ type: "reference", presentationId: "main" })
   expect(h.controller.getSnapshot().workspaces[a]!.composer.text).toContain("My note\n\n> needle [one](https://one.test)")
   expect(h.controller.getSnapshot().workspaces[a]!.interaction.mode).toBe("insert")
 })
@@ -827,12 +876,12 @@ test("late fork cannot steal focus and stale URL picker choices cannot open afte
   h.controller.requestFork(user)
   h.controller.confirmFork()
   h.controller.transcript({ type: "cursor.move", target: { itemId: rich, graphemeOffset: 3 }, preferredScreenRow: 0, extend: false })
-  h.controller.transcript({ type: "url.open" })
+  h.controller.transcript({ type: "url.open", presentationId: "main" })
   expect(h.controller.getSnapshot().urlChoices).toHaveLength(2)
   h.controller.openThread(b)
   await Promise.resolve(); await Promise.resolve()
   expect(h.controller.getSnapshot().urlChoices).toBeUndefined()
-  h.controller.transcript({ type: "url.open", url: "https://one.test" })
+  h.controller.transcript({ type: "url.open", url: "https://one.test", presentationId: "main" })
   finishFork({ summary: summary(threadId("fork")), events: [] })
   await h.controller.settle()
   expect(h.controller.getSnapshot().activeThreadId).toBe(b)

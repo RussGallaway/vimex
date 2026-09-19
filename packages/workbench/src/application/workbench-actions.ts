@@ -14,7 +14,7 @@ export type TranscriptAction =
   | { type: "search"; query: string; direction: "forward" | "backward" }
   | { type: "search.next"; reverse?: boolean; count?: number }
   | { type: "selection.swap" }
-  | { type: "reference" }
+  | { type: "reference"; presentationId: TranscriptPresentationId }
   | { type: "cursor.move"; target: LogicalPoint; preferredScreenRow: number; extend: boolean }
   | { type: "jump"; target: LogicalPoint; preferredScreenRow?: number; extend?: boolean; origin?: LogicalPoint; originPreferredScreenRow?: number }
   | { type: "jump.back" }
@@ -28,8 +28,8 @@ export type TranscriptAction =
   | { type: "viewport.anchor"; point: LogicalPoint; preferredScreenRow: number }
   | { type: "fold.set"; itemId: ItemId; folded: boolean }
   | { type: "fold.all"; folded: boolean }
-  | { type: "copy"; format: "plain" | "source" }
-  | { type: "url.open"; url?: string }
+  | { type: "copy"; format: "plain" | "source"; presentationId: TranscriptPresentationId }
+  | { type: "url.open"; url?: string; presentationId: TranscriptPresentationId }
   | { type: "fork"; itemId?: ItemId }
 
 export interface WorkbenchActions {
@@ -51,8 +51,8 @@ export interface WorkbenchActions {
   renameThread(threadId: ThreadId, title: string): void
   toggleFavorite(threadId: ThreadId): void
   resolveApproval(approvalId: Approval["id"], choiceId: string): void
-  executeCommand(line: string): void
-  executeNamedCommand(name: string): void
+  executeCommand(line: string, presentationId?: TranscriptPresentationId): void
+  executeNamedCommand(name: string, presentationId?: TranscriptPresentationId): void
   interrupt(): void
   retryOutgoing(id: string): void
   copyText(text: string): void

@@ -1,7 +1,7 @@
 import { observeCompaction, observeCompactionTurn } from "./compaction"
 import { acknowledgeOutgoing, failOutgoing, retryOutgoing, submitDraft, updateDraft } from "@vimex/composer"
 import { reduceInteraction } from "@vimex/interaction"
-import { clearSelection, initialTranscript, reduceTranscript, selectedText, urlAt } from "@vimex/transcript"
+import { clearSelection, reduceTranscript } from "@vimex/transcript"
 import { failApproval, receiveApproval, resolveApproval, resolvingApproval } from "@vimex/approvals"
 import { applyConversationEvent, forkWorkspace } from "./conversation-projector"
 import { scheduleQueued, submissionEffect } from "./submission-scheduler"
@@ -89,22 +89,15 @@ export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCom
     case "transcript.yank": {
       const id = targetThread(state, command.threadId)
       const workspace = id ? state.workspaces[id] : undefined
-      const text = workspace ? selectedText(workspace.transcript, command.format) : undefined
-      if (!id || !workspace || text === undefined) return done(state)
-      const shape = workspace.transcript.selection?.shape === "line" ? "line" : "character"
+      if (!id || !workspace) return done(state)
       // Line registers store content without the final line delimiter; the
       // composer adds that delimiter when placing the register between lines.
-      const registerText = shape === "line" ? text.replace(/\n$/, "") : text
+      const registerText = command.shape === "line" ? command.text.replace(/\n$/, "") : command.text
       return done(updateWorkspace(state, id, (current) => ({
         ...current,
-        transcript: clearSelection(current.transcript),
-        interaction: reduceInteraction(reduceInteraction(current.interaction, { type: "register.set", register: { text: registerText, shape } }), { type: "mode.normal" }),
-      })), { type: "clipboard.write", text })
-    }
-    case "transcript.url.open": {
-      const id = targetThread(state, command.threadId)
-      const url = id ? urlAt(state.workspaces[id]?.transcript ?? initialTranscript()) : undefined
-      return url ? done(state, { type: "url.open", url }) : done(state)
+        transcript: current.transcript.selection ? clearSelection(current.transcript) : current.transcript,
+        interaction: reduceInteraction(reduceInteraction(current.interaction, { type: "register.set", register: { text: registerText, shape: command.shape } }), { type: "mode.normal" }),
+      })), { type: "clipboard.write", text: command.text })
     }
     case "composer.change": {
       const id = targetThread(state, command.threadId)

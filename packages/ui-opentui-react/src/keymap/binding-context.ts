@@ -3,6 +3,7 @@ import type { ItemId } from "@vimex/conversation"
 import type { ComposerState, SubmissionIntent } from "@vimex/composer"
 import type { InteractionState } from "@vimex/interaction"
 import type { TranscriptState } from "@vimex/transcript"
+import type { TranscriptPresentationId } from "@vimex/workbench"
 import type { MutableRefObject, RefObject } from "react"
 import type { VimexUiController } from "../contracts"
 import type { movePoint } from "../transcript/layout"
@@ -16,6 +17,7 @@ export interface VimBindingContext {
   foldableItemIds?: readonly ItemId[]
   composer: ComposerState
   controller: VimexUiController
+  presentationId: TranscriptPresentationId
   countRef: MutableRefObject<string>
   textareaRef: RefObject<TextareaRenderable | null>
   scrollRef: RefObject<ScrollBoxRenderable | null>

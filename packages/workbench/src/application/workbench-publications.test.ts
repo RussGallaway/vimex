@@ -93,6 +93,17 @@ test("global connection and error state invalidate an empty main presentation", 
   expect(captureWorkbenchPresentation(after, "main")).toMatchObject({ connection: "error", error: "offline" })
 })
 
+test("transcript yank commits its presentation-derived payload without rereading canonical content", () => {
+  const before = splitState()
+  const selected = run(run(before, { type: "transcript.command", threadId: parent, command: { type: "selection.begin", shape: "character" } }), {
+    type: "transcript.command", threadId: parent, command: { type: "cursor.move", point: { itemId: itemId("parent-item"), graphemeOffset: 6 } },
+  })
+  const transition = transitionWorkbench(selected, { type: "transcript.yank", threadId: parent, text: "displayed payload", shape: "line" })
+  expect(transition.state.workspaces[parent]?.interaction.unnamedRegister).toEqual({ text: "displayed payload", shape: "line" })
+  expect(transition.state.workspaces[parent]?.transcript.selection).toBeUndefined()
+  expect(transition.effects).toEqual([{ type: "clipboard.write", text: "displayed payload" }])
+})
+
 test("global approval and question counts invalidate an empty main presentation", () => {
   const before = initialWorkbench()
   const approval = run(before, { type: "approval.received", approval: {

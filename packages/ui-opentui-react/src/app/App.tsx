@@ -153,7 +153,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
       modelEfforts: Object.fromEntries(state.availableModels?.map(model => [model.id, model.efforts]) ?? []), currentModel: summary?.model, sessionIds: state.threadOrder },
     onExecute(command) {
     commandHistoryRef.current = recordCommand(commandHistoryRef.current, command)
-    controller.executeCommand(command)
+    controller.executeCommand(command, presentationId)
   } })
 
   useEffect(() => () => syntax.destroy(), [syntax])
@@ -421,12 +421,12 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
           })
           return
         }
-        controller.executeCommand(`model ${model.id}`)
+        controller.executeCommand(`model ${model.id}`, presentationId)
       } else {
         const model = state.availableModels?.find(candidate => candidate.id === modelPicker.modelId)
         const effort = model?.efforts[activeIndex]
         if (!model || !effort) return
-        controller.executeCommand(`model ${model.id} ${effort}`)
+        controller.executeCommand(`model ${model.id} ${effort}`, presentationId)
       }
     } else if (interaction.overlay === "sessions") {
       // Input events and Return can arrive in one terminal read. Read the native
@@ -459,13 +459,13 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
       if (row?.direction === "child") controller.openChildThread(row.threadId)
     } else if (interaction.overlay === "urls") {
       const choice = state.urlChoices?.[Math.min(activeIndex, Math.max(0, (state.urlChoices?.length ?? 1) - 1))]
-      if (choice) controller.transcript({ type: "url.open", url: choice.url })
+      if (choice) controller.transcript({ type: "url.open", url: choice.url, presentationId })
     }
     closeOverlay()
-  }, [agentRows, closeOverlay, controller, interaction.overlay, modelPicker, overlayIndex, pendingApproval, pendingQuestion, questionAnswers, questionIndex, sessionQuery, sessionRows, state.availableModels, state.favoriteThreadIds, state.pendingFork, state.summaries, state.threadOrder, state.urlChoices, summary?.reasoningEffort, sessionCwd])
+  }, [agentRows, closeOverlay, controller, interaction.overlay, modelPicker, overlayIndex, pendingApproval, pendingQuestion, presentationId, questionAnswers, questionIndex, sessionQuery, sessionRows, state.availableModels, state.favoriteThreadIds, state.pendingFork, state.summaries, state.threadOrder, state.urlChoices, summary?.reasoningEffort, sessionCwd])
 
   const bindingContext: VimBindingContext = {
-    interaction, transcript, composer, controller, countRef, textareaRef, scrollRef,
+    interaction, transcript, composer, controller, presentationId, countRef, textareaRef, scrollRef,
     toggleComposer: () => { setComposerExpanded(value => !value); controller.dispatchInteraction({ type: "focus.set", surface: "composer" }) },
     distinctControlI,
     foldableItemIds: items.filter(item => item.kind !== "assistant" && item.kind !== "user").map(item => item.id),
@@ -501,8 +501,8 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   useBindings(() => ({
     priority: 150,
     bindings: !interactive || interaction.overlay || jumpActive ? [] : Object.entries(settings.keybindings)
-      .map(([key, command]) => ({ key, cmd: () => controller.executeNamedCommand(command) })),
-  }), [interactive, controller, interaction.overlay, jumpActive, settings.keybindings])
+      .map(([key, command]) => ({ key, cmd: () => controller.executeNamedCommand(command, presentationId) })),
+  }), [interactive, controller, interaction.overlay, jumpActive, presentationId, settings.keybindings])
   useBindings(() => ({
     priority: 175,
     bindings: !interactive || jumpActive || interaction.overlay || interaction.mode !== "command" ? [] : [
@@ -556,7 +556,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
       transcript={<TranscriptViewport window={transcriptWindow} state={transcript} surface={interaction.surface} syntax={syntax} scrollRef={scrollRef} onManualScroll={onManualScroll} />}
       commandLine={interactive && !jumpActive && interaction.mode === "command" ? <CommandLine currentTitle={summary?.title} sessionIds={state.threadOrder} currentModel={summary?.model} models={state.availableModels} value={interaction.commandLine} inputRef={commandRef} controller={controller} onSubmit={(line) => {
         commandHistoryRef.current = recordCommand(commandHistoryRef.current, line)
-        controller.executeCommand(line)
+        controller.executeCommand(line, presentationId)
       }} /> : undefined}
       composer={<Composer
         interactive={interactive}

@@ -259,6 +259,50 @@ test("side quote appends selected text to parent draft without submitting", asyn
   await h.controller.close()
 })
 
+test("side quote reads the detached side presentation instead of hidden canonical tail", async () => {
+  const h = harness(); await h.controller.initialize("/tmp")
+  h.controller.sideChat("open"); await h.controller.settle()
+  const side = threadId("side-1"), item = itemId("detached-quote")
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: side, item: {
+    id: item, turnId: turnId("detached-quote-turn"), kind: "assistant", markdown: "visible", status: "running",
+  } } })
+  const runtime = h.controller.transcriptRuntime("side")!
+  h.controller.transcript({ type: "cursor.move", target: { itemId: item, graphemeOffset: 0 }, preferredScreenRow: 0, extend: false })
+  const pinned = runtime.getSnapshot()
+  h.emit({ type: "conversation", event: { type: "item.completed", threadId: side, item: {
+    id: item, turnId: turnId("detached-quote-turn"), kind: "assistant", markdown: "visible hidden", status: "complete",
+  } } })
+  expect(runtime.getSnapshot()).toBe(pinned)
+  expect(h.controller.getSnapshot().workspaces[side]?.transcript.projectionById[item]?.source).toBe("visible hidden")
+
+  h.controller.executeCommand(":side quote", "side"); await h.controller.settle()
+  expect(h.controller.getSnapshot().activeThreadId).toBe(a)
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe("> visible")
+  expect(runtime.getSnapshot().transcript.projectionById[item]?.source).toBe("visible")
+  await h.controller.close()
+})
+
+test("explicit main presentation reads target the parent while the side thread is active", async () => {
+  const h = harness(); await h.controller.initialize("/tmp")
+  const parentItem = itemId("parent-read"), parentTurn = turnId("parent-read-turn")
+  h.emit({ type: "conversation", event: { type: "item.completed", threadId: a, item: {
+    id: parentItem, turnId: parentTurn, kind: "assistant", markdown: "parent presentation", status: "complete",
+  } } })
+  h.controller.transcriptRuntime("main")
+  h.controller.sideChat("open"); await h.controller.settle()
+  const side = threadId("side-1")
+  expect(h.controller.getSnapshot().activeThreadId).toBe(side)
+  h.controller.dispatchInteraction({ type: "mode.command" })
+
+  h.controller.executeCommand("copy markdown", "main"); await h.controller.settle()
+  expect(h.copied.at(-1)).toBe("parent presentation")
+  expect(h.controller.getSnapshot().workspaces[a]?.interaction.unnamedRegister).toEqual({ text: "parent presentation", shape: "character" })
+  expect(h.controller.getSnapshot().workspaces[side]?.interaction.unnamedRegister.text).toBe("")
+  expect(h.controller.getSnapshot().workspaces[side]?.interaction.mode).toBe("command")
+  expect(h.controller.getSnapshot().activeThreadId).toBe(side)
+  await h.controller.close()
+})
+
 test("independent parents keep side forks isolated when creation completes out of order", async () => {
   const h = harness(); await h.controller.initialize("/tmp")
   let finishA!: (snapshot: SessionSnapshot) => void

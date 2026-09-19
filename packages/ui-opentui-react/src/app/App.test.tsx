@@ -807,7 +807,7 @@ describe("Vimex OpenTUI shell", () => {
       await act(async () => setup.flush())
       expect(setup.captureCharFrame()).toContain("https://example.com/docs")
       await act(async () => { setup.mockInput.pressEnter(); await setup.flush() })
-      expect(commands).toContainEqual({ type: "url.open", url: "https://example.com/docs" })
+      expect(commands).toContainEqual({ type: "url.open", url: "https://example.com/docs", presentationId: "main" })
     } finally { await act(async () => setup.renderer.destroy()) }
   })
 
