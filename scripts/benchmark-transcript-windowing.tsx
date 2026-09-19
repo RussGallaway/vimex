@@ -20,6 +20,7 @@ import {
   blockKey,
   createTranscriptFrame,
   passThroughWindow,
+  pointIsMaterialized,
   TranscriptRuntime,
   type BlockGeometry,
   type TranscriptFrame,
@@ -28,6 +29,7 @@ import {
 import { act, createRef, Profiler, useSyncExternalStore, type RefObject } from "react"
 import { createEmberTideSyntax } from "../packages/ui-opentui-react/src/theme"
 import { blockNativeRevision } from "../packages/ui-opentui-react/src/transcript/measure-rendered-block"
+import { movePointInTranscript } from "../packages/ui-opentui-react/src/transcript/layout"
 import { measureRenderedTranscript, transcriptBlockRenderableId, type RenderedLayoutDiagnostics } from "../packages/ui-opentui-react/src/transcript/rendered-layout"
 import { TranscriptViewport } from "../packages/ui-opentui-react/src/transcript/TranscriptViewport"
 
@@ -375,6 +377,93 @@ function runtimeCorrectionBaseline(fixture: ReturnType<typeof buildTranscriptSca
   } finally {
     runtime.dispose()
   }
+}
+
+function offWindowTargetBaseline(fixture: ReturnType<typeof buildTranscriptScalingFixture>): void {
+  const anchor = Object.freeze({ itemId: fixture.targets.middle, graphemeOffset: 0 })
+  const detachedTranscript = Object.freeze({
+    ...fixture.before.transcript,
+    cursor: anchor,
+    viewport: Object.freeze({ kind: "point" as const, point: anchor, preferredScreenRow: 5 }),
+  })
+  const detachedSnapshot = Object.freeze({ ...fixture.before, transcript: detachedTranscript })
+  const runtimeDiagnostics = {
+    completePlanBuilds: 0,
+    completePlanBlockVisits: 0,
+    orderIndexBuilds: 0,
+    orderIndexItemVisits: 0,
+    orderIndexCacheHits: 0,
+  }
+  const runtime = new TranscriptRuntime(runtimeInput(fixture, detachedSnapshot, "detached", { canonicalDamage: { kind: "full" } }), {
+    windowPolicy: { viewportRows: 24, overscanRows: 24 },
+    diagnostics: runtimeDiagnostics,
+  })
+  try {
+    const before = runtime.getSnapshot()
+    const hidden = appendTranscriptScalingTail(detachedSnapshot, fixture.tailItemId, fixture.tailDelta)
+    assert.equal(runtime.update(runtimeInput(fixture, hidden, "detached", {
+      canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
+    })), before)
+    const motionDiagnostics = { wrappedItems: 0, itemTransitions: 0 }
+    const motion = timed(() => movePointInTranscript(detachedTranscript, 73, anchor, "first", 1, motionDiagnostics))
+    assert.deepEqual(motion.value?.point, { itemId: fixture.targets.first, graphemeOffset: 0 })
+    assert.deepEqual(motionDiagnostics, { wrappedItems: 1, itemTransitions: 0 })
+    const target = Object.freeze(motion.value!.point)
+    assert(!pointIsMaterialized(before.window.blocks, target))
+    const targetTranscript = Object.freeze({
+      ...hidden.transcript,
+      cursor: target,
+      viewport: Object.freeze({ kind: "point" as const, point: target, preferredScreenRow: 5 }),
+    })
+    let publications = 0
+    const unsubscribe = runtime.subscribe(() => { publications++ })
+    const diagnosticsBeforeReveal = { ...runtimeDiagnostics }
+    const revealed = timed(() => runtime.update(runtimeInput(fixture, Object.freeze({ ...hidden, transcript: targetTranscript }), "detached", {
+      presentationDamage: { kind: "view" },
+      reveal: { id: fixture.blockCount, point: target, reason: "jump" },
+    })))
+    unsubscribe()
+    assert.equal(publications, 1)
+    assert.equal(revealed.value.blocks, before.blocks)
+    assert.equal(revealed.value.displayedCanonicalRevision, before.displayedCanonicalRevision)
+    assert(pointIsMaterialized(revealed.value.window.blocks, target))
+    assert(revealed.value.window.blocks.length <= 72)
+    const completePlanBuilds = runtimeDiagnostics.completePlanBuilds - diagnosticsBeforeReveal.completePlanBuilds
+    const completePlanBlockVisits = runtimeDiagnostics.completePlanBlockVisits - diagnosticsBeforeReveal.completePlanBlockVisits
+    const orderIndexBuilds = runtimeDiagnostics.orderIndexBuilds - diagnosticsBeforeReveal.orderIndexBuilds
+    const orderIndexItemVisits = runtimeDiagnostics.orderIndexItemVisits - diagnosticsBeforeReveal.orderIndexItemVisits
+    assert.equal(completePlanBuilds, 0)
+    assert.equal(completePlanBlockVisits, 0)
+    assert.equal(orderIndexBuilds, 0)
+    assert.equal(orderIndexItemVisits, 0)
+    printResult({
+      scenario: "off-window-target-materialization",
+      materialization: "windowed-production",
+      boundary: "semantic-target-runtime-window-publication",
+      blockCount: fixture.blockCount,
+      viewport: { width: 80, height: 24 },
+      mode: "detached",
+      fixture: { contentShape: "mixed-semantic-root-blocks", contentHash: fixture.contentHash, setupExcludedFromTiming: true },
+      operationCounts: {
+        completeBlocks: fixture.blockCount,
+        mountedBlocksBefore: before.window.blocks.length,
+        mountedBlocksAfter: revealed.value.window.blocks.length,
+        wrappedItems: motionDiagnostics.wrappedItems,
+        itemTransitions: motionDiagnostics.itemTransitions,
+        retainedCompleteBlockPlanIdentity: revealed.value.blocks === before.blocks ? 1 : 0,
+        completePlanBuilds,
+        completePlanBlockVisits,
+        orderIndexBuilds,
+        orderIndexItemVisits,
+        publications,
+      },
+      timingsMs: {
+        targetedMotion: Number(motion.milliseconds.toFixed(6)),
+        windowPublication: Number(revealed.milliseconds.toFixed(6)),
+      },
+      samples: { warmup: 0, measured: 1 },
+    })
+  } finally { runtime.dispose() }
 }
 
 function RuntimeNativeMountProbeInner(props: {
@@ -753,6 +842,7 @@ for (const blockCount of requestedSizes) {
   runtimeBaseline(fixture)
   await reactPublicationBaseline(fixture)
   runtimeCorrectionBaseline(fixture)
+  offWindowTargetBaseline(fixture)
   if (process.env.VIMEX_WINDOWING_NATIVE_BASELINE === "1") {
     for (const viewport of requestedNativeViewports) await nativeMountBaseline(fixture, viewport)
   }

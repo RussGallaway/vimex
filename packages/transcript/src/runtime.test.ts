@@ -258,6 +258,43 @@ test("detached presentation damage stays on pinned blocks and explicit missing t
   expect(revealed.damage.kind).toBe("layout")
 })
 
+test("detached reveal distinguishes retained points from hidden append boundaries and rewrites", () => {
+  const appendCase = (offset: (before: Source, after: Source) => number) => {
+    const before = fixture()
+    const runtime = new TranscriptRuntime(input(before, "detached"), { windowPolicy: { viewportRows: 2, overscanRows: 2 } })
+    const pinned = runtime.getSnapshot()
+    const after = apply(before, { type: "item.delta", threadId: thread, itemId: answer, delta: " hidden" })
+    expect(runtime.update(input(after, "detached", { kind: "blocks", itemIds: [answer] }))).toBe(pinned)
+    const revealed = runtime.update(input(after, "detached", { kind: "none" }, { itemId: answer, graphemeOffset: offset(before, after) }))
+    runtime.dispose()
+    return { before, after, pinned, revealed }
+  }
+
+  const retained = appendCase(() => 0)
+  expect(retained.revealed.blocks).toBe(retained.pinned.blocks)
+  expect(retained.revealed.displayedCanonicalRevision).toBe(retained.before.revision)
+
+  const firstAppended = appendCase(before => before.transcript.projectionById[answer]!.sourceSpans.length)
+  expect(firstAppended.revealed.displayedCanonicalRevision).toBe(firstAppended.after.revision)
+  expect(firstAppended.revealed.blocks).not.toBe(firstAppended.pinned.blocks)
+
+  const newEnd = appendCase((_before, after) => after.transcript.projectionById[answer]!.sourceSpans.length)
+  expect(newEnd.revealed.displayedCanonicalRevision).toBe(newEnd.after.revision)
+  expect(newEnd.revealed.blocks).not.toBe(newEnd.pinned.blocks)
+
+  const before = fixture()
+  const rewrittenRuntime = new TranscriptRuntime(input(before, "detached"), { windowPolicy: { viewportRows: 2, overscanRows: 2 } })
+  const rewrittenPinned = rewrittenRuntime.getSnapshot()
+  const rewritten = apply(before, { type: "item.completed", threadId: thread, item: {
+    id: answer, turnId: turn, kind: "assistant", markdown: "jello", status: "complete",
+  } })
+  expect(rewrittenRuntime.update(input(rewritten, "detached", { kind: "blocks", itemIds: [answer] }))).toBe(rewrittenPinned)
+  const revealedRewrite = rewrittenRuntime.update(input(rewritten, "detached", { kind: "none" }, { itemId: answer, graphemeOffset: 0 }))
+  expect(revealedRewrite.displayedCanonicalRevision).toBe(rewritten.revision)
+  expect(revealedRewrite.blocks).not.toBe(rewrittenPinned.blocks)
+  rewrittenRuntime.dispose()
+})
+
 test("explicit targets in new items materialize and activity remains source-less", () => {
   let source = fixture()
   const runtime = new TranscriptRuntime(input(source, "detached"))

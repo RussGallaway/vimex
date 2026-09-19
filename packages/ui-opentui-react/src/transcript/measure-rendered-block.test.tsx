@@ -106,6 +106,20 @@ test("source-less activity blocks report their complete outer footprint", async 
   }
 })
 
+test("empty semantic items retain a synthetic offset-zero native anchor", async () => {
+  const block = blockFor("")
+  const setup = await testRender(<box id="empty-block" height={1} />, { width: 30, height: 8 })
+  try {
+    await act(async () => { await setup.flush(); await setup.renderOnce() })
+    const renderable = setup.renderer.root.findDescendantById("empty-block") as Renderable
+    const geometry = measureRenderedBlock({ renderer: setup.renderer, renderable, block, width: 30, styleRevision: 1, folded: false })
+    expect(geometry.points).toEqual({ 0: { graphemeOffset: 0, x: 0, y: 0, row: 0, column: 0 } })
+    expect(geometry.lines).toEqual([{ from: 0, to: 0, row: 0 }])
+  } finally {
+    await act(async () => setup.renderer.destroy())
+  }
+})
+
 test("an item sub-block measures only its source span in global logical offsets", async () => {
   const root = blockFor("abcdef")
   const block: TranscriptItemBlock = Object.freeze({

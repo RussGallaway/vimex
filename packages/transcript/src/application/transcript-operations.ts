@@ -1,6 +1,6 @@
 import type { ItemId } from "@vimex/conversation"
 import { graphemes, graphemeCount } from "../domain/markdown-source-map"
-import type { JumpLocation, LogicalPoint, TextProjection, TranscriptCommand, TranscriptSelection, TranscriptState } from "../domain/transcript-document"
+import { transcriptOrderIndex, type JumpLocation, type LogicalPoint, type TextProjection, type TranscriptCommand, type TranscriptSelection, type TranscriptState } from "../domain/transcript-document"
 import { clampTranscript } from "./project-conversation"
 export function moveCursor(state: TranscriptState, point: LogicalPoint, preferredScreenRow = 0): TranscriptState {
   return clampTranscript({
@@ -13,7 +13,7 @@ export function anchorViewport(state: TranscriptState, point: LogicalPoint, pref
   const projection = state.projectionById[point.itemId]
   // Ignore stale renderer anchors after a session/item change. Invalid numeric
   // positions cannot name a semantic grapheme and must not detach the viewport.
-  if (!projection || !state.order.includes(point.itemId) || !Number.isFinite(point.graphemeOffset) || !Number.isFinite(preferredScreenRow)) return state
+  if (!projection || !transcriptOrderIndex(state.order).has(point.itemId) || !Number.isFinite(point.graphemeOffset) || !Number.isFinite(preferredScreenRow)) return state
   const anchored = { ...point, graphemeOffset: Math.max(0, Math.min(Math.trunc(point.graphemeOffset), projection.sourceSpans.length)) }
   preferredScreenRow = Math.trunc(preferredScreenRow)
   if (state.viewport.kind === "point"
@@ -100,8 +100,9 @@ export function setDefaultFolds(state: TranscriptState, defaults: { readonly rea
   return additions.length ? { ...state, folded: { ...state.folded, ...Object.fromEntries(additions) } } : state
 }
 function comparePoint(state: TranscriptState, a: LogicalPoint, b: LogicalPoint): number {
-  const ai = state.order.indexOf(a.itemId)
-  const bi = state.order.indexOf(b.itemId)
+  const order = transcriptOrderIndex(state.order)
+  const ai = order.get(a.itemId) ?? -1
+  const bi = order.get(b.itemId) ?? -1
   return ai === bi ? a.graphemeOffset - b.graphemeOffset : ai - bi
 }
 function lineRange(parts: readonly string[], from: number, to: number): [number, number] {
@@ -134,9 +135,10 @@ export function selectedText(state: TranscriptState, format: "plain" | "source")
   const forward = comparePoint(state, state.selection.anchor, state.selection.head) <= 0
   const start = forward ? state.selection.anchor : state.selection.head
   const end = forward ? state.selection.head : state.selection.anchor
-  const startIndex = state.order.indexOf(start.itemId)
-  const endIndex = state.order.indexOf(end.itemId)
-  if (startIndex < 0 || endIndex < 0) return undefined
+  const order = transcriptOrderIndex(state.order)
+  const startIndex = order.get(start.itemId)
+  const endIndex = order.get(end.itemId)
+  if (startIndex === undefined || endIndex === undefined) return undefined
   const ids = state.order.slice(startIndex, endIndex + 1)
   return ids.map((id, index) => {
     const projection = state.projectionById[id]

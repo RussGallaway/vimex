@@ -1,7 +1,7 @@
 import { compactionBlockReason } from "./compaction"
 import { executeGoalCommand } from "./goal-command"
 import { SideChatCoordinator, currentSideChat, sideChatForChild, sideChatForThread, type SideChatAction } from "./side-chat"
-import { adjacentSearchMatch, defaultTranscriptWindowPolicy, findSearchMatches, firstContentPoint, moveByWord, moveBySemanticBlock, moveByUrl, referenceText, selectedText, urlAt, urlCandidates, graphemeCount, TranscriptRuntime, type LogicalPoint, type TranscriptDamage, type TranscriptRevealRequest, type TranscriptRuntimeInput, type TranscriptState } from "@vimex/transcript"
+import { adjacentSearchMatch, defaultTranscriptWindowPolicy, findSearchMatches, firstContentPoint, moveByMessage, moveByWord, moveBySemanticBlock, moveByUrl, referenceText, selectedText, urlAt, urlCandidates, graphemeCount, TranscriptRuntime, type LogicalPoint, type TranscriptDamage, type TranscriptRevealRequest, type TranscriptRuntimeInput, type TranscriptState } from "@vimex/transcript"
 import { isThemeName, themeNames, type PreferenceStore } from "./display-preferences"
 import { parseCommand, validateCommand, resolveCommandName, commandDescriptors, type ExCommand } from "@vimex/interaction"
 import { captureLocalState, emptyLocalState, localViewChanged, restoreThreadView, type LocalState, type SavedThreadView } from "./local-state"
@@ -886,15 +886,7 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
         } else if (command.motion.startsWith("block-")) move(moveBySemanticBlock(transcript, direction, transcript.cursor, count))
         else if (command.motion.startsWith("url-")) move(moveByUrl(transcript, direction, transcript.cursor, { count, wrap: true }))
         else if (command.motion === "first-content") move(firstContentPoint(transcript), false)
-        else {
-          const origin = transcript.cursor ? transcript.order.indexOf(transcript.cursor.itemId) : -1
-          const candidates = transcript.order.filter((id, index) => {
-            const item = workspace.conversation.items[id]
-            return (item?.kind === "user" || item?.kind === "assistant") && (direction === "forward" ? index > origin : index < origin)
-          })
-          const id = direction === "forward" ? candidates[count - 1] : candidates[candidates.length - count]
-          if (id) move({ itemId: id, graphemeOffset: 0 })
-        }
+        else move(moveByMessage(transcript, direction, transcript.cursor, count))
         break
       }
       case "search": {

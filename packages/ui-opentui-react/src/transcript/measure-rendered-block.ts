@@ -541,6 +541,13 @@ export function measureRenderedBlock(input: MeasureRenderedBlockInput): BlockGeo
   let nativePoints = "item" in input.block
     ? measureItem(input.renderer, input.renderable, input.block.key.itemId, text, !input.folded)
     : {}
+  // Empty semantic items still own logical offset zero. Native Markdown has no
+  // child cell to discover, so anchor it to the mounted block root.
+  if ("item" in input.block && textLength === 0) nativePoints[0] ??= {
+    graphemeOffset: 0,
+    x: input.renderable.screenX,
+    y: input.renderable.screenY,
+  }
   if (input.folded) nativePoints = foldedPointFallback(textLength, nativePoints)
   // Adjacent item sub-blocks share a logical boundary. Only the final block
   // owns the document-end cursor; a non-final block must not duplicate the

@@ -220,27 +220,47 @@ test("production window policy bounds initial, detached, reveal, and measured ma
       viewport: Object.freeze({ kind: "point" as const, point: detachedPoint, preferredScreenRow: 5 }),
     })
     const detachedSnapshot = Object.freeze({ ...fixture.before, transcript: detachedTranscript })
-    const detached = new TranscriptRuntime(runtimeInput(fixture, detachedSnapshot, "detached", { canonicalDamage: { kind: "full" } }), { windowPolicy: policy })
+    const runtimeDiagnostics = {
+      completePlanBuilds: 0, completePlanBlockVisits: 0,
+      orderIndexBuilds: 0, orderIndexItemVisits: 0, orderIndexCacheHits: 0,
+    }
+    const detached = new TranscriptRuntime(runtimeInput(fixture, detachedSnapshot, "detached", { canonicalDamage: { kind: "full" } }), {
+      windowPolicy: policy,
+      diagnostics: runtimeDiagnostics,
+    })
     const pinned = detached.getSnapshot()
     expect(pinned.blocks).toHaveLength(blockCount)
     expect(pinned.window.blocks.length).toBeLessThanOrEqual(72)
     expect(pointIsMaterialized(pinned.window.blocks, detachedPoint)).toBe(true)
     expect(pinned.window.topSpacerRows + pinned.window.blocks.length + pinned.window.bottomSpacerRows).toBe(blockCount)
 
+    const hidden = appendTranscriptScalingTail(detachedSnapshot, fixture.tailItemId, fixture.tailDelta)
+    expect(detached.update(runtimeInput(fixture, hidden, "detached", {
+      canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
+    }))).toBe(pinned)
+    const diagnosticsBeforeReveal = { ...runtimeDiagnostics }
     const tailPoint = Object.freeze({ itemId: fixture.targets.tail, graphemeOffset: 0 })
     const revealedTranscript = Object.freeze({
-      ...detachedTranscript,
+      ...hidden.transcript,
       cursor: tailPoint,
       viewport: Object.freeze({ kind: "point" as const, point: tailPoint, preferredScreenRow: 5 }),
     })
-    const revealedSnapshot = Object.freeze({ ...fixture.before, transcript: revealedTranscript })
+    const revealedSnapshot = Object.freeze({ ...hidden, transcript: revealedTranscript })
+    let revealPublications = 0
+    detached.subscribe(() => { revealPublications++ })
     const revealed = detached.update(runtimeInput(fixture, revealedSnapshot, "detached", {
       reveal: { id: blockCount, point: tailPoint, reason: "jump" },
       presentationDamage: { kind: "view" },
     }))
     expect(revealed.window.blocks.length).toBeLessThanOrEqual(72)
     expect(pointIsMaterialized(revealed.window.blocks, tailPoint)).toBe(true)
-    expect(revealed.blocks).toHaveLength(blockCount)
+    expect(revealed.blocks).toBe(pinned.blocks)
+    expect(revealed.displayedCanonicalRevision).toBe(pinned.displayedCanonicalRevision)
+    expect(revealPublications).toBe(1)
+    expect(runtimeDiagnostics.completePlanBuilds - diagnosticsBeforeReveal.completePlanBuilds).toBe(0)
+    expect(runtimeDiagnostics.completePlanBlockVisits - diagnosticsBeforeReveal.completePlanBlockVisits).toBe(0)
+    expect(runtimeDiagnostics.orderIndexBuilds - diagnosticsBeforeReveal.orderIndexBuilds).toBe(0)
+    expect(runtimeDiagnostics.orderIndexItemVisits - diagnosticsBeforeReveal.orderIndexItemVisits).toBe(0)
     runtime.dispose()
     detached.dispose()
   }

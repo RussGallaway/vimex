@@ -604,6 +604,7 @@ describe("Vimex OpenTUI shell", () => {
       await act(async () => { await setup.mockInput.typeText("gg"); await setup.flush() })
       expect(transcriptCommands).toContainEqual(expect.objectContaining({
         type: "jump", target: expect.objectContaining({ itemId: workspace.transcript.order[0] }),
+        preferredScreenRow: 0,
       }))
       await act(async () => { setup.mockInput.pressKey("TAB", { shift: true }); await setup.flush() })
       expect(transcriptCommands).toContainEqual({ type: "fold.all", folded: true })
@@ -620,9 +621,56 @@ describe("Vimex OpenTUI shell", () => {
       expect(runtime.getSnapshot().window.blocks.some(block => block.key.kind === "item" && block.key.itemId === thought)).toBe(true)
       expect(transcriptCommands).not.toContainEqual({ type: "fold.defaults", reasoning: true, tools: true })
       await act(async () => { setup.mockInput.pressKey("g", { shift: true }); await setup.flush() })
-      expect(transcriptCommands).toContainEqual(expect.objectContaining({
+      const lastJump = transcriptCommands.find(command => command.type === "jump" && command.target.itemId === workspace.transcript.order.at(-1))
+      expect(lastJump).toEqual(expect.objectContaining({
         type: "jump", target: expect.objectContaining({ itemId: workspace.transcript.order.at(-1) }),
       }))
+      if (lastJump?.type === "jump") {
+        expect(lastJump.preferredScreenRow).toBeGreaterThanOrEqual(0)
+        expect(lastJump.preferredScreenRow).toBeLessThan(18)
+      }
+    } finally {
+      runtime.dispose()
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
+  test("stationary runtime boundary motion is a no-op and preserves detached attachment", async () => {
+    const state = fixture()
+    const thread = state.activeThreadId!
+    const workspace = state.workspaces[thread]!
+    const first = workspace.transcript.order[0]!
+    const point = { itemId: first, graphemeOffset: 0 }
+    const transcript = {
+      ...workspace.transcript,
+      cursor: point,
+      viewport: { kind: "point" as const, point, preferredScreenRow: 0 },
+    }
+    const runtime = new TranscriptRuntime({
+      threadId: thread,
+      canonicalGeneration: workspace.canonicalGeneration,
+      canonicalRevision: workspace.canonicalRevision,
+      conversation: workspace.conversation,
+      transcript,
+      mode: "detached",
+    }, { windowPolicy: { viewportRows: 4, overscanRows: 4 } })
+    const transcriptCommands: TranscriptUiCommand[] = []
+    let publications = 0
+    runtime.subscribe(() => { publications++ })
+    const controller: VimexUiController = {
+      ...inertController,
+      transcriptRuntime: () => runtime,
+      transcript(command) { transcriptCommands.push(command) },
+    }
+    const setup = await testRender(<VimexRoot state={state} controller={controller} />, { width: 72, height: 18 })
+    try {
+      await act(async () => setup.flush())
+      transcriptCommands.length = 0
+      const publicationsBeforeKey = publications
+      await act(async () => { setup.mockInput.pressKey("h"); await setup.flush() })
+      expect(transcriptCommands).toEqual([])
+      expect(publications).toBe(publicationsBeforeKey)
+      expect(runtime.getSnapshot().mode).toBe("detached")
     } finally {
       runtime.dispose()
       await act(async () => setup.renderer.destroy())

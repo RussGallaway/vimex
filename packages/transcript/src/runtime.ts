@@ -1,8 +1,8 @@
 import type { ConversationState, ItemId, ThreadId, TurnId } from "@vimex/conversation"
-import { transcriptOrderIndex, type LogicalPoint, type TranscriptState } from "./domain/transcript-document"
+import { transcriptOrderIndex, type LogicalPoint, type TranscriptOrderIndexDiagnostics, type TranscriptState } from "./domain/transcript-document"
 import { composeTranscriptGeometry, composeTranscriptWindowGeometry, emptyTranscriptGeometry, freezeBlockGeometry, geometryMatchesBlock, type BlockGeometry, type BlockMeasurementBase, type BlockMeasurementBatch, type LayoutResetReason, type TranscriptGeometry } from "./geometry"
 import { createHeightIndex, type TranscriptHeightIndex } from "./height-index"
-import { blockKey, buildTranscriptBlocks, buildTranscriptItemBlock, passThroughWindow, planTranscriptWindow, type TranscriptBlock, type TranscriptItemBlock, type TranscriptWindow } from "./window"
+import { blockKey, buildTranscriptBlocks, buildTranscriptItemBlock, passThroughWindow, planTranscriptWindow, pointIsMaterialized, transcriptPointBlockIndex, type TranscriptBlock, type TranscriptItemBlock, type TranscriptWindow } from "./window"
 
 export type TranscriptDamage =
   | Readonly<{ kind: "none" }>
@@ -57,6 +57,13 @@ export interface TranscriptWindowPolicy {
 export interface TranscriptRuntimeOptions {
   /** Omit only for inert/test consumers that intentionally retain pass-through materialization. */
   readonly windowPolicy?: TranscriptWindowPolicy
+  /** Mutable deterministic counters for tests and diagnostic benchmarks. */
+  readonly diagnostics?: TranscriptRuntimeDiagnostics
+}
+
+export interface TranscriptRuntimeDiagnostics extends TranscriptOrderIndexDiagnostics {
+  completePlanBuilds: number
+  completePlanBlockVisits: number
 }
 
 export const defaultTranscriptWindowPolicy: TranscriptWindowPolicy = Object.freeze({ viewportRows: 24, overscanRows: 24 })
@@ -210,27 +217,17 @@ function presentationTranscript(state: TranscriptState, blocks: readonly Transcr
   return presentationTranscriptWithProjections(state, Object.freeze([...projections.keys()]), Object.freeze(Object.fromEntries(projections)))
 }
 
-function validReveal(input: TranscriptRuntimeInput): LogicalPoint | undefined {
+function validReveal(input: TranscriptRuntimeInput, diagnostics?: TranscriptOrderIndexDiagnostics): LogicalPoint | undefined {
   const point = input.reveal?.point
   if (!point || !Number.isInteger(point.graphemeOffset) || point.graphemeOffset < 0) return undefined
   const projection = input.transcript.projectionById[point.itemId]
-  if (!projection || !input.transcript.order.includes(point.itemId) || point.graphemeOffset > projection.sourceSpans.length) return undefined
+  if (!projection || !transcriptOrderIndex(input.transcript.order, diagnostics).has(point.itemId) || point.graphemeOffset > projection.sourceSpans.length) return undefined
   return point
 }
 
-function displayedReveal(input: TranscriptRuntimeInput, frame: TranscriptFrame): LogicalPoint | undefined {
-  const point = validReveal(input)
+function displayedReveal(input: TranscriptRuntimeInput, frame: TranscriptFrame, diagnostics?: TranscriptOrderIndexDiagnostics): LogicalPoint | undefined {
+  const point = validReveal(input, diagnostics)
   return point ? mapPoint(input.transcript, frame.transcript.projectionById, point) : undefined
-}
-
-function revealIsMaterialized(input: TranscriptRuntimeInput, blocks: readonly TranscriptBlock[], point: LogicalPoint): boolean {
-  const latest = input.transcript.projectionById[point.itemId]
-  if (!latest) return false
-  const offset = sourceOffset(latest, point.graphemeOffset)
-  return itemBlocks(blocks).some(block => block.key.itemId === point.itemId
-    && offset >= block.sourceSpan.from
-    && (offset < block.sourceSpan.to
-      || (block.sourceSpan.to === latest.source.length && offset === block.sourceSpan.to)))
 }
 
 function reconciledGeometry(previous: TranscriptGeometry | undefined, input: TranscriptRuntimeInput, blocks: readonly TranscriptBlock[]): TranscriptGeometry {
@@ -288,6 +285,7 @@ export class TranscriptRuntime {
   private latestInput: TranscriptRuntimeInput
   private windowPolicy: TranscriptWindowPolicy | undefined
   private heightIndex: TranscriptHeightIndex | undefined
+  private readonly diagnostics: TranscriptRuntimeDiagnostics | undefined
   private readonly itemBlockIndexes = new Map<ItemId, number>()
   private hiddenDamage: TranscriptDamage = noneDamage
   private readonly listeners = new Set<() => void>()
@@ -299,9 +297,17 @@ export class TranscriptRuntime {
   constructor(input: TranscriptRuntimeInput, options: TranscriptRuntimeOptions = {}) {
     this.latestInput = input
     this.windowPolicy = options.windowPolicy && Object.freeze({ ...options.windowPolicy })
+    this.diagnostics = options.diagnostics
+    // Canonical-order indexing is setup work, never a surprise inside the
+    // first user-visible reveal against this authoritative snapshot.
+    transcriptOrderIndex(input.transcript.order, this.diagnostics)
     const initial = createTranscriptFrame(input)
+    if (this.diagnostics) {
+      this.diagnostics.completePlanBuilds += 1
+      this.diagnostics.completePlanBlockVisits += initial.blocks.length
+    }
     const index = this.heightIndexForFrame(initial, true)
-    this.frame = this.withPlannedWindow(initial, index, displayedReveal(input, initial))
+    this.frame = this.withPlannedWindow(initial, index, displayedReveal(input, initial, this.diagnostics))
     this.heightIndex = index
     this.reindex(this.frame.blocks)
     this.lastRevealId = input.reveal?.id ?? -1
@@ -333,6 +339,26 @@ export class TranscriptRuntime {
       return [{ blockKey: geometry.key.blockKey, contentRevision: geometry.key.contentRevision, rows: geometry.rows }]
     })
     return createHeightIndex(frame.blocks, overrides)
+  }
+
+  private revealExistsInDisplayedFrame(input: TranscriptRuntimeInput, frame: TranscriptFrame, point: LogicalPoint): boolean {
+    const latest = input.transcript.projectionById[point.itemId]
+    const displayed = frame.transcript.projectionById[point.itemId]
+    if (!latest || !displayed || !latest.source.startsWith(displayed.source)) return false
+    const targetSpan = latest.sourceSpans[point.graphemeOffset]
+    // A concrete grapheme beginning at the old source end belongs to hidden
+    // appended output. The document-end sentinel belongs to the displayed
+    // revision only when both revisions have the same source extent.
+    if (targetSpan
+      ? targetSpan.from >= displayed.source.length || targetSpan.to > displayed.source.length
+      : latest.source.length !== displayed.source.length) return false
+    const mapped = mapPoint(input.transcript, frame.transcript.projectionById, point)
+    if (!mapped) return false
+    const index = this.heightIndex
+    if (index?.supports(frame.blocks)) return transcriptPointBlockIndex(frame.blocks, index, mapped, undefined) !== undefined
+    // Inert consumers intentionally omit windowing and retain the complete
+    // reference plan; only that pass-through path may use the linear oracle.
+    return !this.windowPolicy && pointIsMaterialized(frame.blocks, mapped)
   }
 
   private withPlannedWindow(
@@ -468,7 +494,7 @@ export class TranscriptRuntime {
     const index = foldsChanged
       ? this.heightIndexForFrame(raw)
       : this.heightIndex?.supports(raw.blocks) ? this.heightIndex : this.heightIndexForFrame(raw)
-    return this.publish(this.withPlannedWindow(raw, index, displayedReveal(input, raw)), index)
+    return this.publish(this.withPlannedWindow(raw, index, displayedReveal(input, raw, this.diagnostics)), index)
   }
 
   /**
@@ -572,9 +598,13 @@ export class TranscriptRuntime {
     this.hiddenDamage = noneDamage
     const incremental = reuse && incrementalItemIds ? this.incrementalFrame(input, incrementalItemIds, damage) : undefined
     const rebuilt = incremental ? undefined : buildFrame(input, reuse ? this.frame : undefined, this.frame.presentationRevision + 1, damage)
+    if (rebuilt && this.diagnostics) {
+      this.diagnostics.completePlanBuilds += 1
+      this.diagnostics.completePlanBlockVisits += rebuilt.blocks.length
+    }
     const raw = incremental ?? rebuilt!
     const index = this.heightIndex?.supports(raw.blocks) ? this.heightIndex : this.heightIndexForFrame(raw)
-    const next = this.withPlannedWindow(raw, index, displayedReveal(input, raw))
+    const next = this.withPlannedWindow(raw, index, displayedReveal(input, raw, this.diagnostics))
     if (!incremental) this.reindex(next.blocks)
     return this.publish(next, index)
   }
@@ -588,6 +618,7 @@ export class TranscriptRuntime {
     if (!lineageChanged && input.canonicalRevision < priorInput.canonicalRevision) return priorFrame
     if (!lineageChanged && input.canonicalRevision === priorInput.canonicalRevision && input.conversation !== priorInput.conversation) {
       this.latestInput = input
+      transcriptOrderIndex(input.transcript.order, this.diagnostics)
       return this.rebuild(input, fullDamage, false)
     }
 
@@ -600,6 +631,7 @@ export class TranscriptRuntime {
     const revealIsNew = Boolean(input.reveal && input.reveal.id > this.lastRevealId)
     if (input.reveal) this.lastRevealId = Math.max(this.lastRevealId, input.reveal.id)
     this.latestInput = input
+    transcriptOrderIndex(input.transcript.order, this.diagnostics)
 
     if (lineageChanged) return this.rebuild(input, fullDamage, false)
     if (exclusionsChanged) return this.rebuild(input, fullDamage)
@@ -610,9 +642,9 @@ export class TranscriptRuntime {
       if (revisionChanged) this.hiddenDamage = mergeDamage(this.hiddenDamage, canonicalDamage)
 
       if (revealIsNew) {
-        const reveal = validReveal(input)
+        const reveal = validReveal(input, this.diagnostics)
         if (!reveal) return priorFrame
-        if (!revealIsMaterialized(input, priorFrame.window.blocks, reveal)) {
+        if (!this.revealExistsInDisplayedFrame(input, priorFrame, reveal)) {
           const hiddenDamage = this.hiddenDamage
           return this.rebuild(input, mergeDamage(presentationDamage, mergeDamage({ kind: "view" }, hiddenDamage)), true, blockDamageIds(hiddenDamage))
         }

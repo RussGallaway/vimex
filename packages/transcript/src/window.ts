@@ -243,7 +243,7 @@ function targetLookupVisit(diagnostics: TranscriptWindowDiagnostics | undefined)
 }
 
 /** Resolve one logical point without consulting native nodes or terminal coordinates. */
-function pointBlockIndex(
+export function transcriptPointBlockIndex(
   blocks: readonly TranscriptBlock[],
   heights: TranscriptHeightIndex,
   point: LogicalPoint,
@@ -297,7 +297,7 @@ export function planTranscriptWindow(input: PlanTranscriptWindowInput): Transcri
     if (!Number.isSafeInteger(input.attachment.preferredScreenRow)
       || (input.attachment.blockLocalRow !== undefined
         && (!Number.isSafeInteger(input.attachment.blockLocalRow) || input.attachment.blockLocalRow < 0))) return passThroughWindow(blocks)
-    focusIndex = pointBlockIndex(blocks, heights, input.attachment.point, input.diagnostics)
+    focusIndex = transcriptPointBlockIndex(blocks, heights, input.attachment.point, input.diagnostics)
     if (focusIndex === undefined) return passThroughWindow(blocks)
     preferredScreenRow = clamp(input.attachment.preferredScreenRow, 0, input.viewportRows - 1)
   }
@@ -317,7 +317,7 @@ export function planTranscriptWindow(input: PlanTranscriptWindowInput): Transcri
     : Math.min(heights.totalRows, visibleEnd + input.overscanRows)
 
   if (input.reveal) {
-    const revealIndex = pointBlockIndex(blocks, heights, input.reveal, input.diagnostics)
+    const revealIndex = transcriptPointBlockIndex(blocks, heights, input.reveal, input.diagnostics)
     if (revealIndex === undefined) return passThroughWindow(blocks)
     const revealRange = heights.rowRange(revealIndex, revealIndex + 1)
     if (!revealRange) return passThroughWindow(blocks)

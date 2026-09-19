@@ -1,6 +1,6 @@
 import type { ItemId } from "@vimex/conversation"
 import { graphemes } from "../domain/markdown-source-map"
-import type { LogicalPoint, TranscriptSelection, TranscriptState } from "../domain/transcript-document"
+import { transcriptOrderIndex, type LogicalPoint, type TranscriptSelection, type TranscriptState } from "../domain/transcript-document"
 import { selectedText } from "./transcript-operations"
 
 export type NavigationDirection = "forward" | "backward"
@@ -24,7 +24,7 @@ export interface UrlCandidate extends LogicalRange {
 export type UrlCandidateScope = "all" | "current-item" | "selection"
 
 function orderedPoint(state: TranscriptState, point: LogicalPoint): readonly [number, number] {
-  return [state.order.indexOf(point.itemId), point.graphemeOffset]
+  return [transcriptOrderIndex(state.order).get(point.itemId) ?? -1, point.graphemeOffset]
 }
 
 function comparePoint(state: TranscriptState, left: LogicalPoint, right: LogicalPoint): number {
@@ -39,45 +39,73 @@ function orderedSelection(state: TranscriptState, selection: TranscriptSelection
     : [selection.head, selection.anchor]
 }
 
-export function semanticBlocks(state: TranscriptState): readonly SemanticBlock[] {
+function semanticBlocksForItem(state: TranscriptState, itemId: ItemId): readonly SemanticBlock[] {
   const blocks: SemanticBlock[] = []
-  for (const itemId of state.order) {
-    const projection = state.projectionById[itemId]
-    if (!projection) continue
-    const parts = graphemes(projection.plain)
-    let blockFrom: number | undefined
-    let blockTo = 0
-    let lineFrom = 0
-    for (let cursor = 0; cursor <= parts.length; cursor++) {
-      if (cursor < parts.length && parts[cursor] !== "\n") continue
-      const nonBlank = parts.slice(lineFrom, cursor).some((part) => !/^\s$/u.test(part))
-      if (nonBlank) {
-        blockFrom ??= lineFrom
-        blockTo = cursor
-      } else if (blockFrom !== undefined) {
-        blocks.push({
-          itemId,
-          from: { itemId, graphemeOffset: blockFrom },
-          to: { itemId, graphemeOffset: blockTo },
-        })
-        blockFrom = undefined
-      }
-      lineFrom = cursor + 1
-    }
-    if (blockFrom !== undefined) {
+  const projection = state.projectionById[itemId]
+  if (!projection) return blocks
+  const parts = graphemes(projection.plain)
+  let blockFrom: number | undefined
+  let blockTo = 0
+  let lineFrom = 0
+  for (let cursor = 0; cursor <= parts.length; cursor++) {
+    if (cursor < parts.length && parts[cursor] !== "\n") continue
+    const nonBlank = parts.slice(lineFrom, cursor).some((part) => !/^\s$/u.test(part))
+    if (nonBlank) {
+      blockFrom ??= lineFrom
+      blockTo = cursor
+    } else if (blockFrom !== undefined) {
       blocks.push({
         itemId,
         from: { itemId, graphemeOffset: blockFrom },
         to: { itemId, graphemeOffset: blockTo },
       })
+      blockFrom = undefined
     }
+    lineFrom = cursor + 1
+  }
+  if (blockFrom !== undefined) {
+    blocks.push({
+      itemId,
+      from: { itemId, graphemeOffset: blockFrom },
+      to: { itemId, graphemeOffset: blockTo },
+    })
   }
   return blocks
 }
 
+export function semanticBlocks(state: TranscriptState): readonly SemanticBlock[] {
+  return state.order.flatMap(itemId => semanticBlocksForItem(state, itemId))
+}
+
+/** Resolve an adjacent semantic item without consulting mounted presentation state. */
+export function adjacentTranscriptItem(
+  state: TranscriptState,
+  itemId: ItemId,
+  direction: NavigationDirection,
+): ItemId | undefined {
+  const current = transcriptOrderIndex(state.order).get(itemId)
+  if (current === undefined) return undefined
+  const delta = direction === "forward" ? 1 : -1
+  for (let index = current + delta; index >= 0 && index < state.order.length; index += delta) {
+    const candidate = state.order[index]!
+    if (state.projectionById[candidate]) return candidate
+  }
+  return undefined
+}
+
+export function transcriptBoundaryItem(state: TranscriptState, direction: NavigationDirection): ItemId | undefined {
+  const start = direction === "forward" ? 0 : state.order.length - 1
+  const delta = direction === "forward" ? 1 : -1
+  for (let index = start; index >= 0 && index < state.order.length; index += delta) {
+    const candidate = state.order[index]!
+    if (state.projectionById[candidate]) return candidate
+  }
+  return undefined
+}
+
 export function currentSemanticBlock(state: TranscriptState, point = state.cursor): SemanticBlock | undefined {
   if (!point) return undefined
-  const inItem = semanticBlocks(state).filter((block) => block.itemId === point.itemId)
+  const inItem = semanticBlocksForItem(state, point.itemId)
   return inItem.find((block) => point.graphemeOffset >= block.from.graphemeOffset && point.graphemeOffset < block.to.graphemeOffset)
     ?? inItem.findLast((block) => block.from.graphemeOffset <= point.graphemeOffset)
     ?? inItem[0]
@@ -102,15 +130,30 @@ export function moveBySemanticBlock(
   count = 1,
 ): LogicalPoint | undefined {
   if (!point) return undefined
-  const blocks = semanticBlocks(state)
-  if (blocks.length === 0) return undefined
+  const blockCache = new Map<ItemId, readonly SemanticBlock[]>()
+  const blocksIn = (itemId: ItemId) => {
+    const cached = blockCache.get(itemId)
+    if (cached) return cached
+    const blocks = semanticBlocksForItem(state, itemId)
+    blockCache.set(itemId, blocks)
+    return blocks
+  }
   let target: SemanticBlock | undefined
   let origin = point
   const repeat = Number.isFinite(count) ? Math.max(1, Math.trunc(count)) : 1
   for (let step = 0; step < repeat; step++) {
+    const local = blocksIn(origin.itemId)
     target = direction === "forward"
-      ? blocks.find((block) => comparePoint(state, block.from, origin) > 0)
-      : blocks.findLast((block) => comparePoint(state, block.from, origin) < 0)
+      ? local.find(block => block.from.graphemeOffset > origin.graphemeOffset)
+      : local.findLast(block => block.from.graphemeOffset < origin.graphemeOffset)
+    let itemId = origin.itemId
+    while (!target) {
+      const adjacent = adjacentTranscriptItem(state, itemId, direction)
+      if (!adjacent) break
+      itemId = adjacent
+      const candidates = blocksIn(itemId)
+      target = direction === "forward" ? candidates[0] : candidates.at(-1)
+    }
     if (!target) return step === 0 ? undefined : origin
     origin = target.from
   }
@@ -124,8 +167,8 @@ export function moveByMessage(
   count = 1,
 ): LogicalPoint | undefined {
   if (!point) return undefined
-  const currentOrder = state.order.indexOf(point.itemId)
-  if (currentOrder < 0) return undefined
+  const currentOrder = transcriptOrderIndex(state.order).get(point.itemId)
+  if (currentOrder === undefined) return undefined
   let remaining = Number.isFinite(count) ? Math.max(1, Math.trunc(count)) : 1
   const delta = direction === "forward" ? 1 : -1
   for (let index = currentOrder + delta; index >= 0 && index < state.order.length; index += delta) {
@@ -216,7 +259,7 @@ export function moveByWord(
   count = 1,
   bigWord = false,
 ): LogicalPoint | undefined {
-  if (!point || !state.order.includes(point.itemId)) return undefined
+  if (!point || !transcriptOrderIndex(state.order).has(point.itemId)) return undefined
   const category = (part: string): number => /^\s+$/u.test(part) ? 0 : bigWord || /^[\p{L}\p{M}\p{N}_]+$/u.test(part) ? 1 : 2
   const cache = new Map<ItemId, { from: LogicalPoint; end: LogicalPoint }[]>()
   const wordsIn = (itemId: ItemId) => {
@@ -237,7 +280,7 @@ export function moveByWord(
     cache.set(itemId, words)
     return words
   }
-  const order = new Map(state.order.map((itemId, index) => [itemId, index]))
+  const order = transcriptOrderIndex(state.order)
   const firstWord = () => {
     for (const itemId of state.order) { const word = wordsIn(itemId)[0]; if (word) return word }
   }

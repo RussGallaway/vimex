@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { itemId } from "@vimex/conversation"
 import { composeTranscriptGeometry, graphemeCount, initialTranscript, projectMarkdown, transcriptOrderIndex, type BlockGeometry, type TranscriptState } from "@vimex/transcript"
-import { blockRefForPoint, buildTranscriptLayout, graphemeCellWidth, movePoint, pointInLayout, selectedRangeForItem } from "./layout"
+import { blockRefForPoint, buildTranscriptLayout, graphemeCellWidth, movePoint, movePointInTranscript, pointInLayout, selectedRangeForItem } from "./layout"
 
 const first = itemId("first")
 const second = itemId("second")
@@ -84,6 +84,60 @@ describe("transcript visual layout", () => {
     expect(index.size).toBe(100_000)
     expect(order.slice(50_000, 50_048).filter(id => selectedRangeForItem(state, id))).toHaveLength(48)
     expect(transcriptOrderIndex(order)).toBe(index)
+  })
+
+  test("targeted off-window motion equals the complete estimated-layout oracle", () => {
+    const ids = [first, second, itemId("empty"), itemId("last")]
+    const texts = ["abcdEFGH", "e\nfg", "", "🙂zz"]
+    const state: TranscriptState = {
+      ...initialTranscript(), order: ids,
+      projectionById: Object.fromEntries(ids.map((id, index) => [id, { ...projectMarkdown(texts[index]!), revision: 1 }])),
+    }
+    const oracle = buildTranscriptLayout(state, 4)
+    const motions = ["left", "right", "up", "down", "line-start", "line-end", "first", "last"] as const
+    const completeMotion = (point: { itemId: typeof first; graphemeOffset: number }, motion: typeof motions[number], repeat: number) => {
+      let current = point
+      let result: ReturnType<typeof movePoint>
+      let moved = false
+      const crossing = motion === "left" || motion === "right" || motion === "up" || motion === "down"
+      for (let index = 0; index < repeat; index++) {
+        result = movePoint(oracle, current, motion)
+        if (!result) return undefined
+        if (result.point.itemId === current.itemId && result.point.graphemeOffset === current.graphemeOffset) {
+          return crossing && !moved ? undefined : result
+        }
+        moved = true
+        current = result.point
+      }
+      return result
+    }
+    for (const id of ids) {
+      const length = state.projectionById[id]!.sourceSpans.length
+      for (let offset = 0; offset <= length; offset++) for (const motion of motions) for (const repeat of [1, 2, 5]) {
+        const point = { itemId: id, graphemeOffset: offset }
+        const targeted = movePointInTranscript(state, 4, point, motion, repeat)
+        expect(targeted?.point).toEqual(completeMotion(point, motion, repeat)?.point)
+        if (targeted) expect(targeted.preferredScreenRow).toBeGreaterThanOrEqual(0)
+      }
+    }
+  })
+
+  test("100k off-window motion wraps only the current and adjacent logical items", () => {
+    const ids = Object.freeze(Array.from({ length: 100_000 }, (_, index) => itemId(`motion-${index}`)))
+    const projection = { ...projectMarkdown("x"), revision: 1 }
+    const state: TranscriptState = {
+      ...initialTranscript(), order: ids,
+      projectionById: Object.fromEntries(ids.map(id => [id, projection])),
+    }
+    transcriptOrderIndex(ids)
+    const diagnostics = { wrappedItems: 0, itemTransitions: 0 }
+    expect(movePointInTranscript(state, 8, { itemId: ids[50_000]!, graphemeOffset: 0 }, "left", 1, diagnostics)?.point)
+      .toEqual({ itemId: ids[49_999]!, graphemeOffset: 1 })
+    expect(diagnostics).toEqual({ wrappedItems: 2, itemTransitions: 1 })
+    const boundary = { wrappedItems: 0, itemTransitions: 0 }
+    expect(movePointInTranscript(state, 8, { itemId: ids[50_000]!, graphemeOffset: 0 }, "first", 1, boundary)?.point)
+      .toEqual({ itemId: ids[0]!, graphemeOffset: 0 })
+    expect(boundary).toEqual({ wrappedItems: 1, itemTransitions: 0 })
   })
 })
 

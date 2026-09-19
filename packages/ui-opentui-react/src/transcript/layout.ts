@@ -1,5 +1,5 @@
 import type { ItemId } from "@vimex/conversation"
-import { graphemes, transcriptOrderIndex, type LogicalPoint, type TranscriptBlock, type TranscriptGeometry, type TranscriptState } from "@vimex/transcript"
+import { adjacentTranscriptItem, graphemes, transcriptBoundaryItem, transcriptOrderIndex, type LogicalPoint, type TranscriptBlock, type TranscriptGeometry, type TranscriptState } from "@vimex/transcript"
 
 export interface VisualLine {
   itemId: ItemId
@@ -109,6 +109,125 @@ export function buildTranscriptLayout(state: TranscriptState, width: number): Tr
     linesByItem[itemId] = itemLines
   }
   return { width: safeWidth, lines, linesByItem }
+}
+
+export interface TargetedMotionDiagnostics {
+  wrappedItems: number
+  itemTransitions: number
+}
+
+export type TranscriptMotion = "left" | "right" | "up" | "down" | "line-start" | "line-end" | "first" | "last"
+
+/**
+ * Exact estimated-layout fallback for a logical target outside the mounted
+ * native window. Only projections visited by the requested motion are wrapped;
+ * buildTranscriptLayout remains the complete reference oracle for tests.
+ */
+export function movePointInTranscript(
+  state: TranscriptState,
+  width: number,
+  point: LogicalPoint | undefined,
+  motion: TranscriptMotion,
+  repeat = 1,
+  diagnostics?: TargetedMotionDiagnostics,
+): { point: LogicalPoint; preferredScreenRow: number } | undefined {
+  const safeWidth = Math.max(1, Math.floor(width))
+  const cache = new Map<ItemId, readonly VisualLine[]>()
+  const linesFor = (itemId: ItemId): readonly VisualLine[] => {
+    const cached = cache.get(itemId)
+    if (cached) return cached
+    const projection = state.projectionById[itemId]
+    const lines = projection ? wrapProjection(itemId, projection.plain, safeWidth, 0, Boolean(state.folded[itemId])) : []
+    cache.set(itemId, lines)
+    if (diagnostics) diagnostics.wrappedItems++
+    return lines
+  }
+  const boundary = (direction: "forward" | "backward") => {
+    const itemId = transcriptBoundaryItem(state, direction)
+    if (!itemId) return undefined
+    const lines = linesFor(itemId)
+    const line = direction === "forward" ? lines[0] : lines.at(-1)
+    return line && { itemId, line }
+  }
+  const adjacent = (itemId: ItemId, direction: "forward" | "backward") => {
+    let candidate = itemId
+    while (true) {
+      const next = adjacentTranscriptItem(state, candidate, direction)
+      if (!next) return undefined
+      candidate = next
+      if (diagnostics) diagnostics.itemTransitions++
+      const lines = linesFor(candidate)
+      const line = direction === "forward" ? lines[0] : lines.at(-1)
+      if (line) return { itemId: candidate, line }
+    }
+  }
+  const lineAt = (current: LogicalPoint) => {
+    const lines = linesFor(current.itemId)
+    const line = lines.find((candidate, index) => current.graphemeOffset < candidate.to
+      || (index === lines.length - 1 && current.graphemeOffset <= candidate.to))
+    return line ? { lines, line, index: lines.indexOf(line) } : undefined
+  }
+  const edge = motion === "first" ? boundary("forward") : motion === "last" ? boundary("backward") : undefined
+  if (motion === "first" || motion === "last") {
+    if (!edge) return undefined
+    return {
+      point: { itemId: edge.itemId, graphemeOffset: motion === "first" ? edge.line.from : edge.line.to },
+      preferredScreenRow: edge.line.row,
+    }
+  }
+  let initial = point
+  if (!initial || !state.projectionById[initial.itemId]) {
+    const last = boundary("backward")
+    if (!last) return undefined
+    initial = { itemId: last.itemId, graphemeOffset: last.line.to }
+  }
+  let current: LogicalPoint = initial
+  const steps = Number.isFinite(repeat) ? Math.max(1, Math.trunc(repeat)) : 1
+  let preferredScreenRow = 0
+  let moved = false
+  const crossingMotion = motion === "left" || motion === "right" || motion === "up" || motion === "down"
+  for (let step = 0; step < steps; step++) {
+    const located = lineAt(current)
+    if (!located) return step ? { point: current, preferredScreenRow } : undefined
+    const { lines, line, index } = located
+    const column = Math.max(0, current.graphemeOffset - line.from)
+    let targetItem: ItemId = current.itemId
+    let targetLine = line
+    let offset = current.graphemeOffset
+    if (motion === "left") {
+      if (offset > line.from) offset--
+      else if (index > 0) { targetLine = lines[index - 1]!; offset = targetLine.to }
+      else {
+        const target = adjacent(current.itemId, "backward")
+        if (target) { targetItem = target.itemId; targetLine = target.line; offset = targetLine.to }
+      }
+    } else if (motion === "right") {
+      if (offset < line.to) offset++
+      else if (index < lines.length - 1) { targetLine = lines[index + 1]!; offset = targetLine.from }
+      else {
+        const target = adjacent(current.itemId, "forward")
+        if (target) { targetItem = target.itemId; targetLine = target.line; offset = targetLine.from }
+      }
+    } else if (motion === "up" || motion === "down") {
+      const direction = motion === "down" ? "forward" : "backward"
+      const localIndex = index + (motion === "down" ? 1 : -1)
+      if (localIndex >= 0 && localIndex < lines.length) targetLine = lines[localIndex]!
+      else {
+        const target = adjacent(current.itemId, direction)
+        if (target) { targetItem = target.itemId; targetLine = target.line }
+      }
+      offset = Math.min(targetLine.to, targetLine.from + column)
+    } else if (motion === "line-start") offset = line.from
+    else if (motion === "line-end") offset = line.to
+    const next: LogicalPoint = { itemId: targetItem, graphemeOffset: offset }
+    preferredScreenRow = targetLine.row
+    if (next.itemId === current.itemId && next.graphemeOffset === current.graphemeOffset) {
+      return crossingMotion && !moved ? undefined : { point: current, preferredScreenRow }
+    }
+    moved = true
+    current = next
+  }
+  return { point: current, preferredScreenRow }
 }
 
 export function blockRefForPoint(layout: TranscriptLayout, point: LogicalPoint): ItemBlockGeometryRef | undefined {
@@ -287,7 +406,7 @@ function moveGeometryPoint(
 export function movePoint(
   layout: TranscriptLayout,
   point: LogicalPoint | undefined,
-  motion: "left" | "right" | "up" | "down" | "line-start" | "line-end" | "first" | "last",
+  motion: TranscriptMotion,
 ): { point: LogicalPoint; preferredScreenRow: number } | undefined {
   if (layout.geometry && (layout.blockKeysByItem || layout.blockKeyByItem)) return moveGeometryPoint(layout, point, motion)
   if (layout.geometry?.measuredBlockCount === 0 || (!layout.geometry && layout.lines.length === 0)) return undefined

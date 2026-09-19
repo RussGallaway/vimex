@@ -41,16 +41,33 @@ export interface TranscriptState {
 
 const orderIndexes = new WeakMap<readonly ItemId[], ReadonlyMap<ItemId, number>>()
 
+/** Optional deterministic counters for derived-order index construction. */
+export interface TranscriptOrderIndexDiagnostics {
+  orderIndexBuilds: number
+  orderIndexItemVisits: number
+  orderIndexCacheHits: number
+}
+
 /**
  * Disposable derived index for logical item order. Runtime-created transcript
  * states prime this before React publication, so mounted selection checks stay
  * independent of total transcript length without adding semantic authority.
  */
-export function transcriptOrderIndex(order: readonly ItemId[]): ReadonlyMap<ItemId, number> {
+export function transcriptOrderIndex(
+  order: readonly ItemId[],
+  diagnostics?: TranscriptOrderIndexDiagnostics,
+): ReadonlyMap<ItemId, number> {
   const cached = orderIndexes.get(order)
-  if (cached) return cached
+  if (cached) {
+    if (diagnostics) diagnostics.orderIndexCacheHits += 1
+    return cached
+  }
+  if (diagnostics) diagnostics.orderIndexBuilds += 1
   const index = new Map<ItemId, number>()
-  for (let position = 0; position < order.length; position++) index.set(order[position]!, position)
+  for (let position = 0; position < order.length; position++) {
+    if (diagnostics) diagnostics.orderIndexItemVisits += 1
+    index.set(order[position]!, position)
+  }
   orderIndexes.set(order, index)
   return index
 }

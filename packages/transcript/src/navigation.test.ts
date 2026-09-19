@@ -18,6 +18,7 @@ import {
   semanticBlocks,
   swapSelection,
   syncTranscriptItem,
+  transcriptOrderIndex,
   urlCandidates,
 } from "./index"
 
@@ -50,6 +51,26 @@ describe("logical transcript navigation", () => {
     expect(moveByMessage(state, "forward", { itemId: itemId("first"), graphemeOffset: 0 })).toEqual({ itemId: itemId("second"), graphemeOffset: 0 })
     expect(moveByMessage(state, "backward", { itemId: itemId("tool"), graphemeOffset: 0 })).toEqual({ itemId: itemId("first"), graphemeOffset: 0 })
     expect(moveByMessage(state, "forward", { itemId: itemId("tool"), graphemeOffset: 0 })).toEqual({ itemId: itemId("second"), graphemeOffset: 0 })
+  })
+
+  test("nearby message and semantic-block motions do not scan unrelated 100k history", () => {
+    const ids = Object.freeze(Array.from({ length: 100_000 }, (_, index) => itemId(`nearby-${index}`)))
+    const order = new Proxy(ids, { get(target, property, receiver) {
+      if (property === "indexOf") return () => { throw new Error("navigation scanned logical order") }
+      return Reflect.get(target, property, receiver)
+    } })
+    const projected = syncTranscriptItem(initialTranscript(), message("seed", "one block")).projectionById[itemId("seed")]!
+    let projectionReads = 0
+    const projectionById = new Proxy(Object.fromEntries(ids.map(id => [id, projected])), { get(target, property, receiver) {
+      if (typeof property === "string" && property.startsWith("nearby-")) projectionReads++
+      return Reflect.get(target, property, receiver)
+    } })
+    const state = { ...initialTranscript(), order, projectionById }
+    transcriptOrderIndex(order)
+    const origin = { itemId: ids[50_000]!, graphemeOffset: 0 }
+    expect(moveByMessage(state, "forward", origin)).toEqual({ itemId: ids[50_001]!, graphemeOffset: 0 })
+    expect(moveBySemanticBlock(state, "forward", origin)).toEqual({ itemId: ids[50_001]!, graphemeOffset: 0 })
+    expect(projectionReads).toBeLessThanOrEqual(6)
   })
 
   test("references a selection first and otherwise the current semantic block", () => {

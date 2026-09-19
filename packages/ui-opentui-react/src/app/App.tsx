@@ -16,7 +16,7 @@ import { Statusline } from "../statusline/Statusline"
 import { useTranscriptLayout } from "../transcript/use-transcript-layout"
 import { TranscriptViewport } from "../transcript/TranscriptViewport"
 import { defaultVimexUiSettings, type VimexAppProps } from "../contracts"
-import { buildTranscriptLayout, movePoint, type TranscriptLayout } from "../transcript/layout"
+import { movePoint, movePointInTranscript, type TranscriptLayout } from "../transcript/layout"
 import { measureRenderedTranscript, measuredPoint, transcriptRenderableIdForPoint } from "../transcript/rendered-layout"
 import { createEmberTideSyntax, selectTheme } from "../theme"
 import { commonBindings } from "../keymap/common-bindings"
@@ -276,7 +276,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
     if (!scrollbox) return
     const point = measuredPoint(measuredLayout.current ?? layout, transcript.cursor)
     if (!point) {
-      scrollbox.scrollChildIntoView(transcriptRenderableIdForPoint(layout, transcript.cursor))
+      if (!transcriptRuntime) scrollbox.scrollChildIntoView(transcriptRenderableIdForPoint(layout, transcript.cursor))
       return
     }
     const top = scrollbox.viewport.screenY
@@ -287,7 +287,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
     } else if (point.screenY > bottom) {
       scrollbox.scrollBy(point.screenY - bottom, "step")
     }
-  }, [transcript.cursor?.itemId, transcript.cursor?.graphemeOffset])
+  }, [transcript.cursor?.itemId, transcript.cursor?.graphemeOffset, transcriptRuntime])
 
   const dispatchMotion = useCallback((motion: Motion, repeat = 1) => {
     const activeLayout = measuredLayout.current ?? layout
@@ -305,19 +305,23 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
       return result
     }
     let result = motion === "first" || motion === "last" ? undefined : calculate(activeLayout)
-    // A mounted layout deliberately ends at the window boundary. Preserve the
-    // exact pre-windowing motion as a correctness fallback only when a motion
-    // reaches that boundary; Stage 5.4 replaces this full semantic reference
-    // with indexed off-window navigation.
+    // A mounted layout deliberately ends at the window boundary. Resolve only
+    // the logical items visited by the off-window motion; the full estimated
+    // layout remains a test oracle rather than production work.
     if (!result && (motion === "first" || motion === "last" || crossesWindow)) {
-      result = calculate(buildTranscriptLayout(transcript, Math.max(8, dimensions.width - 7)))
+      result = movePointInTranscript(transcript, Math.max(8, dimensions.width - 7), transcript.cursor, motion, repeat)
     }
     if (result) controller.transcript({
       type: motion === "first" || motion === "last" ? "jump" : "cursor.move",
       target: result.point,
       preferredScreenRow: (() => {
         const measured = measuredPoint(activeLayout, result.point)
-        return measured && scrollRef.current ? Math.max(0, Math.min(scrollRef.current.viewport.height - 1, measured.screenY - scrollRef.current.viewport.screenY)) : result.preferredScreenRow
+        const viewport = scrollRef.current?.viewport
+        if (measured && viewport) return Math.max(0, Math.min(viewport.height - 1, measured.screenY - viewport.screenY))
+        if (motion === "first") return 0
+        if (motion === "last" && viewport) return Math.max(0, viewport.height - 1)
+        const origin = measuredPoint(activeLayout, transcript.cursor)
+        return origin && viewport ? Math.max(0, Math.min(viewport.height - 1, origin.screenY - viewport.screenY)) : 0
       })(),
       extend: interaction.mode === "visual",
     })

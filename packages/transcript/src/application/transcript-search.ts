@@ -1,6 +1,6 @@
 import type { ItemId } from "@vimex/conversation"
 import { graphemes } from "../domain/markdown-source-map"
-import type { LogicalPoint, TranscriptState } from "../domain/transcript-document"
+import { transcriptOrderIndex, type LogicalPoint, type TranscriptState } from "../domain/transcript-document"
 import type { LogicalRange, NavigationDirection } from "./transcript-navigation"
 
 export interface TranscriptSearchMatch extends LogicalRange {
@@ -62,7 +62,7 @@ export function adjacentSearchMatch(
 ): TranscriptSearchMatch | undefined {
   if (matches.length === 0) return undefined
   const count = Number.isFinite(options.count) ? Math.max(1, Math.trunc(options.count ?? 1)) : 1
-  const order = new Map(state.order.map((id, index) => [id, index]))
+  const order = transcriptOrderIndex(state.order)
   let index: number
   if (!point) {
     index = direction === "forward" ? -1 : matches.length
