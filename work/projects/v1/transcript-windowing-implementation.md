@@ -1,6 +1,6 @@
 # Transcript windowing implementation
 
-Status: Stages 5.0–5.3 are complete and verified. Stage 5.4 is in progress; indexed cursor/message target materialization is complete and the remaining semantic operations are next.
+Status: Stages 5.0–5.3 are complete and verified. Stage 5.4 is in progress; indexed cursor/message target materialization plus spanning selection and copy are complete, and the remaining semantic operations are next.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
@@ -25,7 +25,7 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 | Stage 5a: pure window planner | Complete | Commit `4021939`; indexed height queries, bounded follow/detached/reveal windows, pass-through fallback, and evidence below |
 | Stage 5b: windowed mounting | Complete | Commit `3e24002`; bounded production runtime, React/native mounting, observer lifetime, scaling evidence, and review sign-off below |
 | Stage 5c: anchor correction | Complete | Commit `97f163f`; atomic height correction, window-local geometry, logical-anchor restoration, scaling evidence, and review sign-off below |
-| Stage 5d: off-window semantics | In progress | Commit `a24f5af`; indexed cursor/message target materialization, bounded UI motion, empty-item anchors, and evidence below |
+| Stage 5d: off-window semantics | In progress | Commits `a24f5af`, `df243a1`; indexed target materialization, bounded selection clipping, canonical cross-window copy, and evidence below |
 | Stage 5e: follow and detachment | Not started | — |
 | Stage 5f: stress, review, and evidence | Not started | — |
 
@@ -395,8 +395,8 @@ Exit criteria:
 
 - [x] Materialize cursor and message-motion targets outside the current window.
 - [ ] Materialize search, mark, jump, history, and thread-navigation targets.
-- [ ] Render selections whose logical endpoints span unmounted blocks.
-- [ ] Copy source and rendered text across unmounted blocks from canonical projections.
+- [x] Render selections whose logical endpoints span unmounted blocks.
+- [x] Copy source and rendered text across unmounted blocks from canonical projections.
 - [ ] Preserve folds and URL navigation across window changes.
 - [x] Verify empty-source items and source-less activity at window boundaries.
 
@@ -824,4 +824,41 @@ Every cell retains the complete block-plan identity and materializes the motion'
 - The exact isolated rerun outside the sandbox passed: `bun test tests/terminal/terminal.test.ts --test-name-pattern "isolated tmux"` — 1 passed in 718 ms.
 - Parallel architecture, correctness, and performance review ran before and after repair. Repairs fixed hidden append-boundary classification, removed the complete-plan reveal scan, added direct rebuild/order-index diagnostics, coupled the motion and reveal targets, suppressed stationary boundary dispatch, and restored empty-item native settlement. Final reviewers signed off with no blocker for this slice.
 
-The claim is intentionally scoped. Search/mark/jump/history/thread routing, spanning selection/copy, fold and URL behavior, and atomic multi-command navigation remain open Stage 5.4 work. Fold/unseen metadata cloning remains size-dependent presentation work, and target wrapping plus changed-item prefix validation remain item-content-proportional until stable production sub-blocks land. Stage 5.4 and overall Stage 5 acceptance therefore remain open.
+The 5.4a claim is intentionally scoped. At this checkpoint, search/mark/jump/history/thread routing, spanning selection/copy, fold and URL behavior, and atomic multi-command navigation remained open Stage 5.4 work. Fold/unseen metadata cloning remained size-dependent presentation work, and target wrapping plus changed-item prefix validation remained item-content-proportional until stable production sub-blocks land.
+
+### Stage 5.4b — spanning selection, bounded native clipping, and canonical copy
+
+Implementation commit: `df243a1` (`feat: clip off-window transcript selections`). This is the second Stage 5.4 vertical slice; Stage 5.4 remains in progress.
+
+#### Semantic authority and bounded presentation work
+
+- `TranscriptState.selection` remains the complete semantic range. Native OpenTUI selection is a disposable clipping of that range to the current materialized geometry; it never determines selection meaning or copy payloads.
+- `selection.swap` changes the semantic endpoints, cursor, preferred row, and viewport anchor atomically. Workbench classifies the command as one reveal, so an off-window head produces one coherent runtime publication and bounded window replacement.
+- Source and plain copy continue to read canonical projections. Integration coverage spans 91 logical items with Markdown-differentiated payloads while intermediate native blocks remain unmounted.
+- Native clipping traverses only materialized blocks and visible row offsets, preserves reverse selection direction, and maps folded interiors plus empty final sentinels without expanding hidden text.
+- The status selection count uses a disposable persistent text-length tree keyed by projection and order identity. Incremental projection changes path-copy one leaf; full construction remains the correct cold/rebuild reference.
+- Runtime frame, measured layout, and native selection are applied coherently. Stable frames reuse the native selection, while root or selectable-child remounts invalidate it. Transient out-of-root geometry is rejected and retried at most eight times before a stable no-work state; a later native dirty event can retry normally.
+- Newly materialized target windows are prepositioned with half-open nonfinal sub-block ownership and final-sentinel ownership before exact geometry restoration, preventing an intermediate wrong-window selection frame.
+
+#### Deterministic selection scaling
+
+The warm selection-index probe updates one selected endpoint and counts a fixed semantic range at every fixture size. Native clipping uses a 48-block materialized window; the 100k reverse-selection proof visits only the three mounted blocks and three mapped points needed by its viewport. Timings are diagnostic; operation counts are the hard gate.
+
+| Complete blocks | Mounted blocks | Index builds / item visits / updates | Query cache hits / node visits | Semantic count | Diagnostic query |
+|---:|---:|---:|---:|---:|---:|
+| 100 | 48 | 0 / 0 / 1 | 1 / 7 | 62 | 0.0066 ms |
+| 1k | 48 | 0 / 0 / 1 | 1 / 9 | 62 | 0.0052 ms |
+| 10k | 48 | 0 / 0 / 1 | 1 / 12 | 62 | 0.0086 ms |
+| 100k | 48 | 0 / 0 / 1 | 1 / 14 | 62 | 0.0197 ms |
+
+The recorded production benchmark also keeps target materialization at 48 mounted blocks and height correction at 45 composed blocks from 100 through 100k, with one publication and zero complete-plan/order-index scans for the detached reveal workload. Five stable native frames add zero `startSelection` or `updateSelection` calls.
+
+#### Repository, PTY, benchmark, and review gates
+
+- The broad focused gate passed 189 tests and 32,242 assertions with no failures across transcript semantics, runtime scaling, Workbench integration, App, layout, native geometry, and real OpenTUI visual interaction. Typecheck and `git diff --check` passed.
+- `bun run check` passed typecheck, dependency boundaries, generated-doc validation, and every non-sandbox-sensitive test: 706 passed and 5 intentional profiling skips. Its only failure was the sandbox-denied tmux socket; all four real PTY cases passed in that run.
+- The exact isolated tmux rerun outside the sandbox passed: `bun test tests/terminal/terminal.test.ts --test-name-pattern "isolated tmux"` — 1 passed in 689 ms.
+- The 100/1k/10k/100k production benchmark passed with bounded mounted, correction, and publication counts. The 100k unit probes prove bounded native clipping and logarithmic warm selection-count work.
+- Parallel architecture, correctness, and performance reviews ran before and after repair. Repairs added order-identity validation, differentiated source/plain integration coverage, bounded transient-measurement retries, same-key native-remount detection, deepest selectable-target liveness checks, folded-boundary clipping, and stable-frame no-op verification. Final reviewers signed off with no blocker for this slice.
+
+The claim remains scoped. Copy must remain proportional to the requested output size. Non-folded clipping within one oversized render root remains proportional to that root until stable production sub-blocks land. Search/mark/jump/history/thread routing, fold and URL behavior, fold/unseen metadata cloning, complete rebuild/append paths, and oversized Markdown/command/diff production splitting remain open. Stage 5.4 and overall Stage 5 acceptance therefore remain open.
