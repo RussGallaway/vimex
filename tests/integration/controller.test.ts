@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test"
 import { VimexController } from "@vimex/workbench"
-import type { RuntimeEvent, RuntimeConnection, ModelCatalog, PreferenceStore, ConversationIngressScheduler, WorkbenchState } from "@vimex/workbench"
+import type { RuntimeEvent, RuntimeConnection, ModelCatalog, PreferenceStore, ConversationIngressScheduler, WorkbenchLifecycleSnapshot, WorkbenchState } from "@vimex/workbench"
 import type { SessionSnapshot, ConversationGateway } from "@vimex/conversation"
 import type { ApprovalGateway } from "@vimex/approvals"
 import { resolve } from "node:path"
@@ -10,7 +10,14 @@ import type { LocalState } from "@vimex/workbench"
 
 const a = threadId("a"), b = threadId("b")
 const summary = (id = a): ThreadSummary => ({ id, title: id, cwd: "/tmp", model: "test", reasoningEffort: "high", status: "idle" })
-function harness(options: { localState?: LocalState; onState?: (state: WorkbenchState) => void; preferences?: PreferenceStore; conversationIngressScheduler?: ConversationIngressScheduler } = {}) {
+function harness(options: {
+  localState?: LocalState
+  onState?: (state: WorkbenchState) => void
+  onLocalState?: (state: LocalState) => void
+  onLifecycle?: (state: WorkbenchLifecycleSnapshot) => void
+  preferences?: PreferenceStore
+  conversationIngressScheduler?: ConversationIngressScheduler
+} = {}) {
   let listener: (event: RuntimeEvent) => void = () => {}
   const starts: string[] = []
   const copied: string[] = []
@@ -25,7 +32,7 @@ function harness(options: { localState?: LocalState; onState?: (state: Workbench
     listModels: async () => [{ id: "test", label: "Test", efforts: ["low", "high"] }], updateSettings: async () => {},
     steerTurn: async () => {}, interruptTurn: async () => {}, resolveApproval: async () => {}, renameThread: async () => {}, close: async () => {},
   }
-  const controller = new VimexController({ conversation: backend, approvals: backend, connection: backend, models: backend, resolveDirectory: resolve, localState: options.localState, onState: options.onState, preferences: options.preferences, conversationIngressScheduler: options.conversationIngressScheduler, clipboard: { writeText: async text => { copied.push(text) } }, openUrl: async url => { opened.push(url) }, quit() {} })
+  const controller = new VimexController({ conversation: backend, approvals: backend, connection: backend, models: backend, resolveDirectory: resolve, localState: options.localState, onState: options.onState, onLocalState: options.onLocalState, onLifecycle: options.onLifecycle, preferences: options.preferences, conversationIngressScheduler: options.conversationIngressScheduler, clipboard: { writeText: async text => { copied.push(text) } }, openUrl: async url => { opened.push(url) }, quit() {} })
   return { controller, backend, starts, copied, opened, emit: (event: RuntimeEvent) => listener(event) }
 }
 
@@ -105,6 +112,89 @@ test("streaming ingress bounds canonical settlements by cadence", async () => {
   manual.runNext()
   expect(h.controller.getSnapshot().workspaces[a]?.conversation.items[id]).toMatchObject({ markdown: "0123456789".repeat(10) })
   expect(updates).toBe(1)
+  await h.controller.close()
+})
+
+test("token cadence with an unchanged local view does not wake local-view or lifecycle observers", async () => {
+  const manual = manualIngressScheduler()
+  const local: LocalState[] = []
+  const lifecycle: WorkbenchLifecycleSnapshot[] = []
+  const h = harness({
+    conversationIngressScheduler: manual.scheduler,
+    onLocalState: state => { local.push(state) },
+    onLifecycle: state => { lifecycle.push(state) },
+  })
+  await h.controller.initialize("/tmp")
+  const turn = turnId("observed"), id = itemId("observed-answer")
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id, turnId: turn, kind: "assistant", markdown: "", status: "running" } } })
+  local.length = 0
+  lifecycle.length = 0
+
+  for (let index = 0; index < 100; index++) h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: id, delta: "x" } })
+  manual.runNext()
+  h.emit({ type: "metadata", threadId: a, patch: { contextUsed: 500, contextLimit: 10_000 } })
+
+  expect(local).toHaveLength(0)
+  expect(lifecycle).toHaveLength(0)
+
+  h.controller.changeDraft("persist me", 10)
+  expect(local).toHaveLength(1)
+  expect(local[0]?.threads[a]?.draft).toBe("persist me")
+  h.emit({ type: "metadata", threadId: a, patch: { status: "blocked" } })
+  expect(lifecycle).toHaveLength(1)
+  expect(lifecycle[0]).toMatchObject({ summary: { id: a, status: "blocked" }, pendingApprovals: 0 })
+  await h.controller.close()
+})
+
+test("Markdown re-projection publishes one changed local anchor without waking lifecycle", async () => {
+  const manual = manualIngressScheduler()
+  const local: LocalState[] = []
+  const lifecycle: WorkbenchLifecycleSnapshot[] = []
+  const h = harness({ conversationIngressScheduler: manual.scheduler, onLocalState: state => { local.push(state) }, onLifecycle: state => { lifecycle.push(state) } })
+  await h.controller.initialize("/tmp")
+  const turn = turnId("reproject"), id = itemId("reproject")
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id, turnId: turn, kind: "assistant", markdown: "prefix **bold", status: "running" } } })
+  h.controller.transcript({ type: "cursor.move", target: { itemId: id, graphemeOffset: 11 }, preferredScreenRow: 4, extend: false })
+  local.length = 0
+  lifecycle.length = 0
+
+  h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: id, delta: "** and more" } })
+  manual.runNext()
+
+  expect(local).toHaveLength(1)
+  expect(local[0]?.threads[a]?.cursor).toEqual({ itemId: id, graphemeOffset: 9 })
+  expect(lifecycle).toHaveLength(0)
+  await h.controller.close()
+})
+
+test("lifecycle stays blocked while an approval is resolving", async () => {
+  const lifecycle: WorkbenchLifecycleSnapshot[] = []
+  const h = harness({ onLifecycle: state => { lifecycle.push(state) } })
+  await h.controller.initialize("/tmp")
+  lifecycle.length = 0
+  h.emit({ type: "approval", approval: { id: "approval", threadId: a, kind: "command", title: "Run", detail: "command", choices: [{ id: "yes", label: "Yes" }], status: "pending" } })
+  expect(lifecycle.at(-1)?.pendingApprovals).toBe(1)
+  lifecycle.length = 0
+  h.controller.resolveApproval("approval", "yes")
+  expect(h.controller.getSnapshot().approvals.byId.approval?.status).toBe("resolving")
+  expect(lifecycle).toHaveLength(0)
+  await h.controller.settle()
+  expect(lifecycle.at(-1)?.pendingApprovals).toBe(0)
+  await h.controller.close()
+})
+
+test("a faulty UI subscriber cannot suppress local-view publication", async () => {
+  const local: LocalState[] = []
+  const h = harness({ onLocalState: state => { local.push(state) } })
+  await h.controller.initialize("/tmp")
+  let healthyCalls = 0
+  h.controller.subscribe(() => { throw new Error("broken UI") })
+  h.controller.subscribe(() => { healthyCalls++ })
+  expect(() => h.controller.changeDraft("still committed", 15)).not.toThrow()
+  expect(healthyCalls).toBe(1)
+  expect(local.at(-1)?.threads[a]?.draft).toBe("still committed")
   await h.controller.close()
 })
 
@@ -216,6 +306,21 @@ test("shutdown publishes its final ingress drain to persistence observers", asyn
   h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: id, delta: " after" } })
   await h.controller.close()
   expect(observed?.workspaces[a]?.conversation.items[id]).toMatchObject({ markdown: "before after" })
+})
+
+test("shutdown publishes a persisted anchor reprojected by its final Markdown delta", async () => {
+  const local: LocalState[] = []
+  const h = harness({ onLocalState: state => { local.push(state) } })
+  await h.controller.initialize("/tmp")
+  const turn = turnId("close-anchor"), id = itemId("close-anchor")
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id, turnId: turn, kind: "assistant", markdown: "prefix **bold", status: "running" } } })
+  h.controller.transcript({ type: "cursor.move", target: { itemId: id, graphemeOffset: 11 }, preferredScreenRow: 4, extend: false })
+  local.length = 0
+  h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: id, delta: "** and more" } })
+  await h.controller.close()
+  expect(local.at(-1)?.threads[a]?.cursor).toEqual({ itemId: id, graphemeOffset: 9 })
+  expect(local.at(-1)?.threads[a]?.viewport).toEqual({ kind: "point", point: { itemId: id, graphemeOffset: 9 }, preferredScreenRow: 4 })
 })
 
 test("stale resume response cannot steal focus after a newer navigation", async () => {

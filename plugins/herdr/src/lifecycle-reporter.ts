@@ -105,7 +105,7 @@ function reportSignature(report: ReportReadModel): string {
   const summary = report.summary
   return JSON.stringify([
     summary?.id, summary?.title, summary?.cwd, summary?.model, summary?.reasoningEffort,
-    summary?.gitBranch, summary?.status, summary?.contextUsed, summary?.contextLimit,
+    summary?.gitBranch, summary?.status,
     report.connection, report.pendingApprovals,
   ])
 }

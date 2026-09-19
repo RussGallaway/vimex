@@ -4,7 +4,8 @@ import { SideChatCoordinator, currentSideChat, type SideChatAction } from "./sid
 import { adjacentSearchMatch, findSearchMatches, firstContentPoint, moveByWord, moveBySemanticBlock, moveByUrl, referenceText, urlAt, urlCandidates, graphemeCount, TranscriptRuntime, type LogicalPoint, type TranscriptDamage, type TranscriptRevealRequest, type TranscriptRuntimeInput } from "@vimex/transcript"
 import { isThemeName, themeNames, type PreferenceStore } from "./display-preferences"
 import { parseCommand, validateCommand, resolveCommandName, commandDescriptors, type ExCommand } from "@vimex/interaction"
-import { captureLocalState, emptyLocalState, restoreThreadView, type LocalState, type SavedThreadView } from "./local-state"
+import { captureLocalState, emptyLocalState, localViewChanged, restoreThreadView, type LocalState, type SavedThreadView } from "./local-state"
+import { captureWorkbenchLifecycle, workbenchLifecycleChanged, workbenchLifecycleSignature, type WorkbenchLifecycleSnapshot } from "./workbench-observation"
 import { initialWorkbench, activeWorkspace, createWorkspace, type ThreadWorkspace, type WorkbenchState, type WorkbenchCommand, type WorkbenchEffect } from "./workbench-state"
 import { transitionWorkbench } from "./reduce-workbench"
 import { forkBoundary, threadId, type ThreadId, type TurnId, type ItemId, type ConversationEvent } from "@vimex/conversation"
@@ -29,7 +30,10 @@ export interface ControllerPorts {
   clipboard: { writeText(text: string): Promise<void> }
   openUrl(url: string): Promise<void>
   quit(): void
+  /** Legacy broad observer retained for compatibility and tests. */
   onState?(state: WorkbenchState): void
+  onLocalState?(state: LocalState): void
+  onLifecycle?(state: WorkbenchLifecycleSnapshot): void
   localState?: LocalState
   preferences?: PreferenceStore
   busySubmit?: "queue" | "steer"
@@ -160,6 +164,9 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
   private initialModel?: string
   private closing = false
   private closePromise?: Promise<void>
+  private localStateSnapshot: LocalState
+  private localStateJson: string
+  private lifecycleSignature: string
   private signalClosing!: () => void
   private readonly closingSignal = new Promise<void>(resolve => { this.signalClosing = resolve })
   constructor(private readonly ports: ControllerPorts) {
@@ -173,6 +180,9 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
       this.desiredPreferences = ports.preferences.initial
       this.state = { ...this.state, preferences: ports.preferences.initial }
     }
+    this.localStateSnapshot = ports.localState ?? emptyLocalState()
+    this.localStateJson = JSON.stringify(this.localStateSnapshot)
+    this.lifecycleSignature = workbenchLifecycleSignature(captureWorkbenchLifecycle(this.state))
   }
   getSnapshot = (): WorkbenchState => this.state
   subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener) }
@@ -238,8 +248,33 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     const before = this.state
     this.state = state
     this.syncTranscriptRuntimes(before, state, hint)
-    for (const listener of this.listeners) listener()
-    this.ports.onState?.(state)
+    for (const listener of this.listeners) {
+      try { listener() } catch { /* observers cannot roll back an authoritative state change */ }
+    }
+    this.publishExternalObservers(before)
+  }
+
+  private publishExternalObservers(before: WorkbenchState, changedThreadIds?: readonly ThreadId[]): void {
+    try { this.ports.onState?.(this.state) } catch { /* legacy observers are isolated */ }
+
+    if (localViewChanged(before, this.state, changedThreadIds)) {
+      const next = captureLocalState(this.state, this.localStateSnapshot)
+      const json = JSON.stringify(next)
+      if (json !== this.localStateJson) {
+        this.localStateSnapshot = next
+        this.localStateJson = json
+        try { this.ports.onLocalState?.(next) } catch { /* persistence owns its failure policy */ }
+      }
+    }
+
+    if (workbenchLifecycleChanged(before, this.state)) {
+      const lifecycle = captureWorkbenchLifecycle(this.state)
+      const lifecycleSignature = workbenchLifecycleSignature(lifecycle)
+      if (lifecycleSignature !== this.lifecycleSignature) {
+        this.lifecycleSignature = lifecycleSignature
+        try { this.ports.onLifecycle?.(lifecycle) } catch { /* lifecycle integrations are advisory */ }
+      }
+    }
   }
   private retiringThread(id: ThreadId): boolean {
     return this.state.retiredSideThreadIds.includes(id) || Object.values(this.state.sideChats).some(side => side.threadId === id && side.status === "quitting")
@@ -289,10 +324,10 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
       for (const listener of this.listeners) {
         try { listener() } catch { /* observers cannot roll back an ingress commit */ }
       }
-      try { this.ports.onState?.(this.state) } catch { /* persistence observers are isolated too */ }
+      this.publishExternalObservers(beforeBatch, [...new Set(events.map(event => event.threadId))])
     }
     if (this.closing) {
-      try { this.ports.onState?.(this.state) } catch { /* persistence failure is handled by its owning store */ }
+      this.publishExternalObservers(beforeBatch, [...new Set(events.map(event => event.threadId))])
       return
     }
     for (const effect of effects) {

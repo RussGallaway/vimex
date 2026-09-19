@@ -34,6 +34,18 @@ test("reports optional connection and per-thread approval state, then releases i
   expect(commands.at(-1)?.[1]).toBe("release-agent")
 })
 
+test("does not report token-count-only metadata changes", async () => {
+  const commands: string[][] = []
+  const reporter = new HerdrReporter({ paneId: "w2:p9" }, async args => { commands.push([...args]) })
+  await reporter.report({ summary: { ...thread, contextUsed: 10, contextLimit: 100 }, connection: "connected" })
+  await reporter.report({ summary: { ...thread, contextUsed: 90, contextLimit: 100 }, connection: "connected" })
+  expect(commands).toHaveLength(3)
+  await reporter.report({ summary: { ...thread, title: "Vimex next", contextUsed: 90, contextLimit: 100 }, connection: "connected" })
+  expect(commands).toHaveLength(6)
+  expect(commands[5]).toContain("context_used=90")
+  await reporter.dispose()
+})
+
 test("coalesces an update burst to the in-flight and latest states", async () => {
   const commands: string[][] = []
   let release!: () => void

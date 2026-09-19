@@ -1,5 +1,5 @@
 import { join, resolve } from "node:path"
-import { captureLocalState, emptyLocalState, parseLocalState } from "@vimex/workbench"
+import { emptyLocalState, parseLocalState } from "@vimex/workbench"
 import { createCliRenderer, createClipboard, createHostClipboard, createRendererClipboardAdapter } from "@opentui/core"
 import { createRoot } from "@opentui/react"
 import { FatalBoundary, VimexRoot, registerSyntaxParsers } from "@vimex/ui-opentui-react"
@@ -70,12 +70,12 @@ export async function runApplication(options: CliOptions) {
       clipboard: { writeText: async (text: string) => { await clipboard.writeText(text, { destination: "best-available" }) } },
       openUrl: externalActions.openUrl,
       quit: finish,
-      onState(state: import("@vimex/workbench").WorkbenchState) {
-        localState = captureLocalState(state, localState)
+      onLocalState(state: import("@vimex/workbench").LocalState) {
+        localState = state
         if (localStore && !saveTimer) saveTimer = setTimeout(() => { void save() }, 200)
-        const summary = state.activeThreadId ? state.summaries[state.activeThreadId] : undefined
-        const pendingApprovals = state.approvals.order.filter(id => state.approvals.byId[id]?.threadId === summary?.id).length
-        void herdr.report({ summary, connection: state.connection, pendingApprovals }).catch(error => {
+      },
+      onLifecycle(state: import("@vimex/workbench").WorkbenchLifecycleSnapshot) {
+        void herdr.report(state).catch(error => {
           const message = `Herdr reporting failed: ${String(error)}`
           if (message !== lastHerdrError) { lastHerdrError = message; controller.notice(message) }
         })
