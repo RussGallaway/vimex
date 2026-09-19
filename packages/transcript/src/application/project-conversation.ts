@@ -19,9 +19,22 @@ export function projectItem(item: ConversationItem, previous?: TextProjection): 
   if (previous?.source === source && previous.nodeKind === nodeKind) return previous
   return { ...project(source), nodeKind, revision: (previous?.revision ?? 0) + 1 }
 }
+
+/**
+ * The primary transcript is a user-facing work record, not a lossless dump of
+ * every canonical event. Reasoning remains available in ConversationState for
+ * activity synthesis and a future inspector, but never acquires transcript
+ * semantics such as navigation, search, selection, unseen state, or geometry.
+ */
+export function projectsToTranscript(item: ConversationItem): boolean {
+  if (item.kind === "reasoning") return false
+  if (item.kind === "unknown" && item.transcript === "diagnostic") return false
+  if (item.kind === "agent" && (item.action === "activity" || item.action === "wait" || item.action === "list") && !item.detail) return false
+  return true
+}
+
 export function syncTranscriptItem(state: TranscriptState, item: ConversationItem): TranscriptState {
-  if (item.kind === "unknown" && item.transcript === "diagnostic") return state
-  if (item.kind === "agent" && (item.action === "activity" || item.action === "wait" || item.action === "list") && !item.detail) return state
+  if (!projectsToTranscript(item)) return state
   const previous = state.projectionById[item.id]
   const projection = projectItem(item, previous)
   if (projection === previous) return state

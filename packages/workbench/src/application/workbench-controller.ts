@@ -216,11 +216,14 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     if (before.canonicalRevision === after.canonicalRevision) return { kind: "none" }
     const ids = new Set<ItemId>([...Object.keys(before.conversation.items), ...Object.keys(after.conversation.items)].map(id => id as ItemId))
     const changed = [...ids].filter(id => before.conversation.items[id] !== after.conversation.items[id])
-    const structureChanged = before.conversation.turnIds !== after.conversation.turnIds
-      || Object.keys(before.conversation.turns).some(id => before.conversation.turns[id] !== after.conversation.turns[id])
-      || Object.keys(after.conversation.turns).some(id => before.conversation.turns[id] !== after.conversation.turns[id])
-      || changed.some(id => !before.conversation.items[id] || !after.conversation.items[id])
-    return structureChanged ? { kind: "full" } : changed.length ? { kind: "blocks", itemIds: changed } : { kind: "full" }
+    const turnPresentationChanged = before.conversation.turnIds !== after.conversation.turnIds
+      || Object.keys(before.conversation.turns).some(id => {
+        const left = before.conversation.turns[id], right = after.conversation.turns[id]
+        return !left || !right || left.status !== right.status || left.startedAt !== right.startedAt
+          || left.completedAt !== right.completedAt || left.durationMs !== right.durationMs
+      })
+      || Object.keys(after.conversation.turns).some(id => !before.conversation.turns[id])
+    return turnPresentationChanged ? { kind: "full" } : changed.length ? { kind: "blocks", itemIds: changed } : { kind: "full" }
   }
   private runtimeInput(presentationId: TranscriptPresentationId, state: WorkbenchState, before?: WorkbenchState, hint: TranscriptRuntimeHint = {}): TranscriptRuntimeInput | undefined {
     const thread = this.presentationThread(state, presentationId)
@@ -410,11 +413,10 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
       const before = state
       const result = transitionWorkbench(before, { type: "conversation.event", event })
       if (result.state !== before) {
-        if (event.type === "turn.started" || event.type === "turn.completed" || event.type === "item.started"
-          || (event.type === "item.completed" && !before.workspaces[event.threadId]?.conversation.items[event.item.id])) {
+        if (event.type === "turn.started" || event.type === "turn.completed") {
           fullDamage.add(event.threadId)
           damagedItems.delete(event.threadId)
-        } else if (!fullDamage.has(event.threadId) && (event.type === "item.delta" || event.type === "item.completed")) {
+        } else if (!fullDamage.has(event.threadId) && (event.type === "item.started" || event.type === "item.delta" || event.type === "item.completed")) {
           const ids = damagedItems.get(event.threadId) ?? new Set<ItemId>()
           ids.add(event.type === "item.delta" ? event.itemId : event.item.id)
           damagedItems.set(event.threadId, ids)

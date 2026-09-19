@@ -552,46 +552,27 @@ describe("Vimex OpenTUI shell", () => {
     } finally { await act(async () => setup.renderer.destroy()) }
   })
 
-  test("applies configured reasoning folds when an item first appears", async () => {
+  test("keeps canonical reasoning out of the primary transcript", async () => {
     const thread = threadId("thread-1")
     const state = transitionWorkbench(fixture(), {
       type: "conversation.event",
       event: { type: "item.started", threadId: thread, item: {
-        id: itemId("thought"), turnId: turnId("turn"), kind: "reasoning", markdown: "private reasoning", status: "complete",
+        id: itemId("thought"), turnId: turnId("turn"), kind: "reasoning", markdown: "UNIQUE PRIVATE REASONING", status: "complete",
       } },
     }).state
     const transcriptCommands: TranscriptUiCommand[] = []
     const controller: VimexUiController = { ...inertController, transcript(command) { transcriptCommands.push(command) } }
-    const setup = await testRender(
-      <VimexRoot state={state} controller={controller} settings={{ foldReasoning: true }} />,
-      { width: 72, height: 18 },
-    )
+    const setup = await testRender(<VimexRoot state={state} controller={controller} />, { width: 72, height: 18 })
     try {
       await act(async () => setup.flush())
-      expect(transcriptCommands).toContainEqual({ type: "fold.set", itemId: itemId("thought"), folded: true })
+      const workspace = state.workspaces[thread]!
+      expect(workspace.conversation.items[itemId("thought")]).toBeDefined()
+      expect(workspace.transcript.order).not.toContain(itemId("thought"))
+      expect(setup.captureCharFrame()).not.toContain("UNIQUE PRIVATE REASONING")
+      expect(transcriptCommands).not.toContainEqual({ type: "fold.set", itemId: itemId("thought"), folded: true })
     } finally {
       await act(async () => setup.renderer.destroy())
     }
-  })
-
-  test("preserves an explicitly opened reasoning item when default folding is enabled", async () => {
-    const thread = threadId("thread-1")
-    const thought = itemId("opened-thought")
-    let state = transitionWorkbench(fixture(), {
-      type: "conversation.event",
-      event: { type: "item.started", threadId: thread, item: {
-        id: thought, turnId: turnId("turn"), kind: "reasoning", markdown: "visible reasoning", status: "complete",
-      } },
-    }).state
-    const workspace = state.workspaces[thread]!
-    state = { ...state, workspaces: { ...state.workspaces, [thread]: { ...workspace, transcript: { ...workspace.transcript, folded: { ...workspace.transcript.folded, [thought]: false } } } } }
-    const transcriptCommands: TranscriptUiCommand[] = []
-    const controller: VimexUiController = { ...inertController, transcript(command) { transcriptCommands.push(command) } }
-    const setup = await testRender(<VimexRoot state={state} controller={controller} settings={{ foldReasoning: true }} />, { width: 72, height: 18 })
-    try {
-      await act(async () => setup.flush())
-      expect(transcriptCommands).not.toContainEqual({ type: "fold.set", itemId: thought, folded: true })
-    } finally { await act(async () => setup.renderer.destroy()) }
   })
 
   test("fuzzy-filters rich session rows and opens the selected result", async () => {

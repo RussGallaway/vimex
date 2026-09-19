@@ -11,6 +11,7 @@ export interface VimexConfig {
   insertEnter: "newline" | "submit"
   busySubmit: "queue" | "steer"
   foldTools: boolean
+  /** @deprecated Accepted as a v1 compatibility no-op; reasoning is not part of the primary transcript. */
   foldReasoning: boolean
   composerMaxHeight: number
   keybindings: Record<string, string>

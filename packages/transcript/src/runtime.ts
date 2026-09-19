@@ -300,18 +300,23 @@ export class TranscriptRuntime {
 
   private incrementalFrame(input: TranscriptRuntimeInput, itemIds: readonly ItemId[], damage: TranscriptDamage): TranscriptFrame | undefined {
     let nextBlocks: TranscriptBlock[] | undefined
+    let materialized = false
     const projections: Record<string, TranscriptItemBlock["projection"]> = { ...this.frame.transcript.projectionById }
     for (const itemId of itemIds) {
       const index = this.itemBlockIndexes.get(itemId)
       const prior = index === undefined || index < 0 ? undefined : this.frame.blocks[index]
       const next = buildTranscriptItemBlock(input, itemId)
       if (!prior && !next) continue
+      materialized = true
       if (!prior || !("projection" in prior) || !next || prior.turnId !== next.turnId) return undefined
       projections[itemId] = next.projection
       if (sameBlock(prior, next)) continue
       nextBlocks ??= [...this.frame.blocks]
       nextBlocks[index!] = next
     }
+    // Canonical-only items (for example reasoning) never enter the semantic
+    // transcript. Advancing them must not publish a frame or wake renderers.
+    if (!materialized) return this.frame
     const blocks = nextBlocks ? Object.freeze(nextBlocks) : this.frame.blocks
     const transcript = presentationTranscriptWithProjections(input.transcript, this.frame.transcript.order, Object.freeze(projections))
     return Object.freeze({
@@ -410,6 +415,9 @@ export class TranscriptRuntime {
   private rebuild(input: TranscriptRuntimeInput, damage: TranscriptDamage, reuse = true, incrementalItemIds?: readonly ItemId[]): TranscriptFrame {
     this.hiddenDamage = noneDamage
     const incremental = reuse && incrementalItemIds ? this.incrementalFrame(input, incrementalItemIds, damage) : undefined
+    if (incremental === this.frame) {
+      return input.mode === this.frame.mode ? this.frame : this.publish(this.presentationFrame(input, damage))
+    }
     const next = incremental ?? buildFrame(input, reuse ? this.frame : undefined, this.frame.presentationRevision + 1, damage)
     if (!incremental) this.reindex(next.blocks)
     return this.publish(next)

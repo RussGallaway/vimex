@@ -42,11 +42,13 @@ describe("logical transcript navigation", () => {
     expect(moveByMessage(state, "backward")).toBeUndefined()
   })
 
-  test("message motions skip reasoning and tool nodes", () => {
+  test("message motions skip tool nodes while reasoning has no transcript position", () => {
     let state = syncTranscriptItem(initialTranscript(), message("first", "first"))
     state = syncTranscriptItem(state, { id: itemId("reasoning"), turnId: turnId("turn"), kind: "reasoning", markdown: "thinking", status: "complete" })
     state = syncTranscriptItem(state, { id: itemId("tool"), turnId: turnId("turn"), kind: "command", title: "Run", detail: "output", status: "complete" })
     state = syncTranscriptItem(state, message("second", "second"))
+    expect(state.order).not.toContain(itemId("reasoning"))
+    expect(state.projectionById[itemId("reasoning")]).toBeUndefined()
     expect(moveByMessage(state, "forward", { itemId: itemId("first"), graphemeOffset: 0 })).toEqual({ itemId: itemId("second"), graphemeOffset: 0 })
     expect(moveByMessage(state, "backward", { itemId: itemId("tool"), graphemeOffset: 0 })).toEqual({ itemId: itemId("first"), graphemeOffset: 0 })
     expect(moveByMessage(state, "forward", { itemId: itemId("tool"), graphemeOffset: 0 })).toEqual({ itemId: itemId("second"), graphemeOffset: 0 })

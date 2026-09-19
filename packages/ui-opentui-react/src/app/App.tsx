@@ -171,11 +171,11 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
       const foldKey = `${state.activeThreadId ?? ""}:${item.id}`
       if (initializedFolds.current.has(foldKey) || Object.hasOwn(transcript.folded, item.id)) continue
       initializedFolds.current.add(foldKey)
-      if ((settings.foldReasoning && item.kind === "reasoning") || (settings.foldTools && (item.kind === "tool" || item.kind === "command" || item.kind === "agent"))) {
+      if (settings.foldTools && (item.kind === "tool" || item.kind === "command" || item.kind === "agent")) {
         controller.transcript({ type: "fold.set", itemId: item.id, folded: true })
       }
     }
-  }, [interactive, controller, items, settings.foldReasoning, settings.foldTools, state.activeThreadId, transcript.folded])
+  }, [interactive, controller, items, settings.foldTools, state.activeThreadId, transcript.folded])
   useLayoutEffect(() => {
     overlayIndexRef.current = 0
     setOverlayIndex(0)

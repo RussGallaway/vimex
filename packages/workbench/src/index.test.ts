@@ -92,6 +92,7 @@ describe("workbench", () => {
     const thread = threadId("telemetry"), turn = turnId("turn"), child = threadId("child")
     let state = run(initialWorkbench(), { type: "thread.open", summary: summary("telemetry") }).state
     const items = [
+      { id: itemId("reasoning"), kind: "reasoning" as const, markdown: "private chain of thought", status: "complete" as const },
       { id: itemId("activity"), kind: "agent" as const, action: "activity" as const, activity: "interacted" as const, agentPath: "/root/reviewer", detail: "", agentThreadIds: [child], status: "complete" as const },
       { id: itemId("wait"), kind: "agent" as const, action: "wait" as const, detail: "", agentThreadIds: [child], status: "complete" as const },
       { id: itemId("list"), kind: "agent" as const, action: "list" as const, detail: "", agentThreadIds: [child], status: "complete" as const },
@@ -99,8 +100,9 @@ describe("workbench", () => {
     ]
     for (const item of items) state = run(state, { type: "conversation.event", event: { type: "item.started", threadId: thread, item: { ...item, turnId: turn } } }).state
     const workspace = state.workspaces[thread]!
-    expect(Object.keys(workspace.conversation.items)).toEqual(["activity", "wait", "list", "spawn"])
+    expect(Object.keys(workspace.conversation.items)).toEqual(["reasoning", "activity", "wait", "list", "spawn"])
     expect(workspace.transcript.order).toEqual([itemId("spawn")])
+    expect(workspace.transcript.projectionById[itemId("reasoning")]).toBeUndefined()
     expect(workspace.transcript.projectionById[itemId("spawn")]?.source).toBe("Review the runtime")
   })
 

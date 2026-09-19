@@ -232,7 +232,7 @@ test("viewport anchors reject stale items and invalid coordinates, and normalize
 })
 
 
-test("status-only item updates preserve projection identity but changed text and node kind invalidate it", () => {
+test("status-only item updates preserve projection identity while changed text invalidates it", () => {
   const item = message("a", "**é🙂**", "running")
   if (!("markdown" in item)) throw new Error("Expected a message fixture")
   let state = syncTranscriptItem(initialTranscript(), item)
@@ -245,8 +245,20 @@ test("status-only item updates preserve projection identity but changed text and
   expect(changed.projectionById[item.id]!.revision).toBe(2)
   expect(selectedText(changed, "plain")).toBe("é")
   const reasoning = syncTranscriptItem(state, { ...item, kind: "reasoning" })
-  expect(reasoning.projectionById[item.id]!.nodeKind).toBe("reasoning")
-  expect(reasoning.projectionById[item.id]!.revision).toBe(2)
+  expect(reasoning).toBe(state)
+})
+
+test("reasoning remains outside every semantic transcript index", () => {
+  let state = syncTranscriptItem(initialTranscript(), message("visible", "Visible answer"))
+  state = reduceTranscript(state, { type: "viewport.anchor", point: { itemId: itemId("visible"), graphemeOffset: 0 }, preferredScreenRow: 2 })
+  const reasoning = { id: itemId("thought"), turnId: turnId("turn"), kind: "reasoning" as const, markdown: "private reasoning", status: "running" as const }
+  const next = syncTranscriptItem(state, reasoning)
+  expect(next).toBe(state)
+  expect(next.order).toEqual([itemId("visible")])
+  expect(next.projectionById[reasoning.id]).toBeUndefined()
+  expect(findSearchMatches(next, "private reasoning")).toEqual([])
+  expect(next.unseenEntries).toBe(0)
+  expect(next.unseenItemIds).toEqual([])
 })
 
 

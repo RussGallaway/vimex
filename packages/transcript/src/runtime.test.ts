@@ -181,7 +181,7 @@ test("returns one cached immutable snapshot until selected frame data changes", 
 test("follow reconciliation replaces a changed item and retains historical block identity", () => {
   let source = fixture()
   const history = itemId("history")
-  source = apply(source, { type: "item.started", threadId: thread, item: { id: history, turnId: turn, kind: "reasoning", markdown: "settled", status: "complete" } })
+  source = apply(source, { type: "item.started", threadId: thread, item: { id: history, turnId: turn, kind: "assistant", markdown: "settled", status: "complete" } })
   const runtime = new TranscriptRuntime(input(source, "follow"))
   const before = runtime.getSnapshot()
   const answerBlock = before.blocks.find(block => block.key.kind === "item" && block.key.itemId === answer)
@@ -193,6 +193,35 @@ test("follow reconciliation replaces a changed item and retains historical block
   expect(after.blocks.find(block => block.key.kind === "item" && block.key.itemId === answer)).not.toBe(answerBlock)
   expect(after.blocks.find(block => block.key.kind === "item" && block.key.itemId === history)).toBe(historyBlock)
   expect(after.transcript.projectionById[history]).toBe(before.transcript.projectionById[history])
+})
+
+test("canonical reasoning streams never publish or damage the semantic transcript", () => {
+  let source = fixture()
+  const reasoning = itemId("reasoning")
+  const runtime = new TranscriptRuntime(input(source, "follow"))
+  const before = runtime.getSnapshot()
+  let notifications = 0
+  runtime.subscribe(() => { notifications++ })
+
+  source = apply(source, { type: "item.started", threadId: thread, item: { id: reasoning, turnId: turn, kind: "reasoning", markdown: "private", status: "running" } })
+  expect(runtime.update(input(source, "follow", { kind: "blocks", itemIds: [reasoning] }))).toBe(before)
+  source = apply(source, { type: "item.delta", threadId: thread, itemId: reasoning, delta: " thought" })
+  expect(runtime.update(input(source, "follow", { kind: "blocks", itemIds: [reasoning] }))).toBe(before)
+  source = apply(source, { type: "item.completed", threadId: thread, item: { id: reasoning, turnId: turn, kind: "reasoning", markdown: "private thought", status: "complete" } })
+  expect(runtime.update(input(source, "follow", { kind: "blocks", itemIds: [reasoning] }))).toBe(before)
+
+  expect(source.conversation.items[reasoning]).toBeDefined()
+  expect(source.transcript.order).not.toContain(reasoning)
+  expect(runtime.getSnapshot().blocks).toBe(before.blocks)
+  expect(runtime.getSnapshot().window).toBe(before.window)
+  expect(runtime.getSnapshot().geometry).toBe(before.geometry)
+  expect(notifications).toBe(0)
+
+  source = apply(source, { type: "item.delta", threadId: thread, itemId: answer, delta: " visible" })
+  const visible = runtime.update(input(source, "follow", { kind: "blocks", itemIds: [answer] }))
+  expect(visible).not.toBe(before)
+  expect(visible.displayedCanonicalRevision).toBe(source.revision)
+  expect(notifications).toBe(1)
 })
 
 test("block damage updates one growing item without rebuilding a large historical plan", () => {
