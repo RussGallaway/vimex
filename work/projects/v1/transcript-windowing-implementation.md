@@ -1180,3 +1180,51 @@ The direct runtime/native hidden-delta cell independently retains 34 mounted roo
 - Parallel architecture, correctness, and performance reviews ran before and after repair. Repairs added membership-index append counters, an all-scale private backlog, explicit text/URL priming, indexed side-child membership, the connected status-only boundary, cumulative scheduler observation, exact departed-key cleanup, persisted-array adversaries, and a multi-item full-reference fallback. All three final reviewers signed off with no blocker.
 
 Stage 5.5f is complete for steady detached unseen accumulation and status-only presentation publication. Multi-new-item detached reattachment remains semantically exact through the full rebuild and is not claimed as total-size-independent. Turn completion/activity structure and stable production sub-blocks for oversized Markdown, command output, and diffs remain open before Stage 5.5 and overall Stage 5 can be marked complete.
+
+### Stage 5.5g — bounded active-tail completion and activity admission
+
+Implementation commit: `f55ad57` (`perf: bound active tail completion`). This slice bounds only a direct follow-to-follow completion of the active final running turn when the turn retains zero or one canonical item, `TranscriptState`, canonical items, and turn order are unchanged, and persistent turn-record lineage proves the transition. Broader completion and detached catch-up relationships remain exact full-rebuild fallbacks.
+
+#### Exact completion contract and presentation ownership
+
+- Workbench emits an empty block-damage structural hint only when pre-event state proves that the completed turn is running, active, final, and contains at most one canonical item. `TranscriptRuntime` treats that hint as untrusted and independently revalidates transcript, item-record, turn-order, item-ID, active-turn, status, and persistent turn-record lineage.
+- Canonical conversation state and semantic `TranscriptState` remain the only semantic authorities. The runtime changes only its disposable presentation plan: it path-replaces at most one root item to settle effective status and immutable activity adjacency, appends at most one source-less terminal activity block, updates the corresponding persistent height paths, replans the bounded trailing window, and publishes one coherent frame.
+- The shared activity builder is also used by the complete reference planner. Activity blocks continue to carry a frozen canonical-turn snapshot, have stable render-derived revisions, own no semantic source span or logical target, and do not change copy, selection, search, mark, jump, URL, fold, or fork meaning.
+- A zero-item terminal turn may append only its activity block. A one-item successful completion without observed timing may replace only the item status and append no activity. When neither block shape nor presentation payload changes, the complete plan, window, and geometry remain stable by identity.
+- Detached presentations remain frozen with zero hidden content publication. Render-visible active-turn changes and unproven turn-order changes promote private hidden damage to `full`; exact empty-turn or single-item admissions may retain their compact hints. Missing-target reveal and reattachment therefore choose the complete reference whenever displayed-to-latest structural lineage cannot be proven. Replays that admit and complete a new activity turn, including while an older turn remains running, are covered explicitly.
+
+#### Deterministic follow completion scaling
+
+The production runtime workload begins only after the identical `N`-block history plus one running final item has been admitted and all cold setup has completed. It then applies one duration-bearing `turn.completed`, checks Workbench's exact damage result, reduces the canonical turn, and reconciles the follow presentation. Bulk fixture construction, initial tail admission, cold indexes, complete reference construction, and exhaustive identity audits are outside the measured boundary but remain asserted. Workbench damage-selection timing is diagnostic only; its deterministic gate is the exact damage result.
+
+| Historical blocks | Complete blocks before → after | Mounted / publications | Canonical turn lookup / update visits=copies | Plan visits / copies | Height visits / copies | Window slice / geometry visits | Runtime reconciliation |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 101 → 102 | 47 / 1 | 7 / 7=7 | 27 / 20 | 18 / 11 | 47 / 47 | 0.227 ms |
+| 1k | 1,001 → 1,002 | 47 / 1 | 10 / 10=10 | 36 / 26 | 24 / 14 | 47 / 47 | 0.134 ms |
+| 10k | 10,001 → 10,002 | 47 / 1 | 14 / 14=14 | 45 / 32 | 30 / 17 | 47 / 47 | 0.123 ms |
+| 100k | 100,001 → 100,002 | 47 / 1 | 17 / 17=17 | 57 / 40 | 38 / 21 | 47 / 47 | 0.383 ms |
+
+Every cell performs one canonical turn-record update, one item-block rebuild, two block-plan updates, and two height-index updates. Complete-plan builds and block visits, height-index builds and block visits, complete-geometry visits, order/text/URL builds and item visits, and semantic index updates are all zero. The two changed tail payloads equal the complete reference, all `N` historical block/item/turn/projection identities are preserved, and scale-derived assertions bound canonical, plan, and height work logarithmically. Timings are one-sample machine diagnostics; identity, equivalence, operation counts, and fixed mounted/window work are the gates.
+
+#### React, native mounting, and measurement boundary
+
+The isolated native probe starts after the initial runtime, React/OpenTUI tree, running-tail admission, and native geometry have settled. Each size runs in its own process at 80×24. It drives the same completion through `TranscriptRuntime`, the real runtime hook, `TranscriptViewport`, native block roots, and rendered-layout measurement; it does not claim a connected Workbench-controller boundary.
+
+| Historical blocks | Mounted roots before → after | Retained / mounted / unmounted | Runtime publications / React commits | Measurement candidates / attempts / accepted | Measurement publications / tracked roots |
+|---:|---:|---:|---:|---:|---:|
+| 100 | 24 → 25 | 24 / 1 / 0 | 1 / 1 | 2 / 2 / 2 | 1 / 25 |
+| 1k | 24 → 25 | 24 / 1 / 0 | 1 / 1 | 2 / 2 / 2 | 1 / 25 |
+| 10k | 24 → 25 | 24 / 1 / 0 | 1 / 1 | 2 / 2 / 2 | 1 / 25 |
+| 100k | 24 → 25 | 24 / 1 / 0 | 1 / 1 | 2 / 2 / 2 | 1 / 25 |
+
+Mounted-root churn, runtime publication, React commit, scheduler candidates, native measurement, accepted height corrections, measurement publication, and tracked-root counts are exact and identical across the required range. The benchmark also requires the acknowledgement pass to settle with no further correction. Native settlement timings remain diagnostic curves and are not acceptance thresholds.
+
+#### Fallback, repository, PTY, and review gates
+
+- Multi-item completion, timing enrichment of an already-terminal turn, combined item/completion replay, detached completion catch-up, excluded or non-final turns, reveal or presentation transitions, nonpersistent or forged lineage, pass-through runtimes, and future multi-sub-block items all retain exact complete-reference fallbacks. Detached completion reveal/reattach is semantically correct but still rebuilds the complete plan; this slice does not claim that path is total-size-independent.
+- Focused runtime, scaling, and controller verification passed 129 tests with 339,622 assertions. It includes zero-item activity, status-only completion, full-reference payload equivalence, multi-item/mixed fallbacks, exclusions, presentation/reveal rejection, forged lineage, retained and missing-target reveals, reattachment, and both inactive-start and prior-active-turn mixed replay adversaries. Typecheck and `git diff --check` passed.
+- `bun run check` passed typecheck, dependency boundaries, generated-doc validation, and every non-sandbox-sensitive test: 775 passed with 5 intentional profiling skips. Its only failure was the sandbox-denied isolated tmux socket; the exact host-level rerun passed in 676 ms.
+- The executable core and isolated native 100/1k/10k/100k matrices passed every full-reference, historical-identity, logarithmic-path, zero-complete-work, bounded-window, publication, native-root, React-commit, and measurement-count assertion shown above.
+- Parallel architecture, correctness, and performance reviews ran after the initial slice and again after repairs. The repair rounds added completion-specific fallback coverage, promoted deterministic tree and native counts from printed evidence to hard assertions, labeled Workbench timing honestly, and closed detached mixed-replay holes that could otherwise omit source-less activity on reveal or reattachment. All three final reviewers signed off with no blocker.
+
+Stage 5.5g is complete only for active-final follow-mode completion with zero or one canonical item. Stage 5.5 and overall Stage 5 remain open for broader completion relationships, bounded detached structural catch-up, and stable windowable Markdown, command-output, and diff sub-blocks.
