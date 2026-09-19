@@ -1,7 +1,7 @@
 import type { AvailableModel } from "./model-catalog"
 import type { DisplayPreferences } from "./display-preferences"
 import { createConversation, type AgentRelationship, type ConversationEvent, type ConversationState, type ItemId, type ThreadId, type ThreadSummary, type TurnId } from "@vimex/conversation"
-import { initialTranscript, type UrlCandidate, type TranscriptCommand, type TranscriptState, type ViewportAnchor } from "@vimex/transcript"
+import { initialTranscript, type UrlCandidate, type TranscriptCommand, type TranscriptRevealRequest, type TranscriptState, type ViewportAnchor } from "@vimex/transcript"
 import { initialComposer, type ComposerState, type SubmissionIntent } from "@vimex/composer"
 import { initialInteraction, type InteractionCommand, type InteractionState } from "@vimex/interaction"
 import { initialApprovals, type Approval, type ApprovalsState, type UserQuestionRequest } from "@vimex/approvals"
@@ -26,6 +26,8 @@ export interface WorkbenchState {
   preferences?: DisplayPreferences
   pendingFork?: PendingFork
   urlChoices?: readonly UrlCandidate[]
+  urlChoiceOwner?: Readonly<{ threadId: ThreadId; presentationId: import("./workbench-actions").TranscriptPresentationId;
+    displayedCanonicalRevision: number; scope: "selection" | "current-item" }>
   activeThreadId?: ThreadId
   favoriteThreadIds: readonly ThreadId[]
   threadOrder: readonly ThreadId[]
@@ -50,7 +52,7 @@ export type WorkbenchEffect =
 export interface WorkbenchTransition { state: WorkbenchState; effects: readonly WorkbenchEffect[] }
 
 type TranscriptNavigationCommand = Extract<TranscriptCommand, {
-  type: "search.set" | "search.jump" | "jump.to" | "mark.jump"
+  type: "search.set" | "search.jump" | "jump.to" | "mark.jump" | "cursor.reveal"
 }>
 
 export type WorkbenchCommand =
@@ -69,8 +71,9 @@ export type WorkbenchCommand =
   | { type: "conversation.event"; event: ConversationEvent }
   | { type: "interaction.command"; threadId?: ThreadId; command: InteractionCommand }
   | { type: "transcript.command"; threadId?: ThreadId; command: TranscriptCommand }
-  | { type: "transcript.navigate"; threadId?: ThreadId; command: TranscriptNavigationCommand; focusMode?: "normal" | "visual" }
+  | { type: "transcript.navigate"; threadId?: ThreadId; command: TranscriptNavigationCommand; focusMode?: "normal" | "visual"; revealReason?: TranscriptRevealRequest["reason"] }
   | { type: "transcript.yank"; threadId: ThreadId; text: string; shape: "character" | "line" }
+  | { type: "url.picker"; threadId: ThreadId; choices?: readonly UrlCandidate[]; owner?: WorkbenchState["urlChoiceOwner"]; url?: string }
   | { type: "composer.change"; threadId?: ThreadId; text: string; cursorOffset?: number }
   | { type: "composer.submit"; threadId?: ThreadId; intent: SubmissionIntent; clientMessageId: string }
   | { type: "composer.ack"; threadId: ThreadId; clientMessageId: string; turnId?: TurnId }

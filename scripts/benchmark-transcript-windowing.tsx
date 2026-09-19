@@ -19,8 +19,11 @@ import {
 import {
   blockKey,
   createTranscriptFrame,
+  moveByUrl,
+  moveByUrlReference,
   passThroughWindow,
   pointIsMaterialized,
+  setTranscriptFoldValue,
   TranscriptRuntime,
   type BlockGeometry,
   type TranscriptFrame,
@@ -398,6 +401,18 @@ function offWindowTargetBaseline(fixture: ReturnType<typeof buildTranscriptScali
     textLengthIndexCacheHits: 0,
     textLengthIndexUpdates: 0,
     textLengthNodeVisits: 0,
+    urlIndexBuilds: 0,
+    urlIndexItemVisits: 0,
+    urlIndexCacheHits: 0,
+    urlIndexUpdates: 0,
+    urlIndexNodeVisits: 0,
+    heightIndexBuilds: 0,
+    heightIndexBlockVisits: 0,
+    heightIndexUpdates: 0,
+    heightIndexNodeVisits: 0,
+    heightIndexNodesCopied: 0,
+    completeGeometryBlockVisits: 0,
+    windowGeometryBlockVisits: 0,
   }
   const runtime = new TranscriptRuntime(runtimeInput(fixture, detachedSnapshot, "detached", { canonicalDamage: { kind: "full" } }), {
     windowPolicy: { viewportRows: 24, overscanRows: 24 },
@@ -465,6 +480,128 @@ function offWindowTargetBaseline(fixture: ReturnType<typeof buildTranscriptScali
       timingsMs: {
         targetedMotion: Number(motion.milliseconds.toFixed(6)),
         windowPublication: Number(revealed.milliseconds.toFixed(6)),
+      },
+      samples: { warmup: 0, measured: 1 },
+    })
+  } finally { runtime.dispose() }
+}
+
+function indexedUrlAndFoldBaseline(fixture: ReturnType<typeof buildTranscriptScalingFixture>): void {
+  const anchor = Object.freeze({ itemId: fixture.targets.quarter, graphemeOffset: 0 })
+  const foldTarget = fixture.targets.threeQuarter
+  const foldPoint = Object.freeze({ itemId: foldTarget, graphemeOffset: 0 })
+  const targetTranscript = Object.freeze({
+    ...fixture.before.transcript,
+    folded: setTranscriptFoldValue(fixture.before.transcript.folded, foldTarget, false),
+    cursor: foldPoint,
+    viewport: Object.freeze({ kind: "point" as const, point: foldPoint, preferredScreenRow: 5 }),
+  })
+  const detachedTranscript = Object.freeze({
+    ...targetTranscript,
+    cursor: anchor,
+    viewport: Object.freeze({ kind: "point" as const, point: anchor, preferredScreenRow: 5 }),
+  })
+  const detachedSnapshot = Object.freeze({ ...fixture.before, transcript: detachedTranscript })
+  const targetSnapshot = Object.freeze({ ...fixture.before, transcript: targetTranscript })
+  const diagnostics = {
+    completePlanBuilds: 0, completePlanBlockVisits: 0,
+    orderIndexBuilds: 0, orderIndexItemVisits: 0, orderIndexCacheHits: 0,
+    textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0, textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
+    urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0, urlIndexUpdates: 0, urlIndexNodeVisits: 0,
+    heightIndexBuilds: 0, heightIndexBlockVisits: 0, heightIndexUpdates: 0, heightIndexNodeVisits: 0, heightIndexNodesCopied: 0,
+    completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0,
+  }
+  const runtime = new TranscriptRuntime(runtimeInput(fixture, targetSnapshot, "detached", { canonicalDamage: { kind: "full" } }), {
+    windowPolicy: { viewportRows: 24, overscanRows: 24 }, diagnostics,
+  })
+  try {
+    const targetBlock = runtime.getSnapshot().window.blocks.find(block => block.key.kind === "item" && block.key.itemId === foldTarget)!
+    runtime.reportMeasurements({ ...runtime.measurementBase(), measurements: [{
+      key: { blockKey: blockKey(targetBlock), contentRevision: targetBlock.contentRevision, width: 80,
+        styleRevision: "stage-5.4-fold-path", folded: false },
+      nativeRevision: 1, rows: 8, pointCount: 1, points: sharedPoint, pointOffsetsByRow: sharedOffsets,
+      lines: sharedLines, lineByRow: sharedLineByRow,
+    }] })
+    runtime.update(runtimeInput(fixture, detachedSnapshot, "detached", { presentationDamage: { kind: "view" } }))
+    const before = runtime.getSnapshot()
+    assert(!pointIsMaterialized(before.window.blocks, foldPoint))
+    const urlReference = moveByUrlReference(before.transcript, "backward", before.transcript.cursor, { wrap: true })
+    const urlBefore = { ...diagnostics }
+    const urlMotion = timed(() => moveByUrl(before.transcript, "backward", before.transcript.cursor, { wrap: true }, diagnostics))
+    assert.deepEqual(urlMotion.value, urlReference)
+    const urlCounts = {
+      urlIndexBuilds: diagnostics.urlIndexBuilds - urlBefore.urlIndexBuilds,
+      urlIndexItemVisits: diagnostics.urlIndexItemVisits - urlBefore.urlIndexItemVisits,
+      urlIndexCacheHits: diagnostics.urlIndexCacheHits - urlBefore.urlIndexCacheHits,
+      urlIndexNodeVisits: diagnostics.urlIndexNodeVisits - urlBefore.urlIndexNodeVisits,
+    }
+    assert.equal(urlCounts.urlIndexBuilds, 0)
+    assert.equal(urlCounts.urlIndexItemVisits, 0)
+    assert.equal(urlCounts.urlIndexCacheHits, 1)
+    assert(urlCounts.urlIndexNodeVisits <= 4 * Math.ceil(Math.log2(fixture.blockCount)) + 5)
+
+    const foldedTranscript = Object.freeze({
+      ...before.transcript,
+      folded: setTranscriptFoldValue(before.transcript.folded, foldTarget, true),
+      cursor: foldPoint,
+      viewport: Object.freeze({ kind: "point" as const, point: foldPoint, preferredScreenRow: 5 }),
+    })
+    const foldedSnapshot = Object.freeze({ ...detachedSnapshot, transcript: foldedTranscript })
+    const foldBefore = { ...diagnostics }
+    let publications = 0
+    const unsubscribe = runtime.subscribe(() => { publications++ })
+    const fold = timed(() => runtime.update(runtimeInput(fixture, foldedSnapshot, "detached", {
+      presentationDamage: { kind: "folds", itemIds: [foldTarget] },
+      reveal: { id: fixture.blockCount, point: foldPoint, reason: "url" },
+    })))
+    unsubscribe()
+    const foldCounts = {
+      completePlanBuilds: diagnostics.completePlanBuilds - foldBefore.completePlanBuilds,
+      completePlanBlockVisits: diagnostics.completePlanBlockVisits - foldBefore.completePlanBlockVisits,
+      heightIndexBuilds: diagnostics.heightIndexBuilds - foldBefore.heightIndexBuilds,
+      heightIndexBlockVisits: diagnostics.heightIndexBlockVisits - foldBefore.heightIndexBlockVisits,
+      heightIndexUpdates: diagnostics.heightIndexUpdates - foldBefore.heightIndexUpdates,
+      heightIndexNodeVisits: diagnostics.heightIndexNodeVisits - foldBefore.heightIndexNodeVisits,
+      heightIndexNodesCopied: diagnostics.heightIndexNodesCopied - foldBefore.heightIndexNodesCopied,
+      completeGeometryBlockVisits: diagnostics.completeGeometryBlockVisits - foldBefore.completeGeometryBlockVisits,
+      windowGeometryBlockVisits: diagnostics.windowGeometryBlockVisits - foldBefore.windowGeometryBlockVisits,
+    }
+    assert.equal(publications, 1)
+    assert.equal(fold.value.blocks, before.blocks)
+    assert(pointIsMaterialized(fold.value.window.blocks, foldPoint))
+    assert.equal(foldCounts.completePlanBuilds, 0)
+    assert.equal(foldCounts.completePlanBlockVisits, 0)
+    assert.equal(foldCounts.heightIndexBuilds, 0)
+    assert.equal(foldCounts.heightIndexBlockVisits, 0)
+    assert.equal(foldCounts.heightIndexUpdates, 1)
+    assert(foldCounts.heightIndexNodeVisits <= Math.ceil(Math.log2(fixture.blockCount)) + 1)
+    assert(foldCounts.heightIndexNodesCopied > 0)
+    assert.equal(foldCounts.heightIndexNodesCopied, foldCounts.heightIndexNodeVisits)
+    assert.equal(foldCounts.completeGeometryBlockVisits, 0)
+    assert(foldCounts.windowGeometryBlockVisits <= 144)
+    assert(fold.value.window.blocks.length <= 72)
+    assert.equal(fold.value.geometry.totalRows, before.geometry.totalRows - 7)
+
+    printResult({
+      scenario: "indexed-url-and-off-window-fold",
+      materialization: "windowed-production",
+      boundary: "semantic-index-runtime-window-geometry-publication",
+      blockCount: fixture.blockCount,
+      viewport: { width: 80, height: 24 },
+      mode: "detached",
+      fixture: { contentShape: "mixed-semantic-root-blocks", contentHash: fixture.contentHash, setupExcludedFromTiming: true },
+      operationCounts: {
+        completeBlocks: fixture.blockCount,
+        mountedBlocksBefore: before.window.blocks.length,
+        mountedBlocksAfter: fold.value.window.blocks.length,
+        publications,
+        retainedCompleteBlockPlanIdentity: fold.value.blocks === before.blocks ? 1 : 0,
+        ...urlCounts,
+        ...foldCounts,
+      },
+      timingsMs: {
+        warmUrlMotion: Number(urlMotion.milliseconds.toFixed(6)),
+        offWindowFoldPublication: Number(fold.milliseconds.toFixed(6)),
       },
       samples: { warmup: 0, measured: 1 },
     })
@@ -848,6 +985,7 @@ for (const blockCount of requestedSizes) {
   await reactPublicationBaseline(fixture)
   runtimeCorrectionBaseline(fixture)
   offWindowTargetBaseline(fixture)
+  indexedUrlAndFoldBaseline(fixture)
   if (process.env.VIMEX_WINDOWING_NATIVE_BASELINE === "1") {
     for (const viewport of requestedNativeViewports) await nativeMountBaseline(fixture, viewport)
   }

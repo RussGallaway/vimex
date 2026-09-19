@@ -1,6 +1,7 @@
 import type { ConversationItem } from "@vimex/conversation"
 import { projectMarkdown, projectPlainText } from "../domain/markdown-source-map"
-import { inheritTranscriptTextLengthIndex, type LogicalPoint, type TextProjection, type TranscriptState } from "../domain/transcript-document"
+import { inheritTranscriptTextLengthIndex, persistentTranscriptFolds, setTranscriptFoldValue, type LogicalPoint, type TextProjection, type TranscriptState } from "../domain/transcript-document"
+import { inheritTranscriptUrlIndex } from "./transcript-url-index"
 function sourceOf(item: ConversationItem): string {
   switch (item.kind) {
     case "user": case "assistant": case "reasoning": return item.markdown
@@ -37,7 +38,7 @@ export function syncTranscriptItem(state: TranscriptState, item: ConversationIte
     const offset = projection.sourceSpans.findIndex(span => span.to > sourceOffset)
     return { ...point, graphemeOffset: offset < 0 ? projection.sourceSpans.length : offset }
   }
-  const next = clampTranscript({
+  let next = clampTranscript({
     ...state,
     order: isNew ? [...state.order, item.id] : state.order,
     projectionById: { ...state.projectionById, [item.id]: projection },
@@ -49,7 +50,13 @@ export function syncTranscriptItem(state: TranscriptState, item: ConversationIte
     unseenEntries: newlyUnseen ? state.unseenEntries + 1 : state.unseenEntries,
     unseenItemIds: newlyUnseen ? [...unseenItemIds, item.id] : unseenItemIds,
   })
+  if (isNew && !Object.hasOwn(next.folded, item.id)
+    && ((next.foldDefaults.reasoning && projection.nodeKind === "reasoning")
+      || (next.foldDefaults.tools && projection.nodeKind === "tool"))) {
+    next = { ...next, folded: setTranscriptFoldValue(next.folded, item.id, true) }
+  }
   inheritTranscriptTextLengthIndex(state, next, item.id, isNew)
+  inheritTranscriptUrlIndex(state, next, item.id, isNew)
   return next
 }
 export function clampTranscript(state: TranscriptState): TranscriptState {
@@ -59,6 +66,7 @@ export function clampTranscript(state: TranscriptState): TranscriptState {
   }
   return {
     ...state,
+    folded: persistentTranscriptFolds(state.folded),
     cursor: state.cursor ? clampPoint(state.cursor) : undefined,
     selection: state.selection ? { ...state.selection, anchor: clampPoint(state.selection.anchor), head: clampPoint(state.selection.head) } : undefined,
     viewport: state.viewport.kind === "point" ? { ...state.viewport, point: clampPoint(state.viewport.point) } : state.viewport,

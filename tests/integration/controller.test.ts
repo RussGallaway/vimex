@@ -546,6 +546,129 @@ test("off-window mark and clamped explicit jump each publish one complete target
   await h.controller.close()
 })
 
+test("off-window URL motion unfolds one target and picker ownership settles atomically", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const runtime = h.controller.transcriptRuntime("main")!
+  const ids = Array.from({ length: 100 }, (_, index) => itemId(`url-window-${index}`))
+  for (let index = 0; index < ids.length; index++) h.emit({ type: "conversation", event: {
+    type: "item.started", threadId: a, item: {
+      id: ids[index]!, turnId: turnId(`url-window-turn-${index}`), kind: "reasoning",
+      markdown: index === 5 ? "[link-5](https://five.test) and [other](https://other.test)"
+        : `[link-${index}](https://url-${index}.test)`, status: "complete",
+    },
+  } })
+  h.controller.transcript({ type: "cursor.move", target: { itemId: ids[50]!, graphemeOffset: 0 }, preferredScreenRow: 4, extend: false })
+  const blocks = runtime.getSnapshot().blocks
+  let statePublications = 0, runtimePublications = 0, mainPublications = 0, sidePublications = 0
+  h.controller.subscribe(() => { statePublications++ })
+  runtime.subscribe(() => { runtimePublications++ })
+  h.controller.subscribePresentation("main", () => { mainPublications++ })
+  h.controller.subscribePresentation("side", () => { sidePublications++ })
+
+  h.controller.transcript({ type: "fold.set", itemId: ids[50]!, folded: true })
+  statePublications = runtimePublications = mainPublications = sidePublications = 0
+  h.controller.transcript({ type: "navigate", motion: "first-content" })
+  expect(statePublications).toBe(1)
+  expect(runtimePublications).toBe(1)
+  expect(mainPublications).toBe(0)
+  expect(sidePublications).toBe(0)
+  expect(runtime.getSnapshot().transcript.cursor).toEqual({ itemId: ids[50]!, graphemeOffset: 0 })
+  expect(runtime.getSnapshot().transcript.folded[ids[50]!]).toBe(false)
+  expect(pointIsMaterialized(runtime.getSnapshot().window.blocks, runtime.getSnapshot().transcript.cursor!)).toBe(true)
+  statePublications = runtimePublications = mainPublications = sidePublications = 0
+  h.controller.transcript({ type: "fold.set", itemId: ids[5]!, folded: true })
+  expect(statePublications).toBe(1)
+  expect(runtimePublications).toBe(1)
+  expect(mainPublications).toBe(0)
+  expect(sidePublications).toBe(0)
+  expect(runtime.getSnapshot().blocks).toBe(blocks)
+  expect(runtime.getSnapshot().window.blocks.length).toBeLessThanOrEqual(72)
+
+  statePublications = runtimePublications = mainPublications = sidePublications = 0
+  h.controller.transcript({ type: "navigate", motion: "url-previous", count: 46 })
+  const frame = runtime.getSnapshot()
+  expect(statePublications).toBe(1)
+  expect(runtimePublications).toBe(1)
+  expect(mainPublications).toBe(0)
+  expect(sidePublications).toBe(0)
+  expect(frame.transcript.cursor).toEqual({ itemId: ids[5]!, graphemeOffset: 0 })
+  expect(frame.transcript.folded[ids[5]!]).toBe(false)
+  expect(pointIsMaterialized(frame.window.blocks, frame.transcript.cursor!)).toBe(true)
+  expect(frame.window.blocks.length).toBeLessThanOrEqual(72)
+
+  h.controller.transcript({ type: "cursor.move", target: { itemId: ids[5]!, graphemeOffset: 7 }, preferredScreenRow: 2, extend: false })
+  statePublications = runtimePublications = mainPublications = sidePublications = 0
+  h.controller.transcript({ type: "url.open", presentationId: "main" })
+  const picker = h.controller.getSnapshot()
+  expect(statePublications).toBe(1)
+  expect(runtimePublications).toBe(0)
+  expect(mainPublications).toBe(1)
+  expect(sidePublications).toBe(0)
+  expect(picker.workspaces[a]!.interaction.overlay).toBe("urls")
+  expect(picker.urlChoiceOwner).toEqual({ threadId: a, presentationId: "main", displayedCanonicalRevision: frame.displayedCanonicalRevision,
+    scope: "current-item" })
+  expect(picker.urlChoices?.map(choice => choice.url)).toEqual(["https://five.test", "https://other.test"])
+  const choice = picker.urlChoices![1]!
+  statePublications = runtimePublications = mainPublications = sidePublications = 0
+  h.controller.transcript({ type: "url.open", url: choice.url, candidate: choice, presentationId: "main" })
+  await h.controller.settle()
+  expect(statePublications).toBe(1)
+  expect(runtimePublications).toBe(0)
+  expect(mainPublications).toBe(1)
+  expect(sidePublications).toBe(0)
+  expect(h.controller.getSnapshot().urlChoices).toBeUndefined()
+  expect(h.controller.getSnapshot().urlChoiceOwner).toBeUndefined()
+  expect(h.controller.getSnapshot().workspaces[a]!.interaction.overlay).toBeNull()
+  expect(h.opened.at(-1)).toBe("https://other.test")
+  h.controller.transcript({ type: "cursor.move", target: { itemId: ids[5]!, graphemeOffset: 0 }, preferredScreenRow: 2, extend: false })
+  statePublications = runtimePublications = mainPublications = sidePublications = 0
+  h.controller.transcript({ type: "url.open", presentationId: "main" })
+  await h.controller.settle()
+  expect(statePublications).toBe(0)
+  expect(runtimePublications).toBe(0)
+  expect(mainPublications).toBe(0)
+  expect(sidePublications).toBe(0)
+  expect(h.opened.at(-1)).toBe("https://five.test")
+
+  h.controller.transcript({ type: "cursor.move", target: { itemId: ids[5]!, graphemeOffset: 7 }, preferredScreenRow: 2, extend: false })
+  h.controller.transcript({ type: "url.open", presentationId: "main" })
+  const staleChoice = h.controller.getSnapshot().urlChoices![1]!
+  const openedBeforeStaleChoice = h.opened.length
+  h.controller.transcript({ type: "cursor.move", target: { itemId: ids[6]!, graphemeOffset: 0 }, preferredScreenRow: 2, extend: false })
+  h.controller.transcript({ type: "url.open", url: staleChoice.url, candidate: staleChoice, presentationId: "main" })
+  await h.controller.settle()
+  expect(h.opened).toHaveLength(openedBeforeStaleChoice)
+  expect(h.controller.getSnapshot().error).toBe("That URL is no longer available in the active picker")
+  h.controller.dispatchInteraction({ type: "overlay.close" })
+  expect(h.controller.getSnapshot().urlChoices).toBeUndefined()
+  expect(h.controller.getSnapshot().urlChoiceOwner).toBeUndefined()
+  expect(h.controller.getSnapshot().workspaces[a]!.interaction.overlay).toBeNull()
+  h.controller.transcript({ type: "url.open", url: staleChoice.url, candidate: staleChoice, presentationId: "main" })
+  await h.controller.settle()
+  expect(h.opened).toHaveLength(openedBeforeStaleChoice)
+  await h.controller.close()
+})
+
+test("configured default fold joins a newly admitted item in one semantic and runtime publication", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const runtime = h.controller.transcriptRuntime("main")!
+  h.controller.transcript({ type: "fold.defaults", reasoning: true, tools: false })
+  let statePublications = 0, runtimePublications = 0
+  h.controller.subscribe(() => { statePublications++ })
+  runtime.subscribe(() => { runtimePublications++ })
+  const id = itemId("default-fold-arrival")
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: {
+    id, turnId: turnId("default-fold-arrival-turn"), kind: "reasoning", markdown: "private", status: "complete",
+  } } })
+  expect(statePublications).toBe(1)
+  expect(runtimePublications).toBe(1)
+  expect(h.controller.getSnapshot().workspaces[a]!.transcript.folded[id]).toBe(true)
+  expect(runtime.getSnapshot().transcript.folded[id]).toBe(true)
+  await h.controller.close()
+})
+
 test("cross-thread history atomically materializes the restored viewport rather than its distant cursor", async () => {
   const h = harness()
   await h.controller.initialize("/tmp")
@@ -982,7 +1105,7 @@ test("semantic search unfolds its target, URL choice resolves through the port, 
   const h = harness()
   await h.controller.initialize("/tmp")
   const id = itemId("rich"), turn = turnId("rich-turn")
-  h.emit({ type: "conversation", event: { type: "item.completed", threadId: a, item: { id, turnId: turn, kind: "assistant", status: "complete", markdown: "First paragraph\n\nneedle [one](https://one.test) and [two](https://two.test)\n\nLast paragraph" } } })
+  h.emit({ type: "conversation", event: { type: "item.completed", threadId: a, item: { id, turnId: turn, kind: "reasoning", status: "complete", markdown: "First paragraph\n\nneedle [one](https://one.test) and [two](https://two.test)\n\nLast paragraph" } } })
   h.controller.transcript({ type: "cursor.move", target: { itemId: id, graphemeOffset: 0 }, preferredScreenRow: 2, extend: false })
   h.controller.transcript({ type: "fold.set", itemId: id, folded: true })
   h.controller.executeCommand("/needle")

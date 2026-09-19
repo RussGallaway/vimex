@@ -1,7 +1,7 @@
 import { compactionBlockReason } from "./compaction"
 import { executeGoalCommand } from "./goal-command"
 import { SideChatCoordinator, currentSideChat, sideChatForChild, sideChatForThread, type SideChatAction } from "./side-chat"
-import { adjacentSearchMatch, defaultTranscriptWindowPolicy, findSearchMatches, firstContentPoint, moveByMessage, moveByWord, moveBySemanticBlock, moveByUrl, referenceText, selectedText, urlAt, urlCandidates, graphemeCount, TranscriptRuntime, type LogicalPoint, type TranscriptDamage, type TranscriptRevealRequest, type TranscriptRuntimeInput, type TranscriptState } from "@vimex/transcript"
+import { adjacentSearchMatch, defaultTranscriptWindowPolicy, findSearchMatches, firstContentPoint, moveByMessage, moveByWord, moveBySemanticBlock, moveByUrl, referenceText, selectedText, urlAt, urlCandidateInScope, urlCandidates, graphemeCount, TranscriptRuntime, type LogicalPoint, type TranscriptDamage, type TranscriptRevealRequest, type TranscriptRuntimeInput, type TranscriptState, type UrlCandidate } from "@vimex/transcript"
 import { isThemeName, themeNames, type PreferenceStore } from "./display-preferences"
 import { parseCommand, validateCommand, resolveCommandName, commandDescriptors, type ExCommand } from "@vimex/interaction"
 import { captureLocalState, emptyLocalState, localViewChanged, restoreThreadView, type LocalState, type SavedThreadView } from "./local-state"
@@ -45,12 +45,16 @@ interface TranscriptRuntimeHint {
   canonicalOnly?: boolean
   canonicalDamageByThread?: Readonly<Record<string, TranscriptDamage>>
   reveal?: { threadId: ThreadId; presentationId: TranscriptPresentationId; request: TranscriptRevealRequest }
+  foldItemIds?: readonly ItemId[]
 }
 
 export class VimexController implements WorkbenchActions, TranscriptPresentationHost, WorkbenchPublicationHost {
   private state = initialWorkbench()
   private readonly ingress: ConversationIngress
   private readonly transcriptRuntimes = new Map<TranscriptPresentationId, TranscriptRuntime>()
+  private readonly urlChoiceIndexes = new WeakMap<readonly UrlCandidate[], Readonly<{
+    members: WeakSet<object>; firstByUrl: ReadonlyMap<string, UrlCandidate>
+  }>>()
   private revealRevision = 0
   private readonly sides = new SideChatCoordinator({
     state: () => this.state,
@@ -229,7 +233,9 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     const side = sideChatForChild(state, thread)
     const transcriptChanged = previous && previous.transcript !== workspace.transcript
     const presentationDamage: TranscriptDamage = hint.canonicalOnly || !transcriptChanged ? { kind: "none" }
-      : previous.transcript.folded !== workspace.transcript.folded ? { kind: "layout" } : { kind: "view" }
+      : previous.transcript.folded !== workspace.transcript.folded
+        ? hint.foldItemIds?.length ? { kind: "folds", itemIds: hint.foldItemIds } : { kind: "layout" }
+        : { kind: "view" }
     return {
       threadId: thread,
       canonicalGeneration: workspace.canonicalGeneration,
@@ -267,13 +273,14 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     threadId: ThreadId
     workspace: ThreadWorkspace
     transcript: TranscriptState
+    displayedCanonicalRevision: number
   } | undefined {
     const threadId = this.presentationThread(this.state, presentationId)
     const workspace = threadId ? this.state.workspaces[threadId] : undefined
     const runtime = this.transcriptRuntime(presentationId)
     if (!threadId || !workspace || runtime?.getThreadId() !== threadId) return undefined
     const frame = runtime.getSnapshot()
-    return { threadId, workspace, transcript: frame.transcript }
+    return { threadId, workspace, transcript: frame.transcript, displayedCanonicalRevision: frame.displayedCanonicalRevision }
   }
 
   private activeTranscriptPresentation(): TranscriptPresentationId | undefined {
@@ -287,7 +294,7 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
   private readTranscript(command: Extract<TranscriptAction, { type: "reference" | "copy" | "url.open" }>): void {
     const context = this.presentationContext(command.presentationId)
     if (!context) return
-    const { threadId, workspace, transcript } = context
+    const { threadId, workspace, transcript, displayedCanonicalRevision } = context
     if (command.type === "reference") {
       const text = referenceText(transcript, "source")
       if (!text) { this.notice("No transcript content selected"); return }
@@ -304,21 +311,37 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
       return
     }
 
+    if (command.url || command.candidate) {
+      const owner = this.state.urlChoiceOwner
+      const pickerChoices = this.state.urlChoices
+      const pickerIndex = pickerChoices && this.urlChoiceIndexes.get(pickerChoices)
+      const chosen = command.candidate ?? pickerIndex?.firstByUrl.get(command.url ?? "")
+      const exact = chosen && pickerIndex?.members.has(chosen)
+        && urlCandidateInScope(transcript, chosen, owner?.scope ?? "current-item")
+      if (!owner || owner.threadId !== threadId || owner.presentationId !== command.presentationId
+        || owner.displayedCanonicalRevision !== displayedCanonicalRevision || !exact) {
+        this.notice("That URL is no longer available in the active picker")
+        return
+      }
+      this.dispatch({ type: "url.picker", threadId, url: chosen.url })
+      return
+    }
     const selected = transcript.selection ? urlCandidates(transcript, "selection") : []
     const underCursor = selected.length ? undefined : urlAt(transcript)
     const candidates = selected.length ? selected : urlCandidates(transcript, "current-item")
-    if (command.url && !candidates.some(candidate => candidate.url === command.url)) {
-      this.notice("That URL is no longer available in the active picker")
-      return
-    }
-    const url = command.url ?? (selected.length === 1 ? selected[0]?.url : underCursor) ?? (candidates.length === 1 ? candidates[0]?.url : undefined)
+    const url = (selected.length === 1 ? selected[0]?.url : underCursor) ?? (candidates.length === 1 ? candidates[0]?.url : undefined)
     if (url) {
-      this.setState({ ...this.state, urlChoices: undefined })
-      this.dispatch({ type: "interaction.command", threadId, command: { type: "overlay.close" } })
-      this.launch(() => this.ports.openUrl(url))
+      this.dispatch({ type: "url.picker", threadId, url })
     } else if (candidates.length > 1) {
-      this.setState({ ...this.state, urlChoices: candidates })
-      this.dispatch({ type: "interaction.command", threadId, command: { type: "overlay.open", overlay: "urls" } })
+      const firstByUrl = new Map<string, UrlCandidate>()
+      for (const candidate of candidates) if (!firstByUrl.has(candidate.url)) firstByUrl.set(candidate.url, candidate)
+      this.urlChoiceIndexes.set(candidates, Object.freeze({
+        members: new WeakSet(candidates),
+        firstByUrl,
+      }))
+      this.dispatch({ type: "url.picker", threadId, choices: candidates,
+        owner: { threadId, presentationId: command.presentationId, displayedCanonicalRevision,
+          scope: selected.length ? "selection" : "current-item" } })
     } else this.notice("No URL at this transcript position")
   }
 
@@ -476,7 +499,7 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
       ? command.threadId ?? before.activeThreadId : undefined
     const priorTranscript = revealThread ? before.workspaces[revealThread]?.transcript : undefined
     const nextTranscript = revealThread ? result.state.workspaces[revealThread]?.transcript : undefined
-    const targetCommand = transcriptCommand && (transcriptCommand.type === "cursor.move" || transcriptCommand.type === "jump.to"
+    const targetCommand = transcriptCommand && (transcriptCommand.type === "cursor.move" || transcriptCommand.type === "cursor.reveal" || transcriptCommand.type === "jump.to"
       || transcriptCommand.type === "search.jump" || transcriptCommand.type === "selection.swap"
       || transcriptCommand.type === "jump.back" || transcriptCommand.type === "jump.forward" || transcriptCommand.type === "mark.jump")
     const revealChanged = priorTranscript && nextTranscript && (priorTranscript.cursor?.itemId !== nextTranscript.cursor?.itemId
@@ -486,11 +509,20 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     const revealPoint = targetCommand && revealChanged && nextTranscript
       ? nextTranscript.viewport.kind === "point" ? nextTranscript.viewport.point : nextTranscript.cursor
       : undefined
-    const revealReason: TranscriptRevealRequest["reason"] = transcriptCommand?.type === "search.jump" ? "search"
+    const revealReason: TranscriptRevealRequest["reason"] = command.type === "transcript.navigate" && command.revealReason ? command.revealReason
+      : transcriptCommand?.type === "search.jump" ? "search"
       : transcriptCommand?.type === "mark.jump" ? "mark"
         : transcriptCommand && (transcriptCommand.type === "jump.to" || transcriptCommand.type === "jump.back" || transcriptCommand.type === "jump.forward") ? "jump" : "cursor"
     const presentationId = this.activeTranscriptPresentation()
-    this.setState(result.state, revealThread && revealPoint && presentationId ? { reveal: { threadId: revealThread, presentationId, request: { id: ++this.revealRevision, point: revealPoint, reason: revealReason } } } : undefined)
+    const explicitFoldItem = transcriptCommand?.type === "fold.set" || transcriptCommand?.type === "fold.toggle" ? transcriptCommand.itemId : undefined
+    const revealedFoldItem = revealPoint && priorTranscript?.folded[revealPoint.itemId] && !nextTranscript?.folded[revealPoint.itemId]
+      ? revealPoint.itemId : undefined
+    const hint: TranscriptRuntimeHint = {
+      ...((explicitFoldItem || revealedFoldItem) ? { foldItemIds: [explicitFoldItem ?? revealedFoldItem!] } : {}),
+      ...(revealThread && revealPoint && presentationId ? { reveal: { threadId: revealThread, presentationId,
+        request: { id: ++this.revealRevision, point: revealPoint, reason: revealReason } } } : {}),
+    }
+    this.setState(result.state, hint)
     for (const effect of result.effects) {
       const pending = this.launch(() => this.effect(effect))
       if (effect.type === "conversation.turn.start" || effect.type === "conversation.turn.steer") this.trackContinuation(effect.threadId, pending)
@@ -732,9 +764,13 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     if (target) this.openThread(target)
   }
   private clearNavigationIntent(): void {
-    if (this.state.pendingFork || this.state.urlChoices) {
-      this.setState({ ...this.state, pendingFork: undefined, urlChoices: undefined })
-    }
+    if (!this.state.pendingFork && !this.state.urlChoices && !this.state.urlChoiceOwner) return
+    let next = this.state.pendingFork ? { ...this.state, pendingFork: undefined } : this.state
+    const owner = next.urlChoiceOwner
+    next = owner
+      ? transitionWorkbench(next, { type: "url.picker", threadId: owner.threadId }).state
+      : next.urlChoices ? { ...next, urlChoices: undefined, urlChoiceOwner: undefined } : next
+    this.setState(next)
   }
   restart = (): void => {
     if (this.restartPending || this.closing) return
@@ -811,7 +847,6 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     if (this.state.retiredSideThreadIds.includes(id)) { this.notice("This side chat was quit and cannot be reopened"); return }
     const revision = ++this.navigationRevision
     const epoch = this.runtimeEpoch
-    this.clearNavigationIntent()
     return this.launch(async () => {
       if (this.restartBarrier) await this.restartBarrier
       if (!this.currentRuntime(epoch) || this.state.connection !== "connected") return
@@ -842,12 +877,17 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
           : prepared
         if (restore) {
           const switched = transitionWorkbench(visible, { type: "thread.switch", threadId: id }).state
+          const foldedCursor = restore.target.cursor && switched.workspaces[id]?.transcript.folded[restore.target.cursor.itemId]
+            ? restore.target.cursor.itemId : undefined
           const restored = restoreNavigationLocation(switched, restore.target)
           const transcript = restored.workspaces[id]?.transcript
           const point = transcript?.viewport.kind === "point" ? transcript.viewport.point : undefined
           const presentationId = threadForPresentation(restored, "side") === id ? "side"
             : threadForPresentation(restored, "main") === id ? "main" : undefined
-          this.setState(restored, point && presentationId ? { reveal: { threadId: id, presentationId, request: { id: ++this.revealRevision, point, reason: "history" } } } : undefined)
+          this.setState(restored, {
+            ...(foldedCursor ? { foldItemIds: [foldedCursor] } : {}),
+            ...(point && presentationId ? { reveal: { threadId: id, presentationId, request: { id: ++this.revealRevision, point, reason: "history" as const } } } : {}),
+          })
         } else {
           const switched = transitionWorkbench(visible, { type: "thread.switch", threadId: id }).state
           const closed = transitionWorkbench(switched, { type: "interaction.command", threadId: id, command: { type: "overlay.close" } }).state
@@ -885,10 +925,11 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     }
     const workspace = activeWorkspace(this.state)
     if (!workspace) return
-    const move = (point?: LogicalPoint, record = true) => {
+    const move = (point?: LogicalPoint, record = true, revealReason?: TranscriptRevealRequest["reason"]) => {
       if (!point) return
-      if (!record && workspace.transcript.folded[point.itemId]) this.dispatch({ type: "transcript.command", command: { type: "fold.set", itemId: point.itemId, folded: false } })
-      this.dispatch({ type: "transcript.command", command: record ? { type: "jump.to", target: { point, preferredScreenRow: 2 } } : { type: "cursor.move", point, preferredScreenRow: 2 } })
+      this.dispatch(record
+        ? { type: "transcript.navigate", command: { type: "jump.to", target: { point, preferredScreenRow: 2 } }, revealReason }
+        : { type: "transcript.navigate", command: { type: "cursor.reveal", point, preferredScreenRow: 2 } })
     }
     const preserveVisual = () => workspace.interaction.surface === "transcript" && Boolean(workspace.transcript.selection)
       && (workspace.interaction.mode === "visual" || workspace.interaction.mode === "command")
@@ -905,7 +946,7 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
           const motion = command.motion.endsWith("previous") ? "previous" : command.motion.endsWith("end") ? "end" : "next"
           move(moveByWord(transcript, motion, transcript.cursor, count, command.motion.startsWith("WORD-")), false)
         } else if (command.motion.startsWith("block-")) move(moveBySemanticBlock(transcript, direction, transcript.cursor, count))
-        else if (command.motion.startsWith("url-")) move(moveByUrl(transcript, direction, transcript.cursor, { count, wrap: true }))
+        else if (command.motion.startsWith("url-")) move(moveByUrl(transcript, direction, transcript.cursor, { count, wrap: true }), true, "url")
         else if (command.motion === "first-content") move(firstContentPoint(transcript), false)
         else move(moveByMessage(transcript, direction, transcript.cursor, count))
         break
@@ -1211,7 +1252,7 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
       }
       case "open": {
         if (argument) {
-          this.setState({ ...this.state, urlChoices: undefined })
+          this.setState({ ...this.state, urlChoices: undefined, urlChoiceOwner: undefined })
           this.launch(() => this.ports.openUrl(argument))
         } else if (transcriptPresentation) this.transcript({ type: "url.open", presentationId: transcriptPresentation })
         break

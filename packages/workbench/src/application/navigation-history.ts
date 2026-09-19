@@ -1,5 +1,5 @@
 import type { ThreadId } from "@vimex/conversation"
-import { clampTranscript, type LogicalPoint, type ViewportAnchor } from "@vimex/transcript"
+import { clampTranscript, setTranscriptFoldValue, type LogicalPoint, type ViewportAnchor } from "@vimex/transcript"
 import { activeWorkspace, updateWorkspace, type WorkbenchState } from "./workbench-state"
 
 /** Locations are semantic and compact: never retain transcript contents or drafts. */
@@ -105,7 +105,7 @@ export function restoreNavigationLocation(state: WorkbenchState, location: Navig
     return {
       ...workspace,
       transcript: clampTranscript({ ...transcript, cursor, viewport, selection: undefined,
-        folded: cursor && transcript.folded[cursor.itemId] ? { ...transcript.folded, [cursor.itemId]: false } : transcript.folded }),
+        folded: cursor && transcript.folded[cursor.itemId] ? setTranscriptFoldValue(transcript.folded, cursor.itemId, false) : transcript.folded }),
       interaction: { ...workspace.interaction, mode: "normal", surface: "transcript", overlay: null, pendingKeys: "", lastNormalSurface: "transcript" },
     }
   })

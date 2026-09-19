@@ -896,13 +896,18 @@ describe("Vimex OpenTUI shell", () => {
 
   test("opens the selected URL from the keyboard picker", async () => {
     const answer = itemId("answer")
-    const state = withOverlay({ ...fixture(), urlChoices: [{
+    const base = fixture()
+    const choice = {
       itemId: answer,
       url: "https://example.com/docs",
       text: "documentation",
       from: { itemId: answer, graphemeOffset: 0 },
       to: { itemId: answer, graphemeOffset: 13 },
-    }] }, "urls")
+    }
+    const state = withOverlay({ ...base, urlChoices: [choice], urlChoiceOwner: {
+      threadId: base.activeThreadId!, presentationId: "main", displayedCanonicalRevision: base.workspaces[base.activeThreadId!]!.canonicalRevision,
+      scope: "current-item",
+    } }, "urls")
     const commands: TranscriptUiCommand[] = []
     const controller: VimexUiController = { ...inertController, transcript(command) { commands.push(command) } }
     const setup = await testRender(<VimexRoot state={state} controller={controller} />, { width: 82, height: 22 })
@@ -910,7 +915,7 @@ describe("Vimex OpenTUI shell", () => {
       await act(async () => setup.flush())
       expect(setup.captureCharFrame()).toContain("https://example.com/docs")
       await act(async () => { setup.mockInput.pressEnter(); await setup.flush() })
-      expect(commands).toContainEqual({ type: "url.open", url: "https://example.com/docs", presentationId: "main" })
+      expect(commands).toContainEqual({ type: "url.open", url: "https://example.com/docs", candidate: choice, presentationId: "main" })
     } finally { await act(async () => setup.renderer.destroy()) }
   })
 

@@ -31,12 +31,123 @@ export interface TranscriptState {
   cursor?: LogicalPoint
   selection?: TranscriptSelection
   folded: Readonly<Record<string, boolean>>
+  foldDefaults: Readonly<{ reasoning: boolean; tools: boolean }>
   viewport: ViewportAnchor
   unseenEntries: number
   /** Item ids whose changed output has already contributed to unseenEntries. */
   unseenItemIds: readonly ItemId[]
   jumps: { back: readonly JumpLocation[]; forward: readonly JumpLocation[] }
   marks: Readonly<Record<string, JumpLocation>>
+}
+
+interface FoldNode {
+  readonly key: string
+  readonly value: boolean
+  readonly height: number
+  readonly left?: FoldNode
+  readonly right?: FoldNode
+}
+
+interface FoldRecordData { readonly root?: FoldNode; readonly size: number }
+
+const foldRecordData = new WeakMap<object, FoldRecordData>()
+const normalizedFoldRecords = new WeakMap<object, Readonly<Record<string, boolean>>>()
+
+function compareFoldKey(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+const height = (value: FoldNode | undefined) => value?.height ?? 0
+function foldNode(key: string, value: boolean, left?: FoldNode, right?: FoldNode): FoldNode {
+  return Object.freeze({ key, value, height: Math.max(height(left), height(right)) + 1, ...(left ? { left } : {}), ...(right ? { right } : {}) })
+}
+function rotateFoldLeft(root: FoldNode): FoldNode {
+  const right = root.right!
+  return foldNode(right.key, right.value, foldNode(root.key, root.value, root.left, right.left), right.right)
+}
+function rotateFoldRight(root: FoldNode): FoldNode {
+  const left = root.left!
+  return foldNode(left.key, left.value, left.left, foldNode(root.key, root.value, left.right, root.right))
+}
+function balanceFold(root: FoldNode): FoldNode {
+  const delta = height(root.left) - height(root.right)
+  if (delta > 1) {
+    const left = root.left!
+    return rotateFoldRight(height(left.left) < height(left.right)
+      ? foldNode(root.key, root.value, rotateFoldLeft(left), root.right) : root)
+  }
+  if (delta < -1) {
+    const right = root.right!
+    return rotateFoldLeft(height(right.right) < height(right.left)
+      ? foldNode(root.key, root.value, root.left, rotateFoldRight(right)) : root)
+  }
+  return root
+}
+function foldValue(root: FoldNode | undefined, key: string): boolean | undefined {
+  while (root) {
+    if (key === root.key) return root.value
+    root = compareFoldKey(key, root.key) < 0 ? root.left : root.right
+  }
+  return undefined
+}
+function setFoldNode(root: FoldNode | undefined, key: string, value: boolean): { readonly root: FoldNode; readonly added: boolean; readonly changed: boolean } {
+  if (!root) return { root: foldNode(key, value), added: true, changed: true }
+  if (key === root.key) return root.value === value
+    ? { root, added: false, changed: false }
+    : { root: foldNode(key, value, root.left, root.right), added: false, changed: true }
+  if (compareFoldKey(key, root.key) < 0) {
+    const next = setFoldNode(root.left, key, value)
+    return next.changed ? { root: balanceFold(foldNode(root.key, root.value, next.root, root.right)), added: next.added, changed: true }
+      : { root, added: false, changed: false }
+  }
+  const next = setFoldNode(root.right, key, value)
+  return next.changed ? { root: balanceFold(foldNode(root.key, root.value, root.left, next.root)), added: next.added, changed: true }
+    : { root, added: false, changed: false }
+}
+function foldEntries(root: FoldNode | undefined, result: [string, boolean][]): void {
+  if (!root) return
+  foldEntries(root.left, result)
+  result.push([root.key, root.value])
+  foldEntries(root.right, result)
+}
+function foldRecord(data: FoldRecordData): Readonly<Record<string, boolean>> {
+  const target = Object.create(null) as Record<string, boolean>
+  const proxy = new Proxy(target, {
+    get: (_target, property) => typeof property === "string" ? foldValue(data.root, property) : Reflect.get(target, property),
+    has: (_target, property) => typeof property === "string" ? foldValue(data.root, property) !== undefined : false,
+    ownKeys: () => { const entries: [string, boolean][] = []; foldEntries(data.root, entries); return entries.map(([key]) => key) },
+    getOwnPropertyDescriptor: (_target, property) => typeof property === "string" && foldValue(data.root, property) !== undefined
+      ? { configurable: true, enumerable: true, writable: false, value: foldValue(data.root, property) } : undefined,
+    set: () => false,
+    deleteProperty: () => false,
+    defineProperty: () => false,
+  })
+  foldRecordData.set(proxy, data)
+  return proxy
+}
+
+/** Normalize persisted/plain fold metadata into an immutable persistent record. */
+export function persistentTranscriptFolds(value: Readonly<Record<string, boolean>> = {}): Readonly<Record<string, boolean>> {
+  if (foldRecordData.has(value)) return value
+  const cached = normalizedFoldRecords.get(value)
+  if (cached) return cached
+  const entries = Object.entries(value).sort(([left], [right]) => compareFoldKey(left, right))
+  const build = (from: number, to: number): FoldNode | undefined => {
+    if (from >= to) return undefined
+    const middle = (from + to) >>> 1
+    const [key, folded] = entries[middle]!
+    return foldNode(key, folded, build(from, middle), build(middle + 1, to))
+  }
+  const record = foldRecord({ root: build(0, entries.length), size: entries.length })
+  normalizedFoldRecords.set(value, record)
+  return record
+}
+
+export function setTranscriptFoldValue(value: Readonly<Record<string, boolean>>, itemId: ItemId, folded: boolean): Readonly<Record<string, boolean>> {
+  const record = persistentTranscriptFolds(value)
+  const data = foldRecordData.get(record)!
+  const next = setFoldNode(data.root, itemId, folded)
+  return next.changed ? foldRecord({ root: next.root, size: data.size + (next.added ? 1 : 0) }) : record
 }
 
 const orderIndexes = new WeakMap<readonly ItemId[], ReadonlyMap<ItemId, number>>()
@@ -213,6 +324,7 @@ export type TranscriptCommand =
   | { type: "search.set"; query: string; direction: "forward" | "backward" }
   | { type: "search.jump"; target: JumpLocation; search?: { query: string; direction: "forward" | "backward" } }
   | { type: "cursor.move"; point: LogicalPoint; preferredScreenRow?: number }
+  | { type: "cursor.reveal"; point: LogicalPoint; preferredScreenRow?: number }
   | { type: "jump.to"; target: JumpLocation; origin?: JumpLocation; clearSelection?: boolean }
   | { type: "jump.back"; origin?: JumpLocation }
   | { type: "jump.forward"; origin?: JumpLocation }
@@ -229,5 +341,5 @@ export type TranscriptCommand =
   | { type: "fold.defaults"; reasoning: boolean; tools: boolean }
 
 export const initialTranscript = (): TranscriptState => ({
-  order: [], projectionById: {}, folded: {}, viewport: { kind: "tail" }, unseenEntries: 0, unseenItemIds: [], jumps: { back: [], forward: [] }, marks: {},
+  order: [], projectionById: {}, folded: persistentTranscriptFolds(), foldDefaults: Object.freeze({ reasoning: false, tools: false }), viewport: { kind: "tail" }, unseenEntries: 0, unseenItemIds: [], jumps: { back: [], forward: [] }, marks: {},
 })

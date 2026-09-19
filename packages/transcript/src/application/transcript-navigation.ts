@@ -2,6 +2,7 @@ import type { ItemId } from "@vimex/conversation"
 import { graphemes } from "../domain/markdown-source-map"
 import { transcriptOrderIndex, type LogicalPoint, type TranscriptSelection, type TranscriptState } from "../domain/transcript-document"
 import { selectedText } from "./transcript-operations"
+import { indexedUrlTarget, indexedUrlTargets, type IndexedUrlTarget, type TranscriptUrlIndexDiagnostics } from "./transcript-url-index"
 
 export type NavigationDirection = "forward" | "backward"
 
@@ -184,7 +185,39 @@ function candidateInSelection(state: TranscriptState, candidate: UrlCandidate, s
   return comparePoint(state, candidate.to, start) > 0 && comparePoint(state, candidate.from, end) <= 0
 }
 
+/** Validate one picker candidate against its current semantic scope without enumerating unrelated URLs. */
+export function urlCandidateInScope(state: TranscriptState, candidate: UrlCandidate, scope: "selection" | "current-item"): boolean {
+  if (!transcriptOrderIndex(state.order).has(candidate.itemId)) return false
+  const projection = state.projectionById[candidate.itemId]
+  if (!projection?.links.some(link => link.from === candidate.from.graphemeOffset
+    && link.to === candidate.to.graphemeOffset && link.url === candidate.url)) return false
+  if (scope === "current-item") return state.cursor?.itemId === candidate.itemId
+  return Boolean(state.selection && candidateInSelection(state, candidate, state.selection))
+}
+
 export function urlCandidates(state: TranscriptState, scope: UrlCandidateScope = "all"): readonly UrlCandidate[] {
+  const selection = scope === "selection" && state.selection ? orderedSelection(state, state.selection) : undefined
+  const targets: readonly IndexedUrlTarget[] = scope === "current-item"
+    ? state.cursor && transcriptOrderIndex(state.order).has(state.cursor.itemId)
+      ? (state.projectionById[state.cursor.itemId]?.links ?? []).map(link => ({ itemId: state.cursor!.itemId, link })) : []
+    : indexedUrlTargets(state, selection ? { from: selection[0], to: selection[1] } : undefined)
+  const partsByItem = new Map<ItemId, readonly string[]>()
+  return targets.map(({ itemId, link }) => {
+    const projection = state.projectionById[itemId]
+    let parts = partsByItem.get(itemId)
+    if (!parts) { parts = graphemes(projection?.plain ?? ""); partsByItem.set(itemId, parts) }
+    return {
+      itemId,
+      url: link.url,
+      text: parts.slice(link.from, link.to).join(""),
+      from: { itemId, graphemeOffset: link.from },
+      to: { itemId, graphemeOffset: link.to },
+    }
+  })
+}
+
+/** Exhaustive pass-through oracle retained for indexed candidate equivalence. */
+export function urlCandidatesReference(state: TranscriptState, scope: UrlCandidateScope = "all"): readonly UrlCandidate[] {
   const result: UrlCandidate[] = []
   for (const itemId of state.order) {
     if (scope === "current-item" && itemId !== state.cursor?.itemId) continue
@@ -192,16 +225,11 @@ export function urlCandidates(state: TranscriptState, scope: UrlCandidateScope =
     if (!projection) continue
     const parts = graphemes(projection.plain)
     for (const link of projection.links) {
-      const candidate: UrlCandidate = {
-        itemId,
-        url: link.url,
-        text: parts.slice(link.from, link.to).join(""),
-        from: { itemId, graphemeOffset: link.from },
-        to: { itemId, graphemeOffset: link.to },
+      const candidate = {
+        itemId, url: link.url, text: parts.slice(link.from, link.to).join(""),
+        from: { itemId, graphemeOffset: link.from }, to: { itemId, graphemeOffset: link.to },
       }
-      if (scope !== "selection" || (state.selection && candidateInSelection(state, candidate, state.selection))) {
-        result.push(candidate)
-      }
+      if (scope !== "selection" || (state.selection && candidateInSelection(state, candidate, state.selection))) result.push(candidate)
     }
   }
   return result
@@ -212,25 +240,31 @@ export function moveByUrl(
   direction: NavigationDirection,
   point = state.cursor,
   options: { readonly count?: number; readonly wrap?: boolean } = {},
+  diagnostics?: TranscriptUrlIndexDiagnostics,
 ): LogicalPoint | undefined {
   if (!point) return undefined
-  const candidates = urlCandidates(state)
-  if (candidates.length === 0) return undefined
-  const containing = candidates.findIndex((candidate) => comparePoint(state, candidate.from, point) <= 0 && comparePoint(state, candidate.to, point) > 0)
-  let index = containing >= 0
-    ? containing
-    : direction === "forward"
-      ? (() => {
-          const next = candidates.findIndex((candidate) => comparePoint(state, candidate.from, point) > 0)
-          return next < 0 ? candidates.length - 1 : next - 1
-        })()
-      : candidates.findLastIndex((candidate) => comparePoint(state, candidate.from, point) < 0) + 1
+  const target = indexedUrlTarget(state, direction, point, options, diagnostics)
+  return target ? { itemId: target.itemId, graphemeOffset: target.link.from } : undefined
+}
+
+/** Exhaustive pass-through oracle retained for indexed URL-motion equivalence tests. */
+export function moveByUrlReference(
+  state: TranscriptState,
+  direction: NavigationDirection,
+  point = state.cursor,
+  options: { readonly count?: number; readonly wrap?: boolean } = {},
+): LogicalPoint | undefined {
+  if (!point) return undefined
+  const candidates = urlCandidatesReference(state)
+  if (!candidates.length) return undefined
+  const containing = candidates.findIndex(candidate => comparePoint(state, candidate.from, point) <= 0 && comparePoint(state, candidate.to, point) > 0)
+  let index = containing >= 0 ? containing : direction === "forward"
+    ? (() => { const next = candidates.findIndex(candidate => comparePoint(state, candidate.from, point) > 0); return next < 0 ? candidates.length - 1 : next - 1 })()
+    : candidates.findLastIndex(candidate => comparePoint(state, candidate.from, point) < 0) + 1
   const count = Number.isFinite(options.count) ? Math.max(1, Math.trunc(options.count ?? 1)) : 1
-  const delta = direction === "forward" ? count : -count
-  index += delta
+  index += direction === "forward" ? count : -count
   if (options.wrap) index = ((index % candidates.length) + candidates.length) % candidates.length
-  const target = candidates[index]
-  return target?.from
+  return candidates[index]?.from
 }
 
 /** Text inserted by `r`: an active selection wins, otherwise the cursor's semantic block. */

@@ -137,8 +137,10 @@ export function workbenchPresentationChanged(before: WorkbenchState, after: Work
   if (before.questions !== after.questions && pendingQuestion(before, leftId) !== pendingQuestion(after, rightId)) return true
 
   if (!rightInteractive) return false
+  const leftUrlChoices = before.urlChoiceOwner?.presentationId === presentationId ? before.urlChoices : undefined
+  const rightUrlChoices = after.urlChoiceOwner?.presentationId === presentationId ? after.urlChoices : undefined
   if (before.availableModels !== after.availableModels || before.modelCatalogError !== after.modelCatalogError
-    || before.threadOrder !== after.threadOrder || before.pendingFork !== after.pendingFork || before.urlChoices !== after.urlChoices
+    || before.threadOrder !== after.threadOrder || before.pendingFork !== after.pendingFork || leftUrlChoices !== rightUrlChoices
   ) return true
   if ((right.interaction.overlay === "sessions" || right.interaction.overlay === "agents") && before.summaries !== after.summaries) return true
   if (right.interaction.overlay === "sessions" && before.favoriteThreadIds !== after.favoriteThreadIds) return true

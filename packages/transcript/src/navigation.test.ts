@@ -13,13 +13,16 @@ import {
   selectedText,
   moveBySemanticBlock,
   moveByUrl,
+  moveByUrlReference,
   moveCursor,
   referenceText,
   semanticBlocks,
   swapSelection,
   syncTranscriptItem,
   transcriptOrderIndex,
+  primeTranscriptUrlIndex,
   urlCandidates,
+  urlCandidatesReference,
 } from "./index"
 
 describe("logical transcript navigation", () => {
@@ -109,6 +112,33 @@ describe("logical transcript navigation", () => {
     state = beginSelection(state, "character")
     state = moveCursor(state, { itemId: itemId("a"), graphemeOffset: 2 })
     expect(urlCandidates(state, "selection").map(({ url }) => url)).toEqual(["https://one.test"])
+    for (const scope of ["all", "current-item", "selection"] as const) expect(urlCandidates(state, scope)).toEqual(urlCandidatesReference(state, scope))
+
+    state = moveCursor(state, urlCandidatesReference(state)[1]!.from)
+    expect(urlCandidates(state, "selection").map(({ url }) => url)).toEqual(["https://one.test", "https://two.test/a_(b)"])
+    expect(urlCandidates(state, "selection")).toEqual(urlCandidatesReference(state, "selection"))
+    const reversed = swapSelection(state)
+    expect(urlCandidates(reversed, "selection")).toEqual(urlCandidatesReference(reversed, "selection"))
+
+    const staleCursor = { ...state, cursor: { itemId: itemId("outside-order"), graphemeOffset: 0 },
+      projectionById: { ...state.projectionById, [itemId("outside-order")]: state.projectionById[itemId("a")]! } }
+    expect(urlCandidates(staleCursor, "current-item")).toEqual(urlCandidatesReference(staleCursor, "current-item"))
+  })
+
+  test("warm sparse URL motion is logarithmic across 100k unrelated items", () => {
+    const ids = Object.freeze(Array.from({ length: 100_000 }, (_, index) => itemId(`url-${index}`)))
+    const plain = syncTranscriptItem(initialTranscript(), message("plain-url-fixture", "plain")).projectionById[itemId("plain-url-fixture")]!
+    const linked = syncTranscriptItem(initialTranscript(), message("linked-url-fixture", "[link](https://example.test)")).projectionById[itemId("linked-url-fixture")]!
+    const projectionById = Object.freeze(Object.fromEntries(ids.map((id, index) => [id, index % 10_000 === 0 ? linked : plain])))
+    const state = { ...initialTranscript(), order: ids, projectionById, cursor: { itemId: ids[50_000]!, graphemeOffset: 0 } }
+    const diagnostics = { urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0, urlIndexUpdates: 0, urlIndexNodeVisits: 0 }
+    primeTranscriptUrlIndex(state, diagnostics)
+    const before = { ...diagnostics }
+    expect(moveByUrl(state, "forward", state.cursor, { wrap: true }, diagnostics)).toEqual({ itemId: ids[60_000]!, graphemeOffset: 0 })
+    expect(diagnostics.urlIndexBuilds - before.urlIndexBuilds).toBe(0)
+    expect(diagnostics.urlIndexItemVisits - before.urlIndexItemVisits).toBe(0)
+    expect(diagnostics.urlIndexCacheHits - before.urlIndexCacheHits).toBe(1)
+    expect(diagnostics.urlIndexNodeVisits - before.urlIndexNodeVisits).toBeLessThanOrEqual(4 * Math.ceil(Math.log2(ids.length)) + 5)
   })
 })
 
@@ -213,4 +243,7 @@ test("URL and block motions normalize counts consistently with search and word m
   }
   expect(moveByUrl(state, "forward", origin, { count: 3, wrap: true })).toEqual(urlCandidates(state)[0]!.from)
   expect(moveByUrl(state, "forward", origin, { count: 3, wrap: false })).toBeUndefined()
+  for (const direction of ["forward", "backward"] as const) for (const count of [1, 2, 3, Number.NaN]) for (const wrap of [false, true]) {
+    expect(moveByUrl(state, direction, origin, { count, wrap })).toEqual(moveByUrlReference(state, direction, origin, { count, wrap }))
+  }
 })

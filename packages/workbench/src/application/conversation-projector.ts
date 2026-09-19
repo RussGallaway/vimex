@@ -1,5 +1,5 @@
 import { forkConversation, reduceConversation, type ConversationEvent, type ThreadId, type TurnId } from "@vimex/conversation"
-import { initialTranscript, syncTranscriptItem } from "@vimex/transcript"
+import { initialTranscript, persistentTranscriptFolds, syncTranscriptItem } from "@vimex/transcript"
 import { initialComposer } from "@vimex/composer"
 import { initialInteraction } from "@vimex/interaction"
 import { done, updateWorkspace, type ThreadWorkspace, type WorkbenchEffect, type WorkbenchState, type WorkbenchTransition } from "./workbench-state"
@@ -53,7 +53,10 @@ export function forkWorkspace(source: ThreadWorkspace, nextThreadId: ThreadId, t
   const retained = (location: import("@vimex/transcript").JumpLocation) => Boolean(transcript.projectionById[location.point.itemId])
   transcript = {
     ...transcript,
-    folded: Object.fromEntries(transcript.order.filter((id) => Object.hasOwn(source.transcript.folded, id)).map((id) => [id, source.transcript.folded[id]!])),
+    folded: persistentTranscriptFolds(Object.fromEntries(transcript.order
+      .filter((id) => transcript.projectionById[id]?.nodeKind !== "message" && Object.hasOwn(source.transcript.folded, id))
+      .map((id) => [id, source.transcript.folded[id]!]))),
+    foldDefaults: source.transcript.foldDefaults,
     marks: Object.fromEntries(Object.entries(source.transcript.marks).filter(([, location]) => retained(location))),
     jumps: { back: source.transcript.jumps.back.filter(retained), forward: source.transcript.jumps.forward.filter(retained) },
   }

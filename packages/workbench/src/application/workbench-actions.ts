@@ -2,7 +2,7 @@ import type { Approval } from "@vimex/approvals"
 import type { SubmissionIntent } from "@vimex/composer"
 import type { ItemId, ThreadId } from "@vimex/conversation"
 import type { InteractionCommand } from "@vimex/interaction"
-import type { LogicalPoint, TranscriptRuntime } from "@vimex/transcript"
+import type { LogicalPoint, TranscriptRuntime, UrlCandidate } from "@vimex/transcript"
 
 export type TranscriptPresentationId = "main" | "side"
 export interface TranscriptPresentationHost {
@@ -30,7 +30,7 @@ export type TranscriptAction =
   | { type: "fold.all"; folded: boolean }
   | { type: "fold.defaults"; reasoning: boolean; tools: boolean }
   | { type: "copy"; format: "plain" | "source"; presentationId: TranscriptPresentationId }
-  | { type: "url.open"; url?: string; presentationId: TranscriptPresentationId }
+  | { type: "url.open"; url?: string; candidate?: UrlCandidate; presentationId: TranscriptPresentationId }
   | { type: "fork"; itemId?: ItemId }
 
 export interface WorkbenchActions {

@@ -155,7 +155,11 @@ export function restoreThreadView(workspace: ThreadWorkspace, saved: SavedThread
   }
   const marks = Object.fromEntries(Object.entries(saved.marks ?? {}).flatMap(([name, location]) => { const restored = restoreLocation(location); return restored ? [[name, restored]] : [] }))
   const jumps = { back: (saved.jumps?.back ?? []).flatMap(location => { const restored = restoreLocation(location); return restored ? [restored] : [] }).slice(-100), forward: (saved.jumps?.forward ?? []).flatMap(location => { const restored = restoreLocation(location); return restored ? [restored] : [] }).slice(-100) }
-  const transcript = clampTranscript({ ...workspace.transcript, cursor, viewport, marks, jumps, folded: Object.fromEntries(Object.entries(saved.folded).filter(([id]) => workspace.transcript.projectionById[id])) })
+  const transcript = clampTranscript({ ...workspace.transcript, cursor, viewport, marks, jumps,
+    folded: Object.fromEntries(Object.entries(saved.folded).filter(([id]) => {
+      const projection = workspace.transcript.projectionById[id]
+      return projection && projection.nodeKind !== "message"
+    })) })
   const recoveredOutbox = (saved.outbox ?? []).map(message => ({
     ...message,
     status: "failed" as const,

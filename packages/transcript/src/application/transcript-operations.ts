@@ -1,6 +1,6 @@
 import type { ItemId } from "@vimex/conversation"
 import { graphemes, graphemeCount } from "../domain/markdown-source-map"
-import { transcriptOrderIndex, transcriptTextLengthRange, type JumpLocation, type LogicalPoint, type TextProjection, type TranscriptCommand, type TranscriptSelection, type TranscriptState, type TranscriptTextLengthIndexDiagnostics } from "../domain/transcript-document"
+import { persistentTranscriptFolds, setTranscriptFoldValue, transcriptOrderIndex, transcriptTextLengthRange, type JumpLocation, type LogicalPoint, type TextProjection, type TranscriptCommand, type TranscriptSelection, type TranscriptState, type TranscriptTextLengthIndexDiagnostics } from "../domain/transcript-document"
 import { clampTranscript } from "./project-conversation"
 export function moveCursor(state: TranscriptState, point: LogicalPoint, preferredScreenRow = 0): TranscriptState {
   const projection = state.projectionById[point.itemId]
@@ -114,22 +114,27 @@ export function swapSelection(state: TranscriptState): TranscriptState {
 }
 export function clearSelection(state: TranscriptState): TranscriptState { return { ...state, selection: undefined } }
 export function setFold(state: TranscriptState, id: ItemId, folded: boolean): TranscriptState {
+  if (!transcriptOrderIndex(state.order).has(id) || state.projectionById[id]?.nodeKind === "message") return state
   if (Object.hasOwn(state.folded, id) && state.folded[id] === folded) return state
-  return { ...state, folded: { ...state.folded, [id]: folded } }
+  return { ...state, folded: setTranscriptFoldValue(state.folded, id, folded) }
 }
 export function setAllFolds(state: TranscriptState, folded: boolean): TranscriptState {
   const ids = state.order.filter(id => state.projectionById[id]?.nodeKind !== "message")
   if (Object.keys(state.folded).length === ids.length && ids.every(id => state.folded[id] === folded)) return state
-  return { ...state, folded: Object.fromEntries(ids.map(id => [id, folded])) }
+  return { ...state, folded: persistentTranscriptFolds(Object.fromEntries(ids.map(id => [id, folded]))) }
 }
 export function setDefaultFolds(state: TranscriptState, defaults: { readonly reasoning: boolean; readonly tools: boolean }): TranscriptState {
-  if (!defaults.reasoning && !defaults.tools) return state
   const additions = state.order.flatMap(id => {
     if (Object.hasOwn(state.folded, id)) return []
     const kind = state.projectionById[id]?.nodeKind
     return (defaults.reasoning && kind === "reasoning") || (defaults.tools && kind === "tool") ? [[id, true] as const] : []
   })
-  return additions.length ? { ...state, folded: { ...state.folded, ...Object.fromEntries(additions) } } : state
+  const sameDefaults = state.foldDefaults.reasoning === defaults.reasoning && state.foldDefaults.tools === defaults.tools
+  if (!additions.length && sameDefaults) return state
+  let folded = state.folded
+  for (const [itemId, value] of additions) folded = setTranscriptFoldValue(folded, itemId, value)
+  return { ...state, folded, foldDefaults: sameDefaults ? state.foldDefaults
+    : Object.freeze({ reasoning: defaults.reasoning, tools: defaults.tools }) }
 }
 function comparePoint(state: TranscriptState, a: LogicalPoint, b: LogicalPoint): number {
   const order = transcriptOrderIndex(state.order)
@@ -233,6 +238,7 @@ export function reduceTranscript(state: TranscriptState, command: TranscriptComm
       return jumpTo(searched, command.target)
     }
     case "cursor.move": return moveCursor(state, command.point, command.preferredScreenRow)
+    case "cursor.reveal": return moveCursor(setFold(state, command.point.itemId, false), command.point, command.preferredScreenRow)
     case "jump.to": return jumpTo(state, command.target, command.origin, command.clearSelection)
     case "jump.back": return jumpHistory(state, "back", command.origin)
     case "jump.forward": return jumpHistory(state, "forward", command.origin)

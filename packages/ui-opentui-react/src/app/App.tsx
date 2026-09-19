@@ -85,6 +85,8 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   const transcriptRuntime = controller.transcriptRuntime(presentationId)
   const transcript = workspace ? transcriptFrame.transcript : blankTranscript
   const transcriptWindow = workspace ? transcriptFrame.window : blankTranscriptWindow
+  const urlChoices = state.urlChoiceOwner?.presentationId === presentationId
+    && state.urlChoiceOwner.threadId === state.activeThreadId ? state.urlChoices : undefined
   const transcriptStyleRevision = `${settings.theme}:${settings.syntaxTheme}:${settings.reducedColor ? 1 : 0}`
   const syntax = useMemo(() => createEmberTideSyntax(settings.syntaxTheme === "theme" ? settings.theme : settings.syntaxTheme, settings.reducedColor), [settings.reducedColor, settings.syntaxTheme, settings.theme])
   const scrollRef = useRef<ScrollBoxRenderable>(null)
@@ -155,7 +157,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
     : interaction.overlay === "approvals" ? (pendingApproval?.choices.length ?? 0)
       : interaction.overlay === "questions" ? (pendingQuestion?.questions[questionIndex]?.options?.length ?? 1)
         : interaction.overlay === "agents" ? agentRows.length
-          : interaction.overlay === "urls" ? (state.urlChoices?.length ?? 0)
+          : interaction.overlay === "urls" ? (urlChoices?.length ?? 0)
             : 1
   const activeQuestion = pendingQuestion?.questions[Math.min(questionIndex, Math.max(0, (pendingQuestion?.questions.length ?? 1) - 1))]
   const questionOwnsReturn = Boolean(activeQuestion && (!activeQuestion.options?.length || activeQuestion.allowOther))
@@ -179,7 +181,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   useEffect(() => {
     if (!interactive) return
     controller.transcript({ type: "fold.defaults", reasoning: settings.foldReasoning, tools: settings.foldTools })
-  }, [interactive, controller, settings.foldReasoning, settings.foldTools, state.activeThreadId, semanticTranscript.order])
+  }, [interactive, controller, settings.foldReasoning, settings.foldTools, state.activeThreadId])
   useLayoutEffect(() => {
     overlayIndexRef.current = 0
     setOverlayIndex(0)
@@ -523,11 +525,14 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
       if (row?.direction === "parent") controller.returnToParent()
       if (row?.direction === "child") controller.openChildThread(row.threadId)
     } else if (interaction.overlay === "urls") {
-      const choice = state.urlChoices?.[Math.min(activeIndex, Math.max(0, (state.urlChoices?.length ?? 1) - 1))]
-      if (choice) controller.transcript({ type: "url.open", url: choice.url, presentationId })
+      const choice = urlChoices?.[Math.min(activeIndex, Math.max(0, (urlChoices?.length ?? 1) - 1))]
+      if (choice) {
+        controller.transcript({ type: "url.open", url: choice.url, candidate: choice, presentationId })
+        return
+      }
     }
     closeOverlay()
-  }, [agentRows, closeOverlay, controller, interaction.overlay, modelPicker, overlayIndex, pendingApproval, pendingQuestion, presentationId, questionAnswers, questionIndex, sessionQuery, sessionRows, state.availableModels, state.favoriteThreadIds, state.pendingFork, state.summaries, state.threadOrder, state.urlChoices, summary?.reasoningEffort, sessionCwd])
+  }, [agentRows, closeOverlay, controller, interaction.overlay, modelPicker, overlayIndex, pendingApproval, pendingQuestion, presentationId, questionAnswers, questionIndex, sessionQuery, sessionRows, state.availableModels, state.favoriteThreadIds, state.pendingFork, state.summaries, state.threadOrder, urlChoices, summary?.reasoningEffort, sessionCwd])
 
   const bindingContext: VimBindingContext = {
     interaction, transcript, composer, controller, presentationId, countRef, textareaRef, scrollRef,
@@ -702,7 +707,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
         onActivate={activateOverlay}
         pendingFork={state.pendingFork}
         agents={agentRows}
-        urls={state.urlChoices ?? []}
+        urls={urlChoices ?? []}
         selected={overlayIndex}
       /></> : undefined}
     />

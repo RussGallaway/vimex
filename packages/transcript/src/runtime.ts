@@ -1,12 +1,14 @@
 import type { ConversationState, ItemId, ThreadId, TurnId } from "@vimex/conversation"
-import { inheritTranscriptTextLengthIndexChanges, transcriptOrderIndex, transcriptTextLengthRange, type LogicalPoint, type TranscriptOrderIndexDiagnostics, type TranscriptState, type TranscriptTextLengthIndexDiagnostics } from "./domain/transcript-document"
+import { inheritTranscriptTextLengthIndexChanges, persistentTranscriptFolds, transcriptOrderIndex, transcriptTextLengthRange, type LogicalPoint, type TranscriptOrderIndexDiagnostics, type TranscriptState, type TranscriptTextLengthIndexDiagnostics } from "./domain/transcript-document"
 import { composeTranscriptGeometry, composeTranscriptWindowGeometry, emptyTranscriptGeometry, freezeBlockGeometry, geometryMatchesBlock, type BlockGeometry, type BlockMeasurementBase, type BlockMeasurementBatch, type LayoutResetReason, type TranscriptGeometry } from "./geometry"
 import { createHeightIndex, type TranscriptHeightIndex } from "./height-index"
+import { inheritTranscriptUrlIndexChanges, primeTranscriptUrlIndex, type TranscriptUrlIndexDiagnostics } from "./application/transcript-url-index"
 import { blockKey, buildTranscriptBlocks, buildTranscriptItemBlock, passThroughWindow, planTranscriptWindow, pointIsMaterialized, transcriptPointBlockIndex, type TranscriptBlock, type TranscriptItemBlock, type TranscriptWindow } from "./window"
 
 export type TranscriptDamage =
   | Readonly<{ kind: "none" }>
   | Readonly<{ kind: "blocks"; itemIds: readonly ItemId[] }>
+  | Readonly<{ kind: "folds"; itemIds: readonly ItemId[] }>
   | Readonly<{ kind: "view" }>
   | Readonly<{ kind: "layout" }>
   | Readonly<{ kind: "full" }>
@@ -14,7 +16,7 @@ export type TranscriptDamage =
 export interface TranscriptRevealRequest {
   readonly id: number
   readonly point: LogicalPoint
-  readonly reason: "cursor" | "search" | "mark" | "jump" | "history" | "thread"
+  readonly reason: "cursor" | "search" | "mark" | "jump" | "url" | "history" | "thread"
 }
 
 export interface TranscriptRuntimeInput {
@@ -61,9 +63,16 @@ export interface TranscriptRuntimeOptions {
   readonly diagnostics?: TranscriptRuntimeDiagnostics
 }
 
-export interface TranscriptRuntimeDiagnostics extends TranscriptOrderIndexDiagnostics, TranscriptTextLengthIndexDiagnostics {
+export interface TranscriptRuntimeDiagnostics extends TranscriptOrderIndexDiagnostics, TranscriptTextLengthIndexDiagnostics, TranscriptUrlIndexDiagnostics {
   completePlanBuilds: number
   completePlanBlockVisits: number
+  heightIndexBuilds: number
+  heightIndexBlockVisits: number
+  heightIndexUpdates: number
+  heightIndexNodeVisits: number
+  heightIndexNodesCopied: number
+  completeGeometryBlockVisits: number
+  windowGeometryBlockVisits: number
 }
 
 export const defaultTranscriptWindowPolicy: TranscriptWindowPolicy = Object.freeze({ viewportRows: 24, overscanRows: 24 })
@@ -73,13 +82,19 @@ const fullDamage = Object.freeze({ kind: "full" } as const)
 
 function frozenDamage(damage: TranscriptDamage | undefined): TranscriptDamage {
   if (!damage || damage.kind === "none") return noneDamage
-  if (damage.kind !== "blocks") return Object.freeze({ kind: damage.kind })
-  return Object.freeze({ kind: "blocks", itemIds: Object.freeze([...new Set(damage.itemIds)]) })
+  if (damage.kind !== "blocks" && damage.kind !== "folds") return Object.freeze({ kind: damage.kind })
+  return Object.freeze({ kind: damage.kind, itemIds: Object.freeze([...new Set(damage.itemIds)]) })
 }
 
 function mergeDamage(left: TranscriptDamage, right: TranscriptDamage): TranscriptDamage {
   if (left.kind === "full" || right.kind === "full") return fullDamage
   if (left.kind === "layout" || right.kind === "layout") return Object.freeze({ kind: "layout" })
+  if (left.kind === "folds" && right.kind === "folds") return frozenDamage({ kind: "folds", itemIds: [...left.itemIds, ...right.itemIds] })
+  if (left.kind === "folds" || right.kind === "folds") {
+    const foldDamage = left.kind === "folds" ? left : right
+    const other = left.kind === "folds" ? right : left
+    return other.kind === "none" || other.kind === "view" ? foldDamage : Object.freeze({ kind: "layout" })
+  }
   if (left.kind === "view" || right.kind === "view") return Object.freeze({ kind: "view" })
   if (left.kind === "blocks" || right.kind === "blocks") {
     const ids = [...(left.kind === "blocks" ? left.itemIds : []), ...(right.kind === "blocks" ? right.itemIds : [])]
@@ -105,6 +120,7 @@ function sameList<T>(left: readonly T[] | undefined, right: readonly T[] | undef
 }
 
 function shallowRecordEqual(left: object, right: object): boolean {
+  if (left === right) return true
   const leftEntries = Object.entries(left), rightEntries = Object.entries(right)
   return leftEntries.length === rightEntries.length && leftEntries.every(([key, value]) => Object.is(value, (right as Record<string, unknown>)[key]))
 }
@@ -199,7 +215,7 @@ function presentationTranscriptWithProjections(
     cursor,
     selection: state.selection && selectionAnchor && selectionHead
       ? Object.freeze({ ...state.selection, anchor: selectionAnchor, head: selectionHead }) : undefined,
-    folded: Object.freeze({ ...state.folded }),
+    folded: persistentTranscriptFolds(state.folded),
     viewport: state.viewport.kind === "tail" || !viewportPoint
       ? Object.freeze({ kind: "tail" as const })
       : Object.freeze({ ...state.viewport, point: viewportPoint }),
@@ -302,6 +318,7 @@ export class TranscriptRuntime {
     // first user-visible reveal against this authoritative snapshot.
     transcriptOrderIndex(input.transcript.order, this.diagnostics)
     const initial = createTranscriptFrame(input)
+    primeTranscriptUrlIndex(initial.transcript, this.diagnostics)
     transcriptTextLengthRange(initial.transcript, 0, 0, this.diagnostics)
     if (this.diagnostics) {
       this.diagnostics.completePlanBuilds += 1
@@ -339,7 +356,32 @@ export class TranscriptRuntime {
         block.key.kind === "item" && Boolean(frame.transcript.folded[block.key.itemId]))) return []
       return [{ blockKey: geometry.key.blockKey, contentRevision: geometry.key.contentRevision, rows: geometry.rows }]
     })
+    if (this.diagnostics) {
+      this.diagnostics.heightIndexBuilds += 1
+      this.diagnostics.heightIndexBlockVisits += frame.blocks.length
+    }
     return createHeightIndex(frame.blocks, overrides)
+  }
+
+  private heightIndexForFoldChanges(frame: TranscriptFrame, itemIds: readonly ItemId[]): TranscriptHeightIndex | undefined {
+    let index = this.heightIndex?.supports(frame.blocks) ? this.heightIndex : undefined
+    if (!index) return undefined
+    for (const itemId of new Set(itemIds)) {
+      if (this.frame.transcript.folded[itemId] === frame.transcript.folded[itemId]) continue
+      const blockIndexes = index.itemBlockIndexes(itemId)
+      if (!blockIndexes || blockIndexes.length !== 1) return undefined
+      const block = frame.blocks[blockIndexes[0]!]
+      if (!block || block.key.kind !== "item" || block.key.blockId !== "root") return undefined
+      const counters = { nodeVisits: 0, nodesCopied: 0 }
+      index = index.replaceHeight({ blockKey: blockKey(block), contentRevision: block.contentRevision,
+        rows: frame.transcript.folded[itemId] ? 1 : Math.max(1, block.estimatedRows) }, counters)
+      if (this.diagnostics) {
+        this.diagnostics.heightIndexUpdates += 1
+        this.diagnostics.heightIndexNodeVisits += counters.nodeVisits
+        this.diagnostics.heightIndexNodesCopied += counters.nodesCopied
+      }
+    }
+    return index
   }
 
   private revealExistsInDisplayedFrame(input: TranscriptRuntimeInput, frame: TranscriptFrame, point: LogicalPoint): boolean {
@@ -400,6 +442,7 @@ export class TranscriptRuntime {
       frame.geometry.width,
       frame.geometry.styleRevision,
     )
+    if (!alreadyWindowLocal && this.diagnostics) this.diagnostics.windowGeometryBlockVisits += window.blocks.length
     return window === frame.window && geometry === frame.geometry ? frame : Object.freeze({ ...frame, window, geometry })
   }
 
@@ -461,6 +504,7 @@ export class TranscriptRuntime {
     const blocks = nextBlocks ? Object.freeze(nextBlocks) : this.frame.blocks
     const transcript = presentationTranscriptWithProjections(input.transcript, this.frame.transcript.order, Object.freeze(projections))
     inheritTranscriptTextLengthIndexChanges(this.frame.transcript, transcript, itemIds, this.diagnostics)
+    inheritTranscriptUrlIndexChanges(this.frame.transcript, transcript, itemIds, this.diagnostics)
     const frame = Object.freeze({
       threadId: input.threadId,
       canonicalGeneration: input.canonicalGeneration,
@@ -477,26 +521,35 @@ export class TranscriptRuntime {
   }
 
   private presentationFrame(input: TranscriptRuntimeInput, damage: TranscriptDamage): TranscriptFrame {
-    const geometry = shallowRecordEqual(input.transcript.folded, this.frame.transcript.folded)
-      ? this.frame.geometry : reconciledGeometry(this.frame.geometry, input, this.frame.blocks)
     const frame = Object.freeze({
       ...this.frame,
       presentationRevision: this.frame.presentationRevision + 1,
       mode: input.mode,
       transcript: presentationTranscriptWithProjections(input.transcript, this.frame.transcript.order, this.frame.transcript.projectionById),
-      geometry,
+      geometry: this.frame.geometry,
       damage: frozenDamage(damage),
     })
     return frame
   }
 
   private publishPresentation(input: TranscriptRuntimeInput, damage: TranscriptDamage): TranscriptFrame {
-    const foldsChanged = !shallowRecordEqual(input.transcript.folded, this.frame.transcript.folded)
     const raw = this.presentationFrame(input, damage)
+    const foldsChanged = raw.transcript.folded !== this.frame.transcript.folded
+    const targeted = foldsChanged && damage.kind === "folds" ? this.heightIndexForFoldChanges(raw, damage.itemIds) : undefined
     const index = foldsChanged
-      ? this.heightIndexForFrame(raw)
+      ? targeted ?? this.heightIndexForFrame(raw)
       : this.heightIndex?.supports(raw.blocks) ? this.heightIndex : this.heightIndexForFrame(raw)
-    return this.publish(this.withPlannedWindow(raw, index, displayedReveal(input, raw, this.diagnostics)), index)
+    const geometry = !foldsChanged ? raw.geometry : this.windowPolicy
+      ? composeTranscriptWindowGeometry(raw.window.blocks, raw.transcript.folded, raw.geometry.byBlockKey,
+        raw.geometry.generation, raw.geometry.revision, raw.window.topSpacerRows, index?.totalRows ?? raw.geometry.totalRows,
+        raw.geometry.width, raw.geometry.styleRevision)
+      : reconciledGeometry(raw.geometry, input, raw.blocks)
+    if (foldsChanged && this.diagnostics) {
+      if (this.windowPolicy) this.diagnostics.windowGeometryBlockVisits += raw.window.blocks.length
+      else this.diagnostics.completeGeometryBlockVisits += raw.blocks.length
+    }
+    const prepared = geometry === raw.geometry ? raw : Object.freeze({ ...raw, geometry })
+    return this.publish(this.withPlannedWindow(prepared, index, displayedReveal(input, prepared, this.diagnostics)), index)
   }
 
   /**

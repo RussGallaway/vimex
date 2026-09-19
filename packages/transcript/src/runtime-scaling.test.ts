@@ -4,7 +4,7 @@ import { appendTranscriptScalingTail, buildTranscriptScalingFixture, transcriptS
 import { findSearchMatches } from "./application/transcript-search"
 import { selectedGraphemeCount, selectedText, urlAt } from "./application/transcript-operations"
 import { referenceText, urlCandidates } from "./application/transcript-navigation"
-import type { TranscriptState } from "./domain/transcript-document"
+import { setTranscriptFoldValue, type TranscriptState } from "./domain/transcript-document"
 import type { BlockGeometry } from "./geometry"
 import { TranscriptRuntime, type TranscriptFrame, type TranscriptRuntimeInput } from "./runtime"
 import { blockKey, buildTranscriptBlocks, passThroughWindow, pointIsMaterialized } from "./window"
@@ -225,6 +225,10 @@ test("production window policy bounds initial, detached, reveal, and measured ma
       orderIndexBuilds: 0, orderIndexItemVisits: 0, orderIndexCacheHits: 0,
       textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0,
       textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
+      urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0,
+      urlIndexUpdates: 0, urlIndexNodeVisits: 0,
+      heightIndexBuilds: 0, heightIndexBlockVisits: 0, heightIndexUpdates: 0, heightIndexNodeVisits: 0, heightIndexNodesCopied: 0,
+      completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0,
     }
     const detached = new TranscriptRuntime(runtimeInput(fixture, detachedSnapshot, "detached", { canonicalDamage: { kind: "full" } }), {
       windowPolicy: policy,
@@ -331,6 +335,10 @@ test("incremental runtime projection updates preserve the warm selection-length 
       orderIndexBuilds: 0, orderIndexItemVisits: 0, orderIndexCacheHits: 0,
       textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0,
       textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
+      urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0,
+      urlIndexUpdates: 0, urlIndexNodeVisits: 0,
+      heightIndexBuilds: 0, heightIndexBlockVisits: 0, heightIndexUpdates: 0, heightIndexNodeVisits: 0, heightIndexNodesCopied: 0,
+      completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0,
     }
     const runtime = new TranscriptRuntime(runtimeInput(fixture, fixture.before, "follow", { canonicalDamage: { kind: "full" } }), {
       windowPolicy: { viewportRows: 24, overscanRows: 24 },
@@ -496,4 +504,75 @@ test("a fold transition discards the incompatible measured height before replann
   expect(folded.geometry.totalRows).toBe(100)
   expect(folded.geometry.byBlockKey[key]).toBeUndefined()
   runtime.dispose()
+})
+
+test("single off-window folds update logarithmic height paths and bounded geometry at every scale", () => {
+  for (const blockCount of transcriptScalingBlockCounts) {
+    const fixture = buildTranscriptScalingFixture(blockCount)
+    const anchor = { itemId: fixture.targets.quarter, graphemeOffset: 0 }
+    const target = fixture.targets.threeQuarter
+    const targetPoint = { itemId: target, graphemeOffset: 0 }
+    const targetTranscript = Object.freeze({
+      ...fixture.before.transcript,
+      folded: setTranscriptFoldValue(fixture.before.transcript.folded, target, false),
+      cursor: targetPoint,
+      viewport: Object.freeze({ kind: "point" as const, point: targetPoint, preferredScreenRow: 4 }),
+    })
+    const targetSnapshot = Object.freeze({ ...fixture.before, transcript: targetTranscript })
+    const diagnostics = {
+      completePlanBuilds: 0, completePlanBlockVisits: 0,
+      orderIndexBuilds: 0, orderIndexItemVisits: 0, orderIndexCacheHits: 0,
+      textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0, textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
+      urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0, urlIndexUpdates: 0, urlIndexNodeVisits: 0,
+      heightIndexBuilds: 0, heightIndexBlockVisits: 0, heightIndexUpdates: 0, heightIndexNodeVisits: 0, heightIndexNodesCopied: 0,
+      completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0,
+    }
+    const runtime = new TranscriptRuntime(runtimeInput(fixture, targetSnapshot, "detached", { canonicalDamage: { kind: "full" } }), {
+      windowPolicy: { viewportRows: 24, overscanRows: 24 }, diagnostics,
+    })
+    const targetBlock = runtime.getSnapshot().window.blocks.find(block => block.key.kind === "item" && block.key.itemId === target)!
+    runtime.reportMeasurements({ ...runtime.measurementBase(), measurements: [{
+      key: { blockKey: blockKey(targetBlock), contentRevision: targetBlock.contentRevision, width: 80, styleRevision: "fold-path", folded: false },
+      nativeRevision: 1, rows: 8, points: point, lines,
+    }] })
+    const detachedTranscript = Object.freeze({
+      ...targetTranscript,
+      cursor: anchor,
+      viewport: Object.freeze({ kind: "point" as const, point: anchor, preferredScreenRow: 4 }),
+    })
+    const detached = Object.freeze({ ...fixture.before, transcript: detachedTranscript })
+    runtime.update(runtimeInput(fixture, detached, "detached", { presentationDamage: { kind: "view" } }))
+    const before = runtime.getSnapshot(), beforeDiagnostics = { ...diagnostics }
+    expect(pointIsMaterialized(before.window.blocks, targetPoint)).toBe(false)
+    const foldedTranscript = Object.freeze({
+      ...detachedTranscript,
+      folded: setTranscriptFoldValue(detachedTranscript.folded, target, true),
+      cursor: targetPoint,
+      viewport: Object.freeze({ kind: "point" as const, point: targetPoint, preferredScreenRow: 4 }),
+    })
+    const folded = Object.freeze({ ...detached, transcript: foldedTranscript })
+    let publications = 0
+    runtime.subscribe(() => { publications++ })
+    const after = runtime.update(runtimeInput(fixture, folded, "detached", {
+      presentationDamage: { kind: "folds", itemIds: [target] },
+      reveal: { id: blockCount, point: targetPoint, reason: "url" },
+    }))
+    expect(publications).toBe(1)
+    expect(after.blocks).toBe(before.blocks)
+    expect(after.transcript.folded[target]).toBe(true)
+    expect(pointIsMaterialized(after.window.blocks, targetPoint)).toBe(true)
+    expect(after.geometry.totalRows).toBe(before.geometry.totalRows - 7)
+    expect(after.window.blocks.length).toBeLessThanOrEqual(72)
+    expect(after.geometry.blockRows.length).toBeLessThanOrEqual(72)
+    expect(diagnostics.heightIndexBuilds - beforeDiagnostics.heightIndexBuilds).toBe(0)
+    expect(diagnostics.heightIndexBlockVisits - beforeDiagnostics.heightIndexBlockVisits).toBe(0)
+    expect(diagnostics.heightIndexUpdates - beforeDiagnostics.heightIndexUpdates).toBe(1)
+    expect(diagnostics.heightIndexNodeVisits - beforeDiagnostics.heightIndexNodeVisits).toBeLessThanOrEqual(Math.ceil(Math.log2(blockCount)) + 1)
+    expect(diagnostics.heightIndexNodesCopied - beforeDiagnostics.heightIndexNodesCopied).toBeGreaterThan(0)
+    expect(diagnostics.heightIndexNodesCopied - beforeDiagnostics.heightIndexNodesCopied)
+      .toBe(diagnostics.heightIndexNodeVisits - beforeDiagnostics.heightIndexNodeVisits)
+    expect(diagnostics.completeGeometryBlockVisits - beforeDiagnostics.completeGeometryBlockVisits).toBe(0)
+    expect(diagnostics.windowGeometryBlockVisits - beforeDiagnostics.windowGeometryBlockVisits).toBeLessThanOrEqual(144)
+    runtime.dispose()
+  }
 })

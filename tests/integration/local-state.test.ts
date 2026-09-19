@@ -14,7 +14,7 @@ test("local view round-trips drafts and clamps positions to hydrated content", (
   expect(restored.composer.text).toBe(saved.draft)
   expect(restored.composer.cursorOffset).toBe(3)
   expect(restored.transcript.cursor?.graphemeOffset).toBe(5)
-  expect(restored.transcript.folded).toEqual({ message: true })
+  expect(restored.transcript.folded).toEqual({})
   expect(restored.interaction).toMatchObject({ mode: "normal", surface: "composer" })
 })
 

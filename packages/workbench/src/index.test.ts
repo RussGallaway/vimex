@@ -42,7 +42,7 @@ describe("workbench", () => {
   test("preserves drafts, anchors, folds, and modes per thread", () => {
     const threadA = threadId("a"), turnA = turnId("ta"), itemA = itemId("ia")
     let state = run(initialWorkbench(), { type: "thread.open", summary: summary("a") }).state
-    state = run(state, { type: "conversation.event", event: { type: "item.started", threadId: threadA, item: { id: itemA, turnId: turnA, kind: "assistant", markdown: "alpha output", status: "complete" } } }).state
+    state = run(state, { type: "conversation.event", event: { type: "item.started", threadId: threadA, item: { id: itemA, turnId: turnA, kind: "reasoning", markdown: "alpha output", status: "complete" } } }).state
     state = run(state, { type: "transcript.command", command: { type: "cursor.move", point: { itemId: itemA, graphemeOffset: 2 }, preferredScreenRow: 5 } }).state
     state = run(state, { type: "transcript.command", command: { type: "fold.set", itemId: itemA, folded: true } }).state
     state = run(state, { type: "composer.change", text: "alpha" }).state
@@ -190,13 +190,23 @@ describe("workbench", () => {
     const source = threadId("a"), turn = turnId("t"), item = itemId("i")
     let state = run(initialWorkbench(), { type: "thread.open", summary: summary("a") }).state
     state = run(state, { type: "conversation.event", event: { type: "turn.started", threadId: source, turnId: turn } }).state
-    state = run(state, { type: "conversation.event", event: { type: "item.started", threadId: source, item: { id: item, turnId: turn, kind: "assistant", markdown: "done", status: "complete" } } }).state
+    state = run(state, { type: "conversation.event", event: { type: "item.started", threadId: source, item: { id: item, turnId: turn, kind: "reasoning", markdown: "done", status: "complete" } } }).state
+    state = run(state, { type: "transcript.command", command: { type: "fold.defaults", reasoning: true, tools: false } }).state
+    state = run(state, { type: "transcript.command", command: { type: "fold.set", itemId: item, folded: false } }).state
     state = run(state, { type: "conversation.event", event: { type: "turn.completed", threadId: source, turnId: turn, outcome: "complete" } }).state
     state = run(state, { type: "thread.fork.completed", sourceThreadId: source, throughTurnId: turn, summary: summary("child") }).state
     state = run(state, { type: "composer.change", text: "child draft" }).state
     expect(state.workspaces[source]?.composer.text).toBe("")
     expect(state.workspaces[threadId("child")]?.composer.text).toBe("child draft")
     expect(state.workspaces[threadId("child")]?.conversation).not.toBe(state.workspaces[source]?.conversation)
+    expect(state.workspaces[threadId("child")]?.transcript.foldDefaults).toEqual({ reasoning: true, tools: false })
+    expect(state.workspaces[threadId("child")]?.transcript.folded[item]).toBe(false)
+    const childTurn = turnId("child-turn"), childItem = itemId("child-reasoning")
+    state = run(state, { type: "conversation.event", event: { type: "turn.started", threadId: threadId("child"), turnId: childTurn } }).state
+    state = run(state, { type: "conversation.event", event: { type: "item.started", threadId: threadId("child"), item: {
+      id: childItem, turnId: childTurn, kind: "reasoning", markdown: "new", status: "complete",
+    } } }).state
+    expect(state.workspaces[threadId("child")]?.transcript.folded[childItem]).toBe(true)
   })
 
   test("projects questions and unique agent relationships", () => {

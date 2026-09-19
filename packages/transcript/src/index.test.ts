@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { itemId, threadId, turnId, type ConversationItem } from "@vimex/conversation"
-import { attachTail, beginSelection, findSearchMatches, graphemeCount, initialTranscript, moveCursor, projectItem, reduceTranscript, selectedGraphemeCount, selectedText, setFold, syncTranscriptItem, transcriptTextLengthRange, urlAt } from "./index"
+import { attachTail, beginSelection, findSearchMatches, graphemeCount, initialTranscript, moveCursor, persistentTranscriptFolds, projectItem, reduceTranscript, selectedGraphemeCount, selectedText, setFold, setTranscriptFoldValue, syncTranscriptItem, transcriptTextLengthRange, urlAt } from "./index"
 
 import { assistantMessage as message } from "@vimex/testkit"
 
@@ -79,7 +79,7 @@ describe("transcript", () => {
 
   test("compound search and jump reductions equal their sequential semantic references", () => {
     let state = syncTranscriptItem(initialTranscript(), message("a", "origin"))
-    state = syncTranscriptItem(state, message("b", "needle target"))
+    state = syncTranscriptItem(state, { id: itemId("b"), turnId: turnId("tb"), kind: "reasoning", markdown: "needle target", status: "complete" })
     state = moveCursor(state, { itemId: itemId("a"), graphemeOffset: 1 }, 4)
     state = beginSelection(state, "character")
     state = setFold(state, itemId("b"), true)
@@ -97,6 +97,10 @@ describe("transcript", () => {
       { type: "jump.to", target },
     )
     expect(reduceTranscript(state, { type: "jump.to", target, clearSelection: true })).toEqual(sequentialClearJump)
+
+    const sequentialReveal = moveCursor(setFold(state, itemId("b"), false), target.point, target.preferredScreenRow)
+    expect(reduceTranscript(state, { type: "cursor.reveal", point: target.point,
+      preferredScreenRow: target.preferredScreenRow })).toEqual(sequentialReveal)
 
     expect(moveCursor(state, { itemId: itemId("missing"), graphemeOffset: 0 })).toBe(state)
     expect(moveCursor(state, { itemId: itemId("a"), graphemeOffset: 0.5 })).toBe(state)
@@ -149,7 +153,7 @@ describe("transcript", () => {
   })
 
   test("folds preserve semantic cursor and URL lookup is keyboard-addressable", () => {
-    let state = syncTranscriptItem(initialTranscript(), message("a", "Visit [site](https://example.test)"))
+    let state = syncTranscriptItem(initialTranscript(), { id: itemId("a"), turnId: turnId("ta"), kind: "reasoning", markdown: "Visit [site](https://example.test)", status: "complete" })
     state = moveCursor(state, { itemId: itemId("a"), graphemeOffset: 7 }, 4)
     const cursor = state.cursor, viewport = state.viewport
     state = setFold(state, itemId("a"), true)
@@ -159,15 +163,26 @@ describe("transcript", () => {
   })
 
   test("retains explicit unfolded state for default-fold restoration", () => {
-    let state = syncTranscriptItem(initialTranscript(), message("a", "tool output"))
+    let state = syncTranscriptItem(initialTranscript(), { id: itemId("a"), turnId: turnId("ta"), kind: "reasoning", markdown: "tool output", status: "complete" })
     state = setFold(state, itemId("a"), false)
     expect(Object.hasOwn(state.folded, itemId("a"))).toBe(true)
     expect(state.folded[itemId("a")]).toBe(false)
   })
 
+  test("persistent fold lookup and enumeration use one opaque-id ordering", () => {
+    const folded = persistentTranscriptFolds({ a: true, B: false, z: true, "Á": false, aa: true, A: false })
+    expect(Object.fromEntries(Object.entries(folded))).toEqual({ A: false, B: false, a: true, aa: true, z: true, "Á": false })
+    for (const [id, value] of Object.entries({ a: true, B: false, z: true, "Á": false, aa: true, A: false })) {
+      expect(folded[id]).toBe(value)
+      expect(Object.hasOwn(folded, id)).toBe(true)
+    }
+    const updated = setTranscriptFoldValue(folded, itemId("B"), true)
+    expect(JSON.parse(JSON.stringify(updated))).toEqual({ A: false, B: true, a: true, aa: true, z: true, "Á": false })
+  })
+
   test("records bounded branching jumps, skips stale entries, and reprojects marks", () => {
     let state = syncTranscriptItem(initialTranscript(), message("a", "prefix **bold", "running"))
-    state = syncTranscriptItem(state, message("b", "destination"))
+    state = syncTranscriptItem(state, { id: itemId("b"), turnId: turnId("tb"), kind: "reasoning", markdown: "destination", status: "complete" })
     const origin = { point: { itemId: itemId("a"), graphemeOffset: 9 }, preferredScreenRow: 4 }
     const destination = { point: { itemId: itemId("b"), graphemeOffset: 2 }, preferredScreenRow: 2 }
     state = reduceTranscript(state, { type: "cursor.move", point: origin.point, preferredScreenRow: origin.preferredScreenRow })
@@ -361,4 +376,9 @@ test("default folds initialize complete semantic kinds without overriding an exp
   const defaults = reduceTranscript(state, { type: "fold.defaults", reasoning: true, tools: true })
   expect(defaults.folded).toEqual({ [reasoning]: false, [tool]: true })
   expect(reduceTranscript(defaults, { type: "fold.defaults", reasoning: true, tools: true })).toBe(defaults)
+  const laterReasoning = itemId("later-default-reasoning"), laterTool = itemId("later-default-tool")
+  let appended = syncTranscriptItem(defaults, { id: laterReasoning, turnId: turnId("later-turn"), kind: "reasoning", markdown: "later", status: "complete" })
+  appended = syncTranscriptItem(appended, { id: laterTool, turnId: turnId("later-turn"), kind: "tool", title: "Later", detail: "output", status: "complete" })
+  expect(appended.folded).toEqual({ [reasoning]: false, [tool]: true, [laterReasoning]: true, [laterTool]: true })
+  expect(appended.foldDefaults).toEqual({ reasoning: true, tools: true })
 })

@@ -21,7 +21,7 @@ export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCom
     }
     case "thread.favorite.toggle": return done({ ...state, favoriteThreadIds: state.favoriteThreadIds.includes(command.threadId) ? state.favoriteThreadIds.filter(id => id !== command.threadId) : [...state.favoriteThreadIds, command.threadId] })
     case "connection.changed": return done({ ...state, connection: command.connection, error: command.error })
-    case "thread.open": return done(openThread(state, command.summary))
+    case "thread.open": return done({ ...openThread(state, command.summary), pendingFork: undefined, urlChoices: undefined, urlChoiceOwner: undefined })
     case "thread.register": {
       const exists = Boolean(state.summaries[command.summary.id])
       return done({
@@ -32,7 +32,7 @@ export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCom
       })
     }
     case "thread.switch": return state.workspaces[command.threadId]
-      ? done({ ...state, activeThreadId: command.threadId, pendingFork: undefined, urlChoices: undefined })
+      ? done({ ...state, activeThreadId: command.threadId, pendingFork: undefined, urlChoices: undefined, urlChoiceOwner: undefined })
       : done(state)
     case "thread.close": {
       if (!state.workspaces[command.threadId]) return done(state)
@@ -41,7 +41,9 @@ export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCom
       const summaries = { ...state.summaries }; delete summaries[command.threadId]
       const threadOrder = state.threadOrder.filter((id) => id !== command.threadId)
       const activeThreadId = state.activeThreadId === command.threadId ? threadOrder[0] : state.activeThreadId
-      return done({ ...state, compactingThreads, workspaces, summaries, threadOrder, activeThreadId })
+      const clearUrlPicker = state.urlChoiceOwner?.threadId === command.threadId || activeThreadId !== state.activeThreadId
+      return done({ ...state, compactingThreads, workspaces, summaries, threadOrder, activeThreadId,
+        ...(clearUrlPicker ? { urlChoices: undefined, urlChoiceOwner: undefined } : {}) })
     }
     case "thread.summary.patch": {
       const summary = state.summaries[command.threadId]
@@ -60,6 +62,9 @@ export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCom
       return done({
         ...state,
         activeThreadId: command.summary.id,
+        pendingFork: undefined,
+        urlChoices: undefined,
+        urlChoiceOwner: undefined,
         threadOrder: [command.summary.id, ...state.threadOrder.filter((id) => id !== command.summary.id)],
         summaries: { ...state.summaries, [command.summary.id]: command.summary },
         workspaces: { ...state.workspaces, [command.summary.id]: workspace },
@@ -74,7 +79,13 @@ export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCom
     }
     case "interaction.command": {
       const id = targetThread(state, command.threadId)
-      return id ? done(updateWorkspace(state, id, (workspace) => ({ ...workspace, interaction: reduceInteraction(workspace.interaction, command.command) }))) : done(state)
+      if (!id) return done(state)
+      const before = state.workspaces[id]
+      if (!before) return done(state)
+      const interaction = reduceInteraction(before.interaction, command.command)
+      const next = interaction === before.interaction ? state : updateWorkspace(state, id, workspace => ({ ...workspace, interaction }))
+      return state.urlChoiceOwner?.threadId === id && before.interaction.overlay === "urls" && interaction.overlay !== "urls"
+        ? done({ ...next, urlChoices: undefined, urlChoiceOwner: undefined }) : done(next)
     }
     case "transcript.command": case "transcript.navigate": {
       const id = targetThread(state, command.threadId)
@@ -105,6 +116,27 @@ export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCom
         transcript: current.transcript.selection ? clearSelection(current.transcript) : current.transcript,
         interaction: reduceInteraction(reduceInteraction(current.interaction, { type: "register.set", register: { text: registerText, shape: command.shape } }), { type: "mode.normal" }),
       })), { type: "clipboard.write", text: command.text })
+    }
+    case "url.picker": {
+      const workspace = state.workspaces[command.threadId]
+      if (!workspace || (command.choices && command.url) || Boolean(command.choices) !== Boolean(command.owner)) return done(state)
+      const overlay = command.choices ? "urls" : null
+      const interaction = workspace.interaction.overlay === overlay ? workspace.interaction
+        : reduceInteraction(workspace.interaction, overlay ? { type: "overlay.open", overlay } : { type: "overlay.close" })
+      const choices = command.choices
+      const owner = command.owner
+      const unchangedChoices = (state.urlChoices === choices || (!state.urlChoices && !choices))
+        && (state.urlChoiceOwner === owner || (!state.urlChoiceOwner && !owner))
+      const next = interaction === workspace.interaction && unchangedChoices ? state : {
+        ...state,
+        urlChoices: choices,
+        urlChoiceOwner: owner,
+        workspaces: interaction === workspace.interaction ? state.workspaces : {
+          ...state.workspaces,
+          [command.threadId]: { ...workspace, interaction },
+        },
+      }
+      return command.url ? done(next, { type: "url.open", url: command.url }) : done(next)
     }
     case "composer.change": {
       const id = targetThread(state, command.threadId)

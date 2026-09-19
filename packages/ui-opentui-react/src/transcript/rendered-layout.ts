@@ -367,7 +367,7 @@ function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, 
       }
       if (frame!.damage.kind === "full" || frame!.damage.kind === "layout") {
         for (const block of blocks) candidates.add(blockKey(block))
-      } else if (frame!.damage.kind === "blocks") {
+      } else if (frame!.damage.kind === "blocks" || frame!.damage.kind === "folds") {
         for (const itemId of frame!.damage.itemIds) {
           const keys = schedule.keysByItem.get(itemId)
           if (keys?.length) for (const key of keys) candidates.add(key)
