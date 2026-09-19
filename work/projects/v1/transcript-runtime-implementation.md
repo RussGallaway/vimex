@@ -19,7 +19,7 @@ Stages 1–4 are the current delivery target. Stage 5 contracts must be supporte
 | Architecture and research | Complete | Commit `8f6bba9` |
 | Baseline profiling | Complete | Measurements recorded below |
 | Stage 1: compact activity | Complete | Commit `7a4209d`; full gate plus isolated tmux rerun |
-| Stage 2: ingress and detachment | Not started | — |
+| Stage 2: ingress and detachment | In progress | Stage 2a commit `07678c4` |
 | Stage 3: block-local geometry | Not started | — |
 | Stage 4: narrow observation | Not started | — |
 | Stage 5: block windowing | Contract only | Deferred |
@@ -181,13 +181,13 @@ packages/ui-opentui-react/src/
 
 ### Stage 2a — ingress settlement
 
-- [ ] Introduce a bounded conversation-ingress settler.
-- [ ] Coalesce adjacent deltas only when thread and item identity match.
-- [ ] Preserve first-seen order across independent items.
-- [ ] Flush before item completion, turn completion, hydration, disconnect, restart, and shutdown.
-- [ ] Flush before non-delta events whose meaning depends on prior text.
-- [ ] Ensure close and failure paths cannot strand pending text.
-- [ ] Prefer event-scheduled flushing over a permanent polling timer.
+- [x] Introduce a bounded conversation-ingress settler.
+- [x] Coalesce adjacent deltas only when thread and item identity match.
+- [x] Preserve first-seen order across independent items.
+- [x] Flush before item completion, turn completion, hydration, disconnect, restart, and shutdown.
+- [x] Flush before non-delta events whose meaning depends on prior text.
+- [x] Ensure close and failure paths cannot strand pending text.
+- [x] Prefer event-scheduled flushing over a permanent polling timer.
 
 ### Stage 2b — runtime and detachment
 
@@ -204,9 +204,9 @@ packages/ui-opentui-react/src/
 
 ### Tests
 
-- [ ] Coalesced events reduce to the same canonical state as uncoalesced events.
-- [ ] Every lifecycle boundary flushes pending deltas in order.
-- [ ] An injected scheduler makes cadence tests deterministic.
+- [x] Coalesced events reduce to the same canonical state as uncoalesced events.
+- [x] Every lifecycle boundary flushes pending deltas in order.
+- [x] An injected scheduler makes cadence tests deterministic.
 - [ ] Detached frame identity remains stable during tail streaming.
 - [ ] Detached navigation remains responsive while canonical state advances.
 - [ ] Search, mark, jump, and thread navigation reveal absent targets.
@@ -226,6 +226,18 @@ packages/ui-opentui-react/src/
 - Height-prefix indexing.
 - Unmounted transcript blocks.
 - Server-backed history paging.
+
+### Stage 2a verification evidence
+
+- Commit `07678c4` introduces one controller-owned ingress path for live events and authoritative hydration replay.
+- Adjacent matching deltas coalesce; interleaved items preserve first-seen order while committing once per cadence.
+- Atomic batches retain text and semantic boundaries across pre-commit failures without a permanent retry timer.
+- Shutdown closes intake before its final drain, publishes the drained state for persistence, and rejects re-entrant input.
+- Navigation-history reprojection is staged without changing the stable identity used by in-flight asynchronous jumps.
+- Focused ingress/controller set: 64 pass. Renderer interaction set: 33 pass, 5 intentional skips.
+- Full repository gate: 574 pass, 5 intentional skips; the managed sandbox removed the detached tmux socket, and the exact isolated tmux test passed separately outside the sandbox.
+- Typecheck, dependency boundaries, documentation check, and diff check pass.
+- Three parallel review tracks reported no remaining Stage 2a blockers after repair.
 
 ## Stage 3 — block-local geometry
 
