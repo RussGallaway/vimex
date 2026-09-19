@@ -1,16 +1,18 @@
 import { expect, test } from "bun:test"
-import { forkBoundary, type ConversationState } from "@vimex/conversation"
-import { appendTranscriptScalingTail, buildTranscriptScalingFixture, transcriptScalingBlockCounts, type TranscriptFixtureSnapshot } from "@vimex/testkit"
+import { createConversationReductionDiagnostics, forkBoundary, reduceConversationWithDiagnostics, type ConversationState } from "@vimex/conversation"
+import { appendTranscriptScalingTail, buildTranscriptScalingFixture, buildTranscriptStructuralScalingFixture, transcriptScalingBlockCounts, type TranscriptFixtureSnapshot } from "@vimex/testkit"
+import { syncTranscriptItem, type TranscriptItemSyncDiagnostics } from "./application/project-conversation"
+import { primeTranscriptUrlIndex } from "./application/transcript-url-index"
 import { findSearchMatches } from "./application/transcript-search"
 import { selectedGraphemeCount, selectedText, urlAt } from "./application/transcript-operations"
 import { referenceText, urlCandidates } from "./application/transcript-navigation"
-import { setTranscriptFoldValue, type TranscriptState } from "./domain/transcript-document"
+import { setTranscriptFoldValue, transcriptTextLengthRange, type TranscriptState } from "./domain/transcript-document"
 import type { BlockGeometry } from "./geometry"
-import { TranscriptRuntime, type TranscriptFrame, type TranscriptRuntimeInput } from "./runtime"
+import { createTranscriptFrame, TranscriptRuntime, type TranscriptFrame, type TranscriptRuntimeDiagnostics, type TranscriptRuntimeInput } from "./runtime"
 import { blockKey, buildTranscriptBlocks, passThroughWindow, pointIsMaterialized } from "./window"
 
 function runtimeInput(
-  fixture: ReturnType<typeof buildTranscriptScalingFixture>,
+  fixture: Readonly<{ threadId: TranscriptRuntimeInput["threadId"] }>,
   snapshot: TranscriptFixtureSnapshot,
   mode: "follow" | "detached",
   options: Pick<TranscriptRuntimeInput, "canonicalDamage" | "presentationDamage" | "reveal"> = {},
@@ -33,6 +35,32 @@ const offsets = Object.freeze({ 0: Object.freeze([0]) })
 const line = Object.freeze({ from: 0, to: 0, row: 0 })
 const lines = Object.freeze([line])
 const lineByRow = Object.freeze({ 0: line })
+
+function scalingRuntimeDiagnostics(): TranscriptRuntimeDiagnostics {
+  return {
+    completePlanBuilds: 0, completePlanBlockVisits: 0,
+    orderIndexBuilds: 0, orderIndexItemVisits: 0, orderIndexCacheHits: 0,
+    textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0,
+    textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
+    urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0, urlIndexUpdates: 0, urlIndexNodeVisits: 0,
+    projectionRecordUpdates: 0, projectionRecordNodeVisits: 0, projectionRecordNodesCopied: 0,
+    blockPlanUpdates: 0, blockPlanNodeVisits: 0, blockPlanNodesCopied: 0,
+    heightIndexBuilds: 0, heightIndexBlockVisits: 0, heightIndexUpdates: 0,
+    heightIndexNodeVisits: 0, heightIndexNodesCopied: 0,
+    completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0, blockPlanWindowSliceItems: 0,
+    changedItemBuilds: 0,
+  }
+}
+
+function itemSyncDiagnostics(): TranscriptItemSyncDiagnostics {
+  return {
+    projectionRecordUpdates: 0, projectionRecordNodeVisits: 0, projectionRecordNodesCopied: 0,
+    orderIndexBuilds: 0, orderIndexItemVisits: 0, orderIndexCacheHits: 0,
+    textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0,
+    textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
+    urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0, urlIndexUpdates: 0, urlIndexNodeVisits: 0,
+  }
+}
 
 function measurements(frame: TranscriptFrame): readonly BlockGeometry[] {
   return frame.blocks.map(block => Object.freeze({
@@ -179,6 +207,134 @@ test("identical scaling workloads retain pass-through semantics and deterministi
     runtime.dispose()
   }
 }, 15_000)
+
+test("canonical structural tail admission stays logarithmic with bounded runtime work at every scale", () => {
+  for (const blockCount of transcriptScalingBlockCounts) {
+    const fixture = buildTranscriptStructuralScalingFixture(blockCount)
+    transcriptTextLengthRange(fixture.before.transcript, 0, 0)
+    primeTranscriptUrlIndex(fixture.before.transcript)
+    const runtimeCounters = scalingRuntimeDiagnostics()
+    const runtime = new TranscriptRuntime(runtimeInput(fixture, fixture.before, "follow", {
+      canonicalDamage: { kind: "full" },
+    }), { windowPolicy: { viewportRows: 24, overscanRows: 24 }, diagnostics: runtimeCounters })
+    const before = runtime.getSnapshot()
+    const runtimeBaseline = { ...runtimeCounters }
+    const canonicalCounters = createConversationReductionDiagnostics()
+    const semanticCounters = itemSyncDiagnostics()
+    let publications = 0
+    runtime.subscribe(() => { publications++ })
+
+    const turnConversation = reduceConversationWithDiagnostics(fixture.before.conversation, {
+      type: "turn.started", threadId: fixture.threadId, turnId: fixture.nextTurnId,
+    }, canonicalCounters)
+    const afterTurnSnapshot: TranscriptFixtureSnapshot = Object.freeze({
+      canonicalRevision: fixture.before.canonicalRevision + 1,
+      conversation: turnConversation,
+      transcript: fixture.before.transcript,
+    })
+    const afterTurn = runtime.update(runtimeInput(fixture, afterTurnSnapshot, "follow", {
+      canonicalDamage: { kind: "blocks", itemIds: [] },
+    }))
+    expect(afterTurn.blocks).toBe(before.blocks)
+    expect(afterTurn.window).toBe(before.window)
+    expect(afterTurn.geometry).toBe(before.geometry)
+    expect(afterTurn.transcript).toBe(before.transcript)
+
+    const admittedItem = Object.freeze({
+      id: fixture.nextItemId, turnId: fixture.nextTurnId, kind: "assistant" as const,
+      markdown: "New structural tail block.", status: "running" as const,
+    })
+    const itemConversation = reduceConversationWithDiagnostics(turnConversation, {
+      type: "item.started", threadId: fixture.threadId, item: admittedItem,
+    }, canonicalCounters)
+    const itemTranscript = syncTranscriptItem(fixture.before.transcript, admittedItem, semanticCounters)
+    const afterItemSnapshot: TranscriptFixtureSnapshot = Object.freeze({
+      canonicalRevision: afterTurnSnapshot.canonicalRevision + 1,
+      conversation: itemConversation,
+      transcript: itemTranscript,
+    })
+    const appended = runtime.update(runtimeInput(fixture, afterItemSnapshot, "follow", {
+      canonicalDamage: { kind: "blocks", itemIds: [fixture.nextItemId] },
+    }))
+    const reference = createTranscriptFrame(runtimeInput(fixture, afterItemSnapshot, "follow", {
+      canonicalDamage: { kind: "full" },
+    }))
+
+    expect(publications).toBe(2)
+    expect(appended.blocks.map(blockKey)).toEqual(reference.blocks.map(blockKey))
+    expectPassThroughEquivalent(appended, afterItemSnapshot)
+    expect(appended.window.blocks.length).toBeLessThanOrEqual(48)
+    expect(appended.blocks.slice(0, blockCount).every((block, index) => block === before.blocks[index])).toBe(true)
+    expect(appended.transcript.order).toBe(itemTranscript.order)
+    const beforeWarmQueries = { ...runtimeCounters }
+    transcriptTextLengthRange(appended.transcript, 0, appended.transcript.order.length, runtimeCounters)
+    primeTranscriptUrlIndex(appended.transcript, runtimeCounters)
+    expect(runtimeCounters.textLengthIndexBuilds).toBe(beforeWarmQueries.textLengthIndexBuilds)
+    expect(runtimeCounters.textLengthItemVisits).toBe(beforeWarmQueries.textLengthItemVisits)
+    expect(runtimeCounters.textLengthIndexCacheHits).toBe(beforeWarmQueries.textLengthIndexCacheHits + 1)
+    expect(runtimeCounters.urlIndexBuilds).toBe(beforeWarmQueries.urlIndexBuilds)
+    expect(runtimeCounters.urlIndexItemVisits).toBe(beforeWarmQueries.urlIndexItemVisits)
+    expect(runtimeCounters.urlIndexCacheHits).toBe(beforeWarmQueries.urlIndexCacheHits + 1)
+    let preservedItems = 0, preservedTurns = 0, preservedProjections = 0
+    for (let index = 0; index < blockCount; index++) {
+      const itemId = fixture.before.transcript.order[index]!
+      const turnId = fixture.before.conversation.turnIds[index]!
+      if (itemConversation.items[itemId] === fixture.before.conversation.items[itemId]) preservedItems++
+      if (itemConversation.turns[turnId] === fixture.before.conversation.turns[turnId]) preservedTurns++
+      if (itemTranscript.projectionById[itemId] === fixture.before.transcript.projectionById[itemId]) preservedProjections++
+    }
+    expect(preservedItems).toBe(blockCount)
+    expect(preservedTurns).toBe(blockCount)
+    expect(preservedProjections).toBe(blockCount)
+
+    expect(canonicalCounters.conversationTurnIdSequenceNormalizations).toBe(0)
+    expect(canonicalCounters.conversationTurnIdSequenceNormalizationVisits).toBe(0)
+    expect(canonicalCounters.conversationTurnRecordNormalizations).toBe(0)
+    expect(canonicalCounters.conversationTurnRecordNormalizationVisits).toBe(0)
+    expect(canonicalCounters.conversationTurnItemIdSequenceNormalizations).toBe(0)
+    expect(canonicalCounters.conversationTurnItemIdSequenceNormalizationVisits).toBe(0)
+    expect(canonicalCounters.conversationItemRecordNormalizations).toBe(0)
+    expect(canonicalCounters.conversationItemRecordNormalizationItemVisits).toBe(0)
+    expect(canonicalCounters.conversationTurnIdSequenceAppends).toBe(1)
+    expect(canonicalCounters.conversationTurnItemIdSequenceAppends).toBe(1)
+    expect(canonicalCounters.conversationTurnRecordUpdates).toBe(2)
+    expect(canonicalCounters.conversationItemRecordUpdates).toBe(1)
+    const logarithmicBound = 12 * (Math.ceil(Math.log2(blockCount + 1)) + 1)
+    expect(canonicalCounters.conversationTurnIdSequenceNodeVisits).toBeLessThanOrEqual(logarithmicBound)
+    expect(canonicalCounters.conversationTurnRecordNodeVisits).toBeLessThanOrEqual(logarithmicBound)
+    expect(canonicalCounters.conversationItemRecordNodeVisits).toBeLessThanOrEqual(logarithmicBound)
+
+    expect(semanticCounters.projectionRecordUpdates).toBe(1)
+    expect(semanticCounters.orderIndexBuilds).toBe(0)
+    expect(semanticCounters.orderIndexItemVisits).toBe(0)
+    expect(semanticCounters.textLengthIndexBuilds).toBe(0)
+    expect(semanticCounters.textLengthItemVisits).toBe(0)
+    expect(semanticCounters.textLengthIndexUpdates).toBe(1)
+    expect(semanticCounters.urlIndexBuilds).toBe(0)
+    expect(semanticCounters.urlIndexItemVisits).toBe(0)
+    expect(semanticCounters.urlIndexUpdates).toBe(1)
+
+    expect(runtimeCounters.completePlanBuilds - runtimeBaseline.completePlanBuilds).toBe(0)
+    expect(runtimeCounters.completePlanBlockVisits - runtimeBaseline.completePlanBlockVisits).toBe(0)
+    expect(runtimeCounters.heightIndexBuilds - runtimeBaseline.heightIndexBuilds).toBe(0)
+    expect(runtimeCounters.heightIndexBlockVisits - runtimeBaseline.heightIndexBlockVisits).toBe(0)
+    expect(runtimeCounters.completeGeometryBlockVisits - runtimeBaseline.completeGeometryBlockVisits).toBe(0)
+    expect(runtimeCounters.blockPlanUpdates - runtimeBaseline.blockPlanUpdates).toBe(1)
+    expect(runtimeCounters.heightIndexUpdates - runtimeBaseline.heightIndexUpdates).toBe(1)
+    expect(runtimeCounters.changedItemBuilds - runtimeBaseline.changedItemBuilds).toBe(1)
+    expect(runtimeCounters.orderIndexBuilds - runtimeBaseline.orderIndexBuilds).toBe(0)
+    expect(runtimeCounters.orderIndexItemVisits - runtimeBaseline.orderIndexItemVisits).toBe(0)
+    expect(runtimeCounters.textLengthIndexBuilds - runtimeBaseline.textLengthIndexBuilds).toBe(0)
+    expect(runtimeCounters.textLengthItemVisits - runtimeBaseline.textLengthItemVisits).toBe(0)
+    expect(runtimeCounters.textLengthIndexUpdates - runtimeBaseline.textLengthIndexUpdates).toBe(1)
+    expect(runtimeCounters.urlIndexBuilds - runtimeBaseline.urlIndexBuilds).toBe(0)
+    expect(runtimeCounters.urlIndexItemVisits - runtimeBaseline.urlIndexItemVisits).toBe(0)
+    expect(runtimeCounters.urlIndexUpdates - runtimeBaseline.urlIndexUpdates).toBe(1)
+    expect(runtimeCounters.windowGeometryBlockVisits - runtimeBaseline.windowGeometryBlockVisits).toBeLessThanOrEqual(48)
+    expect(runtimeCounters.blockPlanWindowSliceItems - runtimeBaseline.blockPlanWindowSliceItems).toBeLessThanOrEqual(48)
+    runtime.dispose()
+  }
+}, 30_000)
 
 test("production window policy bounds initial, detached, reveal, and measured materialization at every scale", () => {
   const policy = Object.freeze({ viewportRows: 24, overscanRows: 24 })

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { itemId, threadId, turnId, type ConversationItem } from "@vimex/conversation"
-import { attachTail, beginSelection, findSearchMatches, graphemeCount, initialTranscript, moveCursor, persistentTranscriptFolds, persistentTranscriptProjections, projectItem, reduceTranscript, selectedGraphemeCount, selectedText, setFold, setTranscriptFoldValue, setTranscriptProjection, syncTranscriptItem, transcriptTextLengthRange, urlAt } from "./index"
+import { appendTranscriptOrder, attachTail, beginSelection, findSearchMatches, graphemeCount, initialTranscript, moveCursor, persistentTranscriptFolds, persistentTranscriptOrder, persistentTranscriptProjections, projectItem, reduceTranscript, selectedGraphemeCount, selectedText, setFold, setTranscriptFoldValue, setTranscriptProjection, syncTranscriptItem, transcriptOrderAppend, transcriptOrderIndex, transcriptTextLengthRange, urlAt } from "./index"
 
 import { assistantMessage as message } from "@vimex/testkit"
 
@@ -215,6 +215,76 @@ describe("transcript", () => {
     expect(Object.hasOwn(normalized, "__proto__")).toBe(true)
     expect(Object.prototype.propertyIsEnumerable.call(normalized, "constructor")).toBe(true)
     expect(({ ...normalized } as Record<string, typeof replacement>)["__proto__"]).toBe(replacement)
+  })
+
+  test("persistent logical order preserves readonly array behavior and exact append lineage", () => {
+    const original = Object.freeze([itemId("first"), itemId("second"), itemId("third")])
+    const order = persistentTranscriptOrder(original)
+    const appended = appendTranscriptOrder(order, itemId("fourth"))
+
+    expect(Array.isArray(order)).toBe(true)
+    expect(order).toEqual(original)
+    expect(order.length).toBe(3)
+    expect(order[1]).toBe(itemId("second"))
+    expect(order.at(-1)).toBe(itemId("third"))
+    expect([...order]).toEqual(Array.from(original))
+    expect(order.slice(1)).toEqual(original.slice(1))
+    expect(order.map(id => id.toUpperCase())).toEqual(original.map(id => id.toUpperCase()))
+    expect(order.filter((_, index) => index % 2 === 0)).toEqual([itemId("first"), itemId("third")])
+    expect(order.flatMap(id => [id, id])).toEqual(original.flatMap(id => [id, id]))
+    expect(Object.keys(order)).toEqual(["0", "1", "2"])
+    expect(JSON.stringify(order)).toBe(JSON.stringify(original))
+    expect(Reflect.set(order, "0", itemId("replacement"))).toBe(false)
+
+    expect([...appended]).toEqual([...original, itemId("fourth")])
+    expect([...order]).toEqual(Array.from(original))
+    expect(transcriptOrderAppend(order, appended)).toEqual({ previous: order, itemId: itemId("fourth"), position: 3 })
+    expect(transcriptOrderAppend(original, appended)).toBeUndefined()
+    const next = appendTranscriptOrder(appended, itemId("fifth"))
+    expect(transcriptOrderAppend(appended, next)?.position).toBe(4)
+    expect([...transcriptOrderIndex(next)]).toEqual([...new Map(next.map((id, position) => [id, position] as const))])
+    expect(persistentTranscriptOrder(order)).toBe(order)
+    expect(persistentTranscriptOrder(original)).toBe(order)
+  })
+
+  test("inherits the disposable order index through a 100k append without rebuilding or visiting history", () => {
+    const ids = Object.freeze(Array.from({ length: 100_000 }, (_, index) => itemId(`order-${index}`)))
+    const order = persistentTranscriptOrder(ids)
+    const before = transcriptOrderIndex(order)
+    const appendedId = itemId("order-appended")
+    const appended = appendTranscriptOrder(order, appendedId)
+    const diagnostics = { orderIndexBuilds: 0, orderIndexItemVisits: 0, orderIndexCacheHits: 0 }
+    const after = transcriptOrderIndex(appended, diagnostics)
+
+    expect(after.get(ids[0]!)).toBe(0)
+    expect(after.get(ids[50_000]!)).toBe(50_000)
+    expect(after.get(ids.at(-1)!)).toBe(99_999)
+    expect(after.get(appendedId)).toBe(100_000)
+    expect(before.has(appendedId)).toBe(false)
+    expect(diagnostics).toEqual({ orderIndexBuilds: 0, orderIndexItemVisits: 0, orderIndexCacheHits: 1 })
+  })
+
+  test("sync appends persistent logical order with array-reference semantic equivalence", () => {
+    const first = message("persistent-order-first", "first")
+    const second = message("persistent-order-second", "second")
+    const initial = initialTranscript()
+    const diagnostics = {
+      projectionRecordUpdates: 0, projectionRecordNodeVisits: 0, projectionRecordNodesCopied: 0,
+      textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0,
+      textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
+      orderIndexBuilds: 0, orderIndexItemVisits: 0, orderIndexCacheHits: 0,
+      urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0, urlIndexUpdates: 0, urlIndexNodeVisits: 0,
+    }
+    const afterFirst = syncTranscriptItem(initial, first, diagnostics)
+    const afterSecond = syncTranscriptItem(afterFirst, second, diagnostics)
+
+    expect([...afterFirst.order]).toEqual([first.id])
+    expect([...afterSecond.order]).toEqual([first.id, second.id])
+    expect(transcriptOrderAppend(initial.order, afterFirst.order)).toEqual({ previous: initial.order, itemId: first.id, position: 0 })
+    expect(transcriptOrderAppend(afterFirst.order, afterSecond.order)).toEqual({ previous: afterFirst.order, itemId: second.id, position: 1 })
+    expect(transcriptOrderIndex(afterSecond.order, diagnostics).get(second.id)).toBe(1)
+    expect({ builds: diagnostics.orderIndexBuilds, visits: diagnostics.orderIndexItemVisits,
+      hits: diagnostics.orderIndexCacheHits }).toEqual({ builds: 0, visits: 0, hits: 1 })
   })
 
   test("records bounded branching jumps, skips stale entries, and reprojects marks", () => {

@@ -1,6 +1,6 @@
 import type { ConversationItem } from "@vimex/conversation"
 import { projectMarkdown, projectPlainText } from "../domain/markdown-source-map"
-import { inheritTranscriptTextLengthIndex, persistentTranscriptFolds, setTranscriptFoldValue, setTranscriptProjection, type LogicalPoint, type TextProjection, type TranscriptOrderIndexDiagnostics, type TranscriptProjectionRecordDiagnostics, type TranscriptState, type TranscriptTextLengthIndexDiagnostics } from "../domain/transcript-document"
+import { appendTranscriptOrder, inheritTranscriptTextLengthIndex, persistentTranscriptFolds, persistentTranscriptOrder, setTranscriptFoldValue, setTranscriptProjection, type LogicalPoint, type TextProjection, type TranscriptOrderIndexDiagnostics, type TranscriptProjectionRecordDiagnostics, type TranscriptState, type TranscriptTextLengthIndexDiagnostics } from "../domain/transcript-document"
 import { inheritTranscriptUrlIndex, type TranscriptUrlIndexDiagnostics } from "./transcript-url-index"
 
 export interface TranscriptItemSyncDiagnostics extends TranscriptProjectionRecordDiagnostics,
@@ -47,7 +47,7 @@ export function syncTranscriptItem(
   }
   let next = clampTranscript({
     ...state,
-    order: isNew ? [...state.order, item.id] : state.order,
+    order: isNew ? appendTranscriptOrder(state.order, item.id) : persistentTranscriptOrder(state.order),
     projectionById: setTranscriptProjection(state.projectionById, item.id, projection, diagnostics),
     cursor: state.cursor ? reproject(state.cursor) : undefined,
     selection: state.selection ? { ...state.selection, anchor: reproject(state.selection.anchor), head: reproject(state.selection.head) } : undefined,

@@ -43,12 +43,14 @@ export type TranscriptBlock = TranscriptItemBlock | TranscriptTurnActivityBlock
 interface BlockPlanLeaf {
   readonly kind: "leaf"
   readonly count: 1
+  readonly height: 1
   readonly block: TranscriptBlock
 }
 
 interface BlockPlanBranch {
   readonly kind: "branch"
   readonly count: number
+  readonly height: number
   readonly left: BlockPlanNode
   readonly right: BlockPlanNode
 }
@@ -62,15 +64,21 @@ interface BlockPlanReplacement {
   readonly next: TranscriptBlock
 }
 
+interface BlockPlanAppend {
+  readonly source: readonly TranscriptBlock[]
+  readonly next: TranscriptBlock
+}
+
 interface BlockPlanData {
   readonly root?: BlockPlanNode
   readonly length: number
   readonly replacement?: BlockPlanReplacement
+  readonly append?: BlockPlanAppend
 }
 
 export interface TranscriptBlockPlanDiagnostics {
   blockPlanUpdates: number
-  /** Validation plus path-copy work for point updates; ordinary reads are outside this counter. */
+  /** Validation plus persistent-tree work for updates; ordinary reads are outside this counter. */
   blockPlanNodeVisits: number
   blockPlanNodesCopied: number
 }
@@ -80,11 +88,56 @@ const normalizedBlockPlans = new WeakMap<object, readonly TranscriptBlock[]>()
 
 function buildBlockPlan(values: readonly TranscriptBlock[], from: number, to: number): BlockPlanNode | undefined {
   if (from >= to) return undefined
-  if (to - from === 1) return Object.freeze({ kind: "leaf" as const, count: 1 as const, block: values[from]! })
+  if (to - from === 1) return Object.freeze({ kind: "leaf" as const, count: 1 as const, height: 1 as const, block: values[from]! })
   const middle = from + ((to - from) >>> 1)
   const left = buildBlockPlan(values, from, middle)!
   const right = buildBlockPlan(values, middle, to)!
-  return Object.freeze({ kind: "branch" as const, count: left.count + right.count, left, right })
+  return Object.freeze({ kind: "branch" as const, count: left.count + right.count, height: Math.max(left.height, right.height) + 1, left, right })
+}
+
+function copiedBlockPlanNode(diagnostics: TranscriptBlockPlanDiagnostics | undefined): void {
+  if (diagnostics) diagnostics.blockPlanNodesCopied += 1
+}
+
+function blockPlanBranch(
+  left: BlockPlanNode,
+  right: BlockPlanNode,
+  diagnostics?: TranscriptBlockPlanDiagnostics,
+): BlockPlanBranch {
+  copiedBlockPlanNode(diagnostics)
+  return Object.freeze({ kind: "branch" as const, count: left.count + right.count, height: Math.max(left.height, right.height) + 1, left, right })
+}
+
+function appendBlockPlanNode(
+  node: BlockPlanNode | undefined,
+  block: TranscriptBlock,
+  diagnostics?: TranscriptBlockPlanDiagnostics,
+): BlockPlanNode {
+  if (!node) {
+    copiedBlockPlanNode(diagnostics)
+    return Object.freeze({ kind: "leaf" as const, count: 1 as const, height: 1 as const, block })
+  }
+  if (diagnostics) diagnostics.blockPlanNodeVisits += 1
+  if (node.kind === "leaf") {
+    copiedBlockPlanNode(diagnostics)
+    const right = Object.freeze({ kind: "leaf" as const, count: 1 as const, height: 1 as const, block })
+    return blockPlanBranch(node, right, diagnostics)
+  }
+  const right = appendBlockPlanNode(node.right, block, diagnostics)
+  if (right.height <= node.left.height + 1) return blockPlanBranch(node.left, right, diagnostics)
+
+  // Appending changes only the right spine. Restore AVL balance with one
+  // persistent rotation while sharing every untouched subtree.
+  if (right.kind !== "branch") return blockPlanBranch(node.left, right, diagnostics)
+  if (right.right.height >= right.left.height) {
+    return blockPlanBranch(blockPlanBranch(node.left, right.left, diagnostics), right.right, diagnostics)
+  }
+  if (right.left.kind !== "branch") return blockPlanBranch(node.left, right, diagnostics)
+  return blockPlanBranch(
+    blockPlanBranch(node.left, right.left.left, diagnostics),
+    blockPlanBranch(right.left.right, right.right, diagnostics),
+    diagnostics,
+  )
 }
 
 function blockPlanValue(node: BlockPlanNode | undefined, index: number, diagnostics?: TranscriptBlockPlanDiagnostics): TranscriptBlock | undefined {
@@ -107,18 +160,18 @@ function replaceBlockPlanNode(
   if (node.kind === "leaf") {
     if (node.block === block) return node
     if (diagnostics) diagnostics.blockPlanNodesCopied += 1
-    return Object.freeze({ kind: "leaf" as const, count: 1 as const, block })
+    return Object.freeze({ kind: "leaf" as const, count: 1 as const, height: 1 as const, block })
   }
   if (index < node.left.count) {
     const left = replaceBlockPlanNode(node.left, index, block, diagnostics)
     if (left === node.left) return node
     if (diagnostics) diagnostics.blockPlanNodesCopied += 1
-    return Object.freeze({ kind: "branch" as const, count: node.count, left, right: node.right })
+    return Object.freeze({ kind: "branch" as const, count: node.count, height: node.height, left, right: node.right })
   }
   const right = replaceBlockPlanNode(node.right, index - node.left.count, block, diagnostics)
   if (right === node.right) return node
   if (diagnostics) diagnostics.blockPlanNodesCopied += 1
-  return Object.freeze({ kind: "branch" as const, count: node.count, left: node.left, right })
+  return Object.freeze({ kind: "branch" as const, count: node.count, height: node.height, left: node.left, right })
 }
 
 function *blockPlanValues(root: BlockPlanNode | undefined): IterableIterator<TranscriptBlock> {
@@ -193,6 +246,19 @@ export function replaceTranscriptBlock(
   return blockPlan({ root, length: data.length, replacement: Object.freeze({ source: plan, index, previous, next }) })
 }
 
+/** Append one block while sharing the complete historical plan. */
+export function appendTranscriptBlock(
+  blocks: readonly TranscriptBlock[],
+  next: TranscriptBlock,
+  diagnostics?: TranscriptBlockPlanDiagnostics,
+): readonly TranscriptBlock[] {
+  const plan = persistentTranscriptBlockPlan(blocks)
+  const data = blockPlanData.get(plan)!
+  const root = appendBlockPlanNode(data.root, next, diagnostics)
+  if (diagnostics) diagnostics.blockPlanUpdates += 1
+  return blockPlan({ root, length: data.length + 1, append: Object.freeze({ source: plan, next }) })
+}
+
 /** O(1) lineage proof consumed by indexes that retain complete-plan ordinals. */
 export function isTranscriptBlockReplacement(
   source: readonly TranscriptBlock[],
@@ -202,6 +268,16 @@ export function isTranscriptBlockReplacement(
 ): boolean {
   const replacement = blockPlanData.get(blocks)?.replacement
   return replacement?.source === source && replacement.previous === previous && replacement.next === next
+}
+
+/** O(1) proof that blocks is the exact persistent append of source. */
+export function isTranscriptBlockAppend(
+  source: readonly TranscriptBlock[],
+  blocks: readonly TranscriptBlock[],
+  next: TranscriptBlock,
+): boolean {
+  const append = blockPlanData.get(blocks)?.append
+  return append?.source === source && append.next === next
 }
 
 export interface TranscriptWindow {

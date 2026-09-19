@@ -48,7 +48,19 @@ interface ProjectionNode {
   readonly right?: ProjectionNode
 }
 
-interface ProjectionRecordData { readonly root?: ProjectionNode; readonly size: number }
+interface ProjectionRecordData {
+  readonly token: object
+  readonly root?: ProjectionNode
+  readonly size: number
+  readonly lineage?: {
+    readonly previousRoot?: ProjectionNode
+    readonly previousSize: number
+    readonly previousToken: object
+    readonly updatedKey: string
+    readonly previousValue?: TextProjection
+    readonly updatedValue: TextProjection
+  }
+}
 
 export interface TranscriptProjectionRecordDiagnostics {
   projectionRecordUpdates: number
@@ -105,23 +117,26 @@ function setProjectionNode(
   key: string,
   value: TextProjection,
   diagnostics?: TranscriptProjectionRecordDiagnostics,
-): { readonly root: ProjectionNode; readonly added: boolean; readonly changed: boolean } {
+): { readonly root: ProjectionNode; readonly added: boolean; readonly changed: boolean; readonly previousValue?: TextProjection } {
   if (diagnostics) diagnostics.projectionRecordNodeVisits += 1
   if (!root) {
     return { root: copiedProjectionNode(key, value, undefined, undefined, diagnostics), added: true, changed: true }
   }
   if (key === root.key) {
-    if (root.value === value) return { root, added: false, changed: false }
-    return { root: copiedProjectionNode(key, value, root.left, root.right, diagnostics), added: false, changed: true }
+    if (root.value === value) return { root, added: false, changed: false, previousValue: root.value }
+    return { root: copiedProjectionNode(key, value, root.left, root.right, diagnostics),
+      added: false, changed: true, previousValue: root.value }
   }
   if (key < root.key) {
     const next = setProjectionNode(root.left, key, value, diagnostics)
-    if (!next.changed) return { root, added: false, changed: false }
-    return { root: balanceProjection(copiedProjectionNode(root.key, root.value, next.root, root.right, diagnostics), diagnostics), added: next.added, changed: true }
+    if (!next.changed) return { root, added: false, changed: false, previousValue: next.previousValue }
+    return { root: balanceProjection(copiedProjectionNode(root.key, root.value, next.root, root.right, diagnostics), diagnostics),
+      added: next.added, changed: true, previousValue: next.previousValue }
   }
   const next = setProjectionNode(root.right, key, value, diagnostics)
-  if (!next.changed) return { root, added: false, changed: false }
-  return { root: balanceProjection(copiedProjectionNode(root.key, root.value, root.left, next.root, diagnostics), diagnostics), added: next.added, changed: true }
+  if (!next.changed) return { root, added: false, changed: false, previousValue: next.previousValue }
+  return { root: balanceProjection(copiedProjectionNode(root.key, root.value, root.left, next.root, diagnostics), diagnostics),
+    added: next.added, changed: true, previousValue: next.previousValue }
 }
 function projectionEntries(root: ProjectionNode | undefined, result: [string, TextProjection][]): void {
   if (!root) return
@@ -172,7 +187,7 @@ export function persistentTranscriptProjections(
     const [key, projection] = entries[middle]!
     return projectionNode(key, projection, build(from, middle), build(middle + 1, to))
   }
-  const record = projectionRecord({ root: build(0, entries.length), size: entries.length })
+  const record = projectionRecord({ token: Object.freeze({}), root: build(0, entries.length), size: entries.length })
   normalizedProjectionRecords.set(value, record)
   return record
 }
@@ -188,7 +203,38 @@ export function setTranscriptProjection(
   const next = setProjectionNode(data.root, itemId, projection, diagnostics)
   if (!next.changed) return record
   if (diagnostics) diagnostics.projectionRecordUpdates += 1
-  return projectionRecord({ root: next.root, size: data.size + (next.added ? 1 : 0) })
+  return projectionRecord({
+    token: Object.freeze({}),
+    root: next.root,
+    size: data.size + (next.added ? 1 : 0),
+    lineage: {
+      previousRoot: data.root,
+      previousSize: data.size,
+      previousToken: data.token,
+      updatedKey: itemId,
+      previousValue: next.previousValue,
+      updatedValue: projection,
+    },
+  })
+}
+
+/** Prove one exact projection addition without scanning the projection record. */
+export function isTranscriptProjectionAddition(
+  previous: Readonly<Record<string, TextProjection>>,
+  next: Readonly<Record<string, TextProjection>>,
+  itemId: ItemId,
+  projection: TextProjection,
+): boolean {
+  const previousData = projectionRecordData.get(previous)
+  const data = projectionRecordData.get(next)
+  return previousData !== undefined && data?.lineage !== undefined
+    && data.lineage.previousRoot === previousData.root
+    && data.lineage.previousSize === previousData.size
+    && data.lineage.previousToken === previousData.token
+    && data.lineage.updatedKey === itemId
+    && data.lineage.previousValue === undefined
+    && data.lineage.updatedValue === projection
+    && data.size === previousData.size + 1
 }
 
 interface FoldNode {
@@ -199,7 +245,19 @@ interface FoldNode {
   readonly right?: FoldNode
 }
 
-interface FoldRecordData { readonly root?: FoldNode; readonly size: number }
+interface FoldRecordData {
+  readonly token: object
+  readonly root?: FoldNode
+  readonly size: number
+  readonly lineage?: {
+    readonly previousRoot?: FoldNode
+    readonly previousSize: number
+    readonly previousToken: object
+    readonly updatedKey: string
+    readonly previousValue?: boolean
+    readonly updatedValue: boolean
+  }
+}
 
 const foldRecordData = new WeakMap<object, FoldRecordData>()
 const normalizedFoldRecords = new WeakMap<object, Readonly<Record<string, boolean>>>()
@@ -241,19 +299,26 @@ function foldValue(root: FoldNode | undefined, key: string): boolean | undefined
   }
   return undefined
 }
-function setFoldNode(root: FoldNode | undefined, key: string, value: boolean): { readonly root: FoldNode; readonly added: boolean; readonly changed: boolean } {
+function setFoldNode(root: FoldNode | undefined, key: string, value: boolean): {
+  readonly root: FoldNode
+  readonly added: boolean
+  readonly changed: boolean
+  readonly previousValue?: boolean
+} {
   if (!root) return { root: foldNode(key, value), added: true, changed: true }
   if (key === root.key) return root.value === value
-    ? { root, added: false, changed: false }
-    : { root: foldNode(key, value, root.left, root.right), added: false, changed: true }
+    ? { root, added: false, changed: false, previousValue: root.value }
+    : { root: foldNode(key, value, root.left, root.right), added: false, changed: true, previousValue: root.value }
   if (compareFoldKey(key, root.key) < 0) {
     const next = setFoldNode(root.left, key, value)
-    return next.changed ? { root: balanceFold(foldNode(root.key, root.value, next.root, root.right)), added: next.added, changed: true }
-      : { root, added: false, changed: false }
+    return next.changed ? { root: balanceFold(foldNode(root.key, root.value, next.root, root.right)),
+      added: next.added, changed: true, previousValue: next.previousValue }
+      : { root, added: false, changed: false, previousValue: next.previousValue }
   }
   const next = setFoldNode(root.right, key, value)
-  return next.changed ? { root: balanceFold(foldNode(root.key, root.value, root.left, next.root)), added: next.added, changed: true }
-    : { root, added: false, changed: false }
+  return next.changed ? { root: balanceFold(foldNode(root.key, root.value, root.left, next.root)),
+    added: next.added, changed: true, previousValue: next.previousValue }
+    : { root, added: false, changed: false, previousValue: next.previousValue }
 }
 function foldEntries(root: FoldNode | undefined, result: [string, boolean][]): void {
   if (!root) return
@@ -291,7 +356,7 @@ export function persistentTranscriptFolds(value: Readonly<Record<string, boolean
     const [key, folded] = entries[middle]!
     return foldNode(key, folded, build(from, middle), build(middle + 1, to))
   }
-  const record = foldRecord({ root: build(0, entries.length), size: entries.length })
+  const record = foldRecord({ token: Object.freeze({}), root: build(0, entries.length), size: entries.length })
   normalizedFoldRecords.set(value, record)
   return record
 }
@@ -300,10 +365,286 @@ export function setTranscriptFoldValue(value: Readonly<Record<string, boolean>>,
   const record = persistentTranscriptFolds(value)
   const data = foldRecordData.get(record)!
   const next = setFoldNode(data.root, itemId, folded)
-  return next.changed ? foldRecord({ root: next.root, size: data.size + (next.added ? 1 : 0) }) : record
+  return next.changed ? foldRecord({
+    token: Object.freeze({}),
+    root: next.root,
+    size: data.size + (next.added ? 1 : 0),
+    lineage: {
+      previousRoot: data.root,
+      previousSize: data.size,
+      previousToken: data.token,
+      updatedKey: itemId,
+      previousValue: next.previousValue,
+      updatedValue: folded,
+    },
+  }) : record
 }
 
+/** Prove one exact new-item fold entry without enumerating fold metadata. */
+export function isTranscriptFoldAddition(
+  previous: Readonly<Record<string, boolean>>,
+  next: Readonly<Record<string, boolean>>,
+  itemId: ItemId,
+  folded: boolean,
+): boolean {
+  const previousData = foldRecordData.get(previous)
+  const data = foldRecordData.get(next)
+  return previousData !== undefined && data?.lineage !== undefined
+    && data.lineage.previousRoot === previousData.root
+    && data.lineage.previousSize === previousData.size
+    && data.lineage.previousToken === previousData.token
+    && data.lineage.updatedKey === itemId
+    && data.lineage.previousValue === undefined
+    && data.lineage.updatedValue === folded
+    && data.size === previousData.size + 1
+}
+
+const ORDER_LEAF_SIZE = 32
+
+interface TranscriptOrderLeaf {
+  readonly kind: "leaf"
+  readonly items: readonly ItemId[]
+  readonly size: number
+  readonly height: 1
+}
+
+interface TranscriptOrderBranch {
+  readonly kind: "branch"
+  readonly left: TranscriptOrderNode
+  readonly right: TranscriptOrderNode
+  readonly size: number
+  readonly height: number
+}
+
+type TranscriptOrderNode = TranscriptOrderLeaf | TranscriptOrderBranch
+
+interface TranscriptOrderData {
+  readonly root?: TranscriptOrderNode
+  readonly size: number
+}
+
+export interface TranscriptOrderAppend {
+  readonly previous: readonly ItemId[]
+  readonly itemId: ItemId
+  readonly position: number
+}
+
+interface TranscriptOrderAppendData {
+  readonly previous: WeakRef<readonly ItemId[]>
+  readonly itemId: ItemId
+  readonly position: number
+}
+
+interface OrderIndexNode {
+  readonly key: ItemId
+  readonly position: number
+  readonly height: number
+  readonly left?: OrderIndexNode
+  readonly right?: OrderIndexNode
+}
+
+const transcriptOrderData = new WeakMap<object, TranscriptOrderData>()
+const normalizedTranscriptOrders = new WeakMap<object, readonly ItemId[]>()
+const transcriptOrderAppends = new WeakMap<object, TranscriptOrderAppendData>()
 const orderIndexes = new WeakMap<readonly ItemId[], ReadonlyMap<ItemId, number>>()
+
+const orderNodeHeight = (node: TranscriptOrderNode | undefined): number => node?.height ?? 0
+function transcriptOrderLeaf(items: readonly ItemId[]): TranscriptOrderLeaf {
+  return Object.freeze({ kind: "leaf", items: Object.freeze(items), size: items.length, height: 1 })
+}
+function transcriptOrderBranch(left: TranscriptOrderNode, right: TranscriptOrderNode): TranscriptOrderBranch {
+  return Object.freeze({ kind: "branch", left, right, size: left.size + right.size,
+    height: Math.max(left.height, right.height) + 1 })
+}
+function balanceTranscriptOrder(node: TranscriptOrderBranch): TranscriptOrderNode {
+  const delta = orderNodeHeight(node.left) - orderNodeHeight(node.right)
+  if (delta > 1 && node.left.kind === "branch") {
+    const left = node.left
+    if (orderNodeHeight(left.left) < orderNodeHeight(left.right) && left.right.kind === "branch") {
+      const promoted = left.right
+      return transcriptOrderBranch(transcriptOrderBranch(left.left, promoted.left), transcriptOrderBranch(promoted.right, node.right))
+    }
+    return transcriptOrderBranch(left.left, transcriptOrderBranch(left.right, node.right))
+  }
+  if (delta < -1 && node.right.kind === "branch") {
+    const right = node.right
+    if (orderNodeHeight(right.right) < orderNodeHeight(right.left) && right.left.kind === "branch") {
+      const promoted = right.left
+      return transcriptOrderBranch(transcriptOrderBranch(node.left, promoted.left), transcriptOrderBranch(promoted.right, right.right))
+    }
+    return transcriptOrderBranch(transcriptOrderBranch(node.left, right.left), right.right)
+  }
+  return node
+}
+function appendTranscriptOrderNode(node: TranscriptOrderNode | undefined, itemId: ItemId): TranscriptOrderNode {
+  if (!node) return transcriptOrderLeaf([itemId])
+  if (node.kind === "leaf") return node.items.length < ORDER_LEAF_SIZE
+    ? transcriptOrderLeaf([...node.items, itemId])
+    : transcriptOrderBranch(node, transcriptOrderLeaf([itemId]))
+  return balanceTranscriptOrder(transcriptOrderBranch(node.left, appendTranscriptOrderNode(node.right, itemId)))
+}
+function transcriptOrderItem(node: TranscriptOrderNode, position: number): ItemId {
+  while (node.kind === "branch") {
+    if (position < node.left.size) node = node.left
+    else { position -= node.left.size; node = node.right }
+  }
+  return node.items[position]!
+}
+function* transcriptOrderItems(node: TranscriptOrderNode | undefined): IterableIterator<ItemId> {
+  if (!node) return
+  if (node.kind === "leaf") {
+    yield* node.items
+    return
+  }
+  yield* transcriptOrderItems(node.left)
+  yield* transcriptOrderItems(node.right)
+}
+function buildTranscriptOrder(items: readonly ItemId[], from = 0, to = items.length): TranscriptOrderNode | undefined {
+  if (from >= to) return undefined
+  if (to - from <= ORDER_LEAF_SIZE) return transcriptOrderLeaf(items.slice(from, to))
+  const leafCount = Math.ceil((to - from) / ORDER_LEAF_SIZE)
+  const leftLeafCount = 2 ** Math.floor(Math.log2(leafCount - 1))
+  const middle = Math.min(to, from + leftLeafCount * ORDER_LEAF_SIZE)
+  return transcriptOrderBranch(buildTranscriptOrder(items, from, middle)!, buildTranscriptOrder(items, middle, to)!)
+}
+function transcriptOrderPosition(property: PropertyKey, size: number): number | undefined {
+  if (typeof property !== "string" || property === "" || !/^\d+$/.test(property)) return undefined
+  const position = Number(property)
+  return Number.isSafeInteger(position) && position < size && String(position) === property ? position : undefined
+}
+function persistentOrderArray(data: TranscriptOrderData): readonly ItemId[] {
+  const target = new Array<ItemId>(data.size)
+  const proxy = new Proxy(target, {
+    get: (_target, property, receiver) => {
+      if (property === Symbol.iterator) return () => transcriptOrderItems(data.root)
+      if (property === "entries") return function* () { let position = 0; for (const itemId of transcriptOrderItems(data.root)) yield [position++, itemId] as [number, ItemId] }
+      if (property === "keys") return function* () { for (let position = 0; position < data.size; position++) yield position }
+      if (property === "values") return () => transcriptOrderItems(data.root)
+      const position = transcriptOrderPosition(property, data.size)
+      return position === undefined ? Reflect.get(target, property, receiver) : transcriptOrderItem(data.root!, position)
+    },
+    has: (_target, property) => transcriptOrderPosition(property, data.size) !== undefined || Reflect.has(target, property),
+    ownKeys: () => [...Array.from({ length: data.size }, (_, position) => String(position)), "length"],
+    getOwnPropertyDescriptor: (_target, property) => {
+      const position = transcriptOrderPosition(property, data.size)
+      return position === undefined ? Reflect.getOwnPropertyDescriptor(target, property)
+        : { configurable: true, enumerable: true, writable: false, value: transcriptOrderItem(data.root!, position) }
+    },
+    set: () => false,
+    deleteProperty: () => false,
+    defineProperty: () => false,
+    setPrototypeOf: () => false,
+    preventExtensions: () => false,
+  })
+  transcriptOrderData.set(proxy, data)
+  return proxy
+}
+
+const orderIndexHeight = (node: OrderIndexNode | undefined): number => node?.height ?? 0
+function orderIndexNode(key: ItemId, position: number, left?: OrderIndexNode, right?: OrderIndexNode): OrderIndexNode {
+  return Object.freeze({ key, position, height: Math.max(orderIndexHeight(left), orderIndexHeight(right)) + 1,
+    ...(left ? { left } : {}), ...(right ? { right } : {}) })
+}
+function rotateOrderIndexLeft(root: OrderIndexNode): OrderIndexNode {
+  const right = root.right!
+  return orderIndexNode(right.key, right.position, orderIndexNode(root.key, root.position, root.left, right.left), right.right)
+}
+function rotateOrderIndexRight(root: OrderIndexNode): OrderIndexNode {
+  const left = root.left!
+  return orderIndexNode(left.key, left.position, left.left, orderIndexNode(root.key, root.position, left.right, root.right))
+}
+function balanceOrderIndex(root: OrderIndexNode): OrderIndexNode {
+  const delta = orderIndexHeight(root.left) - orderIndexHeight(root.right)
+  if (delta > 1) {
+    const left = root.left!
+    return rotateOrderIndexRight(orderIndexHeight(left.left) < orderIndexHeight(left.right)
+      ? orderIndexNode(root.key, root.position, rotateOrderIndexLeft(left), root.right) : root)
+  }
+  if (delta < -1) {
+    const right = root.right!
+    return rotateOrderIndexLeft(orderIndexHeight(right.right) < orderIndexHeight(right.left)
+      ? orderIndexNode(root.key, root.position, root.left, rotateOrderIndexRight(right)) : root)
+  }
+  return root
+}
+function setOrderIndexNode(root: OrderIndexNode | undefined, key: ItemId, position: number): { readonly root: OrderIndexNode; readonly added: boolean } {
+  if (!root) return { root: orderIndexNode(key, position), added: true }
+  if (key === root.key) return { root: orderIndexNode(key, position, root.left, root.right), added: false }
+  if (key < root.key) {
+    const next = setOrderIndexNode(root.left, key, position)
+    return { root: balanceOrderIndex(orderIndexNode(root.key, root.position, next.root, root.right)), added: next.added }
+  }
+  const next = setOrderIndexNode(root.right, key, position)
+  return { root: balanceOrderIndex(orderIndexNode(root.key, root.position, root.left, next.root)), added: next.added }
+}
+function orderIndexPosition(root: OrderIndexNode | undefined, key: ItemId): number | undefined {
+  while (root) {
+    if (key === root.key) return root.position
+    root = key < root.key ? root.left : root.right
+  }
+  return undefined
+}
+class PersistentTranscriptOrderIndex implements ReadonlyMap<ItemId, number> {
+  constructor(readonly order: readonly ItemId[], readonly root: OrderIndexNode | undefined, readonly size: number) {}
+  get(key: ItemId): number | undefined { return orderIndexPosition(this.root, key) }
+  has(key: ItemId): boolean { return orderIndexPosition(this.root, key) !== undefined }
+  *entries(): MapIterator<[ItemId, number]> {
+    const yielded = new Set<ItemId>()
+    for (const itemId of this.order) if (!yielded.has(itemId)) { yielded.add(itemId); yield [itemId, this.get(itemId)!] }
+  }
+  *keys(): MapIterator<ItemId> { for (const [itemId] of this.entries()) yield itemId }
+  *values(): MapIterator<number> { for (const [, position] of this.entries()) yield position }
+  [Symbol.iterator](): MapIterator<[ItemId, number]> { return this.entries() }
+  forEach(callbackfn: (value: number, key: ItemId, map: ReadonlyMap<ItemId, number>) => void, thisArg?: unknown): void {
+    for (const [itemId, position] of this.entries()) callbackfn.call(thisArg, position, itemId, this)
+  }
+  get [Symbol.toStringTag](): string { return "Map" }
+}
+
+function buildPersistentOrderIndex(order: readonly ItemId[], diagnostics?: TranscriptOrderIndexDiagnostics): ReadonlyMap<ItemId, number> {
+  if (diagnostics) diagnostics.orderIndexBuilds += 1
+  let root: OrderIndexNode | undefined
+  let size = 0
+  for (let position = 0; position < order.length; position++) {
+    if (diagnostics) diagnostics.orderIndexItemVisits += 1
+    const next = setOrderIndexNode(root, order[position]!, position)
+    root = next.root
+    if (next.added) size += 1
+  }
+  return new PersistentTranscriptOrderIndex(order, root, size)
+}
+
+/** Normalize persisted/plain logical order into an immutable appendable array. */
+export function persistentTranscriptOrder(value: readonly ItemId[] = []): readonly ItemId[] {
+  if (transcriptOrderData.has(value)) return value
+  const cached = normalizedTranscriptOrders.get(value)
+  if (cached) return cached
+  const items = Array.from(value)
+  const order = persistentOrderArray({ root: buildTranscriptOrder(items), size: items.length })
+  normalizedTranscriptOrders.set(value, order)
+  orderIndexes.set(order, buildPersistentOrderIndex(order))
+  return order
+}
+
+/** Append one logical item without copying the preceding transcript order. */
+export function appendTranscriptOrder(value: readonly ItemId[], itemId: ItemId): readonly ItemId[] {
+  const previous = persistentTranscriptOrder(value)
+  const previousData = transcriptOrderData.get(previous)!
+  const order = persistentOrderArray({ root: appendTranscriptOrderNode(previousData.root, itemId), size: previousData.size + 1 })
+  const previousIndex = orderIndexes.get(previous) as PersistentTranscriptOrderIndex
+  const nextIndexNode = setOrderIndexNode(previousIndex.root, itemId, previousData.size)
+  orderIndexes.set(order, new PersistentTranscriptOrderIndex(order, nextIndexNode.root,
+    previousIndex.size + (nextIndexNode.added ? 1 : 0)))
+  transcriptOrderAppends.set(order, Object.freeze({ previous: new WeakRef(value), itemId, position: previousData.size }))
+  return order
+}
+
+/** Return the exact single-append lineage when `next` directly extends `previous`. */
+export function transcriptOrderAppend(previous: readonly ItemId[], next: readonly ItemId[]): TranscriptOrderAppend | undefined {
+  const append = transcriptOrderAppends.get(next)
+  return append?.previous.deref() === previous
+    ? Object.freeze({ previous, itemId: append.itemId, position: append.position }) : undefined
+}
 
 interface TextLengthNode {
   readonly sum: number
@@ -468,12 +809,7 @@ export function transcriptOrderIndex(
     if (diagnostics) diagnostics.orderIndexCacheHits += 1
     return cached
   }
-  if (diagnostics) diagnostics.orderIndexBuilds += 1
-  const index = new Map<ItemId, number>()
-  for (let position = 0; position < order.length; position++) {
-    if (diagnostics) diagnostics.orderIndexItemVisits += 1
-    index.set(order[position]!, position)
-  }
+  const index = buildPersistentOrderIndex(order, diagnostics)
   orderIndexes.set(order, index)
   return index
 }
@@ -498,5 +834,5 @@ export type TranscriptCommand =
   | { type: "fold.defaults"; reasoning: boolean; tools: boolean }
 
 export const initialTranscript = (): TranscriptState => ({
-  order: [], projectionById: persistentTranscriptProjections(), folded: persistentTranscriptFolds(), foldDefaults: Object.freeze({ reasoning: false, tools: false }), viewport: { kind: "tail" }, unseenEntries: 0, unseenItemIds: [], jumps: { back: [], forward: [] }, marks: {},
+  order: persistentTranscriptOrder(), projectionById: persistentTranscriptProjections(), folded: persistentTranscriptFolds(), foldDefaults: Object.freeze({ reasoning: false, tools: false }), viewport: { kind: "tail" }, unseenEntries: 0, unseenItemIds: [], jumps: { back: [], forward: [] }, marks: {},
 })

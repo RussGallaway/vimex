@@ -1,6 +1,9 @@
 import {
   itemId,
   persistentConversationItems,
+  persistentConversationTurnIds,
+  persistentConversationTurns,
+  persistentTurnItemIds,
   setConversationItem,
   threadId,
   turnId,
@@ -10,7 +13,7 @@ import {
   type ThreadId,
   type TurnId,
 } from "@vimex/conversation"
-import { initialTranscript, persistentTranscriptFolds, persistentTranscriptProjections, projectItem, setTranscriptProjection, type SourceSpan, type TranscriptState } from "@vimex/transcript"
+import { initialTranscript, persistentTranscriptFolds, persistentTranscriptOrder, persistentTranscriptProjections, projectItem, setTranscriptProjection, type SourceSpan, type TranscriptState } from "@vimex/transcript"
 
 /** Deterministic transcript fixtures shared by domain and renderer tests. */
 export function assistantMessage(id: string, markdown: string, status: "running" | "complete" = "complete"): ConversationItem {
@@ -77,13 +80,68 @@ function hashText(hash: number, value: string): number {
 function freezeTranscript(state: TranscriptState): TranscriptState {
   return Object.freeze({
     ...state,
-    order: Object.isFrozen(state.order) ? state.order : Object.freeze([...state.order]),
+    order: persistentTranscriptOrder(state.order),
     projectionById: persistentTranscriptProjections(state.projectionById),
     folded: persistentTranscriptFolds(state.folded),
     viewport: Object.isFrozen(state.viewport) ? state.viewport : Object.freeze({ ...state.viewport }),
     unseenItemIds: Object.isFrozen(state.unseenItemIds) ? state.unseenItemIds : Object.freeze([...state.unseenItemIds]),
     jumps: Object.isFrozen(state.jumps) ? state.jumps : Object.freeze({ back: Object.freeze([...state.jumps.back]), forward: Object.freeze([...state.jumps.forward]) }),
     marks: Object.isFrozen(state.marks) ? state.marks : Object.freeze({ ...state.marks }),
+  })
+}
+
+export interface TranscriptStructuralScalingFixture {
+  readonly fixtureVersion: "transcript-structural-scaling-v1"
+  readonly blockCount: number
+  readonly threadId: ThreadId
+  readonly nextTurnId: TurnId
+  readonly nextItemId: ItemId
+  readonly before: TranscriptFixtureSnapshot
+  readonly contentHash: string
+}
+
+/** One semantic item per turn exposes canonical turn/order costs independently of mounted work. */
+export function buildTranscriptStructuralScalingFixture(blockCount: number): TranscriptStructuralScalingFixture {
+  if (!Number.isInteger(blockCount) || blockCount < 1) throw new RangeError("blockCount must be a positive integer")
+  const fixtureThread = threadId(`structural-scale-thread-${blockCount}`)
+  const width = String(blockCount - 1).length
+  const turnIds: TurnId[] = []
+  const turns: Record<string, { readonly id: TurnId; readonly status: "complete"; readonly itemIds: readonly ItemId[] }> = {}
+  const items: Record<string, ConversationItem> = {}
+  const projectionById: Record<string, ReturnType<typeof projectItem>> = {}
+  let contentHash = hashText(2_166_136_261, "transcript-structural-scaling-v1")
+  for (let index = 0; index < blockCount; index++) {
+    const suffix = String(index).padStart(width, "0")
+    const turn = turnId(`structural-turn-${suffix}`)
+    const item = itemId(`structural-item-${suffix}`)
+    const value = Object.freeze({ id: item, turnId: turn, kind: "assistant" as const,
+      markdown: `Settled structural block ${index % 16}.`, status: "complete" as const })
+    turnIds.push(turn)
+    turns[turn] = Object.freeze({ id: turn, status: "complete", itemIds: persistentTurnItemIds([item]) })
+    items[item] = value
+    projectionById[item] = projectItem(value)
+    contentHash = hashText(hashText(contentHash, turn), item)
+  }
+  const order = persistentTranscriptOrder(Object.keys(items).map(id => itemId(id)))
+  const conversation: ConversationState = Object.freeze({
+    threadId: fixtureThread,
+    turnIds: persistentConversationTurnIds(turnIds),
+    turns: persistentConversationTurns(turns),
+    items: persistentConversationItems(items),
+  })
+  const transcript = freezeTranscript({
+    ...initialTranscript(),
+    order,
+    projectionById: persistentTranscriptProjections(projectionById),
+  })
+  return Object.freeze({
+    fixtureVersion: "transcript-structural-scaling-v1",
+    blockCount,
+    threadId: fixtureThread,
+    nextTurnId: turnId(`structural-turn-next-${blockCount}`),
+    nextItemId: itemId(`structural-item-next-${blockCount}`),
+    before: Object.freeze({ canonicalRevision: 1, conversation, transcript }),
+    contentHash: hashText(contentHash, String(blockCount)).toString(16).padStart(8, "0"),
   })
 }
 

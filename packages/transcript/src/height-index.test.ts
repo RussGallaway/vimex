@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { itemId, turnId, type TurnId } from "@vimex/conversation"
 import { createHeightIndex, type BlockHeightOverride, type HeightIndexDiagnostics } from "./height-index"
-import { blockKey, persistentTranscriptBlockPlan, replaceTranscriptBlock, type TranscriptBlock, type TranscriptItemBlock, type TranscriptTurnActivityBlock } from "./window"
+import { appendTranscriptBlock, blockKey, persistentTranscriptBlockPlan, replaceTranscriptBlock, type TranscriptBlock, type TranscriptItemBlock, type TranscriptTurnActivityBlock } from "./window"
 
 function block(index: number, rows: number, id: TurnId = turnId(`height-${index}`)): TranscriptTurnActivityBlock {
   return Object.freeze({
@@ -248,3 +248,96 @@ test("100/1k/10k/100k height operations retain deterministic logarithmic visit a
     expect(index.totalRows).toBe(expectedTotal)
   }
 }, 10_000)
+
+test("100/1k/10k/100k exact tail appends preserve old indexes with logarithmic height work", () => {
+  for (const count of [100, 1_000, 10_000, 100_000]) {
+    const before = persistentTranscriptBlockPlan(blocks(count))
+    const index = createHeightIndex(before)!
+    const next = block(count, 7)
+    const after = appendTranscriptBlock(before, next)
+    const appendDiagnostics = diagnostics()
+    const appended = index.appendBlock?.(after, next, 7, appendDiagnostics)
+    const depthBound = Math.ceil(Math.log2(count)) + 1
+
+    expect(appended).toBeDefined()
+    expect(appended?.supports(after)).toBe(true)
+    expect(appended?.blockCount).toBe(count + 1)
+    expect(appended?.totalRows).toBe(index.totalRows + 7)
+    expect(appended?.blockIndex(blockKey(next))).toBe(count)
+    expect(appended?.prefixRows(count)).toBe(index.totalRows)
+    expect(appended?.blockAtRow(index.totalRows)).toBe(count)
+    expect(index.supports(before)).toBe(true)
+    expect(index.supports(after)).toBe(false)
+    expect(index.blockIndex(blockKey(next))).toBeUndefined()
+    expect(index.blockCount).toBe(count)
+    expect(appendDiagnostics.nodeVisits).toBeLessThanOrEqual(depthBound)
+    expect(appendDiagnostics.nodesCopied).toBeLessThanOrEqual(depthBound * 3)
+  }
+}, 10_000)
+
+test("height append enforces exact lineage and preserves lookup and replacement contracts", () => {
+  const historical = item("append-historical")
+  const before = persistentTranscriptBlockPlan(Object.freeze([historical, block(1, 2), block(2, 3)]))
+  const index = createHeightIndex(before)!
+  const historicalIndexes = index.itemBlockIndexes(historical.key.itemId)
+  const next = item("append-next")
+  const after = appendTranscriptBlock(before, next)
+  const appended = index.appendBlock?.(after, next, 4)
+  expect(appended).toBeDefined()
+  expect(appended?.itemBlockIndexes(historical.key.itemId)).toBe(historicalIndexes)
+  expect(appended?.itemBlockIndexes(next.key.itemId)).toEqual([3])
+
+  const lookalike = persistentTranscriptBlockPlan(Object.freeze([...before, next]))
+  expect(index.appendBlock?.(lookalike, next, 4)).toBeUndefined()
+  expect(index.appendBlock?.(after, Object.freeze({ ...next }), 4)).toBeUndefined()
+  expect(index.appendBlock?.(after, next, 0)).toBeUndefined()
+  const duplicate = before[0]!
+  const duplicatePlan = appendTranscriptBlock(before, duplicate)
+  expect(index.appendBlock?.(duplicatePlan, duplicate, 1)).toBeUndefined()
+
+  const replacement = Object.freeze({ ...next, contentRevision: next.contentRevision + 1 })
+  const replacedPlan = replaceTranscriptBlock(after, 3, next, replacement)!
+  const replaced = appended?.replaceBlock(replacedPlan, next, replacement, 5)
+  expect(replaced?.supports(replacedPlan)).toBe(true)
+  expect(replaced?.totalRows).toBe(appended!.totalRows + 1)
+  expect(appended?.supports(after)).toBe(true)
+
+  const growingRoot = item("append-after-replace", "abcd")
+  const growingBefore = persistentTranscriptBlockPlan(Object.freeze([growingRoot]))
+  const growingIndex = createHeightIndex(growingBefore)!
+  const prefix = Object.freeze({ ...growingRoot, sourceSpan: Object.freeze({ from: 0, to: 2 }), contentRevision: 2 })
+  const prefixPlan = replaceTranscriptBlock(growingBefore, 0, growingRoot, prefix)!
+  const prefixIndex = growingIndex.replaceBlock(prefixPlan, growingRoot, prefix, 2)!
+  const suffix = Object.freeze({ ...prefix, key: Object.freeze({ ...prefix.key, blockId: "part:1" }),
+    sourceSpan: Object.freeze({ from: 2, to: 4 }) })
+  const grownPlan = appendTranscriptBlock(prefixPlan, suffix)
+  const grownIndex = prefixIndex.appendBlock?.(grownPlan, suffix, 2)
+  expect(grownIndex?.itemBlockIndexes(growingRoot.key.itemId)).toEqual([0, 1])
+})
+
+test("height append extends valid sub-block targets and invalidates ambiguous item lookup only in the new snapshot", () => {
+  const root = item("append-split", "abcd")
+  const prefix = Object.freeze({ ...root, key: Object.freeze({ ...root.key, blockId: "part:0" }),
+    sourceSpan: Object.freeze({ from: 0, to: 2 }) })
+  const suffix = Object.freeze({ ...root, key: Object.freeze({ ...root.key, blockId: "part:1" }),
+    sourceSpan: Object.freeze({ from: 2, to: 4 }) })
+  const before = persistentTranscriptBlockPlan(Object.freeze([prefix]))
+  const index = createHeightIndex(before)!
+  const originalIndexes = index.itemBlockIndexes(root.key.itemId)
+  const after = appendTranscriptBlock(before, suffix)
+  const appended = index.appendBlock?.(after, suffix, 2)
+  expect(appended?.itemBlockIndexes(root.key.itemId)).toEqual([0, 1])
+  expect(index.itemBlockIndexes(root.key.itemId)).toBe(originalIndexes)
+  expect(index.itemBlockIndexes(root.key.itemId)).toEqual([0])
+
+  const overlap = Object.freeze({ ...suffix, key: Object.freeze({ ...suffix.key, blockId: "part:overlap" }),
+    sourceSpan: Object.freeze({ from: 1, to: 4 }) })
+  const overlapPlan = appendTranscriptBlock(before, overlap)
+  const ambiguous = index.appendBlock?.(overlapPlan, overlap, 2)
+  expect(ambiguous).toBeDefined()
+  expect(ambiguous?.itemBlockIndexes(root.key.itemId)).toBeUndefined()
+  const recoveryPlan = appendTranscriptBlock(overlapPlan, suffix)
+  const stillAmbiguous = ambiguous?.appendBlock?.(recoveryPlan, suffix, 2)
+  expect(stillAmbiguous?.itemBlockIndexes(root.key.itemId)).toBeUndefined()
+  expect(index.itemBlockIndexes(root.key.itemId)).toEqual([0])
+})

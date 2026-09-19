@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test"
 import { createConversation, itemId, reduceConversation, threadId, turnId, type ConversationEvent, type ItemId } from "@vimex/conversation"
 import { syncTranscriptItem } from "./application/project-conversation"
-import { initialTranscript, type TranscriptState } from "./domain/transcript-document"
-import { createTranscriptFrame, TranscriptRuntime, type TranscriptDamage, type TranscriptRuntimeInput } from "./runtime"
+import { appendTranscriptOrder, initialTranscript, setTranscriptFoldValue, setTranscriptProjection, type TranscriptState } from "./domain/transcript-document"
+import { createTranscriptFrame, TranscriptRuntime, type TranscriptDamage, type TranscriptRuntimeDiagnostics, type TranscriptRuntimeInput } from "./runtime"
 import { blockKey } from "./window"
 import type { BlockGeometry, BlockMeasurementBatch } from "./geometry"
 
@@ -75,6 +75,22 @@ function batch(runtime: TranscriptRuntime, measurements: readonly BlockGeometry[
     basePresentationRevision: frame.presentationRevision,
     geometryGeneration: frame.geometry.generation,
     measurements,
+  }
+}
+
+function runtimeDiagnostics(): TranscriptRuntimeDiagnostics {
+  return {
+    completePlanBuilds: 0, completePlanBlockVisits: 0,
+    orderIndexBuilds: 0, orderIndexItemVisits: 0, orderIndexCacheHits: 0,
+    textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0,
+    textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
+    urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0, urlIndexUpdates: 0, urlIndexNodeVisits: 0,
+    projectionRecordUpdates: 0, projectionRecordNodeVisits: 0, projectionRecordNodesCopied: 0,
+    blockPlanUpdates: 0, blockPlanNodeVisits: 0, blockPlanNodesCopied: 0,
+    heightIndexBuilds: 0, heightIndexBlockVisits: 0, heightIndexUpdates: 0,
+    heightIndexNodeVisits: 0, heightIndexNodesCopied: 0,
+    completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0, blockPlanWindowSliceItems: 0,
+    changedItemBuilds: 0,
   }
 }
 
@@ -229,6 +245,186 @@ test("block damage updates one growing item without rebuilding a large historica
   expect(after.transcript.order).toBe(before.transcript.order)
   expect(after.blocks.filter((block, index) => block === before.blocks[index])).toHaveLength(before.blocks.length - 1)
   expect(after.transcript.projectionById[itemId("history-299")]).toBe(before.transcript.projectionById[itemId("history-299")])
+})
+
+test("validated empty-turn and item tail admissions append without rebuilding history", () => {
+  let source = fixture()
+  const diagnostics = runtimeDiagnostics()
+  const runtime = new TranscriptRuntime(input(source, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics,
+  })
+  const before = runtime.getSnapshot()
+  const initialCounters = { ...diagnostics }
+  let publications = 0
+  runtime.subscribe(() => { publications++ })
+
+  const nextTurn = turnId("structural-tail-turn"), nextItem = itemId("structural-tail-item")
+  source = apply(source, { type: "turn.started", threadId: thread, turnId: nextTurn })
+  const afterTurn = runtime.update(input(source, "follow", { kind: "blocks", itemIds: [] }))
+  expect(afterTurn.displayedCanonicalRevision).toBe(source.revision)
+  expect(afterTurn.blocks).toBe(before.blocks)
+  expect(afterTurn.window).toBe(before.window)
+  expect(afterTurn.geometry).toBe(before.geometry)
+  expect(afterTurn.transcript).toBe(before.transcript)
+  expect(diagnostics.completePlanBuilds - initialCounters.completePlanBuilds).toBe(0)
+  expect(diagnostics.heightIndexBuilds - initialCounters.heightIndexBuilds).toBe(0)
+  expect(diagnostics.windowGeometryBlockVisits - initialCounters.windowGeometryBlockVisits).toBe(0)
+
+  source = apply(source, { type: "item.started", threadId: thread, item: {
+    id: nextItem, turnId: nextTurn, kind: "assistant", markdown: "new structural tail", status: "running",
+  } })
+  const beforeAppendCounters = { ...diagnostics }
+  const appended = runtime.update(input(source, "follow", { kind: "blocks", itemIds: [nextItem] }))
+  const reference = createTranscriptFrame(input(source, "follow", { kind: "full" }))
+  expect(publications).toBe(2)
+  expect(appended.blocks.map(blockKey)).toEqual(reference.blocks.map(blockKey))
+  expect(appended.blocks.slice(0, before.blocks.length).every((block, index) => block === before.blocks[index])).toBe(true)
+  expect(appended.blocks.at(-1)?.key).toEqual({ kind: "item", itemId: nextItem, blockId: "root" })
+  expect(appended.transcript.order).toBe(source.transcript.order)
+  expect(appended.window.blocks.length).toBeLessThanOrEqual(24)
+  expect(diagnostics.completePlanBuilds - beforeAppendCounters.completePlanBuilds).toBe(0)
+  expect(diagnostics.completePlanBlockVisits - beforeAppendCounters.completePlanBlockVisits).toBe(0)
+  expect(diagnostics.heightIndexBuilds - beforeAppendCounters.heightIndexBuilds).toBe(0)
+  expect(diagnostics.heightIndexBlockVisits - beforeAppendCounters.heightIndexBlockVisits).toBe(0)
+  expect(diagnostics.completeGeometryBlockVisits - beforeAppendCounters.completeGeometryBlockVisits).toBe(0)
+  expect(diagnostics.blockPlanUpdates - beforeAppendCounters.blockPlanUpdates).toBe(1)
+  expect(diagnostics.heightIndexUpdates - beforeAppendCounters.heightIndexUpdates).toBe(1)
+  expect(diagnostics.changedItemBuilds - beforeAppendCounters.changedItemBuilds).toBe(1)
+  expect(diagnostics.orderIndexBuilds - beforeAppendCounters.orderIndexBuilds).toBe(0)
+  expect(diagnostics.orderIndexItemVisits - beforeAppendCounters.orderIndexItemVisits).toBe(0)
+  expect(diagnostics.windowGeometryBlockVisits - beforeAppendCounters.windowGeometryBlockVisits).toBeLessThanOrEqual(24)
+  expect(diagnostics.blockPlanWindowSliceItems - beforeAppendCounters.blockPlanWindowSliceItems).toBeLessThanOrEqual(24)
+})
+
+test("one batched tail turn and item admission publishes once; unproven order lineage rebuilds", () => {
+  const initial = fixture()
+  const nextTurn = turnId("batched-tail-turn"), nextItem = itemId("batched-tail-item")
+  let latest = apply(initial, { type: "turn.started", threadId: thread, turnId: nextTurn })
+  latest = apply(latest, { type: "item.started", threadId: thread, item: {
+    id: nextItem, turnId: nextTurn, kind: "assistant", markdown: "batched structural tail", status: "running",
+  } })
+  const diagnostics = runtimeDiagnostics()
+  const runtime = new TranscriptRuntime(input(initial, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics,
+  })
+  const before = runtime.getSnapshot()
+  const baseline = { ...diagnostics }
+  let publications = 0
+  runtime.subscribe(() => { publications++ })
+  const appended = runtime.update(input(latest, "follow", { kind: "blocks", itemIds: [nextItem] }))
+  expect(publications).toBe(1)
+  expect(appended.blocks.slice(0, before.blocks.length).every((block, index) => block === before.blocks[index])).toBe(true)
+  expect(appended.blocks.map(blockKey)).toEqual(createTranscriptFrame(input(latest, "follow", { kind: "full" })).blocks.map(blockKey))
+  expect(diagnostics.completePlanBuilds - baseline.completePlanBuilds).toBe(0)
+  expect(diagnostics.heightIndexBuilds - baseline.heightIndexBuilds).toBe(0)
+
+  const fallbackDiagnostics = runtimeDiagnostics()
+  const fallbackRuntime = new TranscriptRuntime(input(initial, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics: fallbackDiagnostics,
+  })
+  const fallbackBaseline = { ...fallbackDiagnostics }
+  const unproven = { ...latest, transcript: { ...latest.transcript, order: Object.freeze([...latest.transcript.order]) } }
+  const rebuilt = fallbackRuntime.update(input(unproven, "follow", { kind: "blocks", itemIds: [nextItem] }))
+  expect(rebuilt.blocks.map(blockKey)).toEqual(createTranscriptFrame(input(unproven, "follow", { kind: "full" })).blocks.map(blockKey))
+  expect(fallbackDiagnostics.completePlanBuilds - fallbackBaseline.completePlanBuilds).toBe(1)
+  expect(fallbackDiagnostics.completePlanBlockVisits - fallbackBaseline.completePlanBlockVisits).toBe(rebuilt.blocks.length)
+})
+
+test("structural admission rejects historical semantic rewrites and duplicate prior order membership", () => {
+  const initial = fixture()
+  const nextTurn = turnId("guarded-tail-turn"), nextItem = itemId("guarded-tail-item")
+  let latest = apply(initial, { type: "turn.started", threadId: thread, turnId: nextTurn })
+  latest = apply(latest, { type: "item.started", threadId: thread, item: {
+    id: nextItem, turnId: nextTurn, kind: "assistant", markdown: "guarded tail", status: "running",
+  } })
+
+  const originalProjection = latest.transcript.projectionById[answer]!
+  const tamperedProjection = Object.freeze({ ...originalProjection, plain: "TAMPERED", source: "TAMPERED" })
+  const tampered = { ...latest, transcript: { ...latest.transcript,
+    projectionById: setTranscriptProjection(latest.transcript.projectionById, answer, tamperedProjection) } }
+  const projectionDiagnostics = runtimeDiagnostics()
+  const projectionRuntime = new TranscriptRuntime(input(initial, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics: projectionDiagnostics,
+  })
+  const projectionBaseline = { ...projectionDiagnostics }
+  const projectionFrame = projectionRuntime.update(input(tampered, "follow", { kind: "blocks", itemIds: [nextItem] }))
+  const projectionReference = createTranscriptFrame(input(tampered, "follow", { kind: "full" }))
+  expect(projectionFrame.blocks.map(blockKey)).toEqual(projectionReference.blocks.map(blockKey))
+  expect(projectionFrame.blocks.map(block => "projection" in block ? block.projection.source : undefined))
+    .toEqual(projectionReference.blocks.map(block => "projection" in block ? block.projection.source : undefined))
+  expect(projectionFrame.blocks.find(block => "projection" in block
+    && block.key.itemId === answer && block.projection.source === "TAMPERED")).toBeTruthy()
+  expect(projectionDiagnostics.completePlanBuilds - projectionBaseline.completePlanBuilds).toBe(1)
+
+  const refolded = { ...latest, transcript: { ...latest.transcript,
+    folded: setTranscriptFoldValue(latest.transcript.folded, answer, true) } }
+  const foldDiagnostics = runtimeDiagnostics()
+  const foldRuntime = new TranscriptRuntime(input(initial, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics: foldDiagnostics,
+  })
+  const foldBaseline = { ...foldDiagnostics }
+  const foldFrame = foldRuntime.update(input(refolded, "follow", { kind: "blocks", itemIds: [nextItem] }))
+  expect(foldFrame.blocks.map(blockKey)).toEqual(createTranscriptFrame(input(refolded, "follow", { kind: "full" })).blocks.map(blockKey))
+  expect(foldDiagnostics.completePlanBuilds - foldBaseline.completePlanBuilds).toBe(1)
+
+  const duplicateInitial = { ...initial, transcript: { ...initial.transcript,
+    order: appendTranscriptOrder(initial.transcript.order, nextItem) } }
+  let duplicateLatest = apply(duplicateInitial, { type: "turn.started", threadId: thread, turnId: nextTurn })
+  duplicateLatest = apply(duplicateLatest, { type: "item.started", threadId: thread, item: {
+    id: nextItem, turnId: nextTurn, kind: "assistant", markdown: "duplicate tail", status: "running",
+  } })
+  const duplicateDiagnostics = runtimeDiagnostics()
+  const duplicateRuntime = new TranscriptRuntime(input(duplicateInitial, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics: duplicateDiagnostics,
+  })
+  const duplicateBaseline = { ...duplicateDiagnostics }
+  duplicateRuntime.update(input(duplicateLatest, "follow", { kind: "blocks", itemIds: [nextItem] }))
+  expect(duplicateDiagnostics.completePlanBuilds - duplicateBaseline.completePlanBuilds).toBe(1)
+})
+
+test("structural admission retains exclusions, supports exact default folds, and rejects presentation transitions", () => {
+  const initialBase = fixture()
+  const initial = { ...initialBase, transcript: { ...initialBase.transcript,
+    foldDefaults: Object.freeze({ reasoning: true, tools: false }) } }
+  const nextTurn = turnId("presentation-guard-turn"), nextItem = itemId("presentation-guard-item")
+  const withTurn = apply(initial, { type: "turn.started", threadId: thread, turnId: nextTurn })
+  const latest = apply(withTurn, { type: "item.started", threadId: thread, item: {
+    id: nextItem, turnId: nextTurn, kind: "reasoning", markdown: "folded tail", status: "running",
+  } })
+
+  const excludedDiagnostics = runtimeDiagnostics()
+  const excludedInput = { ...input(initial, "follow"), excludedTurnIds: [turn] }
+  const excludedRuntime = new TranscriptRuntime(excludedInput, {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics: excludedDiagnostics,
+  })
+  const excludedBaseline = { ...excludedDiagnostics }
+  const excludedFrame = excludedRuntime.update({
+    ...input(latest, "follow", { kind: "blocks", itemIds: [nextItem] }), excludedTurnIds: [turn],
+  })
+  expect(excludedDiagnostics.completePlanBuilds - excludedBaseline.completePlanBuilds).toBe(0)
+  expect(excludedFrame.transcript.order).toEqual([nextItem])
+  expect(Object.keys(excludedFrame.transcript.projectionById)).toEqual([nextItem])
+  expect(excludedFrame.transcript.folded[nextItem]).toBe(true)
+  const excludedReference = createTranscriptFrame({ ...input(latest, "follow", { kind: "full" }), excludedTurnIds: [turn] })
+  expect(excludedFrame.blocks.map(blockKey)).toEqual(excludedReference.blocks.map(blockKey))
+  expect(excludedFrame.transcript.order).toEqual(excludedReference.transcript.order)
+
+  const modeDiagnostics = runtimeDiagnostics()
+  const modeRuntime = new TranscriptRuntime(input(initial, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics: modeDiagnostics,
+  })
+  const modeBaseline = { ...modeDiagnostics }
+  const detached = modeRuntime.update(input(withTurn, "detached", { kind: "blocks", itemIds: [] }))
+  expect(detached.mode).toBe("detached")
+  expect(modeDiagnostics.completePlanBuilds - modeBaseline.completePlanBuilds).toBe(1)
+
+  const revealDiagnostics = runtimeDiagnostics()
+  const revealRuntime = new TranscriptRuntime(input(initial, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics: revealDiagnostics,
+  })
+  const revealBaseline = { ...revealDiagnostics }
+  revealRuntime.update(input(withTurn, "follow", { kind: "blocks", itemIds: [] }, { itemId: answer, graphemeOffset: 0 }))
+  expect(revealDiagnostics.completePlanBuilds - revealBaseline.completePlanBuilds).toBe(1)
 })
 
 test("detached tail streaming retains exact frame identity while canonical input advances", () => {

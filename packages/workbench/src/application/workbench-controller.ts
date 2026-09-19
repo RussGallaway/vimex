@@ -9,7 +9,7 @@ import { captureWorkbenchLifecycle, workbenchLifecycleChanged, workbenchLifecycl
 import { captureWorkbenchLayout, captureWorkbenchPresentation, captureWorkbenchPublicationContext, threadForPresentation, workbenchLayoutChanged, workbenchPresentationChanged, type WorkbenchLayoutSnapshot, type WorkbenchPublicationContext, type WorkbenchPublicationHost } from "./workbench-publications"
 import { initialWorkbench, activeWorkspace, createWorkspace, type ThreadWorkspace, type WorkbenchState, type WorkbenchCommand, type WorkbenchEffect } from "./workbench-state"
 import { transitionWorkbench } from "./reduce-workbench"
-import { forkBoundary, threadId, type ThreadId, type TurnId, type ItemId, type ConversationEvent } from "@vimex/conversation"
+import { forkBoundary, threadId, turnItemIdsHave, type ThreadId, type TurnId, type ItemId, type ConversationEvent } from "@vimex/conversation"
 import type { ConversationGateway, SessionSnapshot } from "@vimex/conversation"
 import type { ApprovalGateway } from "@vimex/approvals"
 import type { RuntimeConnection, RuntimeEvent } from "./runtime-connection"
@@ -49,16 +49,29 @@ interface TranscriptRuntimeHint {
   foldItemIds?: readonly ItemId[]
 }
 
-/** Returns bounded item damage only when the pre-event chronology proves structure is unchanged. */
+/** Returns bounded damage only when pre-event chronology proves a local change or tail admission. */
 export function incrementalConversationEventDamage(
   conversation: ConversationState | undefined,
   event: ConversationEvent,
 ): Extract<TranscriptDamage, { kind: "blocks" }> | undefined {
   if (event.type === "item.delta") return { kind: "blocks", itemIds: [event.itemId] }
-  if (event.type !== "item.completed" || !conversation) return undefined
+  if (!conversation) return undefined
+  if (event.type === "turn.started") {
+    return conversation.turns[event.turnId] ? undefined : { kind: "blocks", itemIds: [] }
+  }
+  if (event.type === "item.started") {
+    const turn = conversation.turns[event.item.turnId]
+    return !conversation.items[event.item.id]
+      && turn?.status === "running"
+      && conversation.turnIds.at(-1) === event.item.turnId
+      && !turnItemIdsHave(turn.itemIds, event.item.id)
+      ? { kind: "blocks", itemIds: [event.item.id] }
+      : undefined
+  }
+  if (event.type !== "item.completed") return undefined
   const existing = conversation.items[event.item.id]
   const turn = conversation.turns[event.item.turnId]
-  return existing?.turnId === event.item.turnId && turn?.itemIds.includes(event.item.id)
+  return existing?.turnId === event.item.turnId && Boolean(turn && turnItemIdsHave(turn.itemIds, event.item.id))
     ? { kind: "blocks", itemIds: [event.item.id] }
     : undefined
 }
@@ -264,7 +277,7 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
       presentationDamage,
       reveal: hint.reveal?.threadId === thread && hint.reveal.presentationId === presentationId
         ? hint.reveal.request : undefined,
-      excludedTurnIds: side?.inheritedTurnIds?.map(id => id as TurnId),
+      excludedTurnIds: side?.inheritedTurnIds,
     }
   }
   private syncTranscriptRuntimes(before: WorkbenchState, state: WorkbenchState, hint: TranscriptRuntimeHint = {}): void {
@@ -463,7 +476,7 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
           damagedItems.delete(event.threadId)
         } else if (!fullDamage.has(event.threadId)) {
           const ids = damagedItems.get(event.threadId) ?? new Set<ItemId>()
-          ids.add(incrementalDamage.itemIds[0]!)
+          for (const itemId of incrementalDamage.itemIds) ids.add(itemId)
           damagedItems.set(event.threadId, ids)
         }
       }

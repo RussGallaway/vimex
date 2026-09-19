@@ -1,9 +1,9 @@
-import type { ConversationState, ItemId, ThreadId, TurnId } from "@vimex/conversation"
-import { inheritTranscriptTextLengthIndexChanges, persistentTranscriptFolds, persistentTranscriptProjections, setTranscriptProjection, transcriptOrderIndex, transcriptTextLengthRange, type LogicalPoint, type TranscriptOrderIndexDiagnostics, type TranscriptProjectionRecordDiagnostics, type TranscriptState, type TranscriptTextLengthIndexDiagnostics } from "./domain/transcript-document"
+import { isConversationItemAddition, isConversationTurnAdditionThenItemAppend, isConversationTurnIdAppend, isConversationTurnUpdate, isTurnItemIdAppend, type ConversationState, type ItemId, type ThreadId, type TurnId } from "@vimex/conversation"
+import { appendTranscriptOrder, inheritTranscriptTextLengthIndex, inheritTranscriptTextLengthIndexChanges, isTranscriptFoldAddition, isTranscriptProjectionAddition, persistentTranscriptFolds, persistentTranscriptOrder, persistentTranscriptProjections, setTranscriptProjection, transcriptOrderAppend, transcriptOrderIndex, transcriptTextLengthRange, type LogicalPoint, type TranscriptOrderIndexDiagnostics, type TranscriptProjectionRecordDiagnostics, type TranscriptState, type TranscriptTextLengthIndexDiagnostics } from "./domain/transcript-document"
 import { composeTranscriptGeometry, composeTranscriptWindowGeometry, emptyTranscriptGeometry, freezeBlockGeometry, geometryMatchesBlock, type BlockGeometry, type BlockMeasurementBase, type BlockMeasurementBatch, type LayoutResetReason, type TranscriptGeometry } from "./geometry"
 import { createHeightIndex, type TranscriptHeightIndex } from "./height-index"
-import { inheritTranscriptUrlIndexChanges, primeTranscriptUrlIndex, type TranscriptUrlIndexDiagnostics } from "./application/transcript-url-index"
-import { blockKey, buildTranscriptBlocks, buildTranscriptItemBlock, passThroughWindow, persistentTranscriptBlockPlan, planTranscriptWindow, pointIsMaterialized, replaceTranscriptBlock, transcriptPointBlockIndex, type TranscriptBlock, type TranscriptBlockPlanDiagnostics, type TranscriptItemBlock, type TranscriptWindow } from "./window"
+import { inheritTranscriptUrlIndex, inheritTranscriptUrlIndexChanges, primeTranscriptUrlIndex, type TranscriptUrlIndexDiagnostics } from "./application/transcript-url-index"
+import { appendTranscriptBlock, blockKey, buildTranscriptBlocks, buildTranscriptItemBlock, passThroughWindow, persistentTranscriptBlockPlan, planTranscriptWindow, pointIsMaterialized, replaceTranscriptBlock, transcriptPointBlockIndex, type TranscriptBlock, type TranscriptBlockPlanDiagnostics, type TranscriptItemBlock, type TranscriptWindow } from "./window"
 
 export type TranscriptDamage =
   | Readonly<{ kind: "none" }>
@@ -107,12 +107,14 @@ function mergeDamage(left: TranscriptDamage, right: TranscriptDamage): Transcrip
 
 function blockDamageIds(...damage: readonly TranscriptDamage[]): readonly ItemId[] | undefined {
   const ids = new Set<ItemId>()
+  let explicit = false
   for (const entry of damage) {
     if (entry.kind === "none") continue
     if (entry.kind !== "blocks") return undefined
+    explicit = true
     for (const id of entry.itemIds) ids.add(id)
   }
-  return ids.size ? [...ids] : undefined
+  return explicit ? [...ids] : undefined
 }
 
 function sameList<T>(left: readonly T[] | undefined, right: readonly T[] | undefined): boolean {
@@ -232,7 +234,8 @@ function presentationTranscriptWithProjections(
 function presentationTranscript(state: TranscriptState, blocks: readonly TranscriptBlock[]): TranscriptState {
   const projections = new Map<ItemId, TranscriptItemBlock["projection"]>()
   for (const block of itemBlocks(blocks)) if (!projections.has(block.key.itemId)) projections.set(block.key.itemId, block.projection)
-  return presentationTranscriptWithProjections(state, Object.freeze([...projections.keys()]), Object.freeze(Object.fromEntries(projections)))
+  return presentationTranscriptWithProjections(state,
+    persistentTranscriptOrder(Object.freeze([...projections.keys()])), Object.freeze(Object.fromEntries(projections)))
 }
 
 function validReveal(input: TranscriptRuntimeInput, diagnostics?: TranscriptOrderIndexDiagnostics): LogicalPoint | undefined {
@@ -296,6 +299,46 @@ function buildFrame(input: TranscriptRuntimeInput, previous: TranscriptFrame | u
   return frameFor(input, blocks, input.canonicalRevision, revision, damage, previous?.geometry, diagnostics, persistentPlan)
 }
 
+function isEmptyTailTurnAdmission(previous: TranscriptRuntimeInput, next: TranscriptRuntimeInput): boolean {
+  if (previous.transcript !== next.transcript || previous.conversation.items !== next.conversation.items
+    || next.conversation.turnIds.length !== previous.conversation.turnIds.length + 1) return false
+  const turnId = next.conversation.turnIds.at(-1)
+  const turn = turnId && next.conversation.turns[turnId]
+  return Boolean(turnId && turn && turn.status === "running" && turn.itemIds.length === 0
+    && next.conversation.activeTurnId === turnId
+    && isConversationTurnIdAppend(previous.conversation.turnIds, next.conversation.turnIds, turnId)
+    && isConversationTurnUpdate(previous.conversation.turns, next.conversation.turns, turnId, undefined, turn))
+}
+
+function isTailItemAdmission(previous: TranscriptRuntimeInput, next: TranscriptRuntimeInput, itemId: ItemId): boolean {
+  const item = next.conversation.items[itemId]
+  const turn = item && next.conversation.turns[item.turnId]
+  const orderAppend = transcriptOrderAppend(previous.transcript.order, next.transcript.order)
+  const projection = next.transcript.projectionById[itemId]
+  const foldLineage = previous.transcript.folded === next.transcript.folded
+    || (next.transcript.folded[itemId] === true
+      && isTranscriptFoldAddition(previous.transcript.folded, next.transcript.folded, itemId, true))
+  if (!item || !turn || turn.status !== "running" || next.conversation.activeTurnId !== item.turnId
+    || next.conversation.turnIds.at(-1) !== item.turnId || previous.conversation.items[itemId]
+    || previous.transcript.projectionById[itemId] || !projection
+    || transcriptOrderIndex(previous.transcript.order).has(itemId)
+    || orderAppend?.itemId !== itemId || orderAppend.position !== previous.transcript.order.length
+    || !isTranscriptProjectionAddition(previous.transcript.projectionById, next.transcript.projectionById, itemId, projection)
+    || !foldLineage
+    || !isConversationItemAddition(previous.conversation.items, next.conversation.items, item)) return false
+
+  const previousTurn = previous.conversation.turns[item.turnId]
+  if (previousTurn) {
+    return next.conversation.turnIds === previous.conversation.turnIds
+      && isTurnItemIdAppend(previousTurn.itemIds, turn.itemIds, itemId)
+      && isConversationTurnUpdate(previous.conversation.turns, next.conversation.turns,
+        item.turnId, previousTurn, turn)
+  }
+  return isConversationTurnIdAppend(previous.conversation.turnIds, next.conversation.turnIds, item.turnId)
+    && isConversationTurnAdditionThenItemAppend(previous.conversation.turns, next.conversation.turns,
+      item.turnId, itemId, turn)
+}
+
 /** Stateless full-rebuild fallback for inert renderers; it owns no runtime lifetime. */
 export function createTranscriptFrame(input: TranscriptRuntimeInput): TranscriptFrame {
   return buildFrame(input, undefined, 1, fullDamage)
@@ -318,9 +361,11 @@ export class TranscriptRuntime {
   private notifying = false
   private readonly queuedInputs: TranscriptRuntimeInput[] = []
   private lastRevealId = -1
+  private excludedTurnIds: ReadonlySet<TurnId>
 
   constructor(input: TranscriptRuntimeInput, options: TranscriptRuntimeOptions = {}) {
     this.latestInput = input
+    this.excludedTurnIds = new Set(input.excludedTurnIds ?? [])
     this.windowPolicy = options.windowPolicy && Object.freeze({ ...options.windowPolicy })
     this.diagnostics = options.diagnostics
     // Canonical-order indexing is setup work, never a surprise inside the
@@ -554,6 +599,74 @@ export class TranscriptRuntime {
     return Object.freeze({ frame, index })
   }
 
+  private structuralTailFrame(
+    previousInput: TranscriptRuntimeInput,
+    input: TranscriptRuntimeInput,
+    itemIds: readonly ItemId[],
+    damage: TranscriptDamage,
+  ): Readonly<{ frame: TranscriptFrame; index: TranscriptHeightIndex | undefined; appendedItemId?: ItemId; windowStable?: true }> | undefined {
+    if (!this.windowPolicy || this.frame.displayedCanonicalRevision !== previousInput.canonicalRevision
+      || previousInput.mode !== "follow" || input.mode !== "follow"
+      || input.reveal || (input.presentationDamage && input.presentationDamage.kind !== "none")) return undefined
+    if (itemIds.length === 0) {
+      if (!isEmptyTailTurnAdmission(previousInput, input)) return undefined
+      const turnId = input.conversation.turnIds.at(-1)
+      if (!turnId || this.excludedTurnIds.has(turnId)) return undefined
+      return Object.freeze({
+        frame: Object.freeze({
+          ...this.frame,
+          displayedCanonicalRevision: input.canonicalRevision,
+          presentationRevision: this.frame.presentationRevision + 1,
+          damage: frozenDamage(damage),
+        }),
+        index: this.heightIndex,
+        windowStable: true,
+      })
+    }
+    if (itemIds.length !== 1) return undefined
+    const itemId = itemIds[0]!
+    if (!isTailItemAdmission(previousInput, input, itemId)) return undefined
+    const item = input.conversation.items[itemId]
+    if (!item || this.excludedTurnIds.has(item.turnId)) return undefined
+    const appended = buildTranscriptItemBlock(input, itemId)
+    if (!appended || appended.key.blockId !== "root" || appended.followedByActivity) return undefined
+    if (this.diagnostics) this.diagnostics.changedItemBuilds += 1
+    const blocks = appendTranscriptBlock(this.frame.blocks, appended, this.diagnostics)
+    const counters = { nodeVisits: 0, nodesCopied: 0 }
+    const index = this.heightIndex?.supports(this.frame.blocks)
+      ? this.heightIndex.appendBlock?.(blocks, appended,
+        input.transcript.folded[itemId] ? 1 : Math.max(1, appended.estimatedRows), counters)
+      : undefined
+    if (!index) return undefined
+    if (this.diagnostics) {
+      this.diagnostics.heightIndexUpdates += 1
+      this.diagnostics.heightIndexNodeVisits += counters.nodeVisits
+      this.diagnostics.heightIndexNodesCopied += counters.nodesCopied
+    }
+    const presentedOrder = this.excludedTurnIds.size
+      ? appendTranscriptOrder(this.frame.transcript.order, itemId)
+      : input.transcript.order
+    const presentedProjections = this.excludedTurnIds.size
+      ? setTranscriptProjection(this.frame.transcript.projectionById, itemId, input.transcript.projectionById[itemId]!, this.diagnostics)
+      : input.transcript.projectionById
+    const transcript = presentationTranscriptWithProjections(input.transcript, presentedOrder, presentedProjections)
+    inheritTranscriptTextLengthIndex(this.frame.transcript, transcript, itemId, true, this.diagnostics)
+    inheritTranscriptUrlIndex(this.frame.transcript, transcript, itemId, true, this.diagnostics)
+    const frame = Object.freeze({
+      threadId: input.threadId,
+      canonicalGeneration: input.canonicalGeneration,
+      displayedCanonicalRevision: input.canonicalRevision,
+      presentationRevision: this.frame.presentationRevision + 1,
+      mode: input.mode,
+      transcript,
+      blocks,
+      window: passThroughWindow(blocks),
+      geometry: this.frame.geometry,
+      damage: frozenDamage(damage),
+    })
+    return Object.freeze({ frame, index, appendedItemId: itemId })
+  }
+
   private presentationFrame(input: TranscriptRuntimeInput, damage: TranscriptDamage): TranscriptFrame {
     const frame = Object.freeze({
       ...this.frame,
@@ -682,9 +795,21 @@ export class TranscriptRuntime {
     return this.publish(reset, index)
   }
 
-  private rebuild(input: TranscriptRuntimeInput, damage: TranscriptDamage, reuse = true, incrementalItemIds?: readonly ItemId[]): TranscriptFrame {
+  private rebuild(
+    input: TranscriptRuntimeInput,
+    damage: TranscriptDamage,
+    reuse = true,
+    incrementalItemIds?: readonly ItemId[],
+    previousInput: TranscriptRuntimeInput = this.latestInput,
+  ): TranscriptFrame {
     this.hiddenDamage = noneDamage
-    const incremental = reuse && incrementalItemIds ? this.incrementalFrame(input, incrementalItemIds, damage) : undefined
+    const structuralCandidate = Boolean(incrementalItemIds
+      && (incrementalItemIds.length === 0 || incrementalItemIds.some(itemId => !this.itemBlockIndexes.has(itemId))))
+    const incremental = reuse && incrementalItemIds
+      ? structuralCandidate
+        ? this.structuralTailFrame(previousInput, input, incrementalItemIds, damage)
+        : this.incrementalFrame(input, incrementalItemIds, damage)
+      : undefined
     const rebuilt = incremental ? undefined : buildFrame(input, reuse ? this.frame : undefined,
       this.frame.presentationRevision + 1, damage, this.diagnostics, Boolean(this.windowPolicy))
     if (rebuilt && this.diagnostics) {
@@ -694,8 +819,14 @@ export class TranscriptRuntime {
     const raw = incremental?.frame ?? rebuilt!
     if (rebuilt) transcriptTextLengthRange(raw.transcript, 0, 0, this.diagnostics)
     const index = incremental?.index ?? (this.heightIndex?.supports(raw.blocks) ? this.heightIndex : this.heightIndexForFrame(raw))
-    const next = this.withPlannedWindow(raw, index, displayedReveal(input, raw, this.diagnostics))
+    const windowStable = Boolean(incremental
+      && (incremental as { readonly windowStable?: true }).windowStable)
+    const next = windowStable ? raw : this.withPlannedWindow(raw, index, displayedReveal(input, raw, this.diagnostics))
     if (!incremental) this.reindex(next.blocks)
+    else {
+      const appendedItemId = (incremental as { readonly appendedItemId?: ItemId }).appendedItemId
+      if (appendedItemId) this.itemBlockIndexes.set(appendedItemId, next.blocks.length - 1)
+    }
     return this.publish(next, index)
   }
 
@@ -706,14 +837,15 @@ export class TranscriptRuntime {
     const priorFrame = this.frame
     const lineageChanged = input.threadId !== priorInput.threadId || input.canonicalGeneration !== priorInput.canonicalGeneration
     if (!lineageChanged && input.canonicalRevision < priorInput.canonicalRevision) return priorFrame
+    const exclusionsChanged = !sameList(input.excludedTurnIds, priorInput.excludedTurnIds)
     if (!lineageChanged && input.canonicalRevision === priorInput.canonicalRevision && input.conversation !== priorInput.conversation) {
       this.latestInput = input
+      if (exclusionsChanged) this.excludedTurnIds = new Set(input.excludedTurnIds ?? [])
       transcriptOrderIndex(input.transcript.order, this.diagnostics)
       return this.rebuild(input, fullDamage, false)
     }
 
     const revisionChanged = lineageChanged || input.canonicalRevision !== priorInput.canonicalRevision
-    const exclusionsChanged = !sameList(input.excludedTurnIds, priorInput.excludedTurnIds)
     const suppliedCanonicalDamage = frozenDamage(input.canonicalDamage)
     const canonicalDamage = lineageChanged || exclusionsChanged || (revisionChanged && suppliedCanonicalDamage.kind === "none")
       ? fullDamage : suppliedCanonicalDamage
@@ -721,14 +853,15 @@ export class TranscriptRuntime {
     const revealIsNew = Boolean(input.reveal && input.reveal.id > this.lastRevealId)
     if (input.reveal) this.lastRevealId = Math.max(this.lastRevealId, input.reveal.id)
     this.latestInput = input
+    if (lineageChanged || exclusionsChanged) this.excludedTurnIds = new Set(input.excludedTurnIds ?? [])
     transcriptOrderIndex(input.transcript.order, this.diagnostics)
 
-    if (lineageChanged) return this.rebuild(input, fullDamage, false)
-    if (exclusionsChanged) return this.rebuild(input, fullDamage)
+    if (lineageChanged) return this.rebuild(input, fullDamage, false, undefined, priorInput)
+    if (exclusionsChanged) return this.rebuild(input, fullDamage, true, undefined, priorInput)
 
     if (input.mode === "detached") {
       const detaching = priorFrame.mode !== "detached"
-      if (detaching && revisionChanged) return this.rebuild(input, mergeDamage(canonicalDamage, presentationDamage), true, blockDamageIds(canonicalDamage))
+      if (detaching && revisionChanged) return this.rebuild(input, mergeDamage(canonicalDamage, presentationDamage), true, blockDamageIds(canonicalDamage), priorInput)
       if (revisionChanged) this.hiddenDamage = mergeDamage(this.hiddenDamage, canonicalDamage)
 
       if (revealIsNew) {
@@ -736,7 +869,7 @@ export class TranscriptRuntime {
         if (!reveal) return priorFrame
         if (!this.revealExistsInDisplayedFrame(input, priorFrame, reveal)) {
           const hiddenDamage = this.hiddenDamage
-          return this.rebuild(input, mergeDamage(presentationDamage, mergeDamage({ kind: "view" }, hiddenDamage)), true, blockDamageIds(hiddenDamage))
+          return this.rebuild(input, mergeDamage(presentationDamage, mergeDamage({ kind: "view" }, hiddenDamage)), true, blockDamageIds(hiddenDamage), priorInput)
         }
         return this.publishPresentation(input, mergeDamage(presentationDamage, Object.freeze({ kind: "view" as const })))
       }
@@ -756,7 +889,7 @@ export class TranscriptRuntime {
     const incrementalItemIds = reattaching
       ? blockDamageIds(this.hiddenDamage, canonicalDamage)
       : blockDamageIds(canonicalDamage)
-    return this.rebuild(input, damage, true, incrementalItemIds)
+    return this.rebuild(input, damage, true, incrementalItemIds, priorInput)
   }
 
   dispose(): void {

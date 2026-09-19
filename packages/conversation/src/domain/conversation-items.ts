@@ -9,7 +9,20 @@ interface ItemNode {
   readonly right?: ItemNode
 }
 
-interface ItemRecordData { readonly root?: ItemNode; readonly size: number; readonly nextOrdinal: number }
+interface ItemRecordData {
+  readonly token: object
+  readonly root?: ItemNode
+  readonly size: number
+  readonly nextOrdinal: number
+  readonly lineage?: {
+    readonly previousRoot?: ItemNode
+    readonly previousSize: number
+    readonly previousToken: object
+    readonly updatedKey: string
+    readonly previousValue?: ConversationItem
+    readonly updatedValue: ConversationItem
+  }
+}
 
 export interface ConversationItemRecordDiagnostics {
   conversationItemRecordNormalizations: number
@@ -97,20 +110,22 @@ function setItemNode(
   value: ConversationItem,
   ordinal: number,
   diagnostics?: ConversationItemRecordDiagnostics,
-): { readonly root: ItemNode; readonly added: boolean; readonly changed: boolean } {
+): { readonly root: ItemNode; readonly added: boolean; readonly changed: boolean; readonly previousValue?: ConversationItem } {
   if (diagnostics) diagnostics.conversationItemRecordNodeVisits += 1
   if (!root) return { root: copiedItemNode(key, value, ordinal, undefined, undefined, diagnostics), added: true, changed: true }
   if (key === root.key) {
-    if (root.value === value) return { root, added: false, changed: false }
-    return { root: copiedItemNode(key, value, root.ordinal, root.left, root.right, diagnostics), added: false, changed: true }
+    if (root.value === value) return { root, added: false, changed: false, previousValue: root.value }
+    return { root: copiedItemNode(key, value, root.ordinal, root.left, root.right, diagnostics),
+      added: false, changed: true, previousValue: root.value }
   }
   if (key < root.key) {
     const next = setItemNode(root.left, key, value, ordinal, diagnostics)
-    if (!next.changed) return { root, added: false, changed: false }
+    if (!next.changed) return { root, added: false, changed: false, previousValue: next.previousValue }
     return {
       root: balance(copiedItemNode(root.key, root.value, root.ordinal, next.root, root.right, diagnostics), diagnostics),
       added: next.added,
       changed: true,
+      previousValue: next.previousValue,
     }
   }
   const next = setItemNode(root.right, key, value, ordinal, diagnostics)
@@ -119,6 +134,7 @@ function setItemNode(
     root: balance(copiedItemNode(root.key, root.value, root.ordinal, root.left, next.root, diagnostics), diagnostics),
     added: next.added,
     changed: true,
+    previousValue: next.previousValue,
   }
 }
 
@@ -185,7 +201,7 @@ export function persistentConversationItems(
     const { key, item, ordinal } = values[middle]!
     return itemNode(key, item, ordinal, build(from, middle), build(middle + 1, to))
   }
-  const record = itemRecord({ root: build(0, values.length), size: values.length, nextOrdinal: values.length })
+  const record = itemRecord({ token: Object.freeze({}), root: build(0, values.length), size: values.length, nextOrdinal: values.length })
   normalizedItemRecords.set(value, record)
   return record
 }
@@ -201,9 +217,18 @@ export function setConversationItem(
   if (!next.changed) return record
   if (diagnostics) diagnostics.conversationItemRecordUpdates += 1
   return itemRecord({
+    token: Object.freeze({}),
     root: next.root,
     size: data.size + (next.added ? 1 : 0),
     nextOrdinal: data.nextOrdinal + (next.added ? 1 : 0),
+    lineage: {
+      previousRoot: data.root,
+      previousSize: data.size,
+      previousToken: data.token,
+      updatedKey: item.id,
+      previousValue: next.previousValue,
+      updatedValue: item,
+    },
   })
 }
 
@@ -217,4 +242,28 @@ export function conversationItemAt(
   if (diagnostics) diagnostics.conversationItemRecordLookups += 1
   if (!data) return Object.hasOwn(value, itemId) ? value[itemId] : undefined
   return itemValue(data.root, itemId, diagnostics)
+}
+
+export function isConversationItemUpdate(
+  previous: Readonly<Record<string, ConversationItem>>,
+  next: Readonly<Record<string, ConversationItem>>,
+  itemId: string,
+  previousItem: ConversationItem | undefined,
+  nextItem: ConversationItem,
+): boolean {
+  const data = itemRecordData.get(next)
+  const previousData = itemRecordData.get(previous)
+  return data?.lineage !== undefined && previousData !== undefined
+    && data.lineage.previousRoot === previousData.root && data.lineage.previousSize === previousData.size
+    && data.lineage.previousToken === previousData.token
+    && data.lineage.updatedKey === itemId && data.lineage.previousValue === previousItem && data.lineage.updatedValue === nextItem
+    && data.size === previousData.size + (previousItem ? 0 : 1)
+}
+
+export function isConversationItemAddition(
+  previous: Readonly<Record<string, ConversationItem>>,
+  next: Readonly<Record<string, ConversationItem>>,
+  item: ConversationItem,
+): boolean {
+  return isConversationItemUpdate(previous, next, item.id, undefined, item)
 }

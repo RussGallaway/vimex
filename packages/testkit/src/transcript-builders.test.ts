@@ -5,6 +5,7 @@ import {
   appendTranscriptScalingTail,
   buildOversizedTranscriptFixtures,
   buildTranscriptScalingFixture,
+  buildTranscriptStructuralScalingFixture,
   transcriptScalingBlockCounts,
 } from "./transcript-builders"
 
@@ -30,6 +31,19 @@ test("scaling fixtures deterministically produce the exact requested render-bloc
     expect(fixture.afterTailDelta.transcript.order).toBe(fixture.before.transcript.order)
     expect(fixture.afterTailDelta.conversation.items[fixture.targets.first]).toBe(fixture.before.conversation.items[fixture.targets.first])
     expect(fixture.afterTailDelta.transcript.projectionById[fixture.targets.first]).toBe(fixture.before.transcript.projectionById[fixture.targets.first])
+  }
+})
+
+test("structural scaling fixtures expose one canonical turn per render block", () => {
+  for (const blockCount of transcriptScalingBlockCounts) {
+    const fixture = buildTranscriptStructuralScalingFixture(blockCount)
+    expect(fixture.before.conversation.turnIds).toHaveLength(blockCount)
+    expect(Object.keys(fixture.before.conversation.turns)).toHaveLength(blockCount)
+    expect(fixture.before.transcript.order).toHaveLength(blockCount)
+    expect(buildTranscriptBlocks(fixture.before)).toHaveLength(blockCount)
+    for (const turn of fixture.before.conversation.turnIds.slice(0, 3)) {
+      expect(fixture.before.conversation.turns[turn]?.itemIds).toHaveLength(1)
+    }
   }
 })
 

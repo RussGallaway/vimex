@@ -2,7 +2,9 @@ import { expect, test } from "bun:test"
 import { itemId, turnId } from "@vimex/conversation"
 import { createHeightIndex } from "./height-index"
 import {
+  appendTranscriptBlock,
   blockKey,
+  isTranscriptBlockAppend,
   passThroughWindow,
   persistentTranscriptBlockPlan,
   planTranscriptWindow,
@@ -77,6 +79,34 @@ test("persistent complete plans preserve array reflection and reject integrity m
   expect([...plan]).toEqual([...source])
   expect(Object.keys(plan)).toEqual(["0", "1", "2"])
 })
+
+test("100/1k/10k/100k persistent tail appends retain old snapshots with logarithmic tree work", () => {
+  for (const count of [100, 1_000, 10_000, 100_000]) {
+    const source = Object.freeze(Array.from({ length: count }, (_, index) => item(`append-plan-${count}-${index}`)))
+    const before = persistentTranscriptBlockPlan(source)
+    const next = item(`append-plan-${count}-next`)
+    const diagnostics = { blockPlanUpdates: 0, blockPlanNodeVisits: 0, blockPlanNodesCopied: 0 }
+    const after = appendTranscriptBlock(before, next, diagnostics)
+    const depthBound = Math.ceil(Math.log2(count)) + 1
+
+    expect(after).toHaveLength(count + 1)
+    expect(after[count]).toBe(next)
+    expect(after[0]).toBe(before[0])
+    expect(after[count - 1]).toBe(before[count - 1])
+    expect(before).toHaveLength(count)
+    expect(before[count]).toBeUndefined()
+    expect(isTranscriptBlockAppend(before, after, next)).toBe(true)
+    expect(isTranscriptBlockAppend(source, after, next)).toBe(false)
+    expect(diagnostics.blockPlanUpdates).toBe(1)
+    expect(diagnostics.blockPlanNodeVisits).toBeLessThanOrEqual(depthBound)
+    expect(diagnostics.blockPlanNodesCopied).toBeLessThanOrEqual(depthBound * 3)
+
+    const replacement = Object.freeze({ ...next, contentRevision: next.contentRevision + 1 })
+    const replaced = replaceTranscriptBlock(after, count, next, replacement)
+    expect(replaced?.[count]).toBe(replacement)
+    expect(after[count]).toBe(next)
+  }
+}, 10_000)
 
 function activity(name: string, estimatedRows = 1): TranscriptBlock {
   const id = turnId(name)

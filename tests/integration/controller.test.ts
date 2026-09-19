@@ -74,6 +74,77 @@ test("incremental completion damage requires exact pre-event item chronology", (
   }, completion)).toBeUndefined()
 })
 
+test("structural damage accepts only a new empty tail turn and its first semantic tail item", () => {
+  const thread = threadId("structural-damage"), firstTurn = turnId("first-turn"), nextTurn = turnId("next-turn")
+  const first = itemId("first-item"), next = itemId("next-item")
+  let conversation = reduceConversation(createConversation(thread), {
+    type: "turn.started", threadId: thread, turnId: firstTurn,
+  })
+  conversation = reduceConversation(conversation, {
+    type: "item.started", threadId: thread,
+    item: { id: first, turnId: firstTurn, kind: "assistant", markdown: "first", status: "running" },
+  })
+
+  expect(incrementalConversationEventDamage(conversation, {
+    type: "turn.started", threadId: thread, turnId: nextTurn,
+  })).toEqual({ kind: "blocks", itemIds: [] })
+  expect(incrementalConversationEventDamage(conversation, {
+    type: "turn.started", threadId: thread, turnId: firstTurn,
+  })).toBeUndefined()
+
+  const withTailTurn = reduceConversation(conversation, {
+    type: "turn.started", threadId: thread, turnId: nextTurn,
+  })
+  const nextItem = { id: next, turnId: nextTurn, kind: "assistant" as const, markdown: "next", status: "running" as const }
+  expect(incrementalConversationEventDamage(withTailTurn, {
+    type: "item.started", threadId: thread, item: nextItem,
+  })).toEqual({ kind: "blocks", itemIds: [next] })
+  expect(incrementalConversationEventDamage(withTailTurn, {
+    type: "item.started", threadId: thread,
+    item: { ...nextItem, id: first },
+  })).toBeUndefined()
+  expect(incrementalConversationEventDamage(withTailTurn, {
+    type: "item.started", threadId: thread,
+    item: { ...nextItem, id: itemId("non-tail"), turnId: firstTurn },
+  })).toBeUndefined()
+})
+
+test("direct structural tail admission advances an empty turn without rematerializing and appends one block", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const seed = itemId("structural-direct-seed")
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: {
+    id: seed, turnId: turnId("structural-direct-seed-turn"), kind: "assistant", markdown: "seed", status: "complete",
+  } } })
+  const runtime = h.controller.transcriptRuntime("main")!
+  const before = runtime.getSnapshot()
+  const nextTurn = turnId("structural-direct-next-turn")
+  const nextItem = itemId("structural-direct-next-item")
+  let publications = 0
+  runtime.subscribe(() => { publications++ })
+
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: nextTurn } })
+  const emptyTurn = runtime.getSnapshot()
+  expect(emptyTurn.displayedCanonicalRevision).toBe(before.displayedCanonicalRevision + 1)
+  expect(emptyTurn.blocks).toBe(before.blocks)
+  expect(emptyTurn.window).toBe(before.window)
+  expect(emptyTurn.geometry).toBe(before.geometry)
+  expect(emptyTurn.transcript).toBe(before.transcript)
+
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: {
+    id: nextItem, turnId: nextTurn, kind: "assistant", markdown: "tail", status: "running",
+  } } })
+  const admitted = runtime.getSnapshot()
+  expect(publications).toBe(2)
+  expect(admitted.displayedCanonicalRevision).toBe(emptyTurn.displayedCanonicalRevision + 1)
+  expect(admitted.blocks).toHaveLength(before.blocks.length + 1)
+  expect(admitted.blocks[0]).toBe(before.blocks[0])
+  expect(admitted.blocks.at(-1)?.key).toMatchObject({ kind: "item", itemId: nextItem })
+  expect(admitted.window.blocks.length).toBeLessThanOrEqual(72)
+  expect(admitted.transcript.order.at(-1)).toBe(nextItem)
+  await h.controller.close()
+})
+
 test("initializes session catalog without selecting background sessions; restores drafts on round-trip", async () => {
   const h = harness()
   await h.controller.initialize("/tmp")
@@ -283,7 +354,7 @@ test("controller-owned transcript runtime freezes detached content and follows l
   const turn = turnId("runtime"), id = itemId("runtime-answer")
   h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
   h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id, turnId: turn, kind: "assistant", markdown: "visible", status: "running" } } })
-  expect(runtime.getSnapshot().damage.kind).toBe("full")
+  expect(runtime.getSnapshot().damage).toEqual({ kind: "blocks", itemIds: [id] })
   h.controller.transcript({ type: "cursor.move", target: { itemId: id, graphemeOffset: 2 }, preferredScreenRow: 3, extend: false })
   const pinned = runtime.getSnapshot()
   h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: id, delta: " hidden tail" } })

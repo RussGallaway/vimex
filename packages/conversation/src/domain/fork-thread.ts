@@ -3,6 +3,8 @@ import type { ThreadId, TurnId } from "./identifiers"
 import type { ConversationState } from "./thread"
 import type { Turn } from "./turn"
 import { persistentConversationItems } from "./conversation-items"
+import { persistentConversationTurnIds, persistentTurnItemIds } from "./conversation-id-sequences"
+import { persistentConversationTurns } from "./conversation-turns"
 export function forkConversation(state: ConversationState, nextThreadId: ThreadId, throughTurnId: TurnId): ConversationState | undefined {
   const boundary = state.turnIds.indexOf(throughTurnId)
   if (boundary < 0 || state.turns[throughTurnId]?.status === "running") return undefined
@@ -10,8 +12,13 @@ export function forkConversation(state: ConversationState, nextThreadId: ThreadI
   const turns: Record<string, Turn> = {}; const items = Object.create(null) as Record<string, ConversationItem>
   for (const id of turnIds) {
     const turn = state.turns[id]; if (!turn) continue
-    turns[id] = { ...turn, itemIds: [...turn.itemIds] }
+    turns[id] = { ...turn, itemIds: persistentTurnItemIds([...turn.itemIds]) }
     for (const item of turn.itemIds) { const value = state.items[item]; if (value) items[item] = { ...value } }
   }
-  return { threadId: nextThreadId, turnIds, turns, items: persistentConversationItems(items) }
+  return {
+    threadId: nextThreadId,
+    turnIds: persistentConversationTurnIds(turnIds),
+    turns: persistentConversationTurns(turns),
+    items: persistentConversationItems(items),
+  }
 }
