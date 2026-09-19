@@ -2,10 +2,11 @@ import { expect, test } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
 import { act, useState } from "react"
 import type { ScrollBoxRenderable } from "@opentui/core"
-import { createConversation, itemId, reduceConversation, threadId, turnId } from "@vimex/conversation"
-import { initialTranscript, syncTranscriptItem, TranscriptRuntime } from "@vimex/transcript"
+import { createConversation, itemId, reduceConversation, threadId, turnId, type ConversationEvent, type ConversationItem } from "@vimex/conversation"
+import { blockKey, initialTranscript, syncTranscriptItem, TranscriptRuntime, type TranscriptState } from "@vimex/transcript"
 import { ToolCall } from "./ToolCall"
-import { measureRenderedTranscript, measuredPoint, topVisiblePoint } from "./rendered-layout"
+import { measureRenderedTranscript, measuredPoint, topVisiblePoint, transcriptBlockRenderableId } from "./rendered-layout"
+import { movePoint, type TranscriptLayout } from "./layout"
 import { createEmberTideSyntax } from "../theme"
 
 test("native scroll translates cached points without remapping; resize invalidates geometry", async () => {
@@ -145,4 +146,136 @@ test("a block-damage append is discovered after an initially empty render plan",
     expect(measured.geometry.totalPoints).toBeGreaterThan(0)
     expect(measureRenderedTranscript(h.renderer, scroll, { frame: measured, runtime, styleRevision: "test" })).toBeDefined()
   } finally { await act(async () => h.renderer.destroy()) }
+})
+
+test("incremental block geometry and navigation equal a fresh full measurement", async () => {
+  const thread = threadId("geometry-equivalence"), turn = turnId("geometry-equivalence-turn")
+  const first = itemId("geometry-first"), growing = itemId("geometry-growing"), last = itemId("geometry-last")
+  type Source = { conversation: ReturnType<typeof createConversation>; transcript: TranscriptState; revision: number }
+  const apply = (source: Source, event: ConversationEvent): Source => {
+    const conversation = reduceConversation(source.conversation, event)
+    const changed = event.type === "item.delta" ? event.itemId
+      : event.type === "item.started" || event.type === "item.completed" ? event.item.id : undefined
+    const transcript = changed && conversation.items[changed]
+      ? syncTranscriptItem(source.transcript, conversation.items[changed]!) : source.transcript
+    return { conversation, transcript, revision: source.revision + (conversation === source.conversation ? 0 : 1) }
+  }
+  let source: Source = { conversation: createConversation(thread), transcript: initialTranscript(), revision: 0 }
+  source = apply(source, { type: "turn.started", threadId: thread, turnId: turn })
+  const items: ConversationItem[] = [
+    { id: first, turnId: turn, kind: "command", title: "First", detail: "first row\nsecond row", status: "complete" },
+    { id: growing, turnId: turn, kind: "command", title: "Growing", detail: "seed", status: "running" },
+    { id: last, turnId: turn, kind: "command", title: "Last", detail: "last row\nlast second row", status: "complete" },
+  ]
+  for (const item of items) source = apply(source, { type: "item.started", threadId: thread, item })
+  const runtimeInput = (value: Source) => ({
+    threadId: thread, canonicalGeneration: 0, canonicalRevision: value.revision,
+    conversation: value.conversation, transcript: value.transcript, mode: "follow" as const,
+  })
+  const renderBlocks = (runtime: TranscriptRuntime) => runtime.getSnapshot().window.blocks.flatMap(block => {
+    if (!("item" in block) || (block.renderItem.kind !== "command" && block.renderItem.kind !== "tool")) return []
+    return [<box key={blockKey(block)} id={transcriptBlockRenderableId(block)} flexShrink={0}>
+      <ToolCall item={block.renderItem} folded={false} />
+    </box>]
+  })
+  const measure = (runtime: TranscriptRuntime, renderer: Awaited<ReturnType<typeof testRender>>["renderer"], scroll: ScrollBoxRenderable): TranscriptLayout => {
+    measureRenderedTranscript(renderer, scroll, { frame: runtime.getSnapshot(), runtime, styleRevision: "equivalence" })
+    const frame = runtime.getSnapshot()
+    const layout = measureRenderedTranscript(renderer, scroll, { frame, runtime, styleRevision: "equivalence" })
+    expect(layout?.geometry).toBe(frame.geometry)
+    expect(frame.geometry.measuredBlockCount).toBe(3)
+    return layout!
+  }
+  const normalized = (runtime: TranscriptRuntime, layout: TranscriptLayout) => {
+    const frame = runtime.getSnapshot()
+    const origin = layout.placementByBlockKey?.[blockKey(frame.blocks[0]!)] ?? { screenX: 0, screenY: 0 }
+    const blocks = frame.blocks.map(block => {
+      const key = blockKey(block), geometry = frame.geometry.byBlockKey[key]!
+      const placement = layout.placementByBlockKey?.[key] ?? origin
+      return {
+        key: geometry.key, rows: geometry.rows,
+        points: Object.values(geometry.points).sort((left, right) => left.graphemeOffset - right.graphemeOffset)
+          .map(({ graphemeOffset, x, y, row, column, hidden }) => ({ graphemeOffset, x, y, row, column, hidden: Boolean(hidden) })),
+        lines: geometry.lines,
+        placement: { x: placement.screenX - origin.screenX, y: placement.screenY - origin.screenY },
+      }
+    })
+    const points = frame.transcript.order.flatMap(id => Array.from(
+      { length: (frame.transcript.projectionById[id]?.sourceSpans.length ?? 0) + 1 },
+      (_, graphemeOffset) => {
+        const point = measuredPoint(layout, { itemId: id, graphemeOffset })
+        expect(point).toBeDefined()
+        return { itemId: id, graphemeOffset, row: point!.row, column: point!.column, hidden: Boolean(point!.hidden), x: point!.screenX - origin.screenX, y: point!.screenY - origin.screenY }
+      },
+    ))
+    const motions = ["left", "right", "up", "down", "line-start", "line-end", "first", "last"] as const
+    const navigation = frame.transcript.order.flatMap(id => Array.from(
+      { length: (frame.transcript.projectionById[id]?.sourceSpans.length ?? 0) + 1 },
+      (_, graphemeOffset) => motions.map(motion => {
+        const result = movePoint(layout, { itemId: id, graphemeOffset }, motion)
+        expect(result).toBeDefined()
+        return { itemId: id, graphemeOffset, motion, result }
+      }),
+    )).flat()
+    return {
+      geometry: {
+        width: frame.geometry.width, styleRevision: frame.geometry.styleRevision,
+        totalRows: frame.geometry.totalRows, measuredBlockCount: frame.geometry.measuredBlockCount,
+        totalPoints: frame.geometry.totalPoints, blockRows: frame.geometry.blockRows,
+        rowByBlockKey: frame.geometry.rowByBlockKey,
+      },
+      blocks, points, navigation,
+      edges: motions.slice(-2).map(motion => ({ motion, result: movePoint(layout, undefined, motion) })),
+    }
+  }
+
+  const incremental = new TranscriptRuntime(runtimeInput(source))
+  const incrementalRender = await testRender(
+    <scrollbox id="incremental-scroll" width={42} height={12}>{renderBlocks(incremental)}</scrollbox>,
+    { width: 42, height: 12 },
+  )
+  let fullRender: Awaited<ReturnType<typeof testRender>> | undefined
+  let incrementalDestroyed = false
+  try {
+    await act(async () => { await incrementalRender.flush(); await incrementalRender.renderOnce() })
+    const incrementalScroll = incrementalRender.renderer.root.findDescendantById("incremental-scroll") as ScrollBoxRenderable
+    const initialLayout = measure(incremental, incrementalRender.renderer, incrementalScroll)
+    const before = incremental.getSnapshot()
+    const firstKey = `item:${first}:root`, growingKey = `item:${growing}:root`, lastKey = `item:${last}:root`
+    const firstGeometry = before.geometry.byBlockKey[firstKey], lastGeometry = before.geometry.byBlockKey[lastKey]
+    const lastStart = before.geometry.rowByBlockKey[lastKey]
+
+    source = apply(source, { type: "item.delta", threadId: thread, itemId: growing, delta: "\n" + Array.from({ length: 20 }, (_, index) => `growing row ${index} ${"wrapped ".repeat(8)}`).join("\n") })
+    const damaged = incremental.update({ ...runtimeInput(source), canonicalDamage: { kind: "blocks", itemIds: [growing] } })
+    expect(source.conversation.items[growing]?.kind === "command" ? source.conversation.items[growing].detail : "").toContain("growing row 19")
+    const damagedGrowing = damaged.blocks.find(block => block.key.kind === "item" && block.key.itemId === growing)
+    expect(damagedGrowing && "renderItem" in damagedGrowing && damagedGrowing.renderItem.kind === "command" ? damagedGrowing.renderItem.detail : "").toContain("growing row 19")
+    expect(damaged.geometry.byBlockKey[firstKey]).toBe(firstGeometry)
+    expect(damaged.geometry.byBlockKey[lastKey]).toBe(lastGeometry)
+    expect(damaged.geometry.byBlockKey[growingKey]).toBeUndefined()
+    // Update the native leaf directly to isolate reflow/measurement from React
+    // reconciliation after the runtime has invalidated only the changed block.
+    const growingOutput = incrementalRender.renderer.root.findDescendantById(`tool-output:${growing}`) as import("@opentui/core").TextRenderable
+    growingOutput.content = source.conversation.items[growing]!.kind === "command" ? source.conversation.items[growing]!.detail : ""
+    await act(async () => { await incrementalRender.flush(); await incrementalRender.renderOnce(); await incrementalRender.renderOnce() })
+    const incrementalLayout = measure(incremental, incrementalRender.renderer, incrementalScroll)
+    expect(incremental.getSnapshot().geometry.byBlockKey[firstKey]).toBe(firstGeometry)
+    expect(incremental.getSnapshot().geometry.byBlockKey[lastKey]).toBe(lastGeometry)
+    expect(incremental.getSnapshot().geometry.byBlockKey[growingKey]!.rows).toBeGreaterThan(before.geometry.byBlockKey[growingKey]!.rows)
+    expect(incremental.getSnapshot().geometry.rowByBlockKey[lastKey]).toBeGreaterThan(lastStart!)
+    expect(measuredPoint(initialLayout, { itemId: last, graphemeOffset: 0 })?.row).not.toBe(measuredPoint(incrementalLayout, { itemId: last, graphemeOffset: 0 })?.row)
+    const incrementalResult = normalized(incremental, incrementalLayout)
+    await act(async () => incrementalRender.renderer.destroy())
+    incrementalDestroyed = true
+
+    const full = new TranscriptRuntime(runtimeInput(source))
+    fullRender = await testRender(<scrollbox id="full-scroll" width={42} height={12}>{renderBlocks(full)}</scrollbox>, { width: 42, height: 12 })
+    await act(async () => { await fullRender!.flush(); await fullRender!.renderOnce(); await fullRender!.renderOnce() })
+    const fullScroll = fullRender.renderer.root.findDescendantById("full-scroll") as ScrollBoxRenderable
+    const fullLayout = measure(full, fullRender.renderer, fullScroll)
+    expect(incrementalResult).toEqual(normalized(full, fullLayout))
+  } finally {
+    if (fullRender) await act(async () => fullRender!.renderer.destroy())
+    if (!incrementalDestroyed) await act(async () => incrementalRender.renderer.destroy())
+  }
 })
