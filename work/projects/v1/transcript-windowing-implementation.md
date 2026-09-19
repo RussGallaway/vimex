@@ -1,6 +1,6 @@
 # Transcript windowing implementation
 
-Status: ready for implementation. Stages 1–4 are complete and verified; the Stage 5 topology, contracts, and inherited baselines are established.
+Status: Stage 5.0 is complete and verified. The deterministic scaling baseline is established; Stage 5.1 is next.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
@@ -21,7 +21,7 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 |---|---|---|
 | Stage 5 topology and contracts | Complete | Established by Stages 2–4 |
 | Stages 1–4 performance baseline | Complete | Reproducible benchmark commit `ae73913`; inherited measurements below |
-| Stage 5 scaling fixtures | Not started | Identical 100/1k/10k/100k workloads required |
+| Stage 5 scaling fixtures | Complete | Commit `edc28c0`; deterministic runtime/React curves, real native cells, connected-input ceiling, and evidence below |
 | Stage 5a: pure window planner | Not started | — |
 | Stage 5b: windowed mounting | Not started | — |
 | Stage 5c: anchor correction | Not started | — |
@@ -332,12 +332,12 @@ Requirements:
 
 ### Stage 5.0 — baseline and deterministic fixtures
 
-- [ ] Record pre-windowing mount counts, native layout work, memory, and navigation latency alongside the inherited timing baselines.
-- [ ] Add deterministic 100, 1k, 10k, and 100k render-block fixtures.
-- [ ] Run identical warm navigation, follow delta, detachment, reattachment, and explicit-reveal workloads at every recorded size.
-- [ ] Add oversized Markdown, command-output, and split-diff fixtures.
-- [ ] Cover follow and detached presentations at several terminal dimensions.
-- [ ] Preserve a pass-through reference path for semantic equivalence tests.
+- [x] Record pre-windowing mount counts, native layout work, memory, and navigation latency alongside the inherited timing baselines.
+- [x] Add deterministic 100, 1k, 10k, and 100k render-block fixtures.
+- [x] Run identical warm navigation, follow delta, detachment, reattachment, and explicit-reveal workloads at every recorded size.
+- [x] Add oversized Markdown, command-output, and split-diff fixtures.
+- [x] Cover follow and detached presentations at several terminal dimensions.
+- [x] Preserve a pass-through reference path for semantic equivalence tests.
 
 Exit criteria:
 
@@ -578,3 +578,65 @@ If that need becomes real, introduce a history resource-access port at the canon
 ## Evidence ledger
 
 Record implementation commits, focused gates, full repository gates, benchmarks, review findings, and repairs here as Stage 5 advances.
+
+### Stage 5.0 — baseline and deterministic fixtures
+
+Implementation commit: `edc28c0` (`test: add transcript windowing baselines and fixtures`). No production runtime, Workbench, React bridge, geometry, or OpenTUI behavior changed in this slice.
+
+#### Deterministic fixtures and correctness gates
+
+- `buildTranscriptScalingFixture` constructs exact 100, 1k, 10k, and 100k complete render-block plans in O(n). Every size contains meaningful user, assistant, command, edit, reasoning, and running-tail boundaries while producing no activity block.
+- The fixture carries a cross-item selection, search and URL target, mark and jump locations, a real reasoning fold, and a completed-turn fork boundary. Its content hash covers item identity, kind, projected source, status, tail delta, and count.
+- The test-only full-materialization oracle calls `buildTranscriptBlocks` and `passThroughWindow` directly and hard-gates array identity, complete count, and zero spacers. Incremental frames compare complete transcript state plus evaluated copy, reference, search, URL, fold, mark/jump, and fork evidence against that oracle.
+- At every recorded size, one follow-tail delta changes exactly one block, preserves `N - 1` block identities and `N - 1` geometry identities, publishes once, and invalidates only the tail measurement. Detached hidden output publishes zero frames; reveal and reattachment each publish once with the canonical logical cursor and viewport at the target.
+- Oversized fixtures are deterministic before production sub-block planning: Markdown is 143,375 characters / 1,024 fixture segments; command output is 227,527 characters / 2,501 segments; split diff is 29,749 characters / 128 file segments. Segment spans are unique, contiguous, nonempty, and cover canonical source exactly.
+
+Focused gate:
+
+```text
+bun test packages/testkit/src/transcript-builders.test.ts packages/transcript/src/runtime-scaling.test.ts
+5 pass, 0 fail, 14,953 assertions, 6.29 s
+```
+
+#### Separated pre-windowing scaling boundaries
+
+All timing values below are single local observations and diagnostic only. Operation counts and identity results are the hard gates.
+
+| Blocks | Cold runtime | Synthetic geometry publication | Follow reconciliation | Warm view navigation | Explicit reveal | Reattach | Materialized / seeded | Changed / retained identities |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 1.040 ms | 0.448 ms | 0.337 ms | 0.080 ms | 0.203 ms | 0.158 ms | 100 / 100 | 1 / 99 |
+| 1k | 2.593 ms | 1.544 ms | 0.872 ms | 0.021 ms | 0.908 ms | 0.812 ms | 1k / 1k | 1 / 999 |
+| 10k | 26.163 ms | 12.694 ms | 9.820 ms | 0.023 ms | 13.303 ms | 9.401 ms | 10k / 10k | 1 / 9,999 |
+| 100k | 296.076 ms | 153.803 ms | 116.868 ms | 0.064 ms | 120.368 ms | 116.357 ms | 100k / 100k | 1 / 99,999 |
+
+The planner is still the pass-through reference, so materialized and synthetic seeded measurement counts equal total transcript size. React-only publication produced exactly one runtime publication and one React commit at every size; its subscribed view contains one constant text node, deliberately excluding transcript mounting.
+
+The real native 100-block / 80×24 cell mounts `TranscriptViewport` and uses the production `measureRenderedTranscript` scheduler. Cold work mounted 100 roots, attempted and accepted 100 measurements, and published geometry once. Viewport culling produced 13 point-bearing and 87 explicitly recorded zero-point measurements. The follow delta retained all 100 root identities, mounted/unmounted zero roots, published once, and the next measurement pass touched exactly one block. Detached hidden output published zero runtime frames, committed zero React renders, and mounted/unmounted zero roots.
+
+Follow and detached presentation cells also passed at 48×18, 80×24, and 140×40. Each mounted 100 roots; follow retained all 100 with zero churn, while detached hidden output retained all roots with zero publications and commits. Observed follow presentation settlements were 32.139, 12.416, and 15.993 ms respectively.
+
+#### Connected input and memory boundary
+
+Connected-input cells run one size per isolated worker. Fixture construction and hydration are excluded: a benchmark-only setup step installs an already-valid canonical `ConversationState` and semantic `TranscriptState` into an initialized, not-yet-observed Workbench workspace. `TranscriptRuntime` creation happens afterward. The measured interval begins at OpenTUI key dispatch and includes public Workbench command handling, runtime and presentation publication, Connected React reconciliation, native frame callbacks, and final settlement.
+
+| Blocks | Result at 80×24 | Dispatch | Final settlement | Mounted / retained | Accepted measurement damage | Runtime / Workbench publications | Settled RSS |
+|---:|---|---:|---:|---:|---:|---:|---:|
+| 100 | Passed | 7.130 ms | 77.454 ms | 100 / 100 | 4 (bound ≤ 4) | 3 / 1 | 307 MB |
+| 1k | Passed | 9.939 ms | 88.310 ms | 1k / 1k | 4 (bound ≤ 4) | 3 / 1 | 495 MB |
+| 10k | Passed | 33.772 ms | 1,262.823 ms | 10k / 10k | 4 (bound ≤ 4) | 3 / 1 | 2.07 GB |
+| 100k | Failed before settlement | — | — | unavailable | unavailable | unavailable | 1.75 GB at failure |
+
+The isolated 100k worker failed during the inherited pass-through native allocation with `Failed to create TextBuffer`. Its fixture snapshot used about 255 MB RSS and the attempted mount reached about 1.75 GB RSS before failure; mounted, measured, changed, and publication counts are recorded as unavailable rather than inferred. This is the pre-windowing ceiling Stage 5.1/5.2 must remove, not a passing sample. Memory is process-level diagnostic evidence: process→fixture, fixture→settled mount, and mount→input deltas include allocator and native effects and are not component-exclusive.
+
+React commit and native frame counts in this connected boundary are scheduler diagnostics. The deterministic hard gates are exact mounted/retained/changed/publication counts and the accepted measurement-damage bound. The package `:native` and `:input` scripts are safe smoke cells, not full-matrix aliases; size and viewport environment selectors run isolated cells explicitly.
+
+#### Repository, PTY, benchmark, and review gates
+
+- `bun run benchmark:transcript-windowing`: passed the identical runtime and React workloads at 100/1k/10k/100k.
+- `bun run benchmark:transcript-windowing:native`: passed the real 100-block / 80×24 native smoke. Explicit 48×18 and 140×40 native cells also passed.
+- `VIMEX_PROFILE_TUI=1 bun test packages/ui-opentui-react/src/transcript/wheel-interaction.test.tsx`: 11 passed, including connected scrolling, folding, draft-preservation, and streaming profiles.
+- `bun run check`: typecheck, dependency boundaries, generated-doc check, and all non-sandbox-sensitive tests passed; aggregate was 659 passed, 5 intentional skips, and the isolated tmux test failed only because the sandbox removed its socket.
+- The exact isolated rerun outside the sandbox passed: `bun test tests/terminal/terminal.test.ts --test-name-pattern "isolated tmux"` — 1 passed in 717 ms.
+- Parallel architecture, correctness, and performance reviews ran before and after repairs. Repairs added real rendered native measurement, connected Workbench input, isolated memory/failure reporting, exact/common operation counts, meaningful semantic fixtures, a non-windowed oracle, correct reveal state, bounded measurement damage, and honest boundary labels. Final review found no production-architecture blocker; the 100k native failure is retained as baseline evidence.
+
+Stage 5 size-independence acceptance remains open. This baseline demonstrates the opposite inherited curve: pass-through materialization, native mounting, and cold measurement scale with total transcript size, and the connected 100k native presentation cannot settle. Stage 5.1 begins the pure window planner that will change materialization without changing meaning.
