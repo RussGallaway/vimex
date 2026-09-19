@@ -9,7 +9,7 @@ import { captureWorkbenchLifecycle, workbenchLifecycleChanged, workbenchLifecycl
 import { captureWorkbenchLayout, captureWorkbenchPresentation, captureWorkbenchPublicationContext, threadForPresentation, workbenchLayoutChanged, workbenchPresentationChanged, type WorkbenchLayoutSnapshot, type WorkbenchPublicationContext, type WorkbenchPublicationHost } from "./workbench-publications"
 import { initialWorkbench, activeWorkspace, createWorkspace, type ThreadWorkspace, type WorkbenchState, type WorkbenchCommand, type WorkbenchEffect } from "./workbench-state"
 import { transitionWorkbench } from "./reduce-workbench"
-import { forkBoundary, threadId, turnItemIdsHave, type ThreadId, type TurnId, type ItemId, type ConversationEvent } from "@vimex/conversation"
+import { forkBoundary, persistentConversationTurnIds, threadId, turnItemIdsHave, type ThreadId, type TurnId, type ItemId, type ConversationEvent } from "@vimex/conversation"
 import type { ConversationGateway, SessionSnapshot } from "@vimex/conversation"
 import type { ApprovalGateway } from "@vimex/approvals"
 import type { RuntimeConnection, RuntimeEvent } from "./runtime-connection"
@@ -218,7 +218,10 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
       cadenceMs: ports.conversationIngressCadenceMs,
       onError: error => this.notice(error instanceof Error ? error.message : String(error)),
     })
-    this.state = { ...this.state, favoriteThreadIds: [...new Set(ports.localState?.favoriteThreadIds ?? [])].map(threadId), sideChats: ports.localState?.sideChats ?? {}, retiredSideThreadIds: (ports.localState?.retiredSideThreadIds ?? []).map(threadId) }
+    this.state = { ...this.state, favoriteThreadIds: [...new Set(ports.localState?.favoriteThreadIds ?? [])].map(threadId),
+      sideChats: Object.freeze(Object.fromEntries(Object.entries(ports.localState?.sideChats ?? {}).map(([id, side]) => [id,
+        side.inheritedTurnIds ? { ...side, inheritedTurnIds: persistentConversationTurnIds(side.inheritedTurnIds) } : side]))),
+      retiredSideThreadIds: (ports.localState?.retiredSideThreadIds ?? []).map(threadId) }
     if (ports.preferences) {
       this.desiredPreferences = ports.preferences.initial
       this.state = { ...this.state, preferences: ports.preferences.initial }
@@ -609,7 +612,7 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     const side = sideChatForChild(this.state, snapshot.summary.id)
     const parentTurns = side && this.state.workspaces[side.parentId]?.conversation.turns
     if (side && side.inheritedTurnIds === undefined && parentTurns && Object.keys(parentTurns).length) {
-      const inheritedTurnIds = [...new Set(snapshot.events.flatMap(event => "turnId" in event ? [event.turnId] : "item" in event ? [event.item.turnId] : []))].filter(id => parentTurns[id])
+      const inheritedTurnIds = persistentConversationTurnIds([...new Set(snapshot.events.flatMap(event => "turnId" in event ? [event.turnId] : "item" in event ? [event.item.turnId] : []))].filter(id => parentTurns[id]))
       this.setState({ ...this.state, sideChats: { ...this.state.sideChats, [side.parentId]: { ...side, inheritedTurnIds } } })
     }
     if (this.recoveryViews[snapshot.summary.id] && !this.loaded.has(snapshot.summary.id)) {

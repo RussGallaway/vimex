@@ -6,7 +6,7 @@ import { primeTranscriptUrlIndex } from "./application/transcript-url-index"
 import { findSearchMatches } from "./application/transcript-search"
 import { selectedGraphemeCount, selectedText, urlAt } from "./application/transcript-operations"
 import { referenceText, urlCandidates } from "./application/transcript-navigation"
-import { setTranscriptFoldValue, transcriptTextLengthRange, type TranscriptState } from "./domain/transcript-document"
+import { persistentTranscriptUnseenItemIds, setTranscriptFoldValue, transcriptTextLengthRange, type TranscriptState } from "./domain/transcript-document"
 import type { BlockGeometry } from "./geometry"
 import { createTranscriptFrame, TranscriptRuntime, type TranscriptFrame, type TranscriptRuntimeDiagnostics, type TranscriptRuntimeInput } from "./runtime"
 import { blockKey, buildTranscriptBlocks, passThroughWindow, pointIsMaterialized } from "./window"
@@ -49,6 +49,8 @@ function scalingRuntimeDiagnostics(): TranscriptRuntimeDiagnostics {
     heightIndexNodeVisits: 0, heightIndexNodesCopied: 0,
     completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0, blockPlanWindowSliceItems: 0,
     changedItemBuilds: 0,
+    hiddenDamageMerges: 0, hiddenDamageInputItemVisits: 0, hiddenDamageItemAdditions: 0,
+    hiddenDamageSnapshots: 0, hiddenDamageSnapshotItemVisits: 0,
   }
 }
 
@@ -59,6 +61,10 @@ function itemSyncDiagnostics(): TranscriptItemSyncDiagnostics {
     textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0,
     textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
     urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0, urlIndexUpdates: 0, urlIndexNodeVisits: 0,
+    unseenItemSequenceNormalizations: 0, unseenItemSequenceNormalizationItemVisits: 0,
+    unseenItemMembershipChecks: 0, unseenItemMembershipNodeVisits: 0,
+    unseenItemAppends: 0, unseenItemAppendNodeVisits: 0,
+    unseenItemIndexUpdateNodeVisits: 0, unseenItemIndexUpdateNodesCopied: 0,
   }
 }
 
@@ -332,6 +338,143 @@ test("canonical structural tail admission stays logarithmic with bounded runtime
     expect(runtimeCounters.urlIndexUpdates - runtimeBaseline.urlIndexUpdates).toBe(1)
     expect(runtimeCounters.windowGeometryBlockVisits - runtimeBaseline.windowGeometryBlockVisits).toBeLessThanOrEqual(48)
     expect(runtimeCounters.blockPlanWindowSliceItems - runtimeBaseline.blockPlanWindowSliceItems).toBeLessThanOrEqual(48)
+    runtime.dispose()
+  }
+}, 30_000)
+
+test("detached unseen accumulation stays logarithmic and publishes no content frame at every scale", () => {
+  for (const blockCount of transcriptScalingBlockCounts) {
+    const fixture = buildTranscriptStructuralScalingFixture(blockCount)
+    const anchorItemId = fixture.before.transcript.order[0]!
+    const unseenItemIds = persistentTranscriptUnseenItemIds(fixture.before.transcript.order)
+    const detachedTranscript = Object.freeze({
+      ...fixture.before.transcript,
+      cursor: Object.freeze({ itemId: anchorItemId, graphemeOffset: 0 }),
+      viewport: Object.freeze({ kind: "point" as const,
+        point: Object.freeze({ itemId: anchorItemId, graphemeOffset: 0 }), preferredScreenRow: 7 }),
+      unseenEntries: blockCount,
+      unseenItemIds,
+    })
+    const detachedSnapshot: TranscriptFixtureSnapshot = Object.freeze({
+      ...fixture.before,
+      transcript: detachedTranscript,
+    })
+    transcriptTextLengthRange(detachedTranscript, 0, 0)
+    primeTranscriptUrlIndex(detachedTranscript)
+    const runtimeCounters = scalingRuntimeDiagnostics()
+    const runtime = new TranscriptRuntime(runtimeInput(fixture, detachedSnapshot, "detached", {
+      canonicalDamage: { kind: "full" },
+    }), { windowPolicy: { viewportRows: 24, overscanRows: 24 }, diagnostics: runtimeCounters })
+    const pinned = runtime.getSnapshot()
+    const hiddenDamageBacklog = Array.from({ length: blockCount }, (_, index) =>
+      (`detached-hidden-damage-${blockCount}-${index}` as import("@vimex/conversation").ItemId))
+    const seededSnapshot: TranscriptFixtureSnapshot = Object.freeze({
+      ...detachedSnapshot,
+      canonicalRevision: detachedSnapshot.canonicalRevision + 1,
+    })
+    const runtimeBeforeSeed = { ...runtimeCounters }
+    expect(runtime.update(runtimeInput(fixture, seededSnapshot, "detached", {
+      canonicalDamage: { kind: "blocks", itemIds: hiddenDamageBacklog },
+    }))).toBe(pinned)
+    expect(runtimeCounters.hiddenDamageMerges! - runtimeBeforeSeed.hiddenDamageMerges!).toBe(1)
+    expect(runtimeCounters.hiddenDamageInputItemVisits! - runtimeBeforeSeed.hiddenDamageInputItemVisits!).toBe(blockCount)
+    expect(runtimeCounters.hiddenDamageItemAdditions! - runtimeBeforeSeed.hiddenDamageItemAdditions!).toBe(blockCount)
+    expect(runtimeCounters.hiddenDamageSnapshots! - runtimeBeforeSeed.hiddenDamageSnapshots!).toBe(0)
+    expect(runtimeCounters.hiddenDamageSnapshotItemVisits! - runtimeBeforeSeed.hiddenDamageSnapshotItemVisits!).toBe(0)
+    const runtimeBaseline = { ...runtimeCounters }
+    const semanticCounters = itemSyncDiagnostics()
+    const canonicalCounters = createConversationReductionDiagnostics()
+    let publications = 0
+    runtime.subscribe(() => { publications++ })
+
+    const turnConversation = reduceConversationWithDiagnostics(seededSnapshot.conversation, {
+      type: "turn.started", threadId: fixture.threadId, turnId: fixture.nextTurnId,
+    }, canonicalCounters)
+    const afterTurn: TranscriptFixtureSnapshot = Object.freeze({
+      canonicalRevision: seededSnapshot.canonicalRevision + 1,
+      conversation: turnConversation,
+      transcript: detachedTranscript,
+    })
+    expect(runtime.update(runtimeInput(fixture, afterTurn, "detached", {
+      canonicalDamage: { kind: "blocks", itemIds: [] },
+    }))).toBe(pinned)
+
+    const admittedItem = Object.freeze({
+      id: fixture.nextItemId, turnId: fixture.nextTurnId, kind: "assistant" as const,
+      markdown: "Detached unseen tail block.", status: "running" as const,
+    })
+    const itemConversation = reduceConversationWithDiagnostics(turnConversation, {
+      type: "item.started", threadId: fixture.threadId, item: admittedItem,
+    }, canonicalCounters)
+    const itemTranscript = syncTranscriptItem(detachedTranscript, admittedItem, semanticCounters)
+    const afterItem: TranscriptFixtureSnapshot = Object.freeze({
+      canonicalRevision: afterTurn.canonicalRevision + 1,
+      conversation: itemConversation,
+      transcript: itemTranscript,
+    })
+    expect(runtime.update(runtimeInput(fixture, afterItem, "detached", {
+      canonicalDamage: { kind: "blocks", itemIds: [fixture.nextItemId] },
+    }))).toBe(pinned)
+
+    const deltaConversation = reduceConversationWithDiagnostics(itemConversation, {
+      type: "item.delta", threadId: fixture.threadId, itemId: fixture.nextItemId, delta: " More.",
+    }, canonicalCounters)
+    const changedItem = deltaConversation.items[fixture.nextItemId]!
+    const repeatedTranscript = syncTranscriptItem(itemTranscript, changedItem, semanticCounters)
+    const afterDelta: TranscriptFixtureSnapshot = Object.freeze({
+      canonicalRevision: afterItem.canonicalRevision + 1,
+      conversation: deltaConversation,
+      transcript: repeatedTranscript,
+    })
+    expect(runtime.update(runtimeInput(fixture, afterDelta, "detached", {
+      canonicalDamage: { kind: "blocks", itemIds: [fixture.nextItemId] },
+    }))).toBe(pinned)
+
+    expect(publications).toBe(0)
+    expect(runtime.getSnapshot()).toBe(pinned)
+    expect(repeatedTranscript.unseenEntries).toBe(blockCount + 1)
+    expect(repeatedTranscript.unseenItemIds).toBe(itemTranscript.unseenItemIds)
+    expect([...repeatedTranscript.unseenItemIds]).toEqual([...unseenItemIds, fixture.nextItemId])
+    expect(semanticCounters.unseenItemSequenceNormalizations).toBe(0)
+    expect(semanticCounters.unseenItemSequenceNormalizationItemVisits).toBe(0)
+    expect(semanticCounters.unseenItemMembershipChecks).toBe(2)
+    expect(semanticCounters.unseenItemMembershipNodeVisits).toBeLessThanOrEqual(64)
+    expect(semanticCounters.unseenItemAppends).toBe(1)
+    expect(semanticCounters.unseenItemAppendNodeVisits).toBeLessThanOrEqual(32)
+    expect(semanticCounters.unseenItemIndexUpdateNodeVisits).toBeLessThanOrEqual(32)
+    expect(semanticCounters.unseenItemIndexUpdateNodesCopied).toBeLessThanOrEqual(64)
+    expect(semanticCounters.textLengthIndexBuilds).toBe(0)
+    expect(semanticCounters.textLengthItemVisits).toBe(0)
+    expect(semanticCounters.textLengthIndexUpdates).toBe(2)
+    expect(semanticCounters.urlIndexBuilds).toBe(0)
+    expect(semanticCounters.urlIndexItemVisits).toBe(0)
+    expect(semanticCounters.urlIndexUpdates).toBe(2)
+    expect(canonicalCounters.conversationTurnIdSequenceNormalizations).toBe(0)
+    expect(canonicalCounters.conversationTurnIdSequenceNormalizationVisits).toBe(0)
+    expect(canonicalCounters.conversationTurnRecordNormalizations).toBe(0)
+    expect(canonicalCounters.conversationTurnRecordNormalizationVisits).toBe(0)
+    expect(canonicalCounters.conversationItemRecordNormalizations).toBe(0)
+    expect(canonicalCounters.conversationItemRecordNormalizationItemVisits).toBe(0)
+    expect(runtimeCounters.hiddenDamageMerges! - (runtimeBaseline.hiddenDamageMerges ?? 0)).toBe(3)
+    expect(runtimeCounters.hiddenDamageInputItemVisits! - (runtimeBaseline.hiddenDamageInputItemVisits ?? 0)).toBe(2)
+    expect(runtimeCounters.hiddenDamageItemAdditions! - (runtimeBaseline.hiddenDamageItemAdditions ?? 0)).toBe(1)
+    expect(runtimeCounters.hiddenDamageSnapshots! - (runtimeBaseline.hiddenDamageSnapshots ?? 0)).toBe(0)
+    expect(runtimeCounters.completePlanBuilds - runtimeBaseline.completePlanBuilds).toBe(0)
+    expect(runtimeCounters.completePlanBlockVisits - runtimeBaseline.completePlanBlockVisits).toBe(0)
+    expect(runtimeCounters.blockPlanUpdates - runtimeBaseline.blockPlanUpdates).toBe(0)
+    expect(runtimeCounters.heightIndexBuilds - runtimeBaseline.heightIndexBuilds).toBe(0)
+    expect(runtimeCounters.heightIndexUpdates - runtimeBaseline.heightIndexUpdates).toBe(0)
+    expect(runtimeCounters.completeGeometryBlockVisits - runtimeBaseline.completeGeometryBlockVisits).toBe(0)
+    expect(runtimeCounters.windowGeometryBlockVisits - runtimeBaseline.windowGeometryBlockVisits).toBe(0)
+    expect(runtimeCounters.changedItemBuilds - runtimeBaseline.changedItemBuilds).toBe(0)
+
+    const presented = runtime.update({ ...runtimeInput(fixture, afterDelta, "detached"),
+      presentationDamage: { kind: "view" } })
+    expect(publications).toBe(1)
+    expect(presented.blocks).toBe(pinned.blocks)
+    expect(presented.window).toBe(pinned.window)
+    expect(presented.geometry).toBe(pinned.geometry)
+    expect(presented.transcript.unseenItemIds).toBe(repeatedTranscript.unseenItemIds)
     runtime.dispose()
   }
 }, 30_000)

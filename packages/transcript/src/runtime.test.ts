@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test"
 import { createConversation, itemId, reduceConversation, threadId, turnId, type ConversationEvent, type ItemId } from "@vimex/conversation"
 import { syncTranscriptItem } from "./application/project-conversation"
-import { appendTranscriptOrder, initialTranscript, setTranscriptFoldValue, setTranscriptProjection, type TranscriptState } from "./domain/transcript-document"
+import { attachTail } from "./application/transcript-operations"
+import { appendTranscriptOrder, appendTranscriptUnseenItemId, initialTranscript, persistentTranscriptUnseenItemIds, setTranscriptFoldValue, setTranscriptProjection, type TranscriptState } from "./domain/transcript-document"
 import { createTranscriptFrame, TranscriptRuntime, type TranscriptDamage, type TranscriptRuntimeDiagnostics, type TranscriptRuntimeInput } from "./runtime"
 import { blockKey } from "./window"
 import type { BlockGeometry, BlockMeasurementBatch } from "./geometry"
@@ -91,6 +92,8 @@ function runtimeDiagnostics(): TranscriptRuntimeDiagnostics {
     heightIndexNodeVisits: 0, heightIndexNodesCopied: 0,
     completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0, blockPlanWindowSliceItems: 0,
     changedItemBuilds: 0,
+    hiddenDamageMerges: 0, hiddenDamageInputItemVisits: 0, hiddenDamageItemAdditions: 0,
+    hiddenDamageSnapshots: 0, hiddenDamageSnapshotItemVisits: 0,
   }
 }
 
@@ -443,6 +446,95 @@ test("detached tail streaming retains exact frame identity while canonical input
   expect(notifications).toBe(0)
 })
 
+test("detached hidden damage accumulates distinct items without copying its prior backlog", () => {
+  let source = fixture()
+  let unseenItemIds = persistentTranscriptUnseenItemIds()
+  for (let index = 0; index < 4_096; index++) {
+    unseenItemIds = appendTranscriptUnseenItemId(unseenItemIds, itemId(`hidden-${index}`))
+  }
+  source = {
+    ...source,
+    transcript: {
+      ...source.transcript,
+      viewport: { kind: "point", point: { itemId: answer, graphemeOffset: 0 }, preferredScreenRow: 3 },
+      unseenEntries: unseenItemIds.length,
+      unseenItemIds,
+    },
+  }
+  const diagnostics = runtimeDiagnostics()
+  const runtime = new TranscriptRuntime(input(source, "detached"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics,
+  })
+  const presented = runtime.update({ ...input(source, "detached"), presentationDamage: { kind: "view" } })
+  expect(presented.transcript.unseenItemIds).toBe(unseenItemIds)
+  const pinned = runtime.getSnapshot()
+  let notifications = 0
+  runtime.subscribe(() => { notifications++ })
+
+  for (let index = 0; index < unseenItemIds.length; index++) {
+    source = { ...source, revision: source.revision + 1 }
+    expect(runtime.update(input(source, "detached", {
+      kind: "blocks", itemIds: [itemId(`hidden-${index}`)],
+    }))).toBe(pinned)
+  }
+  source = { ...source, revision: source.revision + 1 }
+  expect(runtime.update(input(source, "detached", {
+    kind: "blocks", itemIds: [itemId("hidden-4095")],
+  }))).toBe(pinned)
+  expect(notifications).toBe(0)
+  expect(diagnostics.hiddenDamageMerges).toBe(4_097)
+  expect(diagnostics.hiddenDamageInputItemVisits).toBe(4_097)
+  expect(diagnostics.hiddenDamageItemAdditions).toBe(4_096)
+  expect(diagnostics.hiddenDamageSnapshots).toBe(0)
+  expect(diagnostics.hiddenDamageSnapshotItemVisits).toBe(0)
+
+  source = { ...source, transcript: attachTail(source.transcript) }
+  const reattached = runtime.update(input(source, "follow"))
+  expect(reattached).not.toBe(pinned)
+  expect(notifications).toBe(1)
+  expect(diagnostics.hiddenDamageSnapshots).toBe(1)
+  expect(diagnostics.hiddenDamageSnapshotItemVisits).toBe(4_096)
+  expect(reattached.transcript.unseenEntries).toBe(0)
+  expect(reattached.transcript.unseenItemIds).toBe(persistentTranscriptUnseenItemIds())
+})
+
+test("detached hidden damage preserves public damage precedence and ordered uniqueness", () => {
+  const first = itemId("damage-first"), second = itemId("damage-second")
+  const cases: readonly Readonly<{
+    damages: readonly TranscriptDamage[]
+    expected: TranscriptDamage
+  }>[] = [
+    { damages: [{ kind: "blocks", itemIds: [first] }, { kind: "blocks", itemIds: [first, second] }],
+      expected: { kind: "blocks", itemIds: [first, second] } },
+    { damages: [{ kind: "folds", itemIds: [first] }, { kind: "view" }],
+      expected: { kind: "folds", itemIds: [first] } },
+    { damages: [{ kind: "view" }, { kind: "folds", itemIds: [second] }],
+      expected: { kind: "folds", itemIds: [second] } },
+    { damages: [{ kind: "blocks", itemIds: [first] }, { kind: "folds", itemIds: [second] }],
+      expected: { kind: "layout" } },
+    { damages: [{ kind: "view" }, { kind: "blocks", itemIds: [first] }],
+      expected: { kind: "view" } },
+    { damages: [{ kind: "layout" }, { kind: "blocks", itemIds: [first] }],
+      expected: { kind: "layout" } },
+    { damages: [{ kind: "full" }, { kind: "folds", itemIds: [first] }],
+      expected: { kind: "full" } },
+  ]
+
+  for (const { damages, expected } of cases) {
+    let source = fixture()
+    const runtime = new TranscriptRuntime(input(source, "detached"), {
+      windowPolicy: { viewportRows: 12, overscanRows: 12 },
+    })
+    const pinned = runtime.getSnapshot()
+    for (const damage of damages) {
+      source = { ...source, revision: source.revision + 1 }
+      expect(runtime.update(input(source, "detached", damage))).toBe(pinned)
+    }
+    expect(runtime.update(input(source, "follow")).damage).toEqual(expected)
+    runtime.dispose()
+  }
+})
+
 test("detachment atomically includes canonical events ordered before its boundary", () => {
   let source = fixture()
   const runtime = new TranscriptRuntime(input(source, "follow"))
@@ -567,6 +659,46 @@ test("reattachment adopts the newest canonical revision once and equals a fresh 
   expect(semanticFrame(attached)).toEqual(semanticFrame(new TranscriptRuntime(input(source, "follow")).getSnapshot()))
   expect(runtime.update(input(source, "follow"))).toBe(attached)
   expect(notifications).toBe(1)
+})
+
+test("multi-item detached tail admission reattaches through the exact full-build reference", () => {
+  let source = fixture()
+  source = { ...source, transcript: { ...source.transcript,
+    viewport: { kind: "point", point: { itemId: answer, graphemeOffset: 0 }, preferredScreenRow: 3 } } }
+  const diagnostics = runtimeDiagnostics()
+  const runtime = new TranscriptRuntime(input(source, "detached"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics,
+  })
+  const pinned = runtime.getSnapshot()
+  const hiddenTurn = turnId("multi-hidden-turn")
+  const first = itemId("multi-hidden-first"), second = itemId("multi-hidden-second")
+  source = apply(source, { type: "turn.started", threadId: thread, turnId: hiddenTurn })
+  source = apply(source, { type: "item.started", threadId: thread, item: {
+    id: first, turnId: hiddenTurn, kind: "assistant", markdown: "first hidden item", status: "complete",
+  } })
+  expect(runtime.update(input(source, "detached", { kind: "blocks", itemIds: [first] }))).toBe(pinned)
+  source = apply(source, { type: "item.started", threadId: thread, item: {
+    id: second, turnId: hiddenTurn, kind: "assistant", markdown: "second hidden item", status: "complete",
+  } })
+  expect(runtime.update(input(source, "detached", { kind: "blocks", itemIds: [second] }))).toBe(pinned)
+  expect(source.transcript.unseenItemIds).toEqual([first, second])
+
+  source = { ...source, transcript: attachTail(source.transcript) }
+  const baseline = { ...diagnostics }
+  let notifications = 0
+  runtime.subscribe(() => { notifications++ })
+  const attached = runtime.update(input(source, "follow"))
+  const referenceRuntime = new TranscriptRuntime(input(source, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 },
+  })
+  expect(notifications).toBe(1)
+  expect(semanticFrame(attached)).toEqual(semanticFrame(referenceRuntime.getSnapshot()))
+  expect(diagnostics.completePlanBuilds - baseline.completePlanBuilds).toBe(1)
+  expect(diagnostics.hiddenDamageSnapshots! - baseline.hiddenDamageSnapshots!).toBe(1)
+  expect(attached.transcript.unseenEntries).toBe(0)
+  expect(attached.transcript.unseenItemIds).toBe(persistentTranscriptUnseenItemIds())
+  referenceRuntime.dispose()
+  runtime.dispose()
 })
 
 test("two presentations over one source retain independent attachment and revisions", () => {

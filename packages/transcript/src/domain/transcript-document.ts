@@ -40,6 +40,17 @@ export interface TranscriptState {
   marks: Readonly<Record<string, JumpLocation>>
 }
 
+export interface TranscriptUnseenItemDiagnostics {
+  unseenItemSequenceNormalizations: number
+  unseenItemSequenceNormalizationItemVisits: number
+  unseenItemMembershipChecks: number
+  unseenItemMembershipNodeVisits: number
+  unseenItemAppends: number
+  unseenItemAppendNodeVisits: number
+  unseenItemIndexUpdateNodeVisits: number
+  unseenItemIndexUpdateNodesCopied: number
+}
+
 interface ProjectionNode {
   readonly key: string
   readonly value: TextProjection
@@ -476,12 +487,17 @@ function balanceTranscriptOrder(node: TranscriptOrderBranch): TranscriptOrderNod
   }
   return node
 }
-function appendTranscriptOrderNode(node: TranscriptOrderNode | undefined, itemId: ItemId): TranscriptOrderNode {
+function appendTranscriptOrderNode(
+  node: TranscriptOrderNode | undefined,
+  itemId: ItemId,
+  visit?: () => void,
+): TranscriptOrderNode {
+  visit?.()
   if (!node) return transcriptOrderLeaf([itemId])
   if (node.kind === "leaf") return node.items.length < ORDER_LEAF_SIZE
     ? transcriptOrderLeaf([...node.items, itemId])
     : transcriptOrderBranch(node, transcriptOrderLeaf([itemId]))
-  return balanceTranscriptOrder(transcriptOrderBranch(node.left, appendTranscriptOrderNode(node.right, itemId)))
+  return balanceTranscriptOrder(transcriptOrderBranch(node.left, appendTranscriptOrderNode(node.right, itemId, visit)))
 }
 function transcriptOrderItem(node: TranscriptOrderNode, position: number): ItemId {
   while (node.kind === "branch") {
@@ -541,44 +557,52 @@ function persistentOrderArray(data: TranscriptOrderData): readonly ItemId[] {
 }
 
 const orderIndexHeight = (node: OrderIndexNode | undefined): number => node?.height ?? 0
-function orderIndexNode(key: ItemId, position: number, left?: OrderIndexNode, right?: OrderIndexNode): OrderIndexNode {
+interface OrderIndexUpdateObserver { readonly visit: () => void; readonly copy: () => void }
+function orderIndexNode(key: ItemId, position: number, left?: OrderIndexNode, right?: OrderIndexNode,
+  observer?: OrderIndexUpdateObserver): OrderIndexNode {
+  observer?.copy()
   return Object.freeze({ key, position, height: Math.max(orderIndexHeight(left), orderIndexHeight(right)) + 1,
     ...(left ? { left } : {}), ...(right ? { right } : {}) })
 }
-function rotateOrderIndexLeft(root: OrderIndexNode): OrderIndexNode {
+function rotateOrderIndexLeft(root: OrderIndexNode, observer?: OrderIndexUpdateObserver): OrderIndexNode {
   const right = root.right!
-  return orderIndexNode(right.key, right.position, orderIndexNode(root.key, root.position, root.left, right.left), right.right)
+  return orderIndexNode(right.key, right.position,
+    orderIndexNode(root.key, root.position, root.left, right.left, observer), right.right, observer)
 }
-function rotateOrderIndexRight(root: OrderIndexNode): OrderIndexNode {
+function rotateOrderIndexRight(root: OrderIndexNode, observer?: OrderIndexUpdateObserver): OrderIndexNode {
   const left = root.left!
-  return orderIndexNode(left.key, left.position, left.left, orderIndexNode(root.key, root.position, left.right, root.right))
+  return orderIndexNode(left.key, left.position, left.left,
+    orderIndexNode(root.key, root.position, left.right, root.right, observer), observer)
 }
-function balanceOrderIndex(root: OrderIndexNode): OrderIndexNode {
+function balanceOrderIndex(root: OrderIndexNode, observer?: OrderIndexUpdateObserver): OrderIndexNode {
   const delta = orderIndexHeight(root.left) - orderIndexHeight(root.right)
   if (delta > 1) {
     const left = root.left!
     return rotateOrderIndexRight(orderIndexHeight(left.left) < orderIndexHeight(left.right)
-      ? orderIndexNode(root.key, root.position, rotateOrderIndexLeft(left), root.right) : root)
+      ? orderIndexNode(root.key, root.position, rotateOrderIndexLeft(left, observer), root.right, observer) : root, observer)
   }
   if (delta < -1) {
     const right = root.right!
     return rotateOrderIndexLeft(orderIndexHeight(right.right) < orderIndexHeight(right.left)
-      ? orderIndexNode(root.key, root.position, root.left, rotateOrderIndexRight(right)) : root)
+      ? orderIndexNode(root.key, root.position, root.left, rotateOrderIndexRight(right, observer), observer) : root, observer)
   }
   return root
 }
-function setOrderIndexNode(root: OrderIndexNode | undefined, key: ItemId, position: number): { readonly root: OrderIndexNode; readonly added: boolean } {
-  if (!root) return { root: orderIndexNode(key, position), added: true }
-  if (key === root.key) return { root: orderIndexNode(key, position, root.left, root.right), added: false }
+function setOrderIndexNode(root: OrderIndexNode | undefined, key: ItemId, position: number,
+  observer?: OrderIndexUpdateObserver): { readonly root: OrderIndexNode; readonly added: boolean } {
+  observer?.visit()
+  if (!root) return { root: orderIndexNode(key, position, undefined, undefined, observer), added: true }
+  if (key === root.key) return { root: orderIndexNode(key, position, root.left, root.right, observer), added: false }
   if (key < root.key) {
-    const next = setOrderIndexNode(root.left, key, position)
-    return { root: balanceOrderIndex(orderIndexNode(root.key, root.position, next.root, root.right)), added: next.added }
+    const next = setOrderIndexNode(root.left, key, position, observer)
+    return { root: balanceOrderIndex(orderIndexNode(root.key, root.position, next.root, root.right, observer), observer), added: next.added }
   }
-  const next = setOrderIndexNode(root.right, key, position)
-  return { root: balanceOrderIndex(orderIndexNode(root.key, root.position, root.left, next.root)), added: next.added }
+  const next = setOrderIndexNode(root.right, key, position, observer)
+  return { root: balanceOrderIndex(orderIndexNode(root.key, root.position, root.left, next.root, observer), observer), added: next.added }
 }
-function orderIndexPosition(root: OrderIndexNode | undefined, key: ItemId): number | undefined {
+function orderIndexPosition(root: OrderIndexNode | undefined, key: ItemId, visit?: () => void): number | undefined {
   while (root) {
+    visit?.()
     if (key === root.key) return root.position
     root = key < root.key ? root.left : root.right
   }
@@ -636,6 +660,59 @@ export function appendTranscriptOrder(value: readonly ItemId[], itemId: ItemId):
   orderIndexes.set(order, new PersistentTranscriptOrderIndex(order, nextIndexNode.root,
     previousIndex.size + (nextIndexNode.added ? 1 : 0)))
   transcriptOrderAppends.set(order, Object.freeze({ previous: new WeakRef(value), itemId, position: previousData.size }))
+  return order
+}
+
+const emptyTranscriptUnseenItemIds = persistentTranscriptOrder(Object.freeze([] as ItemId[]))
+
+/** Normalize semantic unseen membership into the immutable appendable sequence representation. */
+export function persistentTranscriptUnseenItemIds(
+  value: readonly ItemId[] = emptyTranscriptUnseenItemIds,
+  diagnostics?: TranscriptUnseenItemDiagnostics,
+): readonly ItemId[] {
+  if (!transcriptOrderData.has(value) && !normalizedTranscriptOrders.has(value) && diagnostics) {
+    diagnostics.unseenItemSequenceNormalizations += 1
+    diagnostics.unseenItemSequenceNormalizationItemVisits += value.length
+  }
+  return persistentTranscriptOrder(value)
+}
+
+/** Test unseen membership without scanning the ordered semantic list. */
+export function hasTranscriptUnseenItemId(
+  value: readonly ItemId[],
+  itemId: ItemId,
+  diagnostics?: TranscriptUnseenItemDiagnostics,
+): boolean {
+  const sequence = persistentTranscriptUnseenItemIds(value, diagnostics)
+  const index = orderIndexes.get(sequence) as PersistentTranscriptOrderIndex
+  if (diagnostics) diagnostics.unseenItemMembershipChecks += 1
+  return orderIndexPosition(index.root, itemId, () => {
+    if (diagnostics) diagnostics.unseenItemMembershipNodeVisits += 1
+  }) !== undefined
+}
+
+/** Append one newly unseen item without copying the preceding semantic backlog. */
+export function appendTranscriptUnseenItemId(
+  value: readonly ItemId[],
+  itemId: ItemId,
+  diagnostics?: TranscriptUnseenItemDiagnostics,
+): readonly ItemId[] {
+  const previous = persistentTranscriptUnseenItemIds(value, diagnostics)
+  const previousData = transcriptOrderData.get(previous)!
+  if (diagnostics) diagnostics.unseenItemAppends += 1
+  const order = persistentOrderArray({
+    root: appendTranscriptOrderNode(previousData.root, itemId, () => {
+      if (diagnostics) diagnostics.unseenItemAppendNodeVisits += 1
+    }),
+    size: previousData.size + 1,
+  })
+  const previousIndex = orderIndexes.get(previous) as PersistentTranscriptOrderIndex
+  const nextIndexNode = setOrderIndexNode(previousIndex.root, itemId, previousData.size, {
+    visit: () => { if (diagnostics) diagnostics.unseenItemIndexUpdateNodeVisits += 1 },
+    copy: () => { if (diagnostics) diagnostics.unseenItemIndexUpdateNodesCopied += 1 },
+  })
+  orderIndexes.set(order, new PersistentTranscriptOrderIndex(order, nextIndexNode.root,
+    previousIndex.size + (nextIndexNode.added ? 1 : 0)))
   return order
 }
 
@@ -834,5 +911,5 @@ export type TranscriptCommand =
   | { type: "fold.defaults"; reasoning: boolean; tools: boolean }
 
 export const initialTranscript = (): TranscriptState => ({
-  order: persistentTranscriptOrder(), projectionById: persistentTranscriptProjections(), folded: persistentTranscriptFolds(), foldDefaults: Object.freeze({ reasoning: false, tools: false }), viewport: { kind: "tail" }, unseenEntries: 0, unseenItemIds: [], jumps: { back: [], forward: [] }, marks: {},
+  order: persistentTranscriptOrder(), projectionById: persistentTranscriptProjections(), folded: persistentTranscriptFolds(), foldDefaults: Object.freeze({ reasoning: false, tools: false }), viewport: { kind: "tail" }, unseenEntries: 0, unseenItemIds: persistentTranscriptUnseenItemIds(), jumps: { back: [], forward: [] }, marks: {},
 })

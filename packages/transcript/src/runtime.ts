@@ -1,5 +1,5 @@
 import { isConversationItemAddition, isConversationTurnAdditionThenItemAppend, isConversationTurnIdAppend, isConversationTurnUpdate, isTurnItemIdAppend, type ConversationState, type ItemId, type ThreadId, type TurnId } from "@vimex/conversation"
-import { appendTranscriptOrder, inheritTranscriptTextLengthIndex, inheritTranscriptTextLengthIndexChanges, isTranscriptFoldAddition, isTranscriptProjectionAddition, persistentTranscriptFolds, persistentTranscriptOrder, persistentTranscriptProjections, setTranscriptProjection, transcriptOrderAppend, transcriptOrderIndex, transcriptTextLengthRange, type LogicalPoint, type TranscriptOrderIndexDiagnostics, type TranscriptProjectionRecordDiagnostics, type TranscriptState, type TranscriptTextLengthIndexDiagnostics } from "./domain/transcript-document"
+import { appendTranscriptOrder, inheritTranscriptTextLengthIndex, inheritTranscriptTextLengthIndexChanges, isTranscriptFoldAddition, isTranscriptProjectionAddition, persistentTranscriptFolds, persistentTranscriptOrder, persistentTranscriptProjections, persistentTranscriptUnseenItemIds, setTranscriptProjection, transcriptOrderAppend, transcriptOrderIndex, transcriptTextLengthRange, type LogicalPoint, type TranscriptOrderIndexDiagnostics, type TranscriptProjectionRecordDiagnostics, type TranscriptState, type TranscriptTextLengthIndexDiagnostics } from "./domain/transcript-document"
 import { composeTranscriptGeometry, composeTranscriptWindowGeometry, emptyTranscriptGeometry, freezeBlockGeometry, geometryMatchesBlock, type BlockGeometry, type BlockMeasurementBase, type BlockMeasurementBatch, type LayoutResetReason, type TranscriptGeometry } from "./geometry"
 import { createHeightIndex, type TranscriptHeightIndex } from "./height-index"
 import { inheritTranscriptUrlIndex, inheritTranscriptUrlIndexChanges, primeTranscriptUrlIndex, type TranscriptUrlIndexDiagnostics } from "./application/transcript-url-index"
@@ -75,6 +75,11 @@ export interface TranscriptRuntimeDiagnostics extends TranscriptOrderIndexDiagno
   windowGeometryBlockVisits: number
   blockPlanWindowSliceItems: number
   changedItemBuilds: number
+  hiddenDamageMerges?: number
+  hiddenDamageInputItemVisits?: number
+  hiddenDamageItemAdditions?: number
+  hiddenDamageSnapshots?: number
+  hiddenDamageSnapshotItemVisits?: number
 }
 
 export const defaultTranscriptWindowPolicy: TranscriptWindowPolicy = Object.freeze({ viewportRows: 24, overscanRows: 24 })
@@ -103,6 +108,72 @@ function mergeDamage(left: TranscriptDamage, right: TranscriptDamage): Transcrip
     return frozenDamage({ kind: "blocks", itemIds: ids })
   }
   return noneDamage
+}
+
+class HiddenDamageAccumulator {
+  private kind: TranscriptDamage["kind"] = "none"
+  private readonly itemIds = new Set<ItemId>()
+
+  add(damage: TranscriptDamage, diagnostics?: TranscriptRuntimeDiagnostics): void {
+    if (diagnostics) diagnostics.hiddenDamageMerges = (diagnostics.hiddenDamageMerges ?? 0) + 1
+    if (damage.kind === "none") return
+    if (this.kind === "none") {
+      this.kind = damage.kind
+      this.itemIds.clear()
+      this.addItemIds(damage, diagnostics)
+      return
+    }
+    if (this.kind === "full" || damage.kind === "full") return this.setScalar("full")
+    if (this.kind === "layout" || damage.kind === "layout") return this.setScalar("layout")
+    if (this.kind === "folds" || damage.kind === "folds") {
+      if (this.kind === "folds" && damage.kind === "folds") {
+        this.addItemIds(damage, diagnostics)
+        return
+      }
+      const otherKind = this.kind === "folds" ? damage.kind : this.kind
+      if (otherKind === "view") {
+        if (damage.kind === "folds") {
+          this.itemIds.clear()
+          this.addItemIds(damage, diagnostics)
+        }
+        this.kind = "folds"
+        return
+      }
+      return this.setScalar("layout")
+    }
+    if (this.kind === "view" || damage.kind === "view") return this.setScalar("view")
+    this.kind = "blocks"
+    this.addItemIds(damage, diagnostics)
+  }
+
+  snapshot(diagnostics?: TranscriptRuntimeDiagnostics): TranscriptDamage {
+    if (diagnostics) diagnostics.hiddenDamageSnapshots = (diagnostics.hiddenDamageSnapshots ?? 0) + 1
+    if (this.kind !== "blocks" && this.kind !== "folds") return this.kind === "none" ? noneDamage
+      : Object.freeze({ kind: this.kind }) as TranscriptDamage
+    const itemIds = Object.freeze([...this.itemIds])
+    if (diagnostics) diagnostics.hiddenDamageSnapshotItemVisits = (diagnostics.hiddenDamageSnapshotItemVisits ?? 0) + itemIds.length
+    return Object.freeze({ kind: this.kind, itemIds })
+  }
+
+  reset(): void {
+    this.kind = "none"
+    this.itemIds.clear()
+  }
+
+  private setScalar(kind: "view" | "layout" | "full"): void {
+    this.kind = kind
+    this.itemIds.clear()
+  }
+
+  private addItemIds(damage: TranscriptDamage, diagnostics?: TranscriptRuntimeDiagnostics): void {
+    if (damage.kind !== "blocks" && damage.kind !== "folds") return
+    for (const itemId of damage.itemIds) {
+      if (diagnostics) diagnostics.hiddenDamageInputItemVisits = (diagnostics.hiddenDamageInputItemVisits ?? 0) + 1
+      const size = this.itemIds.size
+      this.itemIds.add(itemId)
+      if (diagnostics && this.itemIds.size !== size) diagnostics.hiddenDamageItemAdditions = (diagnostics.hiddenDamageItemAdditions ?? 0) + 1
+    }
+  }
 }
 
 function blockDamageIds(...damage: readonly TranscriptDamage[]): readonly ItemId[] | undefined {
@@ -223,7 +294,7 @@ function presentationTranscriptWithProjections(
     viewport: state.viewport.kind === "tail" || !viewportPoint
       ? Object.freeze({ kind: "tail" as const })
       : Object.freeze({ ...state.viewport, point: viewportPoint }),
-    unseenItemIds: Object.freeze([...state.unseenItemIds]),
+    unseenItemIds: persistentTranscriptUnseenItemIds(state.unseenItemIds),
     jumps,
     marks,
   })
@@ -355,7 +426,7 @@ export class TranscriptRuntime {
   private heightIndex: TranscriptHeightIndex | undefined
   private readonly diagnostics: TranscriptRuntimeDiagnostics | undefined
   private readonly itemBlockIndexes = new Map<ItemId, number>()
-  private hiddenDamage: TranscriptDamage = noneDamage
+  private readonly hiddenDamage = new HiddenDamageAccumulator()
   private readonly listeners = new Set<() => void>()
   private disposed = false
   private notifying = false
@@ -802,7 +873,7 @@ export class TranscriptRuntime {
     incrementalItemIds?: readonly ItemId[],
     previousInput: TranscriptRuntimeInput = this.latestInput,
   ): TranscriptFrame {
-    this.hiddenDamage = noneDamage
+    this.hiddenDamage.reset()
     const structuralCandidate = Boolean(incrementalItemIds
       && (incrementalItemIds.length === 0 || incrementalItemIds.some(itemId => !this.itemBlockIndexes.has(itemId))))
     const incremental = reuse && incrementalItemIds
@@ -862,13 +933,13 @@ export class TranscriptRuntime {
     if (input.mode === "detached") {
       const detaching = priorFrame.mode !== "detached"
       if (detaching && revisionChanged) return this.rebuild(input, mergeDamage(canonicalDamage, presentationDamage), true, blockDamageIds(canonicalDamage), priorInput)
-      if (revisionChanged) this.hiddenDamage = mergeDamage(this.hiddenDamage, canonicalDamage)
+      if (revisionChanged) this.hiddenDamage.add(canonicalDamage, this.diagnostics)
 
       if (revealIsNew) {
         const reveal = validReveal(input, this.diagnostics)
         if (!reveal) return priorFrame
         if (!this.revealExistsInDisplayedFrame(input, priorFrame, reveal)) {
-          const hiddenDamage = this.hiddenDamage
+          const hiddenDamage = this.hiddenDamage.snapshot(this.diagnostics)
           return this.rebuild(input, mergeDamage(presentationDamage, mergeDamage({ kind: "view" }, hiddenDamage)), true, blockDamageIds(hiddenDamage), priorInput)
         }
         return this.publishPresentation(input, mergeDamage(presentationDamage, Object.freeze({ kind: "view" as const })))
@@ -882,12 +953,13 @@ export class TranscriptRuntime {
 
     const reattaching = priorFrame.mode === "detached"
     if (!reattaching && !revisionChanged && presentationDamage.kind === "none") return priorFrame
+    const hiddenDamage = reattaching ? this.hiddenDamage.snapshot(this.diagnostics) : noneDamage
     const damage = reattaching
-      ? mergeDamage(this.hiddenDamage, mergeDamage(canonicalDamage, presentationDamage))
+      ? mergeDamage(hiddenDamage, mergeDamage(canonicalDamage, presentationDamage))
       : mergeDamage(canonicalDamage, presentationDamage)
     if (!revisionChanged && !reattaching) return this.publishPresentation(input, damage)
     const incrementalItemIds = reattaching
-      ? blockDamageIds(this.hiddenDamage, canonicalDamage)
+      ? blockDamageIds(hiddenDamage, canonicalDamage)
       : blockDamageIds(canonicalDamage)
     return this.rebuild(input, damage, true, incrementalItemIds, priorInput)
   }

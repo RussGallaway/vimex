@@ -1,6 +1,6 @@
 import type { ItemId } from "@vimex/conversation"
 import { graphemes, graphemeCount } from "../domain/markdown-source-map"
-import { persistentTranscriptFolds, setTranscriptFoldValue, transcriptOrderIndex, transcriptTextLengthRange, type JumpLocation, type LogicalPoint, type TextProjection, type TranscriptCommand, type TranscriptSelection, type TranscriptState, type TranscriptTextLengthIndexDiagnostics } from "../domain/transcript-document"
+import { persistentTranscriptFolds, persistentTranscriptUnseenItemIds, setTranscriptFoldValue, transcriptOrderIndex, transcriptTextLengthRange, type JumpLocation, type LogicalPoint, type TextProjection, type TranscriptCommand, type TranscriptSelection, type TranscriptState, type TranscriptTextLengthIndexDiagnostics } from "../domain/transcript-document"
 import { clampTranscript } from "./project-conversation"
 export function moveCursor(state: TranscriptState, point: LogicalPoint, preferredScreenRow = 0): TranscriptState {
   const projection = state.projectionById[point.itemId]
@@ -100,7 +100,7 @@ export function attachTail(state: TranscriptState): TranscriptState {
   return {
     ...state,
     cursor,
-    viewport: { kind: "tail" }, unseenEntries: 0, unseenItemIds: [],
+    viewport: { kind: "tail" }, unseenEntries: 0, unseenItemIds: persistentTranscriptUnseenItemIds(),
   }
 }
 export function beginSelection(state: TranscriptState, shape: TranscriptSelection["shape"]): TranscriptState {

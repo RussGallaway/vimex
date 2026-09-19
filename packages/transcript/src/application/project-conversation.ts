@@ -1,10 +1,11 @@
 import type { ConversationItem } from "@vimex/conversation"
 import { projectMarkdown, projectPlainText } from "../domain/markdown-source-map"
-import { appendTranscriptOrder, inheritTranscriptTextLengthIndex, persistentTranscriptFolds, persistentTranscriptOrder, setTranscriptFoldValue, setTranscriptProjection, type LogicalPoint, type TextProjection, type TranscriptOrderIndexDiagnostics, type TranscriptProjectionRecordDiagnostics, type TranscriptState, type TranscriptTextLengthIndexDiagnostics } from "../domain/transcript-document"
+import { appendTranscriptOrder, appendTranscriptUnseenItemId, hasTranscriptUnseenItemId, inheritTranscriptTextLengthIndex, persistentTranscriptFolds, persistentTranscriptOrder, persistentTranscriptUnseenItemIds, setTranscriptFoldValue, setTranscriptProjection, type LogicalPoint, type TextProjection, type TranscriptOrderIndexDiagnostics, type TranscriptProjectionRecordDiagnostics, type TranscriptState, type TranscriptTextLengthIndexDiagnostics, type TranscriptUnseenItemDiagnostics } from "../domain/transcript-document"
 import { inheritTranscriptUrlIndex, type TranscriptUrlIndexDiagnostics } from "./transcript-url-index"
 
 export interface TranscriptItemSyncDiagnostics extends TranscriptProjectionRecordDiagnostics,
-  TranscriptTextLengthIndexDiagnostics, TranscriptOrderIndexDiagnostics, TranscriptUrlIndexDiagnostics {}
+  TranscriptTextLengthIndexDiagnostics, TranscriptOrderIndexDiagnostics, TranscriptUrlIndexDiagnostics,
+  TranscriptUnseenItemDiagnostics {}
 function sourceOf(item: ConversationItem): string {
   switch (item.kind) {
     case "user": case "assistant": case "reasoning": return item.markdown
@@ -35,8 +36,9 @@ export function syncTranscriptItem(
   if (projection === previous) return state
   const isNew = !previous
   const changed = !previous || previous.source !== projection.source
-  const unseenItemIds = state.unseenItemIds ?? []
-  const newlyUnseen = state.viewport.kind === "point" && changed && !unseenItemIds.includes(item.id)
+  const unseenItemIds = persistentTranscriptUnseenItemIds(state.unseenItemIds, diagnostics)
+  const newlyUnseen = state.viewport.kind === "point" && changed
+    && !hasTranscriptUnseenItemId(unseenItemIds, item.id, diagnostics)
   // Markdown delimiters can become invisible when a streamed construct closes.
   // Preserve the source location rather than the old rendered-text index.
   const reproject = (point: LogicalPoint): LogicalPoint => {
@@ -55,7 +57,7 @@ export function syncTranscriptItem(
     jumps: { back: state.jumps.back.map(location => ({ ...location, point: reproject(location.point) })), forward: state.jumps.forward.map(location => ({ ...location, point: reproject(location.point) })) },
     marks: Object.fromEntries(Object.entries(state.marks).map(([name, location]) => [name, { ...location, point: reproject(location.point) }])),
     unseenEntries: newlyUnseen ? state.unseenEntries + 1 : state.unseenEntries,
-    unseenItemIds: newlyUnseen ? [...unseenItemIds, item.id] : unseenItemIds,
+    unseenItemIds: newlyUnseen ? appendTranscriptUnseenItemId(unseenItemIds, item.id, diagnostics) : unseenItemIds,
   })
   if (isNew && !Object.hasOwn(next.folded, item.id)
     && ((next.foldDefaults.reasoning && projection.nodeKind === "reasoning")

@@ -373,6 +373,65 @@ test("controller-owned transcript runtime freezes detached content and follows l
   expect(h.controller.transcriptRuntime("main")).toBeUndefined()
 })
 
+test("detached unseen membership publishes status once per item and resets for the next detach epoch", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const runtime = h.controller.transcriptRuntime("main")!
+  const seed = itemId("unseen-seed"), first = itemId("unseen-first"), second = itemId("unseen-second")
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: {
+    id: seed, turnId: turnId("unseen-seed-turn"), kind: "assistant", markdown: "seed", status: "complete",
+  } } })
+  h.controller.transcript({ type: "cursor.move", target: { itemId: seed, graphemeOffset: 0 }, preferredScreenRow: 3, extend: false })
+  const pinned = runtime.getSnapshot()
+  let presentationPublications = 0, runtimePublications = 0
+  h.controller.subscribePresentation("main", () => { presentationPublications++ })
+  runtime.subscribe(() => { runtimePublications++ })
+
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: {
+    id: first, turnId: turnId("unseen-first-turn"), kind: "assistant", markdown: "first", status: "running",
+  } } })
+  expect(h.controller.getSnapshot().workspaces[a]!.transcript.unseenEntries).toBe(1)
+  expect(presentationPublications).toBe(1)
+  expect(runtimePublications).toBe(0)
+  expect(runtime.getSnapshot()).toBe(pinned)
+
+  presentationPublications = 0
+  h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: first, delta: " repeated" } })
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().workspaces[a]!.transcript.unseenEntries).toBe(1)
+  expect(presentationPublications).toBe(0)
+  expect(runtimePublications).toBe(0)
+  expect(runtime.getSnapshot()).toBe(pinned)
+
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: {
+    id: second, turnId: turnId("unseen-second-turn"), kind: "reasoning", markdown: "second", status: "running",
+  } } })
+  expect(h.controller.getSnapshot().workspaces[a]!.transcript.unseenEntries).toBe(2)
+  expect([...h.controller.getSnapshot().workspaces[a]!.transcript.unseenItemIds]).toEqual([first, second])
+  expect(presentationPublications).toBe(1)
+  expect(runtimePublications).toBe(0)
+  expect(runtime.getSnapshot()).toBe(pinned)
+
+  presentationPublications = runtimePublications = 0
+  h.controller.transcript({ type: "viewport.tail" })
+  expect(h.controller.getSnapshot().workspaces[a]!.transcript.unseenEntries).toBe(0)
+  expect(h.controller.getSnapshot().workspaces[a]!.transcript.unseenItemIds).toEqual([])
+  expect(presentationPublications).toBe(1)
+  expect(runtimePublications).toBe(1)
+
+  h.controller.transcript({ type: "cursor.move", target: { itemId: seed, graphemeOffset: 0 }, preferredScreenRow: 3, extend: false })
+  const secondPinned = runtime.getSnapshot()
+  presentationPublications = runtimePublications = 0
+  h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: first, delta: " next epoch" } })
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().workspaces[a]!.transcript.unseenEntries).toBe(1)
+  expect([...h.controller.getSnapshot().workspaces[a]!.transcript.unseenItemIds]).toEqual([first])
+  expect(presentationPublications).toBe(1)
+  expect(runtimePublications).toBe(0)
+  expect(runtime.getSnapshot()).toBe(secondPinned)
+  await h.controller.close()
+})
+
 test("Workbench owns independent bounded main and side transcript runtime lifetimes", async () => {
   const h = harness()
   await h.controller.initialize("/tmp")

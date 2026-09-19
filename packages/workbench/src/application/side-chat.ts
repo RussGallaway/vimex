@@ -1,5 +1,5 @@
 import { referenceText, type TranscriptState } from "@vimex/transcript"
-import type { ThreadId, TurnId, SessionSnapshot } from "@vimex/conversation"
+import { persistentConversationTurnIds, type ThreadId, type TurnId, type SessionSnapshot } from "@vimex/conversation"
 import type { WorkbenchState } from "./workbench-state"
 export interface SideChat {
   parentId: ThreadId
@@ -102,7 +102,7 @@ export class SideChatCoordinator {
           const snapshot = await this.host.fork(active)
           const current = this.host.state().sideChats[active]
           if (!current) return
-          const inheritedTurnIds = [...new Set(snapshot.events.flatMap(event => "turnId" in event ? [event.turnId] : "item" in event ? [event.item.turnId] : []))]
+          const inheritedTurnIds = persistentConversationTurnIds([...new Set(snapshot.events.flatMap(event => "turnId" in event ? [event.turnId] : "item" in event ? [event.item.turnId] : []))])
           const ready = { ...current, inheritedTurnIds, threadId: snapshot.summary.id, status: current.status === "quitting" ? "quitting" as const : undefined }
           this.host.update(ready)
           this.host.hydrate(snapshot)

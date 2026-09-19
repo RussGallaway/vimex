@@ -38,6 +38,7 @@ export interface RenderedLayoutDiagnostics {
   prunedRoots: number
   visibleBeforeOverscan: boolean
   attemptedKeys?: string[]
+  prunedKeys?: string[]
 }
 
 interface LayoutCache {
@@ -111,7 +112,10 @@ function synchronizeMeasurementSchedule(
   if (lineageChanged || layoutReset) {
     schedule.pending.clear()
     schedule.rejectedRetries.clear()
-    if (diagnostics) diagnostics.prunedRoots += schedule.renderableByKey.size
+    if (diagnostics) {
+      diagnostics.prunedRoots += schedule.renderableByKey.size
+      diagnostics.prunedKeys?.push(...schedule.renderableByKey.keys())
+    }
     schedule.renderableByKey.clear()
     indexBlocks(schedule, blocks)
     for (const block of blocks) schedule.pending.add(blockKey(block))
@@ -124,7 +128,10 @@ function synchronizeMeasurementSchedule(
     for (const key of schedule.renderableByKey.keys()) if (!mountedKeys.has(key)) {
       schedule.renderableByKey.delete(key)
       schedule.rejectedRetries.delete(key)
-      if (diagnostics) diagnostics.prunedRoots += 1
+      if (diagnostics) {
+        diagnostics.prunedRoots += 1
+        diagnostics.prunedKeys?.push(key)
+      }
     }
     indexBlocks(schedule, blocks)
     for (const block of blocks) if (priorByKey.get(blockKey(block)) !== block) schedule.pending.add(blockKey(block))
@@ -337,6 +344,7 @@ function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, 
     diagnostics.prunedRoots = 0
     diagnostics.visibleBeforeOverscan = true
     if (diagnostics.attemptedKeys) diagnostics.attemptedKeys.length = 0
+    if (diagnostics.prunedKeys) diagnostics.prunedKeys.length = 0
   }
   const frame = runtimeSource?.frame
   const blocks: readonly TranscriptBlock[] = frame?.window.blocks ?? syntheticBlocks(source as TranscriptState)

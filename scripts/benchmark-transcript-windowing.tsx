@@ -20,8 +20,13 @@ import {
 import {
   conversationItemAt,
   createConversationReductionDiagnostics,
+  createConversationStructureDiagnostics,
+  itemId,
+  persistentConversationTurnIds,
   reduceConversationReference,
   reduceConversationWithDiagnostics,
+  threadId,
+  turnId,
   type ConversationItemRecordDiagnostics,
 } from "@vimex/conversation"
 import {
@@ -31,6 +36,7 @@ import {
   moveByUrlReference,
   passThroughWindow,
   pointIsMaterialized,
+  persistentTranscriptUnseenItemIds,
   primeTranscriptUrlIndex,
   setTranscriptFoldValue,
   syncTranscriptItem,
@@ -52,7 +58,9 @@ import { useTranscriptRuntime } from "../packages/ui-opentui-react/src/transcrip
 import { useTranscriptLayout } from "../packages/ui-opentui-react/src/transcript/use-transcript-layout"
 import { useVisiblePresentationSnapshot } from "../packages/ui-opentui-react/src/side-chat/SideChatLayout"
 import { inertController } from "../packages/ui-opentui-react/src/contracts"
-import { initialWorkbench, type WorkbenchPublicationHost, type WorkbenchState } from "@vimex/workbench"
+import { captureWorkbenchPresentation, createWorkspace, initialWorkbench, workbenchPresentationChanged,
+  type WorkbenchPublicationHost, type WorkbenchState } from "@vimex/workbench"
+import { applyConversationEvent } from "../packages/workbench/src/application/conversation-projector"
 
 interface TimingStats {
   readonly count: number
@@ -75,7 +83,7 @@ function createDiagnostics(): RenderedLayoutDiagnostics {
     candidateBlocks: 0, visibleCandidates: 0, overscanCandidates: 0,
     attemptedMeasurements: 0, changedMeasurements: 0, cachedMeasurements: 0, rejectedMeasurements: 0, placementValidationVisits: 0,
     pendingAfter: 0, trackedMountedRoots: 0, prunedRoots: 0,
-    visibleBeforeOverscan: true, attemptedKeys: [],
+    visibleBeforeOverscan: true, attemptedKeys: [], prunedKeys: [],
   }
 }
 
@@ -161,6 +169,12 @@ function createRuntimeDiagnostics() {
     blockPlanUpdates: 0, blockPlanNodeVisits: 0, blockPlanNodesCopied: 0,
     heightIndexBuilds: 0, heightIndexBlockVisits: 0, heightIndexUpdates: 0, heightIndexNodeVisits: 0, heightIndexNodesCopied: 0,
     completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0, blockPlanWindowSliceItems: 0, changedItemBuilds: 0,
+    unseenItemSequenceNormalizations: 0, unseenItemSequenceNormalizationItemVisits: 0,
+    unseenItemMembershipChecks: 0, unseenItemMembershipNodeVisits: 0,
+    unseenItemAppends: 0, unseenItemAppendNodeVisits: 0,
+    unseenItemIndexUpdateNodeVisits: 0, unseenItemIndexUpdateNodesCopied: 0,
+    hiddenDamageMerges: 0, hiddenDamageInputItemVisits: 0, hiddenDamageItemAdditions: 0,
+    hiddenDamageSnapshots: 0, hiddenDamageSnapshotItemVisits: 0,
   }
 }
 
@@ -183,6 +197,10 @@ function createTranscriptItemSyncDiagnostics(): TranscriptItemSyncDiagnostics {
     textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0,
     textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
     urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0, urlIndexUpdates: 0, urlIndexNodeVisits: 0,
+    unseenItemSequenceNormalizations: 0, unseenItemSequenceNormalizationItemVisits: 0,
+    unseenItemMembershipChecks: 0, unseenItemMembershipNodeVisits: 0,
+    unseenItemAppends: 0, unseenItemAppendNodeVisits: 0,
+    unseenItemIndexUpdateNodeVisits: 0, unseenItemIndexUpdateNodesCopied: 0,
   }
 }
 
@@ -628,6 +646,260 @@ function structuralTailAdmissionBaseline(fixture: ReturnType<typeof buildTranscr
       samples: { warmup: 0, measured: 1 },
     })
   } finally { runtime.dispose() }
+}
+
+function detachedUnseenAccumulationBaseline(fixture: ReturnType<typeof buildTranscriptStructuralScalingFixture>): void {
+  forceGc()
+  const anchorItemId = fixture.before.transcript.order[0]!
+  const unseenItemIds = persistentTranscriptUnseenItemIds(fixture.before.transcript.order)
+  const detachedTranscript = Object.freeze({
+    ...fixture.before.transcript,
+    cursor: Object.freeze({ itemId: anchorItemId, graphemeOffset: 0 }),
+    viewport: Object.freeze({ kind: "point" as const,
+      point: Object.freeze({ itemId: anchorItemId, graphemeOffset: 0 }), preferredScreenRow: 7 }),
+    unseenEntries: fixture.blockCount,
+    unseenItemIds,
+  })
+  const detachedSnapshot: TranscriptFixtureSnapshot = Object.freeze({ ...fixture.before, transcript: detachedTranscript })
+  transcriptTextLengthRange(detachedTranscript, 0, 0)
+  primeTranscriptUrlIndex(detachedTranscript)
+  const runtimeDiagnostics = createRuntimeDiagnostics()
+  const runtime = new TranscriptRuntime(runtimeInput(fixture, detachedSnapshot, "detached", {
+    canonicalDamage: { kind: "full" },
+  }), { windowPolicy: { viewportRows: 24, overscanRows: 24 }, diagnostics: runtimeDiagnostics })
+  try {
+    const pinned = runtime.getSnapshot()
+    const hiddenDamageBacklog = Array.from({ length: fixture.blockCount }, (_, index) =>
+      itemId(`detached-hidden-damage-${fixture.blockCount}-${index}`))
+    const seededSnapshot: TranscriptFixtureSnapshot = Object.freeze({
+      ...detachedSnapshot,
+      canonicalRevision: detachedSnapshot.canonicalRevision + 1,
+    })
+    const runtimeBeforeSeed = { ...runtimeDiagnostics }
+    assert.equal(runtime.update(runtimeInput(fixture, seededSnapshot, "detached", {
+      canonicalDamage: { kind: "blocks", itemIds: hiddenDamageBacklog },
+    })), pinned)
+    const hiddenDamageSeed = {
+      merges: runtimeDiagnostics.hiddenDamageMerges! - (runtimeBeforeSeed.hiddenDamageMerges ?? 0),
+      inputItemVisits: runtimeDiagnostics.hiddenDamageInputItemVisits! - (runtimeBeforeSeed.hiddenDamageInputItemVisits ?? 0),
+      itemAdditions: runtimeDiagnostics.hiddenDamageItemAdditions! - (runtimeBeforeSeed.hiddenDamageItemAdditions ?? 0),
+      snapshots: runtimeDiagnostics.hiddenDamageSnapshots! - (runtimeBeforeSeed.hiddenDamageSnapshots ?? 0),
+      snapshotItemVisits: runtimeDiagnostics.hiddenDamageSnapshotItemVisits! - (runtimeBeforeSeed.hiddenDamageSnapshotItemVisits ?? 0),
+    }
+    assert.deepEqual(hiddenDamageSeed, {
+      merges: 1, inputItemVisits: hiddenDamageBacklog.length, itemAdditions: hiddenDamageBacklog.length,
+      snapshots: 0, snapshotItemVisits: 0,
+    })
+    const runtimeBefore = { ...runtimeDiagnostics }
+    const canonicalDiagnostics = createConversationReductionDiagnostics()
+    const semanticDiagnostics = createTranscriptItemSyncDiagnostics()
+    let publications = 0
+    const stop = runtime.subscribe(() => { publications++ })
+    const sequenceStarted = performance.now()
+
+    const turnReduction = timed(() => reduceConversationWithDiagnostics(seededSnapshot.conversation, Object.freeze({
+      type: "turn.started" as const, threadId: fixture.threadId, turnId: fixture.nextTurnId,
+    }), canonicalDiagnostics))
+    const afterTurn: TranscriptFixtureSnapshot = Object.freeze({
+      canonicalRevision: seededSnapshot.canonicalRevision + 1,
+      conversation: turnReduction.value,
+      transcript: detachedTranscript,
+    })
+    const emptyTurnRuntime = timed(() => runtime.update(runtimeInput(fixture, afterTurn, "detached", {
+      canonicalDamage: { kind: "blocks", itemIds: [] },
+    })))
+    assert.equal(emptyTurnRuntime.value, pinned)
+
+    const item = Object.freeze({
+      id: fixture.nextItemId, turnId: fixture.nextTurnId, kind: "assistant" as const,
+      markdown: "Detached unseen tail block.", status: "running" as const,
+    })
+    const itemReduction = timed(() => reduceConversationWithDiagnostics(afterTurn.conversation, Object.freeze({
+      type: "item.started" as const, threadId: fixture.threadId, item,
+    }), canonicalDiagnostics))
+    const itemProjection = timed(() => syncTranscriptItem(detachedTranscript, item, semanticDiagnostics))
+    const afterItem: TranscriptFixtureSnapshot = Object.freeze({
+      canonicalRevision: afterTurn.canonicalRevision + 1,
+      conversation: itemReduction.value,
+      transcript: itemProjection.value,
+    })
+    const itemRuntime = timed(() => runtime.update(runtimeInput(fixture, afterItem, "detached", {
+      canonicalDamage: { kind: "blocks", itemIds: [fixture.nextItemId] },
+    })))
+    assert.equal(itemRuntime.value, pinned)
+
+    const deltaReduction = timed(() => reduceConversationWithDiagnostics(afterItem.conversation, Object.freeze({
+      type: "item.delta" as const, threadId: fixture.threadId, itemId: fixture.nextItemId, delta: " More.",
+    }), canonicalDiagnostics))
+    const changedItem = deltaReduction.value.items[fixture.nextItemId]!
+    const repeatProjection = timed(() => syncTranscriptItem(itemProjection.value, changedItem, semanticDiagnostics))
+    const afterDelta: TranscriptFixtureSnapshot = Object.freeze({
+      canonicalRevision: afterItem.canonicalRevision + 1,
+      conversation: deltaReduction.value,
+      transcript: repeatProjection.value,
+    })
+    const repeatRuntime = timed(() => runtime.update(runtimeInput(fixture, afterDelta, "detached", {
+      canonicalDamage: { kind: "blocks", itemIds: [fixture.nextItemId] },
+    })))
+    const hiddenSequenceSettlementMs = performance.now() - sequenceStarted
+    assert.equal(repeatRuntime.value, pinned)
+    assert.equal(publications, 0)
+    const hiddenContentPublications = publications
+
+    const presentation = timed(() => runtime.update({ ...runtimeInput(fixture, afterDelta, "detached"),
+      presentationDamage: { kind: "view" } }))
+    stop()
+    assert.equal(publications, 1)
+    assert.equal(presentation.value.blocks, pinned.blocks)
+    assert.equal(presentation.value.window, pinned.window)
+    assert.equal(presentation.value.geometry, pinned.geometry)
+    assert.equal(presentation.value.transcript.unseenItemIds, repeatProjection.value.unseenItemIds)
+    assert.equal(repeatProjection.value.unseenEntries, fixture.blockCount + 1)
+    assert.equal(repeatProjection.value.unseenItemIds, itemProjection.value.unseenItemIds)
+    assert.deepEqual([...repeatProjection.value.unseenItemIds], [...unseenItemIds, fixture.nextItemId])
+
+    assert.equal(semanticDiagnostics.unseenItemSequenceNormalizations, 0)
+    assert.equal(semanticDiagnostics.unseenItemSequenceNormalizationItemVisits, 0)
+    assert.equal(semanticDiagnostics.unseenItemMembershipChecks, 2)
+    assert.equal(semanticDiagnostics.unseenItemAppends, 1)
+    const logarithmicBound = 4 * (Math.ceil(Math.log2(fixture.blockCount + 1)) + 1)
+    assert(semanticDiagnostics.unseenItemMembershipNodeVisits <= logarithmicBound)
+    assert(semanticDiagnostics.unseenItemAppendNodeVisits <= logarithmicBound)
+    assert(semanticDiagnostics.unseenItemIndexUpdateNodeVisits <= logarithmicBound)
+    assert(semanticDiagnostics.unseenItemIndexUpdateNodesCopied <= logarithmicBound * 2)
+    assert.equal(semanticDiagnostics.textLengthIndexBuilds, 0)
+    assert.equal(semanticDiagnostics.textLengthItemVisits, 0)
+    assert.equal(semanticDiagnostics.textLengthIndexUpdates, 2)
+    assert.equal(semanticDiagnostics.urlIndexBuilds, 0)
+    assert.equal(semanticDiagnostics.urlIndexItemVisits, 0)
+    assert.equal(semanticDiagnostics.urlIndexUpdates, 2)
+    assert.equal(canonicalDiagnostics.conversationTurnIdSequenceNormalizations, 0)
+    assert.equal(canonicalDiagnostics.conversationTurnIdSequenceNormalizationVisits, 0)
+    assert.equal(canonicalDiagnostics.conversationTurnRecordNormalizations, 0)
+    assert.equal(canonicalDiagnostics.conversationTurnRecordNormalizationVisits, 0)
+    assert.equal(canonicalDiagnostics.conversationItemRecordNormalizations, 0)
+    assert.equal(canonicalDiagnostics.conversationItemRecordNormalizationItemVisits, 0)
+    assert.equal(runtimeDiagnostics.hiddenDamageMerges! - (runtimeBefore.hiddenDamageMerges ?? 0), 3)
+    assert.equal(runtimeDiagnostics.hiddenDamageInputItemVisits! - (runtimeBefore.hiddenDamageInputItemVisits ?? 0), 2)
+    assert.equal(runtimeDiagnostics.hiddenDamageItemAdditions! - (runtimeBefore.hiddenDamageItemAdditions ?? 0), 1)
+    assert.equal(runtimeDiagnostics.hiddenDamageSnapshots! - (runtimeBefore.hiddenDamageSnapshots ?? 0), 0)
+    assert.equal(runtimeDiagnostics.completePlanBuilds - runtimeBefore.completePlanBuilds, 0)
+    assert.equal(runtimeDiagnostics.completePlanBlockVisits - runtimeBefore.completePlanBlockVisits, 0)
+    assert.equal(runtimeDiagnostics.blockPlanUpdates - runtimeBefore.blockPlanUpdates, 0)
+    assert.equal(runtimeDiagnostics.heightIndexBuilds - runtimeBefore.heightIndexBuilds, 0)
+    assert.equal(runtimeDiagnostics.heightIndexUpdates - runtimeBefore.heightIndexUpdates, 0)
+    assert.equal(runtimeDiagnostics.completeGeometryBlockVisits - runtimeBefore.completeGeometryBlockVisits, 0)
+    assert.equal(runtimeDiagnostics.windowGeometryBlockVisits - runtimeBefore.windowGeometryBlockVisits, 0)
+    assert.equal(runtimeDiagnostics.changedItemBuilds - runtimeBefore.changedItemBuilds, 0)
+
+    printResult({
+      fixtureVersion: fixture.fixtureVersion,
+      scenario: "detached-unseen-accumulation",
+      materialization: "windowed-production",
+      boundary: "canonical-semantic-unseen-runtime-and-presentation-publication",
+      blockCount: fixture.blockCount,
+      viewport: { width: 80, height: 24 },
+      mode: "detached",
+      fixture: { contentShape: "one-semantic-item-per-turn-with-complete-unseen-backlog", contentHash: fixture.contentHash,
+        setupExcludedFromTiming: true, excludedSetup: "bulk canonical construction, persistent unseen backlog, and initial runtime/window settlement" },
+      operationCounts: {
+        completeBlocks: fixture.blockCount,
+        mountedBlocks: pinned.window.blocks.length,
+        unseenEntriesBefore: fixture.blockCount,
+        unseenEntriesAfter: repeatProjection.value.unseenEntries,
+        hiddenContentPublications,
+        presentationOnlyPublications: publications - hiddenContentPublications,
+        semantic: {
+          sequenceNormalizations: semanticDiagnostics.unseenItemSequenceNormalizations,
+          normalizationItemVisits: semanticDiagnostics.unseenItemSequenceNormalizationItemVisits,
+          membershipChecks: semanticDiagnostics.unseenItemMembershipChecks,
+          membershipNodeVisits: semanticDiagnostics.unseenItemMembershipNodeVisits,
+          appends: semanticDiagnostics.unseenItemAppends,
+          appendNodeVisits: semanticDiagnostics.unseenItemAppendNodeVisits,
+          indexUpdateNodeVisits: semanticDiagnostics.unseenItemIndexUpdateNodeVisits,
+          indexUpdateNodesCopied: semanticDiagnostics.unseenItemIndexUpdateNodesCopied,
+        },
+        hiddenDamage: {
+          backlogBefore: hiddenDamageBacklog.length,
+          seed: hiddenDamageSeed,
+          merges: runtimeDiagnostics.hiddenDamageMerges! - (runtimeBefore.hiddenDamageMerges ?? 0),
+          inputItemVisits: runtimeDiagnostics.hiddenDamageInputItemVisits! - (runtimeBefore.hiddenDamageInputItemVisits ?? 0),
+          itemAdditions: runtimeDiagnostics.hiddenDamageItemAdditions! - (runtimeBefore.hiddenDamageItemAdditions ?? 0),
+          snapshots: runtimeDiagnostics.hiddenDamageSnapshots! - (runtimeBefore.hiddenDamageSnapshots ?? 0),
+          snapshotItemVisits: runtimeDiagnostics.hiddenDamageSnapshotItemVisits! - (runtimeBefore.hiddenDamageSnapshotItemVisits ?? 0),
+        },
+        runtime: {
+          completePlanBuilds: runtimeDiagnostics.completePlanBuilds - runtimeBefore.completePlanBuilds,
+          completePlanBlockVisits: runtimeDiagnostics.completePlanBlockVisits - runtimeBefore.completePlanBlockVisits,
+          blockPlanUpdates: runtimeDiagnostics.blockPlanUpdates - runtimeBefore.blockPlanUpdates,
+          heightIndexBuilds: runtimeDiagnostics.heightIndexBuilds - runtimeBefore.heightIndexBuilds,
+          heightIndexUpdates: runtimeDiagnostics.heightIndexUpdates - runtimeBefore.heightIndexUpdates,
+          completeGeometryBlockVisits: runtimeDiagnostics.completeGeometryBlockVisits - runtimeBefore.completeGeometryBlockVisits,
+          windowGeometryBlockVisits: runtimeDiagnostics.windowGeometryBlockVisits - runtimeBefore.windowGeometryBlockVisits,
+          changedItemBuilds: runtimeDiagnostics.changedItemBuilds - runtimeBefore.changedItemBuilds,
+        },
+      },
+      timingsMs: {
+        emptyTurnCanonicalReduction: Number(turnReduction.milliseconds.toFixed(6)),
+        emptyTurnRuntimeAdoption: Number(emptyTurnRuntime.milliseconds.toFixed(6)),
+        newItemCanonicalReduction: Number(itemReduction.milliseconds.toFixed(6)),
+        newItemSemanticProjection: Number(itemProjection.milliseconds.toFixed(6)),
+        newItemRuntimeAdoption: Number(itemRuntime.milliseconds.toFixed(6)),
+        repeatCanonicalReduction: Number(deltaReduction.milliseconds.toFixed(6)),
+        repeatSemanticProjection: Number(repeatProjection.milliseconds.toFixed(6)),
+        repeatRuntimeAdoption: Number(repeatRuntime.milliseconds.toFixed(6)),
+        hiddenSequenceSettlement: Number(hiddenSequenceSettlementMs.toFixed(6)),
+        presentationOnlyPublication: Number(presentation.milliseconds.toFixed(6)),
+      },
+      samples: { warmup: 0, measured: 1 },
+    })
+  } finally { runtime.dispose() }
+}
+
+function sideInheritedMembershipBaseline(blockCount: number): void {
+  const parentId = threadId(`side-membership-parent-${blockCount}`)
+  const childId = threadId(`side-membership-child-${blockCount}`)
+  const localTurnId = turnId(`side-membership-local-turn-${blockCount}`)
+  const localItemId = itemId(`side-membership-local-item-${blockCount}`)
+  let state = { ...initialWorkbench(), workspaces: { [childId]: createWorkspace(childId) } }
+  state = applyConversationEvent(state, {
+    type: "item.started", threadId: childId,
+    item: { id: localItemId, turnId: localTurnId, kind: "assistant", markdown: "seed", status: "running" },
+  }).state
+  const inheritedTurnIds = persistentConversationTurnIds(Array.from({ length: blockCount }, (_, index) =>
+    turnId(`side-membership-inherited-turn-${blockCount}-${index}`)))
+  state = { ...state, sideChats: {
+    [parentId]: { parentId, threadId: childId, visible: true, maximized: false, inheritedTurnIds },
+  } }
+  const diagnostics = createConversationStructureDiagnostics()
+  const projected = timed(() => applyConversationEvent(state, {
+    type: "item.delta", threadId: childId, itemId: localItemId, delta: " delta",
+  }, diagnostics).state)
+  assert.equal(projected.value.workspaces[childId]!.transcript.projectionById[localItemId]?.source, "seed delta")
+  assert.equal(diagnostics.conversationTurnIdSequenceNormalizations, 0)
+  assert.equal(diagnostics.conversationTurnIdSequenceNormalizationVisits, 0)
+  assert.equal(diagnostics.conversationTurnIdSequenceLookups, 1)
+  assert(diagnostics.conversationTurnIdSequenceLookupNodeVisits
+    <= 2 * (Math.ceil(Math.log2(blockCount + 1)) + 1))
+  printResult({
+    scenario: "side-inherited-turn-membership",
+    materialization: "semantic-workbench",
+    boundary: "side-child-canonical-projection",
+    blockCount,
+    viewport: { width: 80, height: 24 },
+    mode: "detached",
+    fixture: { contentShape: "inherited-parent-turns-plus-one-live-child-item", setupExcludedFromTiming: true,
+      excludedSetup: "persistent inherited-turn construction and child workspace/item projection" },
+    operationCounts: {
+      inheritedTurns: inheritedTurnIds.length,
+      membershipLookups: diagnostics.conversationTurnIdSequenceLookups,
+      membershipNodeVisits: diagnostics.conversationTurnIdSequenceLookupNodeVisits,
+      sequenceNormalizations: diagnostics.conversationTurnIdSequenceNormalizations,
+      normalizationVisits: diagnostics.conversationTurnIdSequenceNormalizationVisits,
+    },
+    timingsMs: { canonicalAndSemanticProjection: Number(projected.milliseconds.toFixed(6)) },
+    samples: { warmup: 0, measured: 1 },
+  })
 }
 
 function runtimeBaseline(fixture: ReturnType<typeof buildTranscriptScalingFixture>): void {
@@ -1313,6 +1585,50 @@ function RuntimeNativeMountProbe(props: {
   </Profiler>
 }
 
+function DetachedStatusNativeProbeInner(props: {
+  runtime: TranscriptRuntime
+  presentationHost: WorkbenchPublicationHost
+  threadId: TranscriptRuntimeInput["threadId"]
+  viewport: Readonly<{ width: number; height: number }>
+  syntax: ReturnType<typeof createEmberTideSyntax>
+  diagnostics: RenderedLayoutDiagnostics
+  measurementTotals: { passes: number; attemptedMeasurements: number }
+  observe: { unseenEntries?: number; frame?: TranscriptFrame }
+}) {
+  const state = useVisiblePresentationSnapshot(props.presentationHost, "main", true)
+  const frame = useTranscriptRuntime({ transcriptRuntime: () => props.runtime }, "main", undefined, true)
+  const scrollRef = useRef<ScrollBoxRenderable>(null)
+  useTranscriptLayout({
+    threadId: props.threadId,
+    transcript: frame.transcript,
+    frame,
+    runtime: props.runtime,
+    styleRevision,
+    width: props.viewport.width,
+    height: props.viewport.height - 1,
+    scrollRef,
+    controller: inertController,
+    measurementDiagnostics: props.diagnostics,
+    onMeasurementDiagnostics: diagnostics => {
+      props.measurementTotals.passes++
+      props.measurementTotals.attemptedMeasurements += diagnostics.attemptedMeasurements
+    },
+  })
+  props.observe.unseenEntries = state.workspaces[props.threadId]?.transcript.unseenEntries
+  props.observe.frame = frame
+  return <box width={props.viewport.width} height={props.viewport.height} flexDirection="column">
+    <text id="detached-unseen-status">{`UNSEEN ${props.observe.unseenEntries ?? 0}`}</text>
+    <TranscriptViewport window={frame.window} state={frame.transcript} surface="transcript"
+      syntax={props.syntax} scrollRef={scrollRef} onManualScroll={() => {}} />
+  </box>
+}
+
+function DetachedStatusNativeProbe(props: Parameters<typeof DetachedStatusNativeProbeInner>[0] & { commits: number[] }) {
+  return <Profiler id="detached-status-native" onRender={(_id, _phase, duration) => props.commits.push(duration)}>
+    <DetachedStatusNativeProbeInner {...props} />
+  </Profiler>
+}
+
 function mountedBlockRoots(scroll: ScrollBoxRenderable): ReadonlyMap<string, Renderable> {
   const roots = new Map<string, Renderable>()
   const pending = [...scroll.getChildren()]
@@ -1348,6 +1664,225 @@ function assertBoundedNativeShape(blocks: number, counts: Readonly<{ descendants
 function assertMountedRoots(frame: TranscriptFrame, roots: ReadonlyMap<string, Renderable>): void {
   assert.equal(roots.size, frame.window.blocks.length)
   for (const block of frame.window.blocks) assert(roots.has(transcriptBlockRenderableId(block)), `missing mounted root ${blockKey(block)}`)
+}
+
+async function detachedStatusNativePublicationBaseline(
+  fixture: ReturnType<typeof buildTranscriptStructuralScalingFixture>,
+  viewport: Readonly<{ width: number; height: number }>,
+): Promise<void> {
+  forceGc()
+  const anchorItemId = fixture.before.transcript.order[0]!
+  const detachedTranscript = Object.freeze({
+    ...fixture.before.transcript,
+    cursor: Object.freeze({ itemId: anchorItemId, graphemeOffset: 0 }),
+    viewport: Object.freeze({ kind: "point" as const,
+      point: Object.freeze({ itemId: anchorItemId, graphemeOffset: 0 }), preferredScreenRow: 7 }),
+    unseenEntries: fixture.blockCount,
+    unseenItemIds: persistentTranscriptUnseenItemIds(fixture.before.transcript.order),
+  })
+  let state: WorkbenchState = {
+    ...initialWorkbench(),
+    activeThreadId: fixture.threadId,
+    threadOrder: [fixture.threadId],
+    workspaces: {
+      [fixture.threadId]: {
+        ...createWorkspace(fixture.threadId),
+        conversation: fixture.before.conversation,
+        canonicalRevision: fixture.before.canonicalRevision,
+        transcript: detachedTranscript,
+      },
+    },
+  }
+  const initialSnapshot: TranscriptFixtureSnapshot = Object.freeze({
+    canonicalRevision: fixture.before.canonicalRevision,
+    conversation: fixture.before.conversation,
+    transcript: detachedTranscript,
+  })
+  const runtime = new TranscriptRuntime(runtimeInput(fixture, initialSnapshot, "detached", {
+    canonicalDamage: { kind: "full" },
+  }), { windowPolicy: { viewportRows: viewport.height - 1, overscanRows: viewport.height - 1 } })
+  const originalReportMeasurements = runtime.reportMeasurements.bind(runtime)
+  let measurementReports = 0
+  runtime.reportMeasurements = batch => { measurementReports++; return originalReportMeasurements(batch) }
+  const presentationListeners = new Set<() => void>()
+  let presentationSnapshot = captureWorkbenchPresentation(state, "main")
+  let workbenchPublications = 0
+  const presentationHost: WorkbenchPublicationHost = {
+    getLayoutSnapshot: () => { throw new Error("layout is outside the detached status publication cell") },
+    subscribeLayout: () => () => {},
+    getPresentationSnapshot: () => presentationSnapshot,
+    subscribePresentation: (_presentationId, listener) => {
+      presentationListeners.add(listener)
+      return () => presentationListeners.delete(listener)
+    },
+  }
+  const publishProjectedState = (next: WorkbenchState): boolean => {
+    const previous = state
+    state = next
+    if (!workbenchPresentationChanged(previous, next, "main")) return false
+    presentationSnapshot = captureWorkbenchPresentation(next, "main")
+    workbenchPublications++
+    for (const listener of presentationListeners) listener()
+    return true
+  }
+  const diagnostics = createDiagnostics()
+  const measurementTotals = { passes: 0, attemptedMeasurements: 0 }
+  const commits: number[] = []
+  const observe: { unseenEntries?: number; frame?: TranscriptFrame } = {}
+  const syntax = createEmberTideSyntax()
+  const setup = await testRender(<DetachedStatusNativeProbe runtime={runtime} presentationHost={presentationHost}
+    threadId={fixture.threadId} viewport={viewport} syntax={syntax} diagnostics={diagnostics}
+    measurementTotals={measurementTotals} observe={observe} commits={commits} />, viewport)
+  try {
+    for (let pass = 0; pass < 8; pass++) {
+      await act(async () => { await setup.flush(); await setup.renderOnce() })
+      if (runtime.getSnapshot().geometry.measuredBlockCount > 0 && diagnostics.pendingAfter === 0) break
+    }
+    assert(runtime.getSnapshot().geometry.measuredBlockCount > 0, "connected detached probe must settle native geometry")
+    assert.equal(diagnostics.pendingAfter, 0)
+    let quiescentPasses = 0
+    for (let pass = 0; pass < 8 && quiescentPasses < 2; pass++) {
+      const attemptedBefore = measurementTotals.attemptedMeasurements
+      await act(async () => { await setup.flush(); await setup.renderOnce() })
+      const attempted = measurementTotals.attemptedMeasurements - attemptedBefore
+      quiescentPasses = attempted === 0 && diagnostics.pendingAfter === 0 ? quiescentPasses + 1 : 0
+    }
+    assert.equal(quiescentPasses, 2, "connected detached probe must drain native measurement work before timing")
+    const scroll = setup.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable
+    const rootsBefore = mountedBlockRoots(scroll)
+    const pinned = runtime.getSnapshot()
+    assertMountedRoots(pinned, rootsBefore)
+    assert.equal(observe.unseenEntries, fixture.blockCount)
+
+    const item = Object.freeze({
+      id: fixture.nextItemId, turnId: fixture.nextTurnId, kind: "assistant" as const,
+      markdown: "Detached status-only publication.", status: "running" as const,
+    })
+    commits.length = 0
+    measurementReports = 0
+    workbenchPublications = 0
+    const firstMeasurementPassesBefore = measurementTotals.passes
+    const firstAttemptedMeasurementsBefore = measurementTotals.attemptedMeasurements
+    let runtimePublications = 0
+    const stopRuntime = runtime.subscribe(() => { runtimePublications++ })
+    const firstStarted = performance.now()
+    await act(async () => {
+      const projected = applyConversationEvent(state, {
+        type: "item.started", threadId: fixture.threadId, item,
+      }).state
+      assert.equal(publishProjectedState(projected), true)
+      const workspace = state.workspaces[fixture.threadId]!
+      const result = runtime.update({
+        threadId: fixture.threadId,
+        canonicalGeneration: workspace.canonicalGeneration,
+        canonicalRevision: workspace.canonicalRevision,
+        conversation: workspace.conversation,
+        transcript: workspace.transcript,
+        mode: "detached",
+        canonicalDamage: { kind: "blocks", itemIds: [fixture.nextItemId] },
+      })
+      assert.equal(result, pinned)
+      await setup.flush(); await setup.renderOnce()
+    })
+    const firstSettlementMs = performance.now() - firstStarted
+    const firstCommits = commits.length
+    const firstMeasurementReports = measurementReports
+    const firstMeasurementPasses = measurementTotals.passes - firstMeasurementPassesBefore
+    const firstAttemptedMeasurements = measurementTotals.attemptedMeasurements - firstAttemptedMeasurementsBefore
+    const rootsAfterFirst = mountedBlockRoots(scroll)
+    let retainedAfterFirst = 0
+    for (const [id, root] of rootsBefore) if (rootsAfterFirst.get(id) === root) retainedAfterFirst++
+    assert.equal(state.workspaces[fixture.threadId]!.transcript.unseenEntries, fixture.blockCount + 1)
+    assert.equal(observe.unseenEntries, fixture.blockCount + 1)
+    assert.equal(workbenchPublications, 1)
+    assert.equal(runtimePublications, 0)
+    assert.equal(firstCommits, 1)
+    assert.equal(firstMeasurementReports, 0)
+    assert.equal(firstAttemptedMeasurements, 0)
+    assert.equal(rootsAfterFirst.size, rootsBefore.size)
+    assert.equal(retainedAfterFirst, rootsBefore.size)
+
+    commits.length = 0
+    measurementReports = 0
+    workbenchPublications = 0
+    const repeatMeasurementPassesBefore = measurementTotals.passes
+    const repeatAttemptedMeasurementsBefore = measurementTotals.attemptedMeasurements
+    const repeatStarted = performance.now()
+    await act(async () => {
+      const projected = applyConversationEvent(state, {
+        type: "item.delta", threadId: fixture.threadId, itemId: fixture.nextItemId, delta: " More.",
+      }).state
+      assert.equal(publishProjectedState(projected), false)
+      const workspace = state.workspaces[fixture.threadId]!
+      const result = runtime.update({
+        threadId: fixture.threadId,
+        canonicalGeneration: workspace.canonicalGeneration,
+        canonicalRevision: workspace.canonicalRevision,
+        conversation: workspace.conversation,
+        transcript: workspace.transcript,
+        mode: "detached",
+        canonicalDamage: { kind: "blocks", itemIds: [fixture.nextItemId] },
+      })
+      assert.equal(result, pinned)
+      await setup.flush()
+    })
+    const repeatSettlementMs = performance.now() - repeatStarted
+    const repeatMeasurementPasses = measurementTotals.passes - repeatMeasurementPassesBefore
+    const repeatAttemptedMeasurements = measurementTotals.attemptedMeasurements - repeatAttemptedMeasurementsBefore
+    stopRuntime()
+    const rootsAfterRepeat = mountedBlockRoots(scroll)
+    let retainedAfterRepeat = 0
+    for (const [id, root] of rootsBefore) if (rootsAfterRepeat.get(id) === root) retainedAfterRepeat++
+    assert.equal(state.workspaces[fixture.threadId]!.transcript.unseenEntries, fixture.blockCount + 1)
+    assert.equal(observe.unseenEntries, fixture.blockCount + 1)
+    assert.equal(workbenchPublications, 0)
+    assert.equal(runtimePublications, 0)
+    assert.equal(commits.length, 0)
+    assert.equal(measurementReports, 0)
+    assert.equal(repeatAttemptedMeasurements, 0)
+    assert.equal(rootsAfterRepeat.size, rootsBefore.size)
+    assert.equal(retainedAfterRepeat, rootsBefore.size)
+
+    printResult({
+      scenario: "detached-status-native-publication",
+      materialization: "windowed-production",
+      boundary: "workbench-selector-react-runtime-native-root-and-measurement-scheduler",
+      blockCount: fixture.blockCount,
+      viewport,
+      mode: "detached",
+      fixture: { contentShape: "one-semantic-item-per-turn-with-complete-unseen-backlog",
+        contentHash: fixture.contentHash, setupExcludedFromTiming: true,
+        excludedSetup: "initial Workbench/runtime construction, React/OpenTUI mount, and native geometry settlement" },
+      operationCounts: {
+        mountedBlocks: rootsBefore.size,
+        unseenEntriesBefore: fixture.blockCount,
+        unseenEntriesAfter: fixture.blockCount + 1,
+        firstDistinctItem: {
+          workbenchPublications: 1, runtimePublications: 0, reactCommits: firstCommits,
+          measurementPasses: firstMeasurementPasses, measurementReports: firstMeasurementReports,
+          attemptedMeasurements: firstAttemptedMeasurements,
+          retainedNativeRoots: retainedAfterFirst, mountedNativeRoots: rootsAfterFirst.size - retainedAfterFirst,
+          unmountedNativeRoots: rootsBefore.size - retainedAfterFirst,
+        },
+        repeatedItemDelta: {
+          workbenchPublications, runtimePublications, reactCommits: commits.length,
+          measurementPasses: repeatMeasurementPasses, measurementReports,
+          attemptedMeasurements: repeatAttemptedMeasurements,
+          retainedNativeRoots: retainedAfterRepeat, mountedNativeRoots: rootsAfterRepeat.size - retainedAfterRepeat,
+          unmountedNativeRoots: rootsBefore.size - retainedAfterRepeat,
+        },
+      },
+      timingsMs: {
+        firstDistinctStatusSettlement: Number(firstSettlementMs.toFixed(6)),
+        repeatedItemNoPublicationSettlement: Number(repeatSettlementMs.toFixed(6)),
+      },
+      samples: { warmup: 0, measured: 1 },
+    })
+  } finally {
+    runtime.dispose()
+    syntax.destroy()
+    await act(async () => setup.renderer.destroy())
+  }
 }
 
 async function nativeStructuralAdmissionBaseline(
@@ -1617,6 +2152,7 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
     unsubscribe()
     const rootsAfter = mountedBlockRoots(scroll)
     let settledFollowRoots = rootsAfter
+    let settledFollowFrame = runtime.getSnapshot()
     assertMountedRoots(runtime.getSnapshot(), rootsAfter)
     let retainedBlockRoots = 0
     for (const [id, root] of steadyRoots) if (rootsAfter.get(id) === root) retainedBlockRoots++
@@ -1673,6 +2209,7 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
       })
       assert(followedLayout, "changed tail geometry must settle on the next scheduler pass")
       settledFollowRoots = mountedBlockRoots(scroll)
+      settledFollowFrame = runtime.getSnapshot()
       assertMountedRoots(runtime.getSnapshot(), settledFollowRoots)
       printResult({
         scenario: "follow-tail-native-measurement",
@@ -1692,6 +2229,27 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
         samples: { warmup: 0, measured: 1 },
       })
     }
+
+    // Detached movement owns an exact departed-root cleanup gate even when the
+    // optional geometry-reporting cell is disabled. Seed and fully acknowledge
+    // the pre-move scheduler outside the measured movement boundary.
+    let movementSeedDiagnostics = createDiagnostics()
+    let movementSeedLayout: ReturnType<typeof measureRenderedTranscript>
+    for (let pass = 0; pass < 8; pass++) {
+      movementSeedDiagnostics = createDiagnostics()
+      await act(async () => {
+        movementSeedLayout = measureRenderedTranscript(setup.renderer, scroll, {
+          frame: runtime.getSnapshot(), runtime, styleRevision, diagnostics: movementSeedDiagnostics,
+        })
+        await setup.flush(); await setup.renderOnce()
+      })
+      if (movementSeedLayout && movementSeedDiagnostics.pendingAfter === 0) break
+    }
+    assert(movementSeedLayout, "pre-move native geometry must settle before detached cleanup measurement")
+    assert.equal(movementSeedDiagnostics.pendingAfter, 0)
+    settledFollowRoots = mountedBlockRoots(scroll)
+    settledFollowFrame = runtime.getSnapshot()
+    assertMountedRoots(settledFollowFrame, settledFollowRoots)
 
     const detachedTranscript = Object.freeze({
       ...fixture.afterTailDelta.transcript,
@@ -1724,10 +2282,11 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
     })
     assert(independentlyVisibleKeys.length > 0, "detached movement must put planned roots in the native viewport")
     const shiftDiagnostics = createDiagnostics()
+    const shiftFrame = runtime.getSnapshot()
     const shiftStarted = performance.now()
     await act(async () => {
       measureRenderedTranscript(setup.renderer, scroll, {
-        frame: runtime.getSnapshot(), runtime, styleRevision, diagnostics: shiftDiagnostics,
+        frame: shiftFrame, runtime, styleRevision, diagnostics: shiftDiagnostics,
       })
       await setup.flush(); await setup.renderOnce()
     })
@@ -1749,7 +2308,11 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
     unsubscribeMovement()
     const shiftSettlementMs = performance.now() - movementStarted
     assert.equal(shiftDiagnostics.trackedMountedRoots, detachedRootsBefore.size)
-    assert.equal(shiftDiagnostics.prunedRoots, settledFollowRoots.size - overlap)
+    const detachedBlockKeys = new Set(shiftFrame.window.blocks.map(blockKey))
+    const departedMeasuredKeys = settledFollowFrame.window.blocks
+      .map(blockKey).filter(key => !detachedBlockKeys.has(key)).sort()
+    assert.equal(shiftDiagnostics.prunedRoots, departedMeasuredKeys.length)
+    assert.deepEqual(shiftDiagnostics.prunedKeys?.slice().sort(), departedMeasuredKeys)
     assert(shiftDiagnostics.attemptedMeasurements <= detachedRootsBefore.size)
     assert.equal(shiftDiagnostics.visibleCandidates, independentlyVisibleKeys.length)
     assert.deepEqual(shiftDiagnostics.attemptedKeys?.slice(0, independentlyVisibleKeys.length), independentlyVisibleKeys)
@@ -1782,7 +2345,15 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
         completeMovementSettlement: Number(shiftSettlementMs.toFixed(6)) },
       samples: { warmup: 0, measured: 1 },
     })
-    const hidden = appendTranscriptScalingTail(detachedSnapshot, fixture.tailItemId, fixture.tailDelta)
+    const backloggedTranscript = Object.freeze({
+      ...detachedTranscript,
+      unseenEntries: fixture.blockCount,
+      unseenItemIds: persistentTranscriptUnseenItemIds(detachedTranscript.order),
+    })
+    const backloggedSnapshot = Object.freeze({ ...detachedSnapshot, transcript: backloggedTranscript })
+    const hidden = appendTranscriptScalingTail(backloggedSnapshot, fixture.tailItemId, fixture.tailDelta)
+    assert.equal(hidden.transcript.unseenEntries, fixture.blockCount)
+    assert.equal(hidden.transcript.unseenItemIds, backloggedTranscript.unseenItemIds)
     let detachedPublications = 0
     const unsubscribeDetached = runtime.subscribe(() => { detachedPublications++ })
     commits.length = 0
@@ -1810,9 +2381,11 @@ async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptSca
       blockCount: fixture.blockCount,
       viewport,
       mode: "detached",
-      fixture: { contentShape: "rendered-mixed-semantic-root-blocks", contentHash: fixture.contentHash, setupExcludedFromTiming: true },
-      operationCounts: { mountedBlocks: pinnedRoots.size, measuredBlocks: 0, changedBlocks: 0, publications: detachedPublications,
-        canonicalChangedBlocks: 1, retainedBlockRoots: detachedRetainedRoots, mountedRootsDuringHiddenDelta: 0,
+      fixture: { contentShape: "rendered-mixed-semantic-root-blocks-with-complete-unseen-backlog",
+        contentHash: fixture.contentHash, setupExcludedFromTiming: true },
+      operationCounts: { mountedBlocks: pinnedRoots.size, changedBlocks: 0, publications: detachedPublications,
+        canonicalChangedBlocks: 1, unseenBacklog: backloggedTranscript.unseenItemIds.length,
+        retainedBlockRoots: detachedRetainedRoots, mountedRootsDuringHiddenDelta: 0,
         unmountedRootsDuringHiddenDelta: 0, runtimePublications: detachedPublications, reactCommits: commits.length },
       timingsMs: { hiddenDeltaPresentationSettlement: Number(detachedSettlementMs.toFixed(6)) },
       samples: { warmup: 0, measured: 1 },
@@ -1841,7 +2414,10 @@ for (const blockCount of requestedSizes) {
   assert(transcriptScalingBlockCounts.includes(blockCount as typeof transcriptScalingBlockCounts[number]), `unsupported block count ${blockCount}`)
   const fixture = buildTranscriptScalingFixture(blockCount)
   boundedCanonicalIngressBaseline(fixture)
-  structuralTailAdmissionBaseline(buildTranscriptStructuralScalingFixture(blockCount))
+  const structuralFixture = buildTranscriptStructuralScalingFixture(blockCount)
+  structuralTailAdmissionBaseline(structuralFixture)
+  detachedUnseenAccumulationBaseline(structuralFixture)
+  sideInheritedMembershipBaseline(blockCount)
   runtimeBaseline(fixture)
   boundedFollowRuntimeBaseline(fixture)
   await reactPublicationBaseline(fixture)
@@ -1853,6 +2429,7 @@ for (const blockCount of requestedSizes) {
     const structuralFixture = buildTranscriptStructuralScalingFixture(blockCount)
     for (const viewport of requestedNativeViewports) {
       await nativeStructuralAdmissionBaseline(structuralFixture, viewport)
+      await detachedStatusNativePublicationBaseline(structuralFixture, viewport)
       await nativeMountBaseline(fixture, viewport)
     }
   }

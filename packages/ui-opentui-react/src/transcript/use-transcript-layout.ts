@@ -5,7 +5,7 @@ import { blockGraphemeRange, blockKey, type GeometryStyleRevision, type LogicalP
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react"
 import type { VimexUiController } from "../contracts"
 import { buildTranscriptLayout, type TranscriptLayout } from "./layout"
-import { measureRenderedTranscript, measuredPoint, topVisiblePoint, bottomVisiblePoint, rebaseTranscriptLayout, releaseRenderedTranscriptLayout, transcriptBlockRenderableId, transcriptItemRenderableId, translateTranscriptLayout } from "./rendered-layout"
+import { measureRenderedTranscript, measuredPoint, topVisiblePoint, bottomVisiblePoint, rebaseTranscriptLayout, releaseRenderedTranscriptLayout, transcriptBlockRenderableId, transcriptItemRenderableId, translateTranscriptLayout, type RenderedLayoutDiagnostics } from "./rendered-layout"
 
 /** Owns the volatile bridge between semantic anchors and terminal geometry. */
 export function useTranscriptLayout(options: {
@@ -19,6 +19,10 @@ export function useTranscriptLayout(options: {
   scrollRef: RefObject<ScrollBoxRenderable | null>
   controller: VimexUiController
   visible?: boolean
+  /** Optional operation-count sink for scaling evidence; omitted in production UI use. */
+  measurementDiagnostics?: RenderedLayoutDiagnostics
+  /** Observes every completed measurement pass without owning geometry state. */
+  onMeasurementDiagnostics?(diagnostics: Readonly<RenderedLayoutDiagnostics>): void
   onAnchor?(point: LogicalPoint, preferredScreenRow: number): void
 }) {
   const renderer = useRenderer()
@@ -143,8 +147,10 @@ export function useTranscriptLayout(options: {
         if (captureScrolledAnchor()) { renderer.requestRender(); return }
       }
       const next = measureRenderedTranscript(renderer, scrollbox, current.frame
-        ? { frame: current.frame, runtime: current.runtime, styleRevision: current.styleRevision ?? "default" }
+        ? { frame: current.frame, runtime: current.runtime, styleRevision: current.styleRevision ?? "default",
+          diagnostics: current.measurementDiagnostics }
         : current.transcript)
+      if (current.measurementDiagnostics) current.onMeasurementDiagnostics?.(current.measurementDiagnostics)
       if (!next) return
       // Measurement owns a geometry cache. Its stable identity avoids serializing
       // every logical point merely to discover that a frame has not changed.
@@ -194,8 +200,10 @@ export function useTranscriptLayout(options: {
     // Measure at key time: scrolling may have occurred since the last frame.
     const current = latest.current
     const next = measureRenderedTranscript(renderer, scrollbox, current.frame
-      ? { frame: current.frame, runtime: current.runtime, styleRevision: current.styleRevision ?? "default" }
+      ? { frame: current.frame, runtime: current.runtime, styleRevision: current.styleRevision ?? "default",
+        diagnostics: current.measurementDiagnostics }
       : current.transcript)
+    if (current.measurementDiagnostics) current.onMeasurementDiagnostics?.(current.measurementDiagnostics)
     if (!next) return
     const point = bottomVisiblePoint(next, scrollbox)
     if (!point) return

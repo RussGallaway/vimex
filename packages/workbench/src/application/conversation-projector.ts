@@ -1,11 +1,12 @@
-import { forkConversation, reduceConversation, type ConversationEvent, type ThreadId, type TurnId } from "@vimex/conversation"
+import { conversationTurnIdsHave, forkConversation, reduceConversation, type ConversationEvent, type ConversationStructureDiagnostics, type ThreadId, type TurnId } from "@vimex/conversation"
 import { initialTranscript, persistentTranscriptFolds, syncTranscriptItem } from "@vimex/transcript"
 import { initialComposer } from "@vimex/composer"
 import { initialInteraction } from "@vimex/interaction"
 import { done, updateWorkspace, type ThreadWorkspace, type WorkbenchEffect, type WorkbenchState, type WorkbenchTransition } from "./workbench-state"
 import { scheduleQueued } from "./submission-scheduler"
 import { sideChatForChild } from "./side-chat"
-export function applyConversationEvent(state: WorkbenchState, event: ConversationEvent): WorkbenchTransition {
+export function applyConversationEvent(state: WorkbenchState, event: ConversationEvent,
+  diagnostics?: Partial<ConversationStructureDiagnostics>): WorkbenchTransition {
   const workspace = state.workspaces[event.threadId]
   if (!workspace) return done(state)
   const priorTurn = event.type === "turn.completed" ? workspace.conversation.turns[event.turnId] : undefined
@@ -16,7 +17,7 @@ export function applyConversationEvent(state: WorkbenchState, event: Conversatio
   if (changedItemId) {
     const item = conversation.items[changedItemId]
     const side = sideChatForChild(state, event.threadId)
-    const inherited = item && side?.inheritedTurnIds?.includes(item.turnId)
+    const inherited = item && side?.inheritedTurnIds && conversationTurnIdsHave(side.inheritedTurnIds, item.turnId, diagnostics)
     if (item && !inherited && item !== workspace.conversation.items[changedItemId]) transcript = syncTranscriptItem(transcript, item)
   }
   let composer = workspace.composer

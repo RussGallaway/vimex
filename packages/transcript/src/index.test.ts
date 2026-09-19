@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { itemId, threadId, turnId, type ConversationItem } from "@vimex/conversation"
-import { appendTranscriptOrder, attachTail, beginSelection, findSearchMatches, graphemeCount, initialTranscript, moveCursor, persistentTranscriptFolds, persistentTranscriptOrder, persistentTranscriptProjections, projectItem, reduceTranscript, selectedGraphemeCount, selectedText, setFold, setTranscriptFoldValue, setTranscriptProjection, syncTranscriptItem, transcriptOrderAppend, transcriptOrderIndex, transcriptTextLengthRange, urlAt } from "./index"
+import { appendTranscriptOrder, appendTranscriptUnseenItemId, attachTail, beginSelection, findSearchMatches, graphemeCount, hasTranscriptUnseenItemId, initialTranscript, moveCursor, persistentTranscriptFolds, persistentTranscriptOrder, persistentTranscriptProjections, persistentTranscriptUnseenItemIds, projectItem, reduceTranscript, selectedGraphemeCount, selectedText, setFold, setTranscriptFoldValue, setTranscriptProjection, syncTranscriptItem, transcriptOrderAppend, transcriptOrderIndex, transcriptTextLengthRange, urlAt } from "./index"
 
 import { assistantMessage as message } from "@vimex/testkit"
 
@@ -26,6 +26,104 @@ describe("transcript", () => {
     expect(state.unseenEntries).toBe(1)
     state = attachTail(state)
     expect(state.unseenItemIds).toEqual([])
+  })
+
+  test("persistent unseen membership preserves array semantics and branches without copying history", () => {
+    const proto = itemId("__proto__"), numeric = itemId("17"), constructor = itemId("constructor")
+    const diagnostics = {
+      unseenItemSequenceNormalizations: 0, unseenItemSequenceNormalizationItemVisits: 0,
+      unseenItemMembershipChecks: 0, unseenItemMembershipNodeVisits: 0,
+      unseenItemAppends: 0, unseenItemAppendNodeVisits: 0,
+      unseenItemIndexUpdateNodeVisits: 0, unseenItemIndexUpdateNodesCopied: 0,
+    }
+    const raw = Object.freeze([proto, numeric, proto])
+    const normalized = persistentTranscriptUnseenItemIds(raw, diagnostics)
+    expect([...normalized]).toEqual([...raw])
+    expect(JSON.parse(JSON.stringify(normalized))).toEqual([...raw])
+    expect(hasTranscriptUnseenItemId(normalized, proto, diagnostics)).toBe(true)
+    expect(hasTranscriptUnseenItemId(normalized, constructor, diagnostics)).toBe(false)
+
+    const left = appendTranscriptUnseenItemId(normalized, constructor, diagnostics)
+    const right = appendTranscriptUnseenItemId(normalized, itemId("sibling"), diagnostics)
+    expect([...normalized]).toEqual([...raw])
+    expect([...left]).toEqual([...raw, constructor])
+    expect([...right]).toEqual([...raw, itemId("sibling")])
+    expect(diagnostics.unseenItemSequenceNormalizations).toBe(1)
+    expect(diagnostics.unseenItemSequenceNormalizationItemVisits).toBe(raw.length)
+    expect(diagnostics.unseenItemMembershipChecks).toBe(2)
+    expect(diagnostics.unseenItemAppends).toBe(2)
+    expect(diagnostics.unseenItemIndexUpdateNodeVisits).toBeGreaterThan(0)
+    expect(diagnostics.unseenItemIndexUpdateNodesCopied).toBeGreaterThan(0)
+  })
+
+  test("detached semantic projection retains a large unseen sequence for repeats and appends one new identity", () => {
+    let state = syncTranscriptItem(initialTranscript(), message("anchor", "anchor"))
+    state = moveCursor(state, { itemId: itemId("anchor"), graphemeOffset: 0 }, 4)
+    let unseen = persistentTranscriptUnseenItemIds()
+    for (let index = 0; index < 4_096; index++) unseen = appendTranscriptUnseenItemId(unseen, itemId(`seen-${index}`))
+    const running = message("seen-4095", "before", "running")
+    state = syncTranscriptItem({ ...state, unseenEntries: unseen.length, unseenItemIds: unseen }, running)
+    const counted = state.unseenItemIds
+    const repeatDiagnostics = {
+      projectionRecordUpdates: 0, projectionRecordNodeVisits: 0, projectionRecordNodesCopied: 0,
+      textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0,
+      textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
+      orderIndexBuilds: 0, orderIndexItemVisits: 0, orderIndexCacheHits: 0,
+      urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0, urlIndexUpdates: 0, urlIndexNodeVisits: 0,
+      unseenItemSequenceNormalizations: 0, unseenItemSequenceNormalizationItemVisits: 0,
+      unseenItemMembershipChecks: 0, unseenItemMembershipNodeVisits: 0,
+      unseenItemAppends: 0, unseenItemAppendNodeVisits: 0,
+      unseenItemIndexUpdateNodeVisits: 0, unseenItemIndexUpdateNodesCopied: 0,
+    }
+    const repeated = syncTranscriptItem(state, message("seen-4095", "after", "running"), repeatDiagnostics)
+    expect(repeated.unseenEntries).toBe(unseen.length)
+    expect(repeated.unseenItemIds).toBe(counted)
+    expect(repeatDiagnostics.unseenItemMembershipChecks).toBe(1)
+    expect(repeatDiagnostics.unseenItemMembershipNodeVisits).toBeLessThanOrEqual(32)
+    expect(repeatDiagnostics.unseenItemAppends).toBe(0)
+    expect(repeatDiagnostics.unseenItemSequenceNormalizationItemVisits).toBe(0)
+
+    const appended = syncTranscriptItem(repeated, message("new-unseen", "new", "running"), repeatDiagnostics)
+    expect(appended.unseenEntries).toBe(unseen.length + 1)
+    expect(appended.unseenItemIds.slice(-2)).toEqual([itemId("seen-4095"), itemId("new-unseen")])
+    expect(repeated.unseenItemIds).toBe(counted)
+    expect(repeatDiagnostics.unseenItemAppends).toBe(1)
+    expect(repeatDiagnostics.unseenItemAppendNodeVisits).toBeLessThanOrEqual(16)
+    expect(repeatDiagnostics.unseenItemIndexUpdateNodeVisits).toBeLessThanOrEqual(32)
+    expect(repeatDiagnostics.unseenItemIndexUpdateNodesCopied).toBeLessThanOrEqual(64)
+    expect(attachTail(appended).unseenItemIds).toBe(persistentTranscriptUnseenItemIds())
+  })
+
+  test("sync normalizes persisted plain unseen arrays before indexed membership and append", () => {
+    let state = syncTranscriptItem(initialTranscript(), message("anchor", "anchor"))
+    state = moveCursor(state, { itemId: itemId("anchor"), graphemeOffset: 0 }, 4)
+    const existing = itemId("__proto__")
+    const raw = Object.freeze([existing, itemId("17"), existing])
+    const diagnostics = {
+      projectionRecordUpdates: 0, projectionRecordNodeVisits: 0, projectionRecordNodesCopied: 0,
+      textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0,
+      textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
+      orderIndexBuilds: 0, orderIndexItemVisits: 0, orderIndexCacheHits: 0,
+      urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0, urlIndexUpdates: 0, urlIndexNodeVisits: 0,
+      unseenItemSequenceNormalizations: 0, unseenItemSequenceNormalizationItemVisits: 0,
+      unseenItemMembershipChecks: 0, unseenItemMembershipNodeVisits: 0,
+      unseenItemAppends: 0, unseenItemAppendNodeVisits: 0,
+      unseenItemIndexUpdateNodeVisits: 0, unseenItemIndexUpdateNodesCopied: 0,
+    }
+    const normalized = syncTranscriptItem({ ...state, unseenEntries: raw.length, unseenItemIds: raw },
+      message(existing, "persisted", "running"), diagnostics)
+    expect(normalized.unseenEntries).toBe(raw.length)
+    expect(normalized.unseenItemIds).not.toBe(raw)
+    expect([...normalized.unseenItemIds]).toEqual([...raw])
+    expect(diagnostics.unseenItemSequenceNormalizations).toBe(1)
+    expect(diagnostics.unseenItemSequenceNormalizationItemVisits).toBe(raw.length)
+    expect(diagnostics.unseenItemMembershipChecks).toBe(1)
+    expect(diagnostics.unseenItemAppends).toBe(0)
+
+    const appended = syncTranscriptItem(normalized, message("after-persisted", "new", "running"), diagnostics)
+    expect([...appended.unseenItemIds]).toEqual([...raw, itemId("after-persisted")])
+    expect(diagnostics.unseenItemSequenceNormalizations).toBe(1)
+    expect(diagnostics.unseenItemAppends).toBe(1)
   })
 
   test("projects Markdown with exact source mapping and URL ranges", () => {
@@ -274,6 +372,10 @@ describe("transcript", () => {
       textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
       orderIndexBuilds: 0, orderIndexItemVisits: 0, orderIndexCacheHits: 0,
       urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0, urlIndexUpdates: 0, urlIndexNodeVisits: 0,
+      unseenItemSequenceNormalizations: 0, unseenItemSequenceNormalizationItemVisits: 0,
+      unseenItemMembershipChecks: 0, unseenItemMembershipNodeVisits: 0,
+      unseenItemAppends: 0, unseenItemAppendNodeVisits: 0,
+      unseenItemIndexUpdateNodeVisits: 0, unseenItemIndexUpdateNodesCopied: 0,
     }
     const afterFirst = syncTranscriptItem(initial, first, diagnostics)
     const afterSecond = syncTranscriptItem(afterFirst, second, diagnostics)

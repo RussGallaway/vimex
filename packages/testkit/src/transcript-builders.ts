@@ -13,7 +13,7 @@ import {
   type ThreadId,
   type TurnId,
 } from "@vimex/conversation"
-import { initialTranscript, persistentTranscriptFolds, persistentTranscriptOrder, persistentTranscriptProjections, projectItem, setTranscriptProjection, type SourceSpan, type TranscriptState } from "@vimex/transcript"
+import { initialTranscript, persistentTranscriptFolds, persistentTranscriptOrder, persistentTranscriptProjections, persistentTranscriptUnseenItemIds, projectItem, setTranscriptProjection, type SourceSpan, type TranscriptState } from "@vimex/transcript"
 
 /** Deterministic transcript fixtures shared by domain and renderer tests. */
 export function assistantMessage(id: string, markdown: string, status: "running" | "complete" = "complete"): ConversationItem {
@@ -84,7 +84,7 @@ function freezeTranscript(state: TranscriptState): TranscriptState {
     projectionById: persistentTranscriptProjections(state.projectionById),
     folded: persistentTranscriptFolds(state.folded),
     viewport: Object.isFrozen(state.viewport) ? state.viewport : Object.freeze({ ...state.viewport }),
-    unseenItemIds: Object.isFrozen(state.unseenItemIds) ? state.unseenItemIds : Object.freeze([...state.unseenItemIds]),
+    unseenItemIds: persistentTranscriptUnseenItemIds(state.unseenItemIds),
     jumps: Object.isFrozen(state.jumps) ? state.jumps : Object.freeze({ back: Object.freeze([...state.jumps.back]), forward: Object.freeze([...state.jumps.forward]) }),
     marks: Object.isFrozen(state.marks) ? state.marks : Object.freeze({ ...state.marks }),
   })

@@ -34,6 +34,8 @@ export interface ConversationStructureDiagnostics {
   conversationTurnIdSequenceNormalizations: number
   conversationTurnIdSequenceNormalizationVisits: number
   conversationTurnIdSequenceAppends: number
+  conversationTurnIdSequenceLookups: number
+  conversationTurnIdSequenceLookupNodeVisits: number
   conversationTurnIdSequenceNodeVisits: number
   conversationTurnIdSequenceNodesCopied: number
   conversationTurnItemIdSequenceNormalizations: number
@@ -57,6 +59,8 @@ export function createConversationStructureDiagnostics(): ConversationStructureD
     conversationTurnIdSequenceNormalizations: 0,
     conversationTurnIdSequenceNormalizationVisits: 0,
     conversationTurnIdSequenceAppends: 0,
+    conversationTurnIdSequenceLookups: 0,
+    conversationTurnIdSequenceLookupNodeVisits: 0,
     conversationTurnIdSequenceNodeVisits: 0,
     conversationTurnIdSequenceNodesCopied: 0,
     conversationTurnItemIdSequenceNormalizations: 0,
@@ -233,9 +237,10 @@ function setMembershipNode(
   return right === root.right ? root : balanceMembership(copiedMembershipNode(root.key, root.index, root.left, right, kind, diagnostics), kind, diagnostics)
 }
 
-function membershipIndex(root: MembershipNode | undefined, key: string, diagnostics?: StructureDiagnostics): number | undefined {
+function membershipIndex(root: MembershipNode | undefined, key: string, kind: SequenceKind,
+  diagnostics?: StructureDiagnostics): number | undefined {
   while (root) {
-    bump(diagnostics, "conversationTurnItemIdSequenceLookupNodeVisits")
+    bump(diagnostics, kind === "turn" ? "conversationTurnIdSequenceLookupNodeVisits" : "conversationTurnItemIdSequenceLookupNodeVisits")
     if (key === root.key) return root.index
     root = key < root.key ? root.left : root.right
   }
@@ -331,6 +336,12 @@ export function appendConversationTurnId(value: readonly TurnId[], next: TurnId,
   return appendSequence(value, next, "turn", diagnostics)
 }
 
+export function conversationTurnIdsHave(value: readonly TurnId[], turnId: TurnId, diagnostics?: StructureDiagnostics): boolean {
+  bump(diagnostics, "conversationTurnIdSequenceLookups")
+  const data = sequenceData.get(value)
+  return data ? membershipIndex(data.membership, turnId, "turn", diagnostics) !== undefined : value.includes(turnId)
+}
+
 export function persistentTurnItemIds(value: readonly ItemId[] = [], diagnostics?: StructureDiagnostics): readonly ItemId[] {
   return normalizeSequence(value, "item", normalizedItemIds, diagnostics)
 }
@@ -342,7 +353,7 @@ export function appendTurnItemId(value: readonly ItemId[], next: ItemId, diagnos
 export function turnItemIdsHave(value: readonly ItemId[], itemId: ItemId, diagnostics?: StructureDiagnostics): boolean {
   bump(diagnostics, "conversationTurnItemIdSequenceLookups")
   const data = sequenceData.get(value)
-  return data ? membershipIndex(data.membership, itemId, diagnostics) !== undefined : value.includes(itemId)
+  return data ? membershipIndex(data.membership, itemId, "item", diagnostics) !== undefined : value.includes(itemId)
 }
 
 export function isConversationTurnIdAppend(previous: readonly TurnId[], next: readonly TurnId[], appended: TurnId): boolean {
