@@ -553,7 +553,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   return (
     <FullscreenShell paneLabel={paneLabel} title={summary?.title} parentTitle={parentTitle} connection={state.connection} working={activity.working} activityLabel={activityLabel} activityStartedAt={activity.startedAt} waiting={Boolean(pendingApproval || pendingQuestion)} presentationVisible={presentationVisible}
       notice={interactive ? <NoticeStrip message={state.error} /> : undefined}
-      transcript={<TranscriptViewport window={transcriptWindow} state={transcript} interaction={interaction} syntax={syntax} scrollRef={scrollRef} onManualScroll={onManualScroll} />}
+      transcript={<TranscriptViewport window={transcriptWindow} state={transcript} surface={interaction.surface} syntax={syntax} scrollRef={scrollRef} onManualScroll={onManualScroll} />}
       commandLine={interactive && !jumpActive && interaction.mode === "command" ? <CommandLine currentTitle={summary?.title} sessionIds={state.threadOrder} currentModel={summary?.model} models={state.availableModels} value={interaction.commandLine} inputRef={commandRef} controller={controller} onSubmit={(line) => {
         commandHistoryRef.current = recordCommand(commandHistoryRef.current, line)
         controller.executeCommand(line)

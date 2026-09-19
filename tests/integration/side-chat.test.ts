@@ -91,6 +91,42 @@ test("side chat forks while parent works; close preserves worker, drafts, and re
   await h.controller.close()
 })
 
+test("side-by-side token streams publish only their owned runtime frames", async () => {
+  const h = harness(); await h.controller.initialize("/tmp")
+  h.controller.sideChat("open"); await h.controller.settle()
+  const side = threadId("side-1")
+  const parentTurn = turnId("parent-publication"), sideTurn = turnId("side-publication")
+  const parentItem = itemId("parent-publication"), sideItem = itemId("side-publication")
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: parentTurn } })
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id: parentItem, turnId: parentTurn, kind: "assistant", markdown: "parent", status: "running" } } })
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: side, turnId: sideTurn } })
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: side, item: { id: sideItem, turnId: sideTurn, kind: "assistant", markdown: "side", status: "running" } } })
+  const mainRuntime = h.controller.transcriptRuntime("main")!, sideRuntime = h.controller.transcriptRuntime("side")!
+  let mainFrame = mainRuntime.getSnapshot(), sideFrame = sideRuntime.getSnapshot()
+  const layout = h.controller.getLayoutSnapshot(), main = h.controller.getPresentationSnapshot("main"), sidePane = h.controller.getPresentationSnapshot("side")
+  let layoutCalls = 0, mainCalls = 0, sideCalls = 0
+  h.controller.subscribeLayout(() => { layoutCalls++ })
+  h.controller.subscribePresentation("main", () => { mainCalls++ })
+  h.controller.subscribePresentation("side", () => { sideCalls++ })
+
+  h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: parentItem, delta: " grows" } })
+  await h.controller.settle()
+  expect(mainRuntime.getSnapshot()).not.toBe(mainFrame)
+  expect(sideRuntime.getSnapshot()).toBe(sideFrame)
+  expect(h.controller.getLayoutSnapshot()).toBe(layout)
+  expect(h.controller.getPresentationSnapshot("main")).toBe(main)
+  expect(h.controller.getPresentationSnapshot("side")).toBe(sidePane)
+  expect([layoutCalls, mainCalls, sideCalls]).toEqual([0, 0, 0])
+
+  mainFrame = mainRuntime.getSnapshot(); sideFrame = sideRuntime.getSnapshot()
+  h.emit({ type: "conversation", event: { type: "item.delta", threadId: side, itemId: sideItem, delta: " grows" } })
+  await h.controller.settle()
+  expect(mainRuntime.getSnapshot()).toBe(mainFrame)
+  expect(sideRuntime.getSnapshot()).not.toBe(sideFrame)
+  expect([layoutCalls, mainCalls, sideCalls]).toEqual([0, 0, 0])
+  await h.controller.close()
+})
+
 test("quit interrupts, archives, removes navigation targets, and next side forks anew", async () => {
   const h = harness(); await h.controller.initialize("/tmp")
   const calls: string[] = []

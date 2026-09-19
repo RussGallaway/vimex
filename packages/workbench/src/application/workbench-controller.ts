@@ -6,6 +6,7 @@ import { isThemeName, themeNames, type PreferenceStore } from "./display-prefere
 import { parseCommand, validateCommand, resolveCommandName, commandDescriptors, type ExCommand } from "@vimex/interaction"
 import { captureLocalState, emptyLocalState, localViewChanged, restoreThreadView, type LocalState, type SavedThreadView } from "./local-state"
 import { captureWorkbenchLifecycle, workbenchLifecycleChanged, workbenchLifecycleSignature, type WorkbenchLifecycleSnapshot } from "./workbench-observation"
+import { captureWorkbenchLayout, captureWorkbenchPresentation, captureWorkbenchPublicationContext, threadForPresentation, workbenchLayoutChanged, workbenchPresentationChanged, type WorkbenchLayoutSnapshot, type WorkbenchPublicationContext, type WorkbenchPublicationHost } from "./workbench-publications"
 import { initialWorkbench, activeWorkspace, createWorkspace, type ThreadWorkspace, type WorkbenchState, type WorkbenchCommand, type WorkbenchEffect } from "./workbench-state"
 import { transitionWorkbench } from "./reduce-workbench"
 import { forkBoundary, threadId, type ThreadId, type TurnId, type ItemId, type ConversationEvent } from "@vimex/conversation"
@@ -46,7 +47,7 @@ interface TranscriptRuntimeHint {
   reveal?: { threadId: ThreadId; request: TranscriptRevealRequest }
 }
 
-export class VimexController implements WorkbenchActions, TranscriptPresentationHost {
+export class VimexController implements WorkbenchActions, TranscriptPresentationHost, WorkbenchPublicationHost {
   private state = initialWorkbench()
   private readonly ingress: ConversationIngress
   private readonly transcriptRuntimes = new Map<TranscriptPresentationId, TranscriptRuntime>()
@@ -138,6 +139,11 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     this.dispatch({ type: "transcript.command", threadId: id, command: { type: "viewport.anchor", point, preferredScreenRow } })
   }
   private readonly listeners = new Set<() => void>()
+  private readonly layoutListeners = new Set<() => void>()
+  private readonly presentationListeners: Record<TranscriptPresentationId, Set<() => void>> = { main: new Set(), side: new Set() }
+  private layoutSnapshot!: WorkbenchLayoutSnapshot
+  private publicationContext!: WorkbenchPublicationContext
+  private readonly presentationSnapshots = new Map<TranscriptPresentationId, WorkbenchState>()
   private readonly pending = new Set<Promise<void>>()
   private readonly threadContinuations = new Map<ThreadId, Set<Promise<void>>>()
   private readonly loaded = new Set<ThreadId>()
@@ -183,13 +189,23 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     this.localStateSnapshot = ports.localState ?? emptyLocalState()
     this.localStateJson = JSON.stringify(this.localStateSnapshot)
     this.lifecycleSignature = workbenchLifecycleSignature(captureWorkbenchLifecycle(this.state))
+    this.publicationContext = captureWorkbenchPublicationContext(this.state)
+    this.layoutSnapshot = captureWorkbenchLayout(this.state, this.publicationContext)
+    this.presentationSnapshots.set("main", captureWorkbenchPresentation(this.state, "main", this.publicationContext))
+    this.presentationSnapshots.set("side", captureWorkbenchPresentation(this.state, "side", this.publicationContext))
   }
   getSnapshot = (): WorkbenchState => this.state
   subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener) }
+  getLayoutSnapshot = (): WorkbenchLayoutSnapshot => this.layoutSnapshot
+  subscribeLayout = (listener: () => void): (() => void) => { this.layoutListeners.add(listener); return () => this.layoutListeners.delete(listener) }
+  getPresentationSnapshot = (presentationId: TranscriptPresentationId): WorkbenchState => this.presentationSnapshots.get(presentationId)!
+  subscribePresentation = (presentationId: TranscriptPresentationId, listener: () => void): (() => void) => {
+    this.presentationListeners[presentationId].add(listener)
+    return () => this.presentationListeners[presentationId].delete(listener)
+  }
 
   private presentationThread(state: WorkbenchState, presentationId: TranscriptPresentationId): ThreadId | undefined {
-    const side = currentSideChat(state)
-    return presentationId === "main" ? side?.parentId ?? state.activeThreadId : side?.threadId
+    return threadForPresentation(state, presentationId, state === this.state ? this.publicationContext : undefined)
   }
   private canonicalDamage(before: ThreadWorkspace | undefined, after: ThreadWorkspace): TranscriptDamage {
     if (!before || before.canonicalGeneration !== after.canonicalGeneration) return { kind: "full" }
@@ -207,7 +223,9 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     const workspace = thread ? state.workspaces[thread] : undefined
     if (!thread || !workspace) return undefined
     const previous = before?.workspaces[thread]
-    const side = Object.values(state.sideChats).find(candidate => candidate.threadId === thread)
+    const selectedSide = state === this.state ? this.publicationContext.candidate : undefined
+    const side = selectedSide?.threadId === thread ? selectedSide
+      : state === this.state ? undefined : Object.values(state.sideChats).find(candidate => candidate.threadId === thread)
     const transcriptChanged = previous && previous.transcript !== workspace.transcript
     const presentationDamage: TranscriptDamage = hint.canonicalOnly || !transcriptChanged ? { kind: "none" }
       : previous.transcript.folded !== workspace.transcript.folded ? { kind: "layout" } : { kind: "view" }
@@ -247,11 +265,42 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     if (this.state === state) return
     const before = this.state
     this.state = state
+    const viewChanges = this.prepareWorkbenchViews(before)
     this.syncTranscriptRuntimes(before, state, hint)
+    this.notifyWorkbenchViews(viewChanges)
     for (const listener of this.listeners) {
       try { listener() } catch { /* observers cannot roll back an authoritative state change */ }
     }
     this.publishExternalObservers(before)
+  }
+
+  private prepareWorkbenchViews(before: WorkbenchState): { layout: boolean; presentations: readonly TranscriptPresentationId[] } {
+    const beforeContext = this.publicationContext
+    const afterContext = captureWorkbenchPublicationContext(this.state, beforeContext)
+    const layout = workbenchLayoutChanged(before, this.state, beforeContext, afterContext)
+    if (layout) {
+      this.layoutSnapshot = captureWorkbenchLayout(this.state, afterContext)
+    }
+    const presentations = (["main", "side"] as const).filter(presentationId => {
+      if (!workbenchPresentationChanged(before, this.state, presentationId, beforeContext, afterContext)) return false
+      this.presentationSnapshots.set(presentationId, captureWorkbenchPresentation(this.state, presentationId, afterContext))
+      return true
+    })
+    this.publicationContext = afterContext
+    return { layout, presentations }
+  }
+
+  private notifyWorkbenchViews(changes: { layout: boolean; presentations: readonly TranscriptPresentationId[] }): void {
+    if (changes.layout) {
+      for (const listener of this.layoutListeners) {
+        try { listener() } catch { /* one view cannot suppress its peers */ }
+      }
+    }
+    for (const presentationId of changes.presentations) {
+      for (const listener of this.presentationListeners[presentationId]) {
+        try { listener() } catch { /* one pane cannot suppress its peer */ }
+      }
+    }
   }
 
   private publishExternalObservers(before: WorkbenchState, changedThreadIds?: readonly ThreadId[]): void {
@@ -318,7 +367,9 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     for (const id of fullDamage) canonicalDamageByThread[id] = { kind: "full" }
     for (const [id, itemIds] of damagedItems) canonicalDamageByThread[id] = { kind: "blocks", itemIds: [...itemIds] }
     this.state = state
+    const viewChanges = this.prepareWorkbenchViews(beforeBatch)
     this.syncTranscriptRuntimes(beforeBatch, state, { canonicalOnly: true, canonicalDamageByThread })
+    this.notifyWorkbenchViews(viewChanges)
     if (!this.closing) {
       // Canonical commit is authoritative even if a renderer observer is faulty.
       for (const listener of this.listeners) {
@@ -1175,6 +1226,9 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     for (const runtime of this.transcriptRuntimes.values()) runtime.dispose()
     this.transcriptRuntimes.clear()
     this.listeners.clear()
+    this.layoutListeners.clear()
+    this.presentationListeners.main.clear()
+    this.presentationListeners.side.clear()
     if (errors.length) throw new AggregateError(errors, "Vimex controller shutdown failed")
   }
 }

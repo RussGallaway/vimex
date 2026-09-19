@@ -178,6 +178,25 @@ test("a maximized layout schedules no heartbeat for its mounted hidden pane", as
   }
 })
 
+test("a closed retained side releases its heartbeat and reacquires it when reopened", async () => {
+  const intervals = spyOn(globalThis, "setInterval")
+  const cleared = spyOn(globalThis, "clearInterval")
+  const h = await harness()
+  try {
+    const initial = intervals.mock.calls.map((args, index) => ({ args, timer: intervals.mock.results[index]?.value })).filter(call => call.args[1] === 120)
+    expect(initial).toHaveLength(2)
+    await h.windowKey("c")
+    expect(initial.some(call => cleared.mock.calls.some(args => args[0] === call.timer))).toBe(true)
+    const afterClose = intervals.mock.calls.filter(args => args[1] === 120).length
+    await act(async () => { h.associate(true); await h.flush(); await h.renderOnce() })
+    expect(intervals.mock.calls.filter(args => args[1] === 120)).toHaveLength(afterClose + 1)
+  } finally {
+    await h.close()
+    intervals.mockRestore()
+    cleared.mockRestore()
+  }
+})
+
 test("mouse wheel in unfocused parent preserves side draft and updates only parent anchor", async () => {
   const h = await harness()
   try {

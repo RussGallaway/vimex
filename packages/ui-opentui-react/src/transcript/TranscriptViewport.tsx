@@ -9,14 +9,21 @@ import { TranscriptNode } from "./TranscriptNode"
 import { TurnActivity } from "./TurnActivity"
 import { transcriptBlockRenderableId } from "./rendered-layout"
 
-export function TranscriptViewport(props: {
+export interface TranscriptViewportProps {
   window: TranscriptWindow
   state: TranscriptState
-  interaction: InteractionState
+  surface: InteractionState["surface"]
   syntax: SyntaxStyle
   scrollRef: RefObject<ScrollBoxRenderable | null>
   onManualScroll?: () => void
-}) {
+}
+
+export function sameTranscriptViewportProps(before: TranscriptViewportProps, after: TranscriptViewportProps): boolean {
+  return before.window === after.window && before.state === after.state && before.surface === after.surface
+    && before.syntax === after.syntax && before.scrollRef === after.scrollRef && before.onManualScroll === after.onManualScroll
+}
+
+export const TranscriptViewport = memo(function TranscriptViewport(props: TranscriptViewportProps) {
   // Terminal wheel events already encode movement; deterministic deltas avoid
   // accelerating trackpad bursts into large, unexpected viewport jumps.
   const scrollAcceleration = useMemo(() => new LinearScrollAccel(), [])
@@ -57,7 +64,7 @@ export function TranscriptViewport(props: {
         </box>
         if (!("item" in block)) return null
         const folded = Boolean(props.state.folded[block.key.itemId])
-        const current = cursorId === block.key.itemId && props.interaction.surface === "transcript"
+        const current = cursorId === block.key.itemId && props.surface === "transcript"
         const selected = Boolean(selectedRangeForItem(props.state, block.key.itemId))
         const next = props.window.blocks[index + 1]
         const followedByActivity = Boolean(next && "turn" in next && next.key.turnId === block.turnId)
@@ -66,7 +73,7 @@ export function TranscriptViewport(props: {
       {props.window.bottomSpacerRows > 0 ? <box id="transcript-bottom-spacer" height={props.window.bottomSpacerRows} flexShrink={0} /> : null}
     </scrollbox>
   )
-}
+}, sameTranscriptViewportProps)
 
 // Stable historical rows skip Markdown reconciliation during typing and scrolling.
 const TranscriptRow = memo(function TranscriptRow(props: {

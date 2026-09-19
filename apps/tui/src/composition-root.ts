@@ -2,10 +2,10 @@ import { join, resolve } from "node:path"
 import { emptyLocalState, parseLocalState } from "@vimex/workbench"
 import { createCliRenderer, createClipboard, createHostClipboard, createRendererClipboardAdapter } from "@opentui/core"
 import { createRoot } from "@opentui/react"
-import { FatalBoundary, VimexRoot, registerSyntaxParsers } from "@vimex/ui-opentui-react"
+import { ConnectedVimexRoot, FatalBoundary, registerSyntaxParsers } from "@vimex/ui-opentui-react"
 import { JsonStore, stateDirectory, configDirectory, loadConfig, parseConfig, openUrl } from "@vimex/platform-node"
 import { createHerdrExternalActions, detectHerdr, HerdrReporter } from "@vimex/herdr"
-import { createElement, useSyncExternalStore } from "react"
+import { createElement } from "react"
 import type { CliOptions } from "./cli-options"
 import { FailureNotice, failureAfterCleanup, Lifecycle, shutdownApplication } from "./lifecycle"
 import { createCodexGateways } from "@vimex/codex-app-server"
@@ -102,11 +102,10 @@ export async function runApplication(options: CliOptions) {
       process.off("uncaughtException", onFailure)
       process.off("unhandledRejection", onFailure)
     }
-    function ConnectedApp() {
-      const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
-      return createElement(VimexRoot, { state, controller, settings: { ...config, reducedColor: config.reducedColor || Boolean(process.env.NO_COLOR) } })
-    }
-    root.render(createElement(FatalBoundary, { onFatal: onFailure }, createElement(ConnectedApp)))
+    root.render(createElement(FatalBoundary, { onFatal: onFailure }, createElement(ConnectedVimexRoot, {
+      controller,
+      settings: { ...config, reducedColor: config.reducedColor || Boolean(process.env.NO_COLOR) },
+    })))
     void controller.initialize(options.cwd, options.model, options.thread, options.resumeMode).catch(error => {
       if (options.resumeMode) onFailure(error)
       else controller.notice(String(error))

@@ -263,6 +263,88 @@ test("explicit navigation materializes an item created beyond a detached frame",
   await h.controller.close()
 })
 
+test("cached layout and pane publications ignore canonical token content", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const runtime = h.controller.transcriptRuntime("main")!
+  const turn = turnId("publication"), id = itemId("publication-answer")
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id, turnId: turn, kind: "assistant", markdown: "before", status: "running" } } })
+  const layout = h.controller.getLayoutSnapshot()
+  const main = h.controller.getPresentationSnapshot("main")
+  const side = h.controller.getPresentationSnapshot("side")
+  const frame = runtime.getSnapshot()
+  let layoutCalls = 0, mainCalls = 0, sideCalls = 0
+  h.controller.subscribeLayout(() => { layoutCalls++ })
+  h.controller.subscribePresentation("main", () => { mainCalls++ })
+  h.controller.subscribePresentation("side", () => { sideCalls++ })
+
+  h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: id, delta: " after" } })
+  await h.controller.settle()
+  expect(runtime.getSnapshot()).not.toBe(frame)
+  expect(h.controller.getLayoutSnapshot()).toBe(layout)
+  expect(h.controller.getPresentationSnapshot("main")).toBe(main)
+  expect(h.controller.getPresentationSnapshot("side")).toBe(side)
+  expect([layoutCalls, mainCalls, sideCalls]).toEqual([0, 0, 0])
+
+  h.controller.changeDraft("pane input", 10)
+  expect(h.controller.getPresentationSnapshot("main")).not.toBe(main)
+  expect(h.controller.getPresentationSnapshot("side")).toBe(side)
+  expect([layoutCalls, mainCalls, sideCalls]).toEqual([0, 1, 0])
+  await h.controller.close()
+})
+
+test("publication callbacks observe one coherent canonical revision across stores", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const runtime = h.controller.transcriptRuntime("main")!
+  const turn = turnId("coherent")
+  const observations: Array<{ working: boolean; presentationRevision?: number; runtimeRevision: number }> = []
+  const observe = () => observations.push({
+    working: h.controller.getLayoutSnapshot().parentActivity.working,
+    presentationRevision: h.controller.getPresentationSnapshot("main").workspaces[a]?.canonicalRevision,
+    runtimeRevision: runtime.getSnapshot().displayedCanonicalRevision,
+  })
+  const unsubscribers = [runtime.subscribe(observe), h.controller.subscribeLayout(observe), h.controller.subscribePresentation("main", observe)]
+
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
+  expect(observations.length).toBeGreaterThan(0)
+  expect(observations.every(observation => observation.working && observation.presentationRevision === observation.runtimeRevision)).toBe(true)
+
+  observations.length = 0
+  h.emit({ type: "conversation", event: { type: "turn.completed", threadId: a, turnId: turn, outcome: "complete" } })
+  expect(observations.length).toBeGreaterThan(0)
+  expect(observations.every(observation => !observation.working && observation.presentationRevision === observation.runtimeRevision)).toBe(true)
+
+  for (const unsubscribe of unsubscribers) unsubscribe()
+  await h.controller.close()
+})
+
+test("cached main presentation publishes global status before a workspace exists", async () => {
+  const h = harness()
+  const before = h.controller.getPresentationSnapshot("main")
+  let calls = 0
+  h.controller.subscribePresentation("main", () => { calls++ })
+  h.controller.dispatch({ type: "connection.changed", connection: "error", error: "offline" })
+  expect(h.controller.getPresentationSnapshot("main")).not.toBe(before)
+  expect(h.controller.getPresentationSnapshot("main")).toMatchObject({ connection: "error", error: "offline" })
+  expect(calls).toBe(1)
+  h.controller.dispatch({ type: "approval.received", approval: {
+    id: "early-approval", threadId: a, kind: "command", title: "Run", detail: "command",
+    choices: [{ id: "yes", label: "Yes" }], status: "pending",
+  } })
+  expect(h.controller.getPresentationSnapshot("main").approvals.order).toEqual(["early-approval"])
+  expect(calls).toBe(2)
+  h.controller.dispatch({ type: "question.received", request: {
+    id: "early-question", threadId: a, turnId: turnId("early-turn"), questions: [{ id: "choice", header: "Choose", question: "Choose", allowOther: false, secret: false, options: [
+      { label: "A", description: "First" }, { label: "B", description: "Second" },
+    ] }],
+  } })
+  expect(Object.keys(h.controller.getPresentationSnapshot("main").questions)).toEqual(["early-question"])
+  expect(calls).toBe(3)
+  await h.controller.close()
+})
+
 test("conversation boundaries, disconnect, restart, and close cannot strand pending deltas", async () => {
   const setup = async (suffix: string) => {
     const manual = manualIngressScheduler()

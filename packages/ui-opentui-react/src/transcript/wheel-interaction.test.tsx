@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test"
 import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
 import { testRender } from "@opentui/react/test-utils"
-import { act, Profiler, useSyncExternalStore } from "react"
+import { act, Profiler } from "react"
 import { itemId, threadId, turnId, type ConversationGateway } from "@vimex/conversation"
 import type { ApprovalGateway } from "@vimex/approvals"
 import { VimexController, type ModelCatalog, type RuntimeConnection, type RuntimeEvent } from "@vimex/workbench"
-import { VimexRoot } from "../index"
+import { ConnectedVimexRoot } from "../index"
 
 const thread = threadId("wheel-thread")
 const answer = itemId("wheel-answer")
@@ -32,8 +32,7 @@ async function wheelHarness() {
   } } })
   const reactCommits: number[] = []
   function Harness() {
-    const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
-    const root = <VimexRoot state={state} controller={controller} />
+    const root = <ConnectedVimexRoot controller={controller} />
     return process.env.VIMEX_PROFILE_TUI === "1"
       ? <Profiler id="app" onRender={(_id, _phase, duration) => reactCommits.push(duration)}>{root}</Profiler>
       : root

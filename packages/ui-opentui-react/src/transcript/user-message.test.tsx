@@ -3,7 +3,6 @@ import { testRender } from "@opentui/react/test-utils"
 import type { ScrollBoxRenderable } from "@opentui/core"
 import { act, createRef } from "react"
 import { itemId, turnId } from "@vimex/conversation"
-import { initialInteraction } from "@vimex/interaction"
 import { graphemeCount, initialTranscript, selectedText, syncTranscriptItem } from "@vimex/transcript"
 import { TranscriptViewport } from "./TranscriptViewport"
 import { measureRenderedTranscript, measuredPoint } from "./rendered-layout"
@@ -19,7 +18,7 @@ test("sent user panels preserve exact selectable Markdown without a role label t
   const syntax = createEmberTideSyntax()
   const blocks = [{ key: { kind: "item" as const, itemId: item.id, blockId: "root" as const }, turnId: item.turnId, item, renderItem: item,
     projection: state.projectionById[item.id]!, sourceSpan: { from: 0, to: item.markdown.length }, contentRevision: 1, estimatedRows: 1 }]
-  const h = await testRender(<TranscriptViewport window={{ blocks, topSpacerRows: 2, bottomSpacerRows: 3, overscanRows: 1 }} state={state} interaction={{ ...initialInteraction(), mode: "visual", surface: "transcript" }} syntax={syntax} scrollRef={scrollRef} />, { width: 80, height: 20 })
+  const h = await testRender(<TranscriptViewport window={{ blocks, topSpacerRows: 2, bottomSpacerRows: 3, overscanRows: 1 }} state={state} surface="transcript" syntax={syntax} scrollRef={scrollRef} />, { width: 80, height: 20 })
   try {
     for (const width of [80, 38]) {
       h.resize(width, 20)
