@@ -1,6 +1,6 @@
 # Transcript windowing implementation
 
-Status: Stages 5.0–5.3 are complete and verified. Estimate correction is atomic and anchor-stable; Stage 5.4 is next.
+Status: Stages 5.0–5.3 are complete and verified. Stage 5.4 is in progress; indexed cursor/message target materialization is complete and the remaining semantic operations are next.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
@@ -25,7 +25,7 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 | Stage 5a: pure window planner | Complete | Commit `4021939`; indexed height queries, bounded follow/detached/reveal windows, pass-through fallback, and evidence below |
 | Stage 5b: windowed mounting | Complete | Commit `3e24002`; bounded production runtime, React/native mounting, observer lifetime, scaling evidence, and review sign-off below |
 | Stage 5c: anchor correction | Complete | Commit `97f163f`; atomic height correction, window-local geometry, logical-anchor restoration, scaling evidence, and review sign-off below |
-| Stage 5d: off-window semantics | Not started | — |
+| Stage 5d: off-window semantics | In progress | Commit `a24f5af`; indexed cursor/message target materialization, bounded UI motion, empty-item anchors, and evidence below |
 | Stage 5e: follow and detachment | Not started | — |
 | Stage 5f: stress, review, and evidence | Not started | — |
 
@@ -393,12 +393,12 @@ Exit criteria:
 
 ### Stage 5.4 — off-window semantics
 
-- [ ] Materialize cursor and message-motion targets outside the current window.
+- [x] Materialize cursor and message-motion targets outside the current window.
 - [ ] Materialize search, mark, jump, history, and thread-navigation targets.
 - [ ] Render selections whose logical endpoints span unmounted blocks.
 - [ ] Copy source and rendered text across unmounted blocks from canonical projections.
 - [ ] Preserve folds and URL navigation across window changes.
-- [ ] Verify empty-source items and source-less activity at window boundaries.
+- [x] Verify empty-source items and source-less activity at window boundaries.
 
 Exit criteria:
 
@@ -790,3 +790,38 @@ The increasing dispatch curve and 100k memory remain diagnostic evidence of comp
 - Parallel architecture, correctness/geometry, and performance reviews ran after the slice. Repairs clarified pre-/post-correction benchmark counts, allowed bounded multi-pass acknowledgement after window movement, proved equal-height no-op convergence, exercised a nonzero logical anchor, and proved manual-scroll anchoring precedes dirty reflow. Final reviewers found no Stage 5.3 blocker.
 
 Stage 5.3 satisfies its atomic correction, immutability, stale-guard, no-oscillation, and anchor-stability exit criteria. Overall Stage 5 acceptance remains open: canonical reconciliation, reset, and fold rebuild paths still traverse the complete plan; off-window semantic operations retain complete-reference scans until Stage 5.4; and one oversized Markdown, command-output, or diff root remains content-sized until stable production sub-blocks are introduced.
+
+### Stage 5.4a — indexed cursor and message-target materialization
+
+Implementation commit: `a24f5af` (`feat: materialize off-window transcript targets`). This is the first Stage 5.4 vertical slice; Stage 5.4 remains in progress.
+
+#### Target discovery, reveal classification, and physical settlement
+
+- Production cursor boundary motion no longer constructs a complete estimated transcript layout. The UI adapter wraps only the current, adjacent, or requested boundary item, while `buildTranscriptLayout` remains the exhaustive pass-through oracle in tests.
+- Message, semantic-block, word, search-adjacency, selection-order, and Workbench message routing reuse the disposable logical-order index. Counted semantic-block motion caches each visited item's segmentation within the operation.
+- A detached reveal now distinguishes a point present in the pinned displayed revision from a first appended grapheme, a new document end, a new item, or rewritten content. Retained points replan the window over the pinned complete plan; missing/new points conservatively adopt the latest revision.
+- Windowed membership uses the retained height index's item/sub-block ordinals. The measured reveal performs no complete-plan scan or rebuild and no derived-order build. The pass-through runtime retains its linear reference path.
+- Stationary `h`/`j`/`k`/`l` motions at an absolute boundary are strict no-ops, so they cannot detach follow or publish an unchanged cursor command.
+- Empty semantic items publish a synthetic native anchor only for logical offset zero. This is disposable block-local geometry; source-less activity remains unable to own a logical point.
+
+#### Deterministic target-materialization scaling
+
+The benchmark starts detached at the middle item, appends hidden canonical tail damage, resolves `gg` item-locally, and feeds that exact logical result into runtime reveal. Setup and hidden-damage adoption are excluded from the measured reveal. Counts are identical across the recorded range.
+
+| Complete blocks | Mounted before / after | Wrapped items / transitions | Complete-plan builds / visits | Order-index builds / visits | Publications | Target motion / window publication |
+|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 72 / 48 | 1 / 0 | 0 / 0 | 0 / 0 | 1 | 0.246 / 0.119 ms |
+| 1k | 72 / 48 | 1 / 0 | 0 / 0 | 0 / 0 | 1 | 0.033 / 0.077 ms |
+| 10k | 72 / 48 | 1 / 0 | 0 / 0 | 0 / 0 | 1 | 0.031 / 0.133 ms |
+| 100k | 72 / 48 | 1 / 0 | 0 / 0 | 0 / 0 | 1 | 0.034 / 0.147 ms |
+
+Every cell retains the complete block-plan identity and materializes the motion's exact target. Machine-specific timing is diagnostic; the hard gates are the zero full-plan/order-build counts, one publication, one wrapped item, and bounded mounted work. The existing Stage 5.1 planner proof separately bounds same-item sub-block lookup logarithmically.
+
+#### Repository, PTY, and review gates
+
+- Focused navigation, runtime, scaling, planner, App, layout, and native-measurement verification passed: 108 tests, 6,243 assertions, 0 failures. Typecheck and `git diff --check` passed.
+- `bun run check` passed typecheck, boundaries, generated-doc validation, and all non-sandbox-sensitive tests: 698 passed and 5 intentional skips. Its only failure was the sandbox-denied tmux socket.
+- The exact isolated rerun outside the sandbox passed: `bun test tests/terminal/terminal.test.ts --test-name-pattern "isolated tmux"` — 1 passed in 718 ms.
+- Parallel architecture, correctness, and performance review ran before and after repair. Repairs fixed hidden append-boundary classification, removed the complete-plan reveal scan, added direct rebuild/order-index diagnostics, coupled the motion and reveal targets, suppressed stationary boundary dispatch, and restored empty-item native settlement. Final reviewers signed off with no blocker for this slice.
+
+The claim is intentionally scoped. Search/mark/jump/history/thread routing, spanning selection/copy, fold and URL behavior, and atomic multi-command navigation remain open Stage 5.4 work. Fold/unseen metadata cloning remains size-dependent presentation work, and target wrapping plus changed-item prefix validation remain item-content-proportional until stable production sub-blocks land. Stage 5.4 and overall Stage 5 acceptance therefore remain open.
