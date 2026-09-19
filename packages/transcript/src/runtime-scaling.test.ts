@@ -1,0 +1,181 @@
+import { expect, test } from "bun:test"
+import { forkBoundary, type ConversationState } from "@vimex/conversation"
+import { appendTranscriptScalingTail, buildTranscriptScalingFixture, transcriptScalingBlockCounts, type TranscriptFixtureSnapshot } from "@vimex/testkit"
+import { findSearchMatches } from "./application/transcript-search"
+import { selectedText, urlAt } from "./application/transcript-operations"
+import { referenceText, urlCandidates } from "./application/transcript-navigation"
+import type { TranscriptState } from "./domain/transcript-document"
+import type { BlockGeometry } from "./geometry"
+import { TranscriptRuntime, type TranscriptFrame, type TranscriptRuntimeInput } from "./runtime"
+import { blockKey, buildTranscriptBlocks, passThroughWindow } from "./window"
+
+function runtimeInput(
+  fixture: ReturnType<typeof buildTranscriptScalingFixture>,
+  snapshot: TranscriptFixtureSnapshot,
+  mode: "follow" | "detached",
+  options: Pick<TranscriptRuntimeInput, "canonicalDamage" | "presentationDamage" | "reveal"> = {},
+): TranscriptRuntimeInput {
+  return {
+    threadId: fixture.threadId,
+    canonicalGeneration: 0,
+    canonicalRevision: snapshot.canonicalRevision,
+    conversation: snapshot.conversation,
+    transcript: snapshot.transcript,
+    mode,
+    canonicalDamage: options.canonicalDamage ?? { kind: "none" },
+    presentationDamage: options.presentationDamage,
+    reveal: options.reveal,
+  }
+}
+
+const point = Object.freeze({ 0: Object.freeze({ graphemeOffset: 0, x: 0, y: 0, row: 0, column: 0 }) })
+const offsets = Object.freeze({ 0: Object.freeze([0]) })
+const line = Object.freeze({ from: 0, to: 0, row: 0 })
+const lines = Object.freeze([line])
+const lineByRow = Object.freeze({ 0: line })
+
+function measurements(frame: TranscriptFrame): readonly BlockGeometry[] {
+  return frame.blocks.map(block => Object.freeze({
+    key: Object.freeze({ blockKey: blockKey(block), contentRevision: block.contentRevision, width: 80, styleRevision: "scaling-test", folded: block.key.kind === "item" && Boolean(frame.transcript.folded[block.key.itemId]) }),
+    nativeRevision: 1,
+    rows: 1,
+    pointCount: 1,
+    points: point,
+    pointOffsetsByRow: offsets,
+    lines,
+    lineByRow,
+  }))
+}
+
+function semanticEvidence(transcript: TranscriptState, conversation: ConversationState) {
+  const urlState = transcript.selection
+    ? { ...transcript, cursor: transcript.selection.anchor }
+    : transcript
+  const urls = urlCandidates(urlState, "current-item")
+  return {
+    transcript,
+    copyPlain: selectedText(transcript, "plain"),
+    copySource: selectedText(transcript, "source"),
+    referencePlain: referenceText(transcript, "plain"),
+    referenceSource: referenceText(transcript, "source"),
+    searchMatches: findSearchMatches(transcript, transcript.search?.query ?? ""),
+    urls,
+    firstUrlAtPoint: urls[0] ? urlAt(transcript, urls[0].from) : undefined,
+    marks: transcript.marks,
+    jumps: transcript.jumps,
+    foldedItems: Object.entries(transcript.folded).filter(([, folded]) => folded).map(([itemId]) => ({
+      itemId,
+      nodeKind: transcript.projectionById[itemId]?.nodeKind,
+    })),
+    forkBoundary: forkBoundary(conversation, transcript.cursor?.itemId),
+  }
+}
+
+/**
+ * Test-only full-materialization oracle. Its identity and zero-spacer assertions
+ * prevent Stage 5's production planner from silently turning this reference
+ * into another windowed candidate.
+ */
+function passThroughOracle(snapshot: TranscriptFixtureSnapshot) {
+  const blocks = buildTranscriptBlocks(snapshot)
+  const window = passThroughWindow(blocks)
+  expect(window.blocks).toBe(blocks)
+  expect(window.blocks).toHaveLength(snapshot.transcript.order.length)
+  expect(window.topSpacerRows).toBe(0)
+  expect(window.bottomSpacerRows).toBe(0)
+  expect(window.overscanRows).toBe(0)
+  return {
+    blockKeys: blocks.map(blockKey),
+    semantics: semanticEvidence(snapshot.transcript, snapshot.conversation),
+  }
+}
+
+function expectPassThroughEquivalent(frame: TranscriptFrame, snapshot: TranscriptFixtureSnapshot): void {
+  const reference = passThroughOracle(snapshot)
+  expect(frame.blocks.map(blockKey)).toEqual(reference.blockKeys)
+  expect(semanticEvidence(frame.transcript, snapshot.conversation)).toEqual(reference.semantics)
+}
+
+test("identical scaling workloads retain pass-through semantics and deterministic publication counts", () => {
+  for (const blockCount of transcriptScalingBlockCounts) {
+    const fixture = buildTranscriptScalingFixture(blockCount)
+    const runtime = new TranscriptRuntime(runtimeInput(fixture, fixture.before, "follow", { canonicalDamage: { kind: "full" } }))
+    runtime.reportMeasurements({ ...runtime.measurementBase(), measurements: measurements(runtime.getSnapshot()) })
+    const initial = runtime.getSnapshot()
+    expect(initial.blocks).toHaveLength(blockCount)
+    expect(initial.window.blocks).toBe(initial.blocks)
+    expect(initial.geometry.measuredBlockCount).toBe(blockCount)
+
+    let publications = 0
+    runtime.subscribe(() => { publications++ })
+    const followed = runtime.update(runtimeInput(fixture, fixture.afterTailDelta, "follow", {
+      canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
+    }))
+    expect(publications).toBe(1)
+    let preservedBlocks = 0, preservedGeometry = 0
+    const changedKeys: string[] = []
+    for (let index = 0; index < blockCount; index++) {
+      const key = blockKey(followed.blocks[index]!)
+      if (followed.blocks[index] === initial.blocks[index]) preservedBlocks++
+      else changedKeys.push(key)
+      if (followed.geometry.byBlockKey[key] === initial.geometry.byBlockKey[key]) preservedGeometry++
+    }
+    expect(preservedBlocks).toBe(blockCount - 1)
+    expect(preservedGeometry).toBe(blockCount - 1)
+    expect(changedKeys).toEqual([`item:${fixture.tailItemId}:root`])
+    expect(followed.blocks.at(-1)).not.toBe(initial.blocks.at(-1))
+    expect(blockKey(followed.blocks.at(-1)!)).toBe(`item:${fixture.tailItemId}:root`)
+    expect(followed.window.blocks).toBe(followed.blocks)
+    expect(followed.geometry.measuredBlockCount).toBe(blockCount - 1)
+    expectPassThroughEquivalent(followed, fixture.afterTailDelta)
+
+    const navigatedTranscript = Object.freeze({
+      ...fixture.afterTailDelta.transcript,
+      cursor: Object.freeze({ itemId: fixture.targets.quarter, graphemeOffset: 0 }),
+      viewport: Object.freeze({ kind: "point" as const, point: Object.freeze({ itemId: fixture.targets.quarter, graphemeOffset: 0 }), preferredScreenRow: 7 }),
+    })
+    const navigatedSnapshot = Object.freeze({ ...fixture.afterTailDelta, transcript: navigatedTranscript })
+    const navigated = runtime.update(runtimeInput(fixture, navigatedSnapshot, "follow", { presentationDamage: { kind: "view" } }))
+    expect(publications).toBe(2)
+    expectPassThroughEquivalent(navigated, navigatedSnapshot)
+
+    runtime.update(runtimeInput(fixture, navigatedSnapshot, "detached"))
+    expect(publications).toBe(3)
+    const pinned = runtime.getSnapshot()
+    expectPassThroughEquivalent(pinned, navigatedSnapshot)
+    const hidden = appendTranscriptScalingTail(navigatedSnapshot, fixture.tailItemId, fixture.tailDelta)
+    expect(runtime.update(runtimeInput(fixture, hidden, "detached", {
+      canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
+    }))).toBe(pinned)
+    expect(publications).toBe(3)
+
+    const hiddenTail = hidden.transcript.projectionById[fixture.tailItemId]!
+    const revealPoint = Object.freeze({ itemId: fixture.tailItemId, graphemeOffset: hiddenTail.sourceSpans.length })
+    const revealedTranscript = Object.freeze({
+      ...hidden.transcript,
+      cursor: revealPoint,
+      viewport: Object.freeze({ kind: "point" as const, point: revealPoint, preferredScreenRow: 7 }),
+    })
+    const revealedSnapshot = Object.freeze({ ...hidden, transcript: revealedTranscript })
+    const revealed = runtime.update(runtimeInput(fixture, revealedSnapshot, "detached", {
+      reveal: { id: blockCount, point: revealPoint, reason: "jump" },
+    }))
+    expect(publications).toBe(4)
+    expect(revealed.displayedCanonicalRevision).toBe(hidden.canonicalRevision)
+    expect(revealed.mode).toBe("detached")
+    expect(revealed.transcript.cursor).toEqual(revealPoint)
+    expect(revealed.transcript.viewport).toEqual({ kind: "point", point: revealPoint, preferredScreenRow: 7 })
+    expectPassThroughEquivalent(revealed, revealedSnapshot)
+
+    const latest = appendTranscriptScalingTail(revealedSnapshot, fixture.tailItemId, fixture.tailDelta)
+    expect(runtime.update(runtimeInput(fixture, latest, "detached", {
+      canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
+    }))).toBe(revealed)
+    expect(publications).toBe(4)
+    const reattached = runtime.update(runtimeInput(fixture, latest, "follow"))
+    expect(publications).toBe(5)
+    expect(reattached.displayedCanonicalRevision).toBe(latest.canonicalRevision)
+    expectPassThroughEquivalent(reattached, latest)
+    runtime.dispose()
+  }
+}, 15_000)

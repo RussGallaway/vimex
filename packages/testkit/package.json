@@ -5,6 +5,7 @@
   "type": "module",
   "exports": "./src/index.ts",
   "dependencies": {
-    "@vimex/conversation": "workspace:*"
+    "@vimex/conversation": "workspace:*",
+    "@vimex/transcript": "workspace:*"
   }
 }

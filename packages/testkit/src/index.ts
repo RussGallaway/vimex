@@ -1,1 +1,1 @@
-export { assistantMessage } from "./transcript-builders"
+export * from "./transcript-builders"
