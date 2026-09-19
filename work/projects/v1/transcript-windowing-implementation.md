@@ -1,6 +1,6 @@
 # Transcript windowing implementation
 
-Status: Stages 5.0–5.4 are complete and verified. Stage 5.5 is in progress; bounded same-item follow, reattachment, and canonical ingress are complete.
+Status: Stages 5.0–5.4 are complete and verified. Stage 5.5 is in progress; bounded same-item follow, reattachment, canonical ingress, and monotonic cross-presentation settlement are complete.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
@@ -26,7 +26,7 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 | Stage 5b: windowed mounting | Complete | Commit `3e24002`; bounded production runtime, React/native mounting, observer lifetime, scaling evidence, and review sign-off below |
 | Stage 5c: anchor correction | Complete | Commit `97f163f`; atomic height correction, window-local geometry, logical-anchor restoration, scaling evidence, and review sign-off below |
 | Stage 5d: off-window semantics | Complete | Commits `a24f5af`, `df243a1`, `9266837`, `0e1ad6d`; indexed target materialization and URL motion, bounded selection clipping, canonical cross-window copy, atomic navigation/fold/picker settlement, and evidence below |
-| Stage 5e: follow and detachment | In progress | Stage 5.5a commit `9e8974e` and Stage 5.5b commit `e5dfc61`; bounded same-item canonical ingress, follow/reattach runtime reconciliation, and evidence below |
+| Stage 5e: follow and detachment | In progress | Stage 5.5a commit `9e8974e`, Stage 5.5b commit `e5dfc61`, and Stage 5.5c commit `b3d26f9`; bounded same-item canonical ingress, follow/reattach reconciliation, monotonic independent-presentation settlement, and evidence below |
 | Stage 5f: stress, review, and evidence | Not started | — |
 
 “Complete” means the slice's exit criteria pass, evidence is recorded here, and the implementation is committed. Partial working-tree changes do not count as complete.
@@ -1012,3 +1012,36 @@ Every cell preserves `N - 1` canonical item identities and `N - 1` semantic proj
 - Parallel architecture, correctness, and performance reviews ran before implementation and after the slice. Repairs preserved named-key insertion order, separated the diagnostic reducer from `Array.reduce`, made lookup and cold-normalization counters truthful, moved exhaustive evidence after measured settlement, added sequential-AVL evidence, and forced ambiguous completion chronology to the full fallback. All three final reviewers signed off with no blocker.
 
 Stage 5.5b is complete for steady same-item follow-tail ingress. It removes total-history record copies from canonical reduction and makes the complete reducer → semantic projection → runtime publication boundary executable at every required scale. It does not claim constant changed-item parsing: Markdown/tool projection remains proportional to that item's own content. Detached `unseenItemIds` membership/copy, new item and turn structure, hidden/maximized pane resources, cross-presentation reentrancy, and stable production sub-blocks for oversized Markdown, command output, and diffs remain open before Stage 5.5 and overall Stage 5 can be marked complete.
+
+### Stage 5.5c — monotonic cross-presentation settlement
+
+Implementation commit: `b3d26f9` (`fix: serialize transcript presentation sync`). This prerequisite slice closes a correctness defect at the Workbench/runtime publication boundary before structural tail reconciliation changes that boundary further.
+
+#### Restartable presentation synchronization
+
+- A Workbench state commit synchronizes presentation runtimes synchronously. Runtime listeners are also synchronous and may legitimately dispatch a newer Workbench command while an older main/side synchronization pass is still iterating.
+- The controller now owns a monotonic synchronization epoch. Every newer authoritative synchronization restarts from the first owned presentation. An older pass checks its captured epoch before and after each runtime update and stops immediately when a nested pass supersedes it.
+- Canonical conversation and semantic `TranscriptState` remain the only authorities. The epoch neither queues another semantic state nor moves presentation ownership into React; it only prevents captured older inputs from reaching later runtimes after a newer state is already authoritative.
+- Ordinary work remains one pass over the owned presentations: one runtime-input derivation and at most one runtime update per presentation, plus constant epoch checks. Reentrant work is bounded by the number of presentations and actual synchronous nesting depth, never transcript history size.
+- Runtime creation, deletion, disposal, and independent window/geometry ownership are unchanged. A runtime created without a state change starts from current authority; every state-changing ownership transition starts a newer epoch and invalidates an older pass.
+
+#### Exact regression and gates
+
+The public-controller regression constructs main then side runtimes, starts a main canonical update, and dispatches a side cursor reveal from the main runtime's publication listener. Before this repair the stale outer pass subsequently reattached side to its captured follow-tail input, producing two side publications and leaving the authoritative side viewport detached while the presented frame was follow-tail. The repaired path has these deterministic gates:
+
+- the triggering main delta remains present;
+- the authoritative side viewport and runtime frame are the same logical point;
+- the side frame remains detached and materializes the target;
+- side publishes exactly once;
+- no transcript-history scan, plan rebuild, or native work is added by synchronization.
+
+Independent adversarial review also exercised direct and batched outer changes, two-level main→side→main listener reentrancy, a batch that changed both canonical threads, and a nested structural side admission. Every final frame matched authority; the addressed side published once and retained its latest canonical revision.
+
+#### Repository, PTY, and review gates
+
+- The focused controller integration suite passed 77 tests and 439 assertions. The independent correctness matrix passed 109 controller/runtime/scaling tests, including the adversarial nested cases. Typecheck and `git diff --check` passed.
+- `bun run check` passed typecheck, dependency boundaries, generated-doc validation, and every non-sandbox-sensitive test: 732 passed and 5 intentional profiling skips. Its only failure was the sandbox-denied isolated tmux socket; the other four real PTY cases passed.
+- The exact isolated rerun outside the sandbox passed: `bun test tests/terminal/terminal.test.ts --test-name-pattern "isolated tmux" --timeout 30000` — 1 passed in 727 ms.
+- Parallel architecture, correctness, and performance reviews signed off. They verified restart behavior across Map mutation and disposal, exact final authority/frame agreement under nested direct and batched updates, ordinary `O(presentations)` work, and no new history-sized path.
+
+Stage 5.5c is complete for monotonic multi-presentation runtime settlement. Structural tail insertion, detached unseen-item accumulation, hidden/maximized pane resource suspension, and stable production sub-blocks for oversized Markdown, command output, and diffs remain open before Stage 5.5 and overall Stage 5 can be marked complete.
