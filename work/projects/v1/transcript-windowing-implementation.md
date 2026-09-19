@@ -1,6 +1,6 @@
 # Transcript windowing implementation
 
-Status: Stages 5.0–5.4 are complete and verified. Stage 5.5 is in progress; bounded same-item follow, reattachment, canonical ingress, and monotonic cross-presentation settlement are complete.
+Status: Stages 5.0–5.4 are complete and verified. Stage 5.5 is in progress; bounded same-item follow, reattachment, canonical ingress, monotonic cross-presentation settlement, and hidden-presentation resource suspension are complete.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
@@ -26,7 +26,7 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 | Stage 5b: windowed mounting | Complete | Commit `3e24002`; bounded production runtime, React/native mounting, observer lifetime, scaling evidence, and review sign-off below |
 | Stage 5c: anchor correction | Complete | Commit `97f163f`; atomic height correction, window-local geometry, logical-anchor restoration, scaling evidence, and review sign-off below |
 | Stage 5d: off-window semantics | Complete | Commits `a24f5af`, `df243a1`, `9266837`, `0e1ad6d`; indexed target materialization and URL motion, bounded selection clipping, canonical cross-window copy, atomic navigation/fold/picker settlement, and evidence below |
-| Stage 5e: follow and detachment | In progress | Stage 5.5a commit `9e8974e`, Stage 5.5b commit `e5dfc61`, and Stage 5.5c commit `b3d26f9`; bounded same-item canonical ingress, follow/reattach reconciliation, monotonic independent-presentation settlement, and evidence below |
+| Stage 5e: follow and detachment | In progress | Stage 5.5a commit `9e8974e`, Stage 5.5b commit `e5dfc61`, Stage 5.5c commit `b3d26f9`, and Stage 5.5d commit `4189d25`; bounded same-item canonical ingress, follow/reattach reconciliation, monotonic independent-presentation settlement, hidden-presentation resource suspension, and evidence below |
 | Stage 5f: stress, review, and evidence | Not started | — |
 
 “Complete” means the slice's exit criteria pass, evidence is recorded here, and the implementation is committed. Partial working-tree changes do not count as complete.
@@ -412,7 +412,7 @@ Exit criteria:
 - [ ] Keep detached displayed content, anchor window, and geometry stable during hidden streaming.
 - [ ] Reattach by selecting the latest revision and trailing window atomically.
 - [ ] Preserve independent main and side presentation windows.
-- [ ] Keep hidden or maximized-away panes free of mounting and measurement work.
+- [x] Keep hidden or maximized-away panes free of mounting and measurement work.
 - [ ] Bound ingress, planner, measurement, and render work so input cannot be starved.
 
 Exit criteria:
@@ -1022,7 +1022,7 @@ Implementation commit: `b3d26f9` (`fix: serialize transcript presentation sync`)
 - A Workbench state commit synchronizes presentation runtimes synchronously. Runtime listeners are also synchronous and may legitimately dispatch a newer Workbench command while an older main/side synchronization pass is still iterating.
 - The controller now owns a monotonic synchronization epoch. Every newer authoritative synchronization restarts from the first owned presentation. An older pass checks its captured epoch before and after each runtime update and stops immediately when a nested pass supersedes it.
 - Canonical conversation and semantic `TranscriptState` remain the only authorities. The epoch neither queues another semantic state nor moves presentation ownership into React; it only prevents captured older inputs from reaching later runtimes after a newer state is already authoritative.
-- Ordinary work remains one pass over the owned presentations: one runtime-input derivation and at most one runtime update per presentation, plus constant epoch checks. Reentrant work is bounded by the number of presentations and actual synchronous nesting depth, never transcript history size.
+- The epoch guard itself adds only constant work per visited presentation. Calls carrying bounded damage hints or no canonical change remain one pass over the owned presentations; structural events may still pay the pre-existing history-sized canonical-damage derivation before each runtime update. Reentrant guard work is bounded by the number of presentations and actual synchronous nesting depth.
 - Runtime creation, deletion, disposal, and independent window/geometry ownership are unchanged. A runtime created without a state change starts from current authority; every state-changing ownership transition starts a newer epoch and invalidates an older pass.
 
 #### Exact regression and gates
@@ -1042,6 +1042,42 @@ Independent adversarial review also exercised direct and batched outer changes, 
 - The focused controller integration suite passed 77 tests and 439 assertions. The independent correctness matrix passed 109 controller/runtime/scaling tests, including the adversarial nested cases. Typecheck and `git diff --check` passed.
 - `bun run check` passed typecheck, dependency boundaries, generated-doc validation, and every non-sandbox-sensitive test: 732 passed and 5 intentional profiling skips. Its only failure was the sandbox-denied isolated tmux socket; the other four real PTY cases passed.
 - The exact isolated rerun outside the sandbox passed: `bun test tests/terminal/terminal.test.ts --test-name-pattern "isolated tmux" --timeout 30000` — 1 passed in 727 ms.
-- Parallel architecture, correctness, and performance reviews signed off. They verified restart behavior across Map mutation and disposal, exact final authority/frame agreement under nested direct and batched updates, ordinary `O(presentations)` work, and no new history-sized path.
+- Parallel architecture, correctness, and performance reviews signed off. They verified restart behavior across Map mutation and disposal, exact final authority/frame agreement under nested direct and batched updates, and constant guard overhead per visited presentation without adding a new history-sized path.
 
 Stage 5.5c is complete for monotonic multi-presentation runtime settlement. Structural tail insertion, detached unseen-item accumulation, hidden/maximized pane resource suspension, and stable production sub-blocks for oversized Markdown, command output, and diffs remain open before Stage 5.5 and overall Stage 5 can be marked complete.
+
+### Stage 5.5d — hidden-presentation resource suspension
+
+Implementation commit: `4189d25` (`perf: suspend hidden transcript presentations`). This slice makes maximized-away and closed-but-retained presentations own no React transcript publication, native transcript tree, renderer frame listener, or geometry-measurement work while preserving their semantic authority and recoverable Workbench runtime.
+
+#### Visibility boundary and recoverable resources
+
+- Workbench still owns every presentation snapshot and `TranscriptRuntime`. Hiding a pane does not dispose, replace, or fork either authority; it only suspends the React subscriptions that publish them into that pane.
+- The presentation and runtime hooks retain their last visible snapshots while hidden, including across unrelated parent renders. The first reveal render synchronously reads the newest Workbench snapshots, so no stale intermediate frame is published and no hidden update must be replayed through React.
+- The transcript viewport is unmounted while hidden, but the pane application and composer remain mounted. Drafts, Vim mode, Ex history, focus-local state, and native composer selection therefore retain their existing ownership and identity.
+- Visibility gates every transcript-owned frame effect: measurement scheduling, cursor placement, native selection, point-scroll restoration, and expanded-composer frame measurement. Departing transcript roots release their measurement schedule and all renderer-side layout and geometry caches.
+- Native transcript selection is explicitly cleared before its native nodes disappear. The canonical semantic selection remains in `TranscriptState`; reveal reconstructs the native clipped selection from that authority.
+- Reveal restores the presentation's own follow-tail position or detached logical point and preferred screen row. Main and side panes continue to own independent visibility, frames, windows, anchors, and geometry.
+
+#### Deterministic hidden-resource scaling
+
+The production probe mounts the real presentation snapshot hook, runtime hook, layout hook, and `TranscriptViewport`. Its visible setup proves the bridge is live with one presentation subscription, one UI runtime subscription, one renderer `FRAME` listener, and accepted measurement reports. It then hides the pane, publishes both a retained-runtime tail update and a presentation update, forces renderer settlement, and reveals the pane at the latest revision.
+
+| Complete blocks | Mounted before / hidden / after | Hidden transcript / spacer roots | Hidden `FRAME` listeners / measurement reports | Hidden presentation / UI runtime subscriptions | Hidden presentation notifications / React commits / renders | Retained runtime publications | Latest revision on reveal | Publication + forced-flush settlement |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 24 / 0 / 24 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 / 0 | 1 | 1 | 33.019 ms |
+| 1k | 24 / 0 / 24 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 / 0 | 1 | 1 | 33.839 ms |
+| 10k | 24 / 0 / 24 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 / 0 | 1 | 1 | 37.008 ms |
+| 100k | 24 / 0 / 24 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 / 0 | 1 | 1 | 29.602 ms |
+
+The one retained-runtime publication is intentional cache reconciliation and is observed by a diagnostic listener, not by the hidden UI. Every UI resource and publication count is identically zero across the recorded range, and reveal remounts exactly 24 blocks at the newest canonical revision. The timings include runtime and presentation publication plus forced renderer flushing and are one-sample machine diagnostics; mounted/native/measurement/publication operation counts are the hard gates. The connected controller regression separately proves the Workbench-owned runtime object retains identity across maximize, close, and reveal.
+
+#### Repository, PTY, benchmark, and review gates
+
+- The final focused UI/runtime/layout/selection matrix passed 83 tests and 565 assertions. It proves subscription counts move `1 → 0 → 1`, hidden parent renders retain snapshots, reveal reads the newest snapshots, runtime identity survives maximize/close, native transcript roots and selections are released, semantic selection survives, detached preferred-row restoration is exact, and composer identity/selection remain intact. Typecheck and `git diff --check` passed.
+- `bun run check` passed typecheck, dependency boundaries, generated-doc validation, and every non-sandbox-sensitive test: 737 passed and 5 intentional profiling skips. Its only failure was the sandbox-denied isolated tmux socket; the other four real PTY cases passed.
+- The exact isolated rerun outside the sandbox passed: `bun test tests/terminal/terminal.test.ts --test-name-pattern "isolated tmux"` — 1 passed in 690 ms.
+- The executable 100/1k/10k/100k benchmark passed every mounted-root, subscription, frame-listener, measurement, publication, React-render, identity, and latest-reveal assertion shown above.
+- Parallel architecture, correctness, and performance reviews ran after the slice and again after repair. Repairs replaced declarative benchmark literals with a production bridge probe, added real visible measurement and hidden-delta observation, cleared renderer-global native selection before unmount, retained semantic selection for reveal, and explicitly released departed-root caches. All three final reviewers signed off with no blocker.
+
+Stage 5.5d closes hidden/maximized presentation mounting and measurement work across the required scaling range. It deliberately retains the disposable Workbench runtime cache so canonical streaming can reconcile there without keeping presentation/native resources alive. Structural tail insertion, detached unseen-item accumulation, structural canonical-damage derivation, and stable production sub-blocks for oversized Markdown, command output, and diffs remain open before Stage 5.5 and overall Stage 5 can be marked complete.
