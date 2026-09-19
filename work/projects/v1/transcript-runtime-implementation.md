@@ -1,6 +1,6 @@
 # Transcript runtime implementation
 
-Status: active execution ledger. Update this document as implementation evidence changes.
+Status: Stages 1–4 complete; Stage 5 contract-only. Update this ledger as implementation evidence changes.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime research](./transcript-runtime-research.md) owns the supporting evidence and references.
@@ -20,9 +20,10 @@ Stages 1–4 are the current delivery target. Stage 5 contracts must be supporte
 | Architecture and research | Complete | Commit `8f6bba9` |
 | Baseline profiling | Complete | Measurements recorded below |
 | Stage 1: compact activity | Complete | Commit `7a4209d`; full gate plus isolated tmux rerun |
-| Stage 2: ingress and detachment | Complete | Stage 2a `07678c4`; Stage 2b `28cc24d` |
-| Stage 3: block-local geometry | Complete | Commit `f71cba9`; full gate plus isolated tmux rerun |
+| Stage 2: ingress and detachment | Complete | Stage 2a `07678c4`; Stage 2b `28cc24d`; detached-read repair `bf1b76a` |
+| Stage 3: block-local geometry | Complete | Commits `f71cba9` and `1e69bde`; full gate plus isolated tmux rerun |
 | Stage 4: narrow observation | Complete | Commits `efad886`, `21ea810`, and `31c4e41`; full gate plus isolated tmux rerun |
+| Performance closeout | Complete | Reproducible benchmark commit `ae73913`; measurements recorded below |
 | Stage 5: block windowing | Contract only | Deferred |
 
 “Complete” means the stage's exit criteria pass, evidence is recorded here, and the implementation is committed. Partial working-tree changes do not count as complete.
@@ -213,6 +214,7 @@ packages/ui-opentui-react/src/
 - [x] Search, mark, jump, and thread navigation reveal absent targets.
 - [x] Reattachment equals a fresh frame built from current canonical state.
 - [x] Full rebuild and incremental update frames are semantically equivalent.
+- [x] Detached copy, reference, URL selection, and side quote read the exact presentation frame rather than hidden canonical tail content.
 
 ### Exit criteria
 
@@ -251,6 +253,7 @@ packages/ui-opentui-react/src/
 - The existing 135,389-character renderer benchmark remained effectively flat: measure 0.030 ms, anchor 0.254 ms, frame 0.129 ms.
 - Final focused verification passed 131 tests. The repository gate passed typecheck, dependency boundaries, documentation generation, 606 tests, and 5 intentional performance skips; the managed sandbox removed the tmux socket, and the exact isolated tmux scenario passed outside it.
 - Two parallel review-and-repair rounds covering runtime correctness, ownership/topology, tests, and performance reported no remaining blockers.
+- Commit `bf1b76a` closes the detached-read boundary: presentation identity selects the displayed runtime frame, while derived copy/reference/URL results mutate the resolved canonical workspace. Multi-choice URLs exclude hidden canonical tail values, side quote uses the side presentation, and an explicit main-pane read cannot mutate the active side pane.
 
 ## Stage 3 — block-local geometry
 
@@ -319,6 +322,7 @@ packages/transcript/src/
 - The 135,389-character renderer benchmark measured 0.022–0.030 ms for cached measurement, 0.554–0.809 ms for anchor work, and 0.142–0.177 ms for a native frame across repeated runs.
 - Full repository gate: typecheck, dependency boundaries, and documentation generation pass; 622 tests pass with 5 intentional performance skips. The managed sandbox removed the tmux socket, and the exact isolated tmux scenario passed outside it.
 - Final transcript/UI review set: 343 pass with 5 intentional performance skips. Three parallel architecture, correctness, and test/performance review tracks reported no remaining Stage 3 blockers after repair.
+- Commit `1e69bde` adds a direct native geometry proof over three blocks: a growing middle block invalidates only its own geometry, retained siblings preserve identity, the trailing global row moves, and every logical point plus all eight cursor motions equal a fresh full runtime/renderer measurement. Repeated parallel review runs found no flakiness or semantic omissions.
 
 ## Stage 4 — narrow observation and cadence isolation
 
@@ -385,9 +389,22 @@ packages/ui-opentui-react/src/
 - The connected-App profile passed 11 scenarios in an 80×24 terminal. Its navigation fixture contained 100 historical Markdown items with eight repeated paragraphs each; warm navigation settled in approximately 19–21 ms with 0.09–0.21 ms input dispatch and 0.45–0.51 ms React commits. Its detached fixture appended 1,200 Markdown paragraphs to a live answer; steady deltas settled in approximately 18–20 ms and navigation in approximately 52–57 ms with 0.22–0.30 ms React commits. The first large-frame materialization was approximately 228 ms.
 - These measurements do not justify a second presentation scheduler: bounded ingress and narrow publications remove token-cadence starvation, while remaining cost is primarily native frame and Markdown work. Stage 5 block windowing is the next topology-preserving scaling step.
 
+### Performance closeout evidence
+
+Commit `ae73913` makes `bun run benchmark:transcript` emit reproducible JSONL for warm navigation, cold geometry, and follow reconciliation with fixture shape, dimensions, attachment mode, cache scope, warmup/sample counts, and min/median/p95/max/mean. Timings remain diagnostic rather than pass/fail thresholds. Streaming settlement remains a separate connected-App profile.
+
+- Warm navigation — one expanded 1,500-line, 135,389-character command at 100×30 in follow mode; one representative warmup and 12 samples: native frame median 0.108 ms, cached runtime-layout lookup median 0.006 ms, and visible-anchor lookup median 0.425 ms.
+- Streaming settlement — the separate connected-App profile with a detached 1,200-paragraph growing Markdown answer at 80×24: the first of 12 timed small live chunks settled in 221.2 ms against the already-large mounted block; subsequent deltas settled in 18.14–20.30 ms; navigation settled in 51.92–57.41 ms with 0.24–0.32 ms React commits. The mounted runtime/cache state carries into the timed loop and there is no discarded warmup. This path is intentionally not conflated with runtime-only reconciliation.
+- Cold geometry — the same expanded command at 100×30, with a fresh runtime, renderer, and scroll cache for each of 12 samples after one discarded process/JIT warmup: renderer/test setup through the initial visual-idle flush, before geometry extraction, had a 22.690 ms median; first runtime-owned native geometry measurement/publication had a 183.529 ms median.
+- Follow reconciliation — 300 settled Markdown blocks with seeded synthetic geometry plus one running Markdown tail at 100×30, 7,400→7,841 total source characters; 10 warmups and 100 samples: isolated `TranscriptRuntime.update` median 0.217 ms, p95 0.264 ms, max 0.328 ms. Assertions prove exactly one block replacement, retention of all historical block and geometry identities, and invalidation of only the changed tail geometry.
+
+Parallel benchmark review verified the timing boundaries and cache claims. The `nativeFirstFrame` field includes test-renderer creation and React setup through visual-idle flush, but excludes runtime geometry extraction; it is not a pure native renderer-loop or complete transcript-layout measurement.
+
+The completion gate passed typecheck, dependency boundaries, documentation generation, 654 tests, and 5 intentional performance skips. The managed sandbox again removed the isolated tmux socket; the exact tmux scenario passed separately outside the sandbox. The opt-in connected-App performance profile passed all 11 scenarios.
+
 ## Stage 5 — render-block windowing
 
-Status: deferred implementation; contracts established in Stages 2–3.
+Status: deferred implementation; contracts established in Stages 2–4.
 
 ### Future outcome
 
@@ -445,7 +462,12 @@ Add one row after each coherent implementation commit.
 | 2026-09-18 | Stage 2a | `07678c4` | Typecheck, boundaries, docs, 574-test repository run plus isolated tmux rerun, deterministic ingress tests, three parallel review scopes | Settlement bounded by injected cadence; no permanent polling timer | Atomic bounded ingress, lifecycle drains, hydration replay, staged navigation-history projection |
 | 2026-09-18 | Stage 2b | `28cc24d` | Typecheck, boundaries, docs, 606-test repository run plus isolated tmux rerun, 131 focused tests, two parallel review-and-repair rounds | Runtime update 0.015–0.033 ms at 10K–100K active chars; 2.417 ms at 10K historical items; detached deltas publish 0 frames | Workbench-owned runtime, coherent detachment, incremental block damage, thin React bridge, Stage 5 block/window contract |
 | 2026-09-18 | Stage 3 | `f71cba9` | Typecheck, boundaries, docs, 622-test repository run plus isolated tmux rerun, 343 transcript/UI tests, three parallel review scopes | Ten-point tail update 0.064–0.080 ms with up to 495K retained points; bottom navigation 0.010–0.26 ms | Immutable block-local geometry, guarded native measurement, indexed navigation, scroll translation fast path |
-| 2026-09-18 | Stage 4 | `efad886`, `21ea810`, `31c4e41` | Typecheck, boundaries, docs, 649-test repository run plus isolated tmux rerun, 105 final hardening tests, parallel review-and-repair rounds | Warm navigation 19–21 ms; detached steady deltas 18–20 ms; React commits 0.22–0.51 ms | Semantic external observers, cached pane publications, bounded ingress turns, indexed side associations; no additional presentation scheduler |
+| 2026-09-18 | Stage 4 observers | `efad886` | Typecheck, boundaries, docs, repository gate, focused observer tests, parallel review | Token-only state changes publish no persistence or Herdr notifications | Semantic external observers with stable signatures and retained latest-wins Herdr delivery |
+| 2026-09-18 | Stage 4 UI | `21ea810` | Typecheck, boundaries, docs, repository gate, focused publication/UI tests, parallel review | Independent pane React commits approximately 0.22–0.51 ms | Cached layout/pane publications, external-store bridge, pane-local subscriptions, memoized viewport |
+| 2026-09-18 | Stage 4 ingress | `31c4e41` | Typecheck, boundaries, docs, 649-test repository run plus isolated tmux rerun, 105 final hardening tests, parallel review-and-repair rounds | Warm navigation 19–21 ms; detached steady deltas 18–20 ms | Bounded 64-stream scheduling turns, zero-delay backlog continuation, indexed side associations |
+| 2026-09-18 | Detached reads | `bf1b76a` | Typecheck; 150 focused controller, side-chat, reducer, App, and keymap tests; parallel review-and-repair | Detached reads publish no hidden-tail frame and add no scheduler | Copy, reference, URL picker/open, command yank, and side quote read the addressed presentation and mutate its resolved canonical workspace |
+| 2026-09-18 | Geometry equivalence | `1e69bde` | Typecheck; native scroll-layout suite; repeated parallel review runs | Incremental and full native measurements agree for every point and all eight motions | Changed middle block retains sibling geometry identity and recomposes downstream rows |
+| 2026-09-18 | Performance closeout | `ae73913` | Typecheck, boundaries, docs, 654-test repository run plus isolated tmux rerun; reproducible benchmark; connected-App profile 11/11; two benchmark review rounds | Warm 0.108/0.006/0.425 ms frame/layout/anchor medians; streaming steady 18.14–20.30 ms; cold 22.690/183.529 ms setup/geometry medians; follow update 0.217 ms median, 0.264 ms p95 | Three JSONL runtime paths carry fixture, dimensions, mode, cache scope, and sample counts; the separate streaming profile is documented at 80×24 with 12 timed deltas and no discarded warmup |
 
 ## Deferred questions
 
