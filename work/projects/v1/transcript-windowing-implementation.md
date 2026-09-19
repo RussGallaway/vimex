@@ -1,6 +1,6 @@
 # Transcript windowing implementation
 
-Status: planned execution ledger. Begin after Stage 4 is complete and verified.
+Status: ready for implementation. Stages 1–4 are complete and verified; the Stage 5 topology, contracts, and inherited baselines are established.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
@@ -8,6 +8,8 @@ Status: planned execution ledger. Begin after Stage 4 is complete and verified.
 - This document owns Stage 5 implementation order, verification, performance evidence, and commit history.
 
 ## Objective
+
+**Goal: Make transcript size cease to matter.**
 
 Make steady-state transcript rendering and native layout cost independent of total in-memory transcript size without changing transcript semantics.
 
@@ -18,7 +20,8 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 | Work | State | Evidence |
 |---|---|---|
 | Stage 5 topology and contracts | Complete | Established by Stages 2–4 |
-| Baseline and large-history fixtures | Not started | — |
+| Stages 1–4 performance baseline | Complete | Reproducible benchmark commit `ae73913`; inherited measurements below |
+| Stage 5 scaling fixtures | Not started | Identical 100/1k/10k/100k workloads required |
 | Stage 5a: pure window planner | Not started | — |
 | Stage 5b: windowed mounting | Not started | — |
 | Stage 5c: anchor correction | Not started | — |
@@ -27,6 +30,21 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 | Stage 5f: stress, review, and evidence | Not started | — |
 
 “Complete” means the slice's exit criteria pass, evidence is recorded here, and the implementation is committed. Partial working-tree changes do not count as complete.
+
+## Inherited performance baseline
+
+Stages 1–4 established the starting point for Stage 5. Preserve the timing boundary of each measurement when comparing windowed results:
+
+| Path | Inherited evidence | Boundary |
+|---|---:|---|
+| Warm native frame / cached layout / visible anchor | 0.108 / 0.006 / 0.425 ms medians | One already-mounted, already-measured 1,500-line command at 100×30 |
+| Steady streaming settlement | 18.14–20.30 ms | Connected application at 80×24 with a mounted 1,200-paragraph Markdown answer |
+| Navigation around the large streaming fixture | 51.92–57.41 ms | Connected application settlement, not runtime-only reconciliation |
+| Cold renderer setup / geometry publication | 22.690 / 183.529 ms medians | Fresh renderer and runtime around one 135,389-character expanded command |
+| Follow reconciliation | 0.217 ms median, 0.264 ms p95 | Isolated `TranscriptRuntime.update` with 300 settled blocks and one changed tail; projection and rendering excluded |
+| Large-history runtime update | 2.417 ms | Runtime reconciliation with 10,000 historical items |
+
+These are diagnostic baselines, not universal thresholds. Stage 5 must measure the same operation and content shape across session sizes so results describe a scaling curve rather than unrelated fast fixtures. Runtime-only reconciliation, React publication, native mounting, geometry measurement, and end-to-end settlement remain separately reported.
 
 ## Scope
 
@@ -314,8 +332,9 @@ Requirements:
 
 ### Stage 5.0 — baseline and deterministic fixtures
 
-- [ ] Record pre-windowing mount counts, native layout work, memory, and navigation latency.
-- [ ] Add deterministic 1k, 10k, and 100k render-block fixtures.
+- [ ] Record pre-windowing mount counts, native layout work, memory, and navigation latency alongside the inherited timing baselines.
+- [ ] Add deterministic 100, 1k, 10k, and 100k render-block fixtures.
+- [ ] Run identical warm navigation, follow delta, detachment, reattachment, and explicit-reveal workloads at every recorded size.
 - [ ] Add oversized Markdown, command-output, and split-diff fixtures.
 - [ ] Cover follow and detached presentations at several terminal dimensions.
 - [ ] Preserve a pass-through reference path for semantic equivalence tests.
@@ -324,6 +343,7 @@ Exit criteria:
 
 - Fixtures are deterministic and do not dominate test runtime accidentally.
 - Baselines separate planner, React reconciliation, native layout, and end-to-end input latency.
+- Every scaling result identifies transcript size, mounted block count, measured block count, changed block count, and publication count.
 
 ### Stage 5.1 — pure window planner
 
@@ -404,7 +424,7 @@ Exit criteria:
 ### Stage 5.6 — stress, review, and evidence
 
 - [ ] Run full semantic, renderer, integration, and PTY regression suites.
-- [ ] Benchmark 1k, 10k, and 100k render blocks.
+- [ ] Benchmark identical operations at 100, 1k, 10k, and 100k render blocks.
 - [ ] Benchmark one oversized Markdown item, command output, and split diff.
 - [ ] Record warm navigation, window movement, follow settlement, anchor correction, mount churn, and memory separately.
 - [ ] Run parallel architecture, correctness, and performance review rounds.
@@ -413,6 +433,7 @@ Exit criteria:
 
 Exit criteria:
 
+- Across the recorded 100/1k/10k/100k range, steady-state mounted block count, native measurement work, follow-tail damage, and detached-window publications are independent of total transcript size.
 - Transcript size is not perceptible through steady-state navigation or rendering within the recorded target envelope.
 - Mounted work remains bounded by viewport and overscan.
 - Full and windowed presentations remain semantically equivalent.
@@ -481,7 +502,7 @@ Hard gates:
 - semantic operations equal the pass-through reference;
 - stale measurement batches produce zero window or spacer changes.
 
-Record for each 1k, 10k, and 100k fixture:
+Record the same workload for each 100, 1k, 10k, and 100k fixture and report both absolute values and the scaling curve:
 
 | Path | Measurements |
 |---|---|
@@ -492,6 +513,8 @@ Record for each 1k, 10k, and 100k fixture:
 | Anchor correction | accepted measurements, correction time, visible displacement |
 | Explicit reveal | semantic lookup, planning, mount, measurement, final settlement |
 | Memory | canonical state, runtime blocks, geometry, mounted native nodes |
+
+For follow reconciliation at every size, one changed tail block must replace only that block, preserve every unrelated block and geometry identity, and produce viewport-bounded mounted work. Timings remain diagnostic; changed-block, publication, measurement, mount, and identity counts are deterministic gates.
 
 Do not turn machine-specific millisecond targets into universal CI gates until calibrated. CI should enforce bounded operation counts, stable identity, semantic equivalence, and deterministic fake-scheduler behavior.
 

@@ -1,17 +1,17 @@
 # Transcript runtime implementation
 
-Status: Stages 1–4 complete; Stage 5 contract-only. Update this ledger as implementation evidence changes.
+Status: Stages 1–4 complete and verified; Stage 5 is handed off to its implementation ledger. Update this ledger only when Stages 1–4 evidence changes.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime research](./transcript-runtime-research.md) owns the supporting evidence and references.
-- [Transcript windowing implementation](./transcript-windowing-implementation.md) owns the deferred Stage 5 execution plan.
-- This document owns implementation order, status, verification, and commit evidence.
+- [Transcript windowing implementation](./transcript-windowing-implementation.md) owns the next Stage 5 execution plan.
+- This document owns the implementation order, status, verification, and commit evidence for Stages 1–4.
 
 ## Objective
 
 Implement the simplest, most robust, and most scalable transcript runtime we can reasonably build.
 
-Stages 1–4 are the current delivery target. Stage 5 contracts must be supported by the topology created now, but full render-block windowing is deferred.
+Stages 1–4 are complete. Their topology establishes the contracts required to implement Stage 5 without changing transcript semantics or architectural ownership.
 
 ## Status
 
@@ -24,7 +24,7 @@ Stages 1–4 are the current delivery target. Stage 5 contracts must be supporte
 | Stage 3: block-local geometry | Complete | Commits `f71cba9` and `1e69bde`; full gate plus isolated tmux rerun |
 | Stage 4: narrow observation | Complete | Commits `efad886`, `21ea810`, and `31c4e41`; full gate plus isolated tmux rerun |
 | Performance closeout | Complete | Reproducible benchmark commit `ae73913`; measurements recorded below |
-| Stage 5: block windowing | Contract only | Deferred |
+| Stage 5: block windowing | Ready | Contracts established; execution handed off to `transcript-windowing-implementation.md` |
 
 “Complete” means the stage's exit criteria pass, evidence is recorded here, and the implementation is committed. Partial working-tree changes do not count as complete.
 
@@ -404,7 +404,7 @@ The completion gate passed typecheck, dependency boundaries, documentation gener
 
 ## Stage 5 — render-block windowing
 
-Status: deferred implementation; contracts established in Stages 2–4.
+Status: ready for implementation; contracts established in Stages 2–4 and execution owned by `transcript-windowing-implementation.md`.
 
 ### Future outcome
 

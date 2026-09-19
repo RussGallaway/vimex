@@ -1,6 +1,6 @@
 # Transcript runtime
 
-Status: normative implementation design. Stages 1–4 are the current target. Stage 5 is a compatibility contract, not part of the current implementation.
+Status: normative implementation design. Stages 1–4 are complete and verified. Stage 5 render-block windowing is the next implementation stage; its compatibility contracts are already established.
 
 The supporting evidence and source references live in [transcript-runtime-research.md](./transcript-runtime-research.md).
 
@@ -251,7 +251,7 @@ interface TranscriptWindow {
 
 `TranscriptFrame.blocks` is the complete lightweight chronological block plan. `TranscriptFrame.window.blocks` is the subset selected for native mounting and measurement. Renderer-neutral height composition may retain measurements or estimates for the complete plan, but the OpenTUI adapter must inspect native renderables only for the materialized window. Stages 1–4 use a pass-through planner, so both arrays currently contain every block; Stage 5 changes the window policy and materialization strategy without changing transcript semantics or this ownership contract.
 
-[Transcript windowing implementation](./transcript-windowing-implementation.md) owns the deferred Stage 5 execution order, verification, and performance evidence.
+[Transcript windowing implementation](./transcript-windowing-implementation.md) owns the next Stage 5 execution order, verification, and performance evidence.
 
 Item blocks address canonical source; an item with empty canonical source uses a zero-width span and retains one logical anchor point. Turn-activity blocks are runtime-owned, source-less decoration so empty terminal turns retain chronology without entering cursor, selection, search, copy, or fork semantics. The temporary Stage 1 UI join that places turn footers beside rows must move into the runtime block plan in Stage 2.
 
@@ -277,4 +277,4 @@ Server-backed paging, eviction, and indexed global search are separate future vo
 - Incremental and full-rebuild paths produce equivalent frames.
 - Existing navigation, selection, folding, search, marks, jumps, copy, and anchor restoration tests remain green.
 - Benchmarks report warm navigation, streaming settlement, geometry rebuild, and follow reconciliation separately.
-- Stage 5 adds history-size scaling at 1k, 10k, and 100k render blocks, including a single oversized item.
+- Stage 5 runs identical workloads at 100, 1k, 10k, and 100k render blocks, including a single oversized item, so performance evidence describes a scaling curve.
