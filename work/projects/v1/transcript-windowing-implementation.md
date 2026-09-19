@@ -1,6 +1,6 @@
 # Transcript windowing implementation
 
-Status: Stages 5.0–5.4 are complete and verified. Stage 5.5 is in progress; bounded same-item follow, reattachment, canonical ingress, monotonic cross-presentation settlement, hidden-presentation resource suspension, exact structural tail admission, and detached unseen accumulation are complete.
+Status: Stages 5.0–5.4 are complete and verified. Stage 5.5 is in progress; bounded same-item follow, reattachment, canonical ingress, monotonic cross-presentation settlement, hidden-presentation resource suspension, exact structural tail admission, detached unseen accumulation, and active-final tail completion are complete.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
@@ -26,7 +26,7 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 | Stage 5b: windowed mounting | Complete | Commit `3e24002`; bounded production runtime, React/native mounting, observer lifetime, scaling evidence, and review sign-off below |
 | Stage 5c: anchor correction | Complete | Commit `97f163f`; atomic height correction, window-local geometry, logical-anchor restoration, scaling evidence, and review sign-off below |
 | Stage 5d: off-window semantics | Complete | Commits `a24f5af`, `df243a1`, `9266837`, `0e1ad6d`; indexed target materialization and URL motion, bounded selection clipping, canonical cross-window copy, atomic navigation/fold/picker settlement, and evidence below |
-| Stage 5e: follow and detachment | In progress | Stage 5.5a commit `9e8974e`, Stage 5.5b commit `e5dfc61`, Stage 5.5c commit `b3d26f9`, Stage 5.5d commit `4189d25`, Stage 5.5e commit `70733dc`, and Stage 5.5f commit `43d9a9b`; bounded same-item canonical ingress, follow/reattach reconciliation, monotonic independent-presentation settlement, hidden-presentation resource suspension, exact structural tail admission, detached unseen accumulation, and evidence below |
+| Stage 5e: follow and detachment | In progress | Stage 5.5a commit `9e8974e`, Stage 5.5b commit `e5dfc61`, Stage 5.5c commit `b3d26f9`, Stage 5.5d commit `4189d25`, Stage 5.5e commit `70733dc`, Stage 5.5f commit `43d9a9b`, and Stage 5.5g commit `f55ad57`; bounded same-item canonical ingress, follow/reattach reconciliation, monotonic independent-presentation settlement, hidden-presentation resource suspension, exact structural tail admission, detached unseen accumulation, active-final tail completion, and evidence below |
 | Stage 5f: stress, review, and evidence | Not started | — |
 
 “Complete” means the slice's exit criteria pass, evidence is recorded here, and the implementation is committed. Partial working-tree changes do not count as complete.
