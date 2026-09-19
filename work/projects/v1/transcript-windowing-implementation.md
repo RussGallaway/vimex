@@ -1,6 +1,6 @@
 # Transcript windowing implementation
 
-Status: Stages 5.0–5.3 are complete and verified. Stage 5.4 is in progress; indexed cursor/message target materialization plus spanning selection and copy are complete, and the remaining semantic operations are next.
+Status: Stages 5.0–5.3 are complete and verified. Stage 5.4 is in progress; cursor/message, selection/copy, and atomic search/mark/jump/history/thread target materialization are complete. Fold and URL preservation are next.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
@@ -25,7 +25,7 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 | Stage 5a: pure window planner | Complete | Commit `4021939`; indexed height queries, bounded follow/detached/reveal windows, pass-through fallback, and evidence below |
 | Stage 5b: windowed mounting | Complete | Commit `3e24002`; bounded production runtime, React/native mounting, observer lifetime, scaling evidence, and review sign-off below |
 | Stage 5c: anchor correction | Complete | Commit `97f163f`; atomic height correction, window-local geometry, logical-anchor restoration, scaling evidence, and review sign-off below |
-| Stage 5d: off-window semantics | In progress | Commits `a24f5af`, `df243a1`; indexed target materialization, bounded selection clipping, canonical cross-window copy, and evidence below |
+| Stage 5d: off-window semantics | In progress | Commits `a24f5af`, `df243a1`, `9266837`; indexed target materialization, bounded selection clipping, canonical cross-window copy, atomic navigation settlement, and evidence below |
 | Stage 5e: follow and detachment | Not started | — |
 | Stage 5f: stress, review, and evidence | Not started | — |
 
@@ -394,7 +394,7 @@ Exit criteria:
 ### Stage 5.4 — off-window semantics
 
 - [x] Materialize cursor and message-motion targets outside the current window.
-- [ ] Materialize search, mark, jump, history, and thread-navigation targets.
+- [x] Materialize search, mark, jump, history, and thread-navigation targets.
 - [x] Render selections whose logical endpoints span unmounted blocks.
 - [x] Copy source and rendered text across unmounted blocks from canonical projections.
 - [ ] Preserve folds and URL navigation across window changes.
@@ -862,3 +862,41 @@ The recorded production benchmark also keeps target materialization at 48 mounte
 - Parallel architecture, correctness, and performance reviews ran before and after repair. Repairs added order-identity validation, differentiated source/plain integration coverage, bounded transient-measurement retries, same-key native-remount detection, deepest selectable-target liveness checks, folded-boundary clipping, and stable-frame no-op verification. Final reviewers signed off with no blocker for this slice.
 
 The claim remains scoped. Copy must remain proportional to the requested output size. Non-folded clipping within one oversized render root remains proportional to that root until stable production sub-blocks land. Search/mark/jump/history/thread routing, fold and URL behavior, fold/unseen metadata cloning, complete rebuild/append paths, and oversized Markdown/command/diff production splitting remain open. Stage 5.4 and overall Stage 5 acceptance therefore remain open.
+
+### Stage 5.4c — atomic search, mark, jump, history, and thread target settlement
+
+Implementation commit: `9266837` (`feat: atomically reveal transcript navigation targets`). This is the third Stage 5.4 vertical slice; Stage 5.4 remains in progress.
+
+#### Semantic composition and presentation routing
+
+- Search state plus target jump/unfold, explicit jump plus selection clearing, and interaction mode/focus now reduce as single semantic Workbench transitions. The sequential reducers remain the equivalence reference, and compound transcript tests prove the same final meaning.
+- Logical jump locations are validated against the complete semantic order and normalized before comparison, history recording, mark storage, or cursor movement. Oversized offsets clamp before identity comparison; fractional offsets, non-finite rows, missing items, and items absent from the complete order are no-ops.
+- `/` and `?` remain in Command mode until the transcript transaction settles. A Visual search atomically clears command input and restores Visual mode while retaining its semantic anchor; Normal/composer search settles to transcript Normal. Real OpenTUI tests cover `/`, `?`, `n`, and `N`.
+- Reveal hints carry an exact presentation ID and are accepted only by that presentation runtime. Main and side frames retain independent identity and publication counts; a missing presentation still commits semantic state without misrouting a reveal.
+- Cross-thread history restores the saved logical viewport before considering the cursor. Tail restores emit no synthetic cursor reveal, and direct/history thread transitions stage source overlay closure, side visibility, thread selection, target overlay closure, and restored navigation state before one publication.
+- Runtime and native geometry remain disposable presentation resources. Target discovery uses complete canonical projections and semantic state; native nodes are never consulted to decide search, mark, jump, history, or thread meaning.
+
+#### Deterministic target-materialization scaling
+
+The generic indexed reveal workload from Stage 5.4a remains the physical settlement proof for search, mark, jump, history, and thread targets after semantic discovery. The latest run retained the complete plan identity, wrapped one target item, and published one bounded window at every scale.
+
+| Complete blocks | Mounted before / after | Wrapped items / transitions | Complete-plan builds / visits | Order-index builds / visits | Publications | Target motion / window publication |
+|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 72 / 48 | 1 / 0 | 0 / 0 | 0 / 0 | 1 | 0.260 / 0.128 ms |
+| 1k | 72 / 48 | 1 / 0 | 0 / 0 | 0 / 0 | 1 | 0.030 / 0.075 ms |
+| 10k | 72 / 48 | 1 / 0 | 0 / 0 | 0 / 0 | 1 | 0.031 / 0.141 ms |
+| 100k | 72 / 48 | 1 / 0 | 0 / 0 | 0 / 0 | 1 | 0.030 / 0.134 ms |
+
+The Workbench composition fixture is deliberately separate from that scaling proof. With 100 semantic items, an off-window search and a loaded cross-thread history restore each produce exactly one authoritative-state, one affected runtime, and one affected-pane publication; mark and explicit jump each produce one state and one runtime publication. Side-target reveals publish only the side runtime, preserve the main frame identity, and the inverse holds for main-target reveals.
+
+Search discovery itself still scans complete canonical text and grows with the number of graphemes and matches. This slice does not claim otherwise: the normative Stage 4 ledger explicitly defers indexed search until search cost becomes size-dependent. Folded-target settlement also still rebuilds complete fold geometry/index state. Both costs are excluded from the non-folded post-discovery materialization claim and remain visible work for later slices rather than being hidden by timing results.
+
+#### Repository, PTY, benchmark, and review gates
+
+- The final focused matrix passed 221 tests and 1,591 assertions with no failures across transcript semantics/navigation/scaling, Workbench, controller integration, App, command-line input, and real OpenTUI Visual interaction. Typecheck and `git diff --check` passed.
+- `bun run check` passed typecheck, dependency boundaries, generated-doc validation, and every non-sandbox-sensitive test: 713 passed and 5 intentional profiling skips. Its only failure was the sandbox-denied tmux socket.
+- The full terminal rerun outside the sandbox passed all five PTY/tmux cases, including isolated tmux.
+- The 100/1k/10k/100k production benchmark retained fixed mounted, measurement, and publication counts. Machine timings remain diagnostic; the hard gates are 72-to-48 mounted blocks, one publication, one wrapped item, retained complete-plan identity, and zero complete-plan/order-index builds or visits.
+- Parallel architecture, correctness, and performance reviews ran before and after repair. Repairs normalized invalid and clamped locations, eliminated redundant fold/focus publications, routed reveals to exact presentations, staged history/thread state atomically, preferred restored viewports over stale cursors, preserved follow-tail restoration, added authoritative publication counts, and fixed real Visual search command-state cleanup. Final reviewers signed off with no blocker.
+
+The claim remains scoped to non-folded target settlement after semantic discovery. Fold and URL preservation, complete fold rebuild work, fold/unseen metadata cloning, complete reconciliation across lineage changes, and production sub-blocks for oversized Markdown, command output, and diffs remain open. Stage 5.4 and overall Stage 5 acceptance therefore remain open.
