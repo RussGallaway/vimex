@@ -1,6 +1,6 @@
 # Transcript windowing implementation
 
-Status: Stage 5.0 is complete and verified. The deterministic scaling baseline is established; Stage 5.1 is next.
+Status: Stages 5.0–5.1 are complete and verified. The indexed pure planner is established; Stage 5.2 is next.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
@@ -22,7 +22,7 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 | Stage 5 topology and contracts | Complete | Established by Stages 2–4 |
 | Stages 1–4 performance baseline | Complete | Reproducible benchmark commit `ae73913`; inherited measurements below |
 | Stage 5 scaling fixtures | Complete | Commit `edc28c0`; deterministic runtime/React curves, real native cells, connected-input ceiling, and evidence below |
-| Stage 5a: pure window planner | Not started | — |
+| Stage 5a: pure window planner | Complete | Commit `4021939`; indexed height queries, bounded follow/detached/reveal windows, pass-through fallback, and evidence below |
 | Stage 5b: windowed mounting | Not started | — |
 | Stage 5c: anchor correction | Not started | — |
 | Stage 5d: off-window semantics | Not started | — |
@@ -347,13 +347,13 @@ Exit criteria:
 
 ### Stage 5.1 — pure window planner
 
-- [ ] Build a renderer-neutral height index over stable block keys.
-- [ ] Plan visible and overscan block ranges from viewport rows.
-- [ ] Calculate leading and trailing spacer rows.
-- [ ] Plan a trailing window for follow attachment.
-- [ ] Plan an anchor-centered window for detached reading.
-- [ ] Include explicit off-window targets deterministically.
-- [ ] Retain a full pass-through fallback for unknown relationships.
+- [x] Build a renderer-neutral height index over stable block keys.
+- [x] Plan visible and overscan block ranges from viewport rows.
+- [x] Calculate leading and trailing spacer rows.
+- [x] Plan a trailing window for follow attachment.
+- [x] Plan an anchor-centered window for detached reading.
+- [x] Include explicit off-window targets deterministically.
+- [x] Retain a full pass-through fallback for unknown relationships.
 
 Exit criteria:
 
@@ -640,3 +640,54 @@ React commit and native frame counts in this connected boundary are scheduler di
 - Parallel architecture, correctness, and performance reviews ran before and after repairs. Repairs added real rendered native measurement, connected Workbench input, isolated memory/failure reporting, exact/common operation counts, meaningful semantic fixtures, a non-windowed oracle, correct reveal state, bounded measurement damage, and honest boundary labels. Final review found no production-architecture blocker; the 100k native failure is retained as baseline evidence.
 
 Stage 5 size-independence acceptance remains open. This baseline demonstrates the opposite inherited curve: pass-through materialization, native mounting, and cold measurement scale with total transcript size, and the connected 100k native presentation cannot settle. Stage 5.1 begins the pure window planner that will change materialization without changing meaning.
+
+### Stage 5.1 — pure window planner
+
+Implementation commit: `4021939` (`feat: add indexed transcript window planner`). This slice adds renderer-neutral planning only. `TranscriptRuntime`, Workbench, React, OpenTUI mounting, and native measurement still use the pass-through window until Stage 5.2.
+
+#### Contracts and correctness
+
+- `TranscriptHeightIndex` is an immutable persistent exact-range tree. Initial construction is O(n); prefix, row, range, and height-replacement paths are O(log n); total rows, stable-key lookup, exact-plan compatibility, and item-to-sub-block lookup are O(1).
+- A valid height replacement path-copies only the affected tree path. Stale revisions, invalid rows, missing keys, and equal heights preserve the exact index identity. Earlier index snapshots remain unchanged.
+- `planTranscriptWindow` consumes only complete blocks, the renderer-neutral height index, viewport rows, overscan rows, logical attachment, and an optional logical reveal target. It returns original block objects plus exact leading/trailing row spacers.
+- Tail attachment uses trailing overscan. Point attachment preserves a bounded preferred screen row, including negative semantic anchor rows clamped only at the physical planning boundary. A distant explicit reveal recenters a bounded range instead of mounting the intervening history.
+- Same-item render sub-blocks are indexed once and targeted by binary search. Their source spans must be ordered, disjoint, valid for one shared immutable projection, and unambiguous. Invalid spans, duplicate block keys, incompatible plans, and unknown targets take the exact `passThroughWindow` reference path.
+- Empty-source item endpoints remain addressable; source-less turn activity never becomes a logical target. Block identity, chronology, half-open source ownership, and total-row conservation are hard-gated against independent linear oracles.
+
+Focused gates:
+
+```text
+bun test packages/transcript/src/height-index.test.ts packages/transcript/src/window.test.ts packages/transcript/src/window-planner.test.ts
+25 pass, 0 fail, 4,631 assertions
+
+bun test packages/transcript
+93 pass, 0 fail, 5,226 assertions
+
+bun run typecheck
+bun run boundaries
+git diff --check
+all passed
+```
+
+#### Deterministic planner scaling
+
+`bun run benchmark:transcript-window-planner` runs identical 24-row viewport / 24-row overscan workloads. Timings are one local diagnostic observation; mounted counts, retained identities, row conservation, target comparisons, and tree visits/copies are asserted gates.
+
+| Blocks | Index build | Follow plan / mounted | Detached plan / mounted | Far reveal / mounted | Replacement copies | Same-item target comparisons / mounted |
+|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 0.510 ms | 0.212 ms / 48 | 0.117 ms / 72 | 0.044 ms / 48 | 7 | 9 / 57 |
+| 1k | 2.531 ms | 0.035 ms / 48 | 0.031 ms / 72 | 0.024 ms / 48 | 10 | 12 / 72 |
+| 10k | 12.246 ms | 0.083 ms / 48 | 0.048 ms / 72 | 0.026 ms / 48 | 14 | 16 / 72 |
+| 100k | 141.964 ms | 0.055 ms / 48 | 0.060 ms / 72 | 0.027 ms / 48 | 17 | 19 / 72 |
+
+Every planned block retains the exact source-plan object identity. Follow, detached, and reveal work obey logarithmic deterministic visit bounds at every size. One middle-block height change adds three rows, copies 7/10/14/17 nodes, leaves the prior index immutable, and replans 69 blocks. An equal-height update copies zero nodes and retains the index identity. The unsupported-relationship probe returns the exact input block array with zero spacers and zero overscan.
+
+The same benchmark builds 100/1k/10k/100k stable sub-blocks for one oversized item. Logical targeting takes 9/12/16/19 indexed comparisons, below the asserted 11/14/18/21 logarithmic bounds, and mounts at most 72 blocks. Production root-block splitting is intentionally deferred; Stage 5.1 proves that the planner and lookup contract can window stable sub-blocks once a producer supplies them.
+
+#### Repository and review gates
+
+- `bun run check`: typecheck, dependency boundaries, generated-doc check, and every non-sandbox-sensitive test passed. The isolated tmux case failed only because the sandbox removed its Unix socket.
+- The exact isolated rerun outside the sandbox passed: `bun test tests/terminal/terminal.test.ts --test-name-pattern "isolated tmux"` — 1 passed in 790 ms.
+- Parallel architecture, correctness, and performance reviews ran after the slice. Repairs bounded negative preferred rows and replaced an O(n) same-item sub-block scan with the indexed logarithmic resolver. A final audit also made distinct per-sub-block projection snapshots an explicit unsupported relationship. Focused gates and scaling benchmarks were rerun after repair; final review found no Stage 5.1 blocker.
+
+Stage 5 size-independence acceptance remains open. The pure planner now makes selected range size and indexed lookup/update work independent of total history except for logarithmic tree depth, but production native mounting remains pass-through until Stage 5.2 consumes the planned window.
