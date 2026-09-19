@@ -1,5 +1,4 @@
 import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
-import type { ItemId } from "@vimex/conversation"
 import type { ComposerState, SubmissionIntent } from "@vimex/composer"
 import type { InteractionState } from "@vimex/interaction"
 import type { TranscriptState } from "@vimex/transcript"
@@ -14,7 +13,6 @@ export interface VimBindingContext {
   distinctControlI?: boolean
   interaction: InteractionState
   transcript: TranscriptState
-  foldableItemIds?: readonly ItemId[]
   composer: ComposerState
   controller: VimexUiController
   presentationId: TranscriptPresentationId

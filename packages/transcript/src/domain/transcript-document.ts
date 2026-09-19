@@ -38,6 +38,22 @@ export interface TranscriptState {
   jumps: { back: readonly JumpLocation[]; forward: readonly JumpLocation[] }
   marks: Readonly<Record<string, JumpLocation>>
 }
+
+const orderIndexes = new WeakMap<readonly ItemId[], ReadonlyMap<ItemId, number>>()
+
+/**
+ * Disposable derived index for logical item order. Runtime-created transcript
+ * states prime this before React publication, so mounted selection checks stay
+ * independent of total transcript length without adding semantic authority.
+ */
+export function transcriptOrderIndex(order: readonly ItemId[]): ReadonlyMap<ItemId, number> {
+  const cached = orderIndexes.get(order)
+  if (cached) return cached
+  const index = new Map<ItemId, number>()
+  for (let position = 0; position < order.length; position++) index.set(order[position]!, position)
+  orderIndexes.set(order, index)
+  return index
+}
 export type TranscriptCommand =
   | { type: "search.set"; query: string; direction: "forward" | "backward" }
   | { type: "cursor.move"; point: LogicalPoint; preferredScreenRow?: number }
@@ -54,6 +70,7 @@ export type TranscriptCommand =
   | { type: "fold.set"; itemId: ItemId; folded: boolean }
   | { type: "fold.toggle"; itemId: ItemId }
   | { type: "fold.all"; folded: boolean }
+  | { type: "fold.defaults"; reasoning: boolean; tools: boolean }
 
 export const initialTranscript = (): TranscriptState => ({
   order: [], projectionById: {}, folded: {}, viewport: { kind: "tail" }, unseenEntries: 0, unseenItemIds: [], jumps: { back: [], forward: [] }, marks: {},

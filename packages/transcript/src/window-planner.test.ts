@@ -29,6 +29,7 @@ function item(name: string, estimatedRows = 1, source = "x"): TranscriptItemBloc
     sourceSpan: Object.freeze({ from: 0, to: source.length }),
     contentRevision: 1,
     estimatedRows,
+    followedByActivity: false,
   })
 }
 
@@ -266,6 +267,7 @@ test("a logical target among 100k same-item sub-blocks resolves logarithmically"
     sourceSpan: Object.freeze({ from: index, to: index + 1 }),
     contentRevision: 1,
     estimatedRows: 1,
+    followedByActivity: false,
   })))
   const heights = heightIndex(blocks)
   const target = 50_000

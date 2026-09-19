@@ -39,6 +39,7 @@ function item(name: string, source = "abcd"): TranscriptItemBlock {
     sourceSpan: Object.freeze({ from: 0, to: source.length }),
     contentRevision: 1,
     estimatedRows: 1,
+    followedByActivity: false,
   })
 }
 

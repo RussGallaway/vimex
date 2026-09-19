@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { itemId } from "@vimex/conversation"
-import { composeTranscriptGeometry, graphemeCount, initialTranscript, projectMarkdown, type BlockGeometry, type TranscriptState } from "@vimex/transcript"
+import { composeTranscriptGeometry, graphemeCount, initialTranscript, projectMarkdown, transcriptOrderIndex, type BlockGeometry, type TranscriptState } from "@vimex/transcript"
 import { blockRefForPoint, buildTranscriptLayout, graphemeCellWidth, movePoint, pointInLayout, selectedRangeForItem } from "./layout"
 
 const first = itemId("first")
@@ -65,6 +65,25 @@ describe("transcript visual layout", () => {
       selection: { anchor: { itemId: first, graphemeOffset: 5 }, head: { itemId: first, graphemeOffset: 5 }, shape: "line" },
     }
     expect(selectedRangeForItem(line, first)).toEqual({ from: 4, to: 7 })
+  })
+
+  test("reuses a 100k logical-order index for bounded mounted selection checks", () => {
+    const ids = Object.freeze(Array.from({ length: 100_000 }, (_, index) => itemId(`indexed-${index}`)))
+    const order = new Proxy(ids, { get(target, property, receiver) {
+      if (property === "indexOf") return () => { throw new Error("selection lookup scanned logical order") }
+      return Reflect.get(target, property, receiver)
+    } })
+    const start = order[50_000]!, end = order[50_047]!
+    const projection = { ...projectMarkdown("x"), revision: 1 }
+    const state: TranscriptState = {
+      ...initialTranscript(), order,
+      projectionById: Object.fromEntries(order.slice(50_000, 50_048).map(id => [id, projection])),
+      selection: { anchor: { itemId: start, graphemeOffset: 0 }, head: { itemId: end, graphemeOffset: 0 }, shape: "character" },
+    }
+    const index = transcriptOrderIndex(order)
+    expect(index.size).toBe(100_000)
+    expect(order.slice(50_000, 50_048).filter(id => selectedRangeForItem(state, id))).toHaveLength(48)
+    expect(transcriptOrderIndex(order)).toBe(index)
   })
 })
 

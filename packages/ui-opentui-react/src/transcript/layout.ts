@@ -1,5 +1,5 @@
 import type { ItemId } from "@vimex/conversation"
-import { graphemes, type LogicalPoint, type TranscriptGeometry, type TranscriptState } from "@vimex/transcript"
+import { graphemes, transcriptOrderIndex, type LogicalPoint, type TranscriptBlock, type TranscriptGeometry, type TranscriptState } from "@vimex/transcript"
 
 export interface VisualLine {
   itemId: ItemId
@@ -10,6 +10,8 @@ export interface VisualLine {
 
 export interface TranscriptLayout {
   width: number
+  /** Exact runtime window whose native placements this layout describes. */
+  materializedBlocks?: readonly TranscriptBlock[]
   lines: readonly VisualLine[]
   linesByItem: Readonly<Record<string, readonly VisualLine[]>>
   /** Translation from cached native coordinates; use measuredPoint for screen positions. */
@@ -349,8 +351,9 @@ export function movePoint(
 export function orderedSelectionBounds(state: TranscriptState): { start: LogicalPoint; end: LogicalPoint } | undefined {
   const selection = state.selection
   if (!selection) return undefined
-  const ai = state.order.indexOf(selection.anchor.itemId)
-  const hi = state.order.indexOf(selection.head.itemId)
+  const order = transcriptOrderIndex(state.order)
+  const ai = order.get(selection.anchor.itemId) ?? -1
+  const hi = order.get(selection.head.itemId) ?? -1
   if (ai < hi || (ai === hi && selection.anchor.graphemeOffset <= selection.head.graphemeOffset)) {
     return { start: selection.anchor, end: selection.head }
   }
@@ -360,9 +363,10 @@ export function orderedSelectionBounds(state: TranscriptState): { start: Logical
 export function selectedRangeForItem(state: TranscriptState, itemId: ItemId): { from: number; to: number } | undefined {
   const bounds = orderedSelectionBounds(state)
   if (!bounds) return undefined
-  const itemIndex = state.order.indexOf(itemId)
-  const startIndex = state.order.indexOf(bounds.start.itemId)
-  const endIndex = state.order.indexOf(bounds.end.itemId)
+  const order = transcriptOrderIndex(state.order)
+  const itemIndex = order.get(itemId) ?? -1
+  const startIndex = order.get(bounds.start.itemId) ?? -1
+  const endIndex = order.get(bounds.end.itemId) ?? -1
   if (itemIndex < startIndex || itemIndex > endIndex) return undefined
   const parts = graphemes(state.projectionById[itemId]?.plain ?? "")
   let from = itemIndex === startIndex ? bounds.start.graphemeOffset : 0

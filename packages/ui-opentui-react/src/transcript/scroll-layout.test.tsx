@@ -4,10 +4,12 @@ import { act, useState } from "react"
 import type { ScrollBoxRenderable } from "@opentui/core"
 import { createConversation, itemId, reduceConversation, threadId, turnId, type ConversationEvent, type ConversationItem } from "@vimex/conversation"
 import { blockKey, initialTranscript, syncTranscriptItem, TranscriptRuntime, type TranscriptState } from "@vimex/transcript"
+import { buildTranscriptScalingFixture } from "@vimex/testkit"
 import { ToolCall } from "./ToolCall"
-import { measureRenderedTranscript, measuredPoint, topVisiblePoint, transcriptBlockRenderableId } from "./rendered-layout"
+import { measureRenderedTranscript, measuredPoint, synchronizeRenderedTranscriptWindow, topVisiblePoint, transcriptBlockRenderableId, type RenderedLayoutDiagnostics } from "./rendered-layout"
 import { movePoint, type TranscriptLayout } from "./layout"
 import { createEmberTideSyntax } from "../theme"
+import { TranscriptViewport } from "./TranscriptViewport"
 
 test("native scroll translates cached points without remapping; resize invalidates geometry", async () => {
   const item = { id: itemId("scroll-cache"), turnId: turnId("turn"), kind: "command" as const, title: "Output", detail: Array.from({ length: 80 }, (_, i) => `${i}: ${"result ".repeat(12)}`).join("\n"), status: "complete" as const }
@@ -277,5 +279,122 @@ test("incremental block geometry and navigation equal a fresh full measurement",
   } finally {
     if (fullRender) await act(async () => fullRender!.renderer.destroy())
     if (!incrementalDestroyed) await act(async () => incrementalRender.renderer.destroy())
+  }
+})
+
+test("window movement measures visible roots first and releases every departed scheduler root", async () => {
+  const fixture = buildTranscriptScalingFixture(100)
+  const input = (transcript = fixture.before.transcript, mode: "follow" | "detached" = "follow") => ({
+    threadId: fixture.threadId,
+    canonicalGeneration: 0,
+    canonicalRevision: fixture.before.canonicalRevision,
+    conversation: fixture.before.conversation,
+    transcript,
+    mode,
+    canonicalDamage: { kind: "full" as const },
+    presentationDamage: { kind: "view" as const },
+  })
+  const runtime = new TranscriptRuntime(input(), { windowPolicy: { viewportRows: 8, overscanRows: 8 } })
+  const syntax = createEmberTideSyntax()
+  let shift!: () => void
+  function Harness() {
+    const [frame, setFrame] = useState(runtime.getSnapshot())
+    shift = () => {
+      const target = { itemId: fixture.targets.quarter, graphemeOffset: 0 }
+      const transcript = Object.freeze({
+        ...fixture.before.transcript,
+        cursor: target,
+        viewport: Object.freeze({ kind: "point" as const, point: target, preferredScreenRow: 2 }),
+      })
+      setFrame(runtime.update(input(transcript, "detached")))
+    }
+    return <TranscriptViewport window={frame.window} state={frame.transcript} surface="transcript" syntax={syntax} scrollRef={{ current: null }} />
+  }
+  const setup = await testRender(<Harness />, { width: 80, height: 12 })
+  try {
+    await act(async () => { await setup.flush(); await setup.renderOnce() })
+    const scroll = setup.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable
+    const initialDiagnostics = { attemptedKeys: [] } as unknown as RenderedLayoutDiagnostics
+    await act(async () => {
+      measureRenderedTranscript(setup.renderer, scroll, { frame: runtime.getSnapshot(), runtime, styleRevision: "window-test", diagnostics: initialDiagnostics })
+      await setup.flush(); await setup.renderOnce()
+    })
+    expect(initialDiagnostics.candidateBlocks).toBe(16)
+    expect(initialDiagnostics.attemptedMeasurements).toBe(16)
+    expect(initialDiagnostics.trackedMountedRoots).toBe(16)
+    expect(initialDiagnostics.visibleBeforeOverscan).toBe(true)
+    measureRenderedTranscript(setup.renderer, scroll, { frame: runtime.getSnapshot(), runtime, styleRevision: "window-test" })
+
+    await act(async () => { shift(); await setup.flush(); await setup.renderOnce() })
+    const shifted = runtime.getSnapshot()
+    expect(shifted.window.blocks).toHaveLength(24)
+    const cleanupDiagnostics = { prunedRoots: 0, pendingAfter: 0, trackedMountedRoots: 0 } as RenderedLayoutDiagnostics
+    synchronizeRenderedTranscriptWindow(scroll, shifted, cleanupDiagnostics)
+    expect(cleanupDiagnostics.prunedRoots).toBe(16)
+    expect(cleanupDiagnostics.trackedMountedRoots).toBe(0)
+    expect(cleanupDiagnostics.pendingAfter).toBe(24)
+    const shiftDiagnostics = { attemptedKeys: [] } as unknown as RenderedLayoutDiagnostics
+    await act(async () => {
+      measureRenderedTranscript(setup.renderer, scroll, { frame: shifted, runtime, styleRevision: "window-test", diagnostics: shiftDiagnostics })
+      await setup.flush(); await setup.renderOnce()
+    })
+    expect(shiftDiagnostics.candidateBlocks).toBeLessThanOrEqual(24)
+    expect(shiftDiagnostics.attemptedMeasurements).toBeLessThanOrEqual(24)
+    expect(shiftDiagnostics.trackedMountedRoots).toBe(24)
+    expect(shiftDiagnostics.prunedRoots).toBe(0)
+    expect(shiftDiagnostics.visibleBeforeOverscan).toBe(true)
+    expect(shiftDiagnostics.attemptedKeys!.every(key => shifted.window.blocks.some(block => blockKey(block) === key))).toBe(true)
+  } finally {
+    runtime.dispose()
+    syntax.destroy()
+    await act(async () => setup.renderer.destroy())
+  }
+})
+
+test("a drop-only window change cannot reuse native placements from the wider materialization", async () => {
+  const fixture = buildTranscriptScalingFixture(100)
+  const input = {
+    threadId: fixture.threadId,
+    canonicalGeneration: 0,
+    canonicalRevision: fixture.before.canonicalRevision,
+    conversation: fixture.before.conversation,
+    transcript: fixture.before.transcript,
+    mode: "follow" as const,
+    canonicalDamage: { kind: "full" as const },
+  }
+  const runtime = new TranscriptRuntime(input, { windowPolicy: { viewportRows: 8, overscanRows: 8 } })
+  const syntax = createEmberTideSyntax()
+  let shrink!: () => void
+  function Harness() {
+    const [frame, setFrame] = useState(runtime.getSnapshot())
+    shrink = () => setFrame(runtime.setWindowViewport(4, 4))
+    return <TranscriptViewport window={frame.window} state={frame.transcript} surface="transcript" syntax={syntax} scrollRef={{ current: null }} />
+  }
+  const setup = await testRender(<Harness />, { width: 80, height: 12 })
+  try {
+    await act(async () => { await setup.flush(); await setup.renderOnce() })
+    const scroll = setup.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable
+    await act(async () => {
+      measureRenderedTranscript(setup.renderer, scroll, { frame: runtime.getSnapshot(), runtime, styleRevision: "cache-window-test" })
+      await setup.flush(); await setup.renderOnce()
+    })
+    const measured = runtime.getSnapshot()
+    const wider = measureRenderedTranscript(setup.renderer, scroll, { frame: measured, runtime, styleRevision: "cache-window-test" })!
+    const departed = blockKey(measured.window.blocks[0]!)
+    expect(wider.placementByBlockKey?.[departed]).toBeDefined()
+
+    await act(async () => { shrink(); await setup.flush(); await setup.renderOnce() })
+    const narrowed = runtime.getSnapshot()
+    expect(narrowed.geometry).toBe(measured.geometry)
+    const layout = measureRenderedTranscript(setup.renderer, scroll, { frame: narrowed, runtime, styleRevision: "cache-window-test" })!
+    expect(layout).not.toBe(wider)
+    expect(layout.materializedBlocks).toBe(narrowed.window.blocks)
+    expect(layout.placementByBlockKey?.[departed]).toBeUndefined()
+    expect(layout.screenBlockRows?.some(row => row.blockKey === departed)).toBe(false)
+    expect(Object.values(layout.blockKeysByItem ?? {}).flat().some(ref => ref.blockKey === departed)).toBe(false)
+  } finally {
+    runtime.dispose()
+    syntax.destroy()
+    await act(async () => setup.renderer.destroy())
   }
 })

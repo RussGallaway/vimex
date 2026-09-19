@@ -16,7 +16,7 @@ import { Statusline } from "../statusline/Statusline"
 import { useTranscriptLayout } from "../transcript/use-transcript-layout"
 import { TranscriptViewport } from "../transcript/TranscriptViewport"
 import { defaultVimexUiSettings, type VimexAppProps } from "../contracts"
-import { movePoint } from "../transcript/layout"
+import { buildTranscriptLayout, movePoint, type TranscriptLayout } from "../transcript/layout"
 import { measureRenderedTranscript, measuredPoint, transcriptRenderableIdForPoint } from "../transcript/rendered-layout"
 import { createEmberTideSyntax, selectTheme } from "../theme"
 import { commonBindings } from "../keymap/common-bindings"
@@ -85,8 +85,6 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   const transcriptRuntime = controller.transcriptRuntime(presentationId)
   const transcript = workspace ? transcriptFrame.transcript : blankTranscript
   const transcriptWindow = workspace ? transcriptFrame.window : blankTranscriptWindow
-  const blocks = transcriptWindow.blocks
-  const items = useMemo(() => [...new Map(blocks.flatMap(block => "item" in block ? [[block.item.id, block.item] as const] : [])).values()], [blocks])
   const transcriptStyleRevision = `${settings.theme}:${settings.syntaxTheme}:${settings.reducedColor ? 1 : 0}`
   const syntax = useMemo(() => createEmberTideSyntax(settings.syntaxTheme === "theme" ? settings.theme : settings.syntaxTheme, settings.reducedColor), [settings.reducedColor, settings.syntaxTheme, settings.theme])
   const scrollRef = useRef<ScrollBoxRenderable>(null)
@@ -114,7 +112,6 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   const composerInteractionRef = useRef(interaction)
   const composerThreadRef = useRef(state.activeThreadId)
   composerInteractionRef.current = interaction
-  const initializedFolds = useRef(new Set<string>())
   const { layout, measuredLayout, onManualScroll, enterVisibleTranscript } = useTranscriptLayout({
     threadId: state.activeThreadId,
     transcript,
@@ -125,6 +122,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
     height: dimensions.height,
     scrollRef,
     controller,
+    visible: presentationVisible,
     onAnchor: paneLabel || !interactive ? (point, row) => { if (state.activeThreadId) controller.anchorThread(state.activeThreadId, point, row) } : undefined,
   })
   const busy = activeTurn(interaction, workspace?.conversation.activeTurnId)
@@ -167,15 +165,8 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   }, [interaction.mode, interaction.surface, state.activeThreadId])
   useEffect(() => {
     if (!interactive) return
-    for (const item of items) {
-      const foldKey = `${state.activeThreadId ?? ""}:${item.id}`
-      if (initializedFolds.current.has(foldKey) || Object.hasOwn(transcript.folded, item.id)) continue
-      initializedFolds.current.add(foldKey)
-      if ((settings.foldReasoning && item.kind === "reasoning") || (settings.foldTools && (item.kind === "tool" || item.kind === "command" || item.kind === "agent"))) {
-        controller.transcript({ type: "fold.set", itemId: item.id, folded: true })
-      }
-    }
-  }, [interactive, controller, items, settings.foldReasoning, settings.foldTools, state.activeThreadId, transcript.folded])
+    controller.transcript({ type: "fold.defaults", reasoning: settings.foldReasoning, tools: settings.foldTools })
+  }, [interactive, controller, settings.foldReasoning, settings.foldTools, state.activeThreadId, semanticTranscript.order])
   useLayoutEffect(() => {
     overlayIndexRef.current = 0
     setOverlayIndex(0)
@@ -300,12 +291,26 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
 
   const dispatchMotion = useCallback((motion: Motion, repeat = 1) => {
     const activeLayout = measuredLayout.current ?? layout
-    let point = transcript.cursor
-    let result: ReturnType<typeof movePoint>
-    for (let index = 0; index < repeat; index += 1) {
-      result = movePoint(activeLayout, point, motion)
-      if (!result) return
-      point = result.point
+    const crossesWindow = motion === "left" || motion === "right" || motion === "up" || motion === "down"
+    const calculate = (candidateLayout: TranscriptLayout) => {
+      let point = transcript.cursor
+      let result: ReturnType<typeof movePoint>
+      for (let index = 0; index < repeat; index += 1) {
+        result = movePoint(candidateLayout, point, motion)
+        if (!result) return undefined
+        if (point?.itemId === result.point.itemId && point.graphemeOffset === result.point.graphemeOffset
+          && (crossesWindow || index < repeat - 1)) return undefined
+        point = result.point
+      }
+      return result
+    }
+    let result = motion === "first" || motion === "last" ? undefined : calculate(activeLayout)
+    // A mounted layout deliberately ends at the window boundary. Preserve the
+    // exact pre-windowing motion as a correctness fallback only when a motion
+    // reaches that boundary; Stage 5.4 replaces this full semantic reference
+    // with indexed off-window navigation.
+    if (!result && (motion === "first" || motion === "last" || crossesWindow)) {
+      result = calculate(buildTranscriptLayout(transcript, Math.max(8, dimensions.width - 7)))
     }
     if (result) controller.transcript({
       type: motion === "first" || motion === "last" ? "jump" : "cursor.move",
@@ -316,7 +321,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
       })(),
       extend: interaction.mode === "visual",
     })
-  }, [controller, interaction.mode, layout, transcript.cursor])
+  }, [controller, dimensions.width, interaction.mode, layout, transcript])
   const countedMotion = useCallback((motion: Motion) => {
     dispatchMotion(motion, countRef.current ? Math.max(1, Number.parseInt(countRef.current, 10)) : 1)
     countRef.current = ""
@@ -468,7 +473,6 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
     interaction, transcript, composer, controller, presentationId, countRef, textareaRef, scrollRef,
     toggleComposer: () => { setComposerExpanded(value => !value); controller.dispatchInteraction({ type: "focus.set", surface: "composer" }) },
     distinctControlI,
-    foldableItemIds: items.filter(item => item.kind !== "assistant" && item.kind !== "user").map(item => item.id),
     submitComposer: intent => composerSubmitRef.current?.(intent),
     countedMotion, dispatchMotion, runComposerKey, beginVisual, openOverlay, scroll, enterVisibleTranscript,
   }

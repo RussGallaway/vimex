@@ -5,7 +5,7 @@ import type { GeometryStyleRevision, LogicalPoint, TranscriptFrame, TranscriptRu
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react"
 import type { VimexUiController } from "../contracts"
 import { buildTranscriptLayout, type TranscriptLayout } from "./layout"
-import { measureRenderedTranscript, measuredPoint, topVisiblePoint, bottomVisiblePoint, rebaseTranscriptLayout, transcriptItemRenderableId } from "./rendered-layout"
+import { measureRenderedTranscript, measuredPoint, topVisiblePoint, bottomVisiblePoint, rebaseTranscriptLayout, synchronizeRenderedTranscriptWindow, transcriptItemRenderableId } from "./rendered-layout"
 
 /** Owns the volatile bridge between semantic anchors and terminal geometry. */
 export function useTranscriptLayout(options: {
@@ -18,6 +18,7 @@ export function useTranscriptLayout(options: {
   height: number
   scrollRef: RefObject<ScrollBoxRenderable | null>
   controller: VimexUiController
+  visible?: boolean
   onAnchor?(point: LogicalPoint, preferredScreenRow: number): void
 }) {
   const renderer = useRenderer()
@@ -30,10 +31,19 @@ export function useTranscriptLayout(options: {
   const pendingAnchor = useRef(false)
   const pendingRestore = useRef(false)
   const hasRuntimeGeometry = Boolean(options.frame && options.frame.geometry.measuredBlockCount > 0)
+  const estimatedTranscript = useMemo(() => {
+    if (!options.runtime || !options.frame) return transcript
+    const order = Object.freeze([...new Set(options.frame.window.blocks.flatMap(block => "projection" in block ? [block.key.itemId] : []))])
+    const projectionById = Object.freeze(Object.fromEntries(order.flatMap(itemId => {
+      const projection = transcript.projectionById[itemId]
+      return projection ? [[itemId, projection]] : []
+    })))
+    return Object.freeze({ ...transcript, order, projectionById })
+  }, [options.frame?.window.blocks, options.runtime, transcript])
   // Estimated wrapping is only a startup fallback. Rewrapping the whole history
   // on each fold wastes work once native geometry is available.
-  const estimated = useMemo(() => hasRuntimeGeometry ? undefined : buildTranscriptLayout(transcript, Math.max(8, width - 7)),
-    [hasRuntimeGeometry, transcript.order, transcript.projectionById, transcript.folded, width])
+  const estimated = useMemo(() => hasRuntimeGeometry ? undefined : buildTranscriptLayout(estimatedTranscript, Math.max(8, width - 7)),
+    [estimatedTranscript, hasRuntimeGeometry, width])
   useLayoutEffect(() => {
     measuredLayout.current = undefined
     pendingAnchor.current = false
@@ -60,6 +70,14 @@ export function useTranscriptLayout(options: {
       const current = latest.current
       const scrollbox = scrollRef.current
       if (!scrollbox) return
+      if (current.visible === false) {
+        if (current.runtime && current.frame) synchronizeRenderedTranscriptWindow(scrollbox, current.frame)
+        return
+      }
+      if (current.runtime && current.frame) {
+        const configured = current.runtime.setWindowViewport(Math.max(1, scrollbox.viewport.height))
+        if (configured !== current.frame) { renderer.requestRender(); return }
+      }
       const next = measureRenderedTranscript(renderer, scrollbox, current.frame
         ? { frame: current.frame, runtime: current.runtime, styleRevision: current.styleRevision ?? "default" }
         : current.transcript)
@@ -118,11 +136,12 @@ export function useTranscriptLayout(options: {
     pendingRestore.current = false
     controller.transcript({ type: "cursor.move", target: { itemId: point.itemId, graphemeOffset: point.graphemeOffset }, preferredScreenRow: point.screenY - scrollbox.viewport.screenY, extend: false })
   }, [controller, renderer, scrollRef])
-  const currentLayout = !options.runtime || measuredLayout.current?.geometry === options.frame?.geometry ? measuredLayout.current : undefined
-  const rebased = !currentLayout && options.frame && measuredLayout.current
+  const currentWindow = !options.runtime || measuredLayout.current?.materializedBlocks === options.frame?.window.blocks
+  const currentLayout = currentWindow && (!options.runtime || measuredLayout.current?.geometry === options.frame?.geometry) ? measuredLayout.current : undefined
+  const rebased = !currentLayout && currentWindow && options.frame && measuredLayout.current
     ? rebaseTranscriptLayout(measuredLayout.current, options.frame.geometry)
     : undefined
-  const layout = currentLayout ?? rebased ?? estimated ?? buildTranscriptLayout(transcript, Math.max(8, width - 7))
+  const layout = currentLayout ?? rebased ?? estimated ?? buildTranscriptLayout(estimatedTranscript, Math.max(8, width - 7))
   // Input consumers must never bypass the current runtime frame by reading an
   // older native layout during the remeasurement frame.
   currentMeasuredLayout.current = currentLayout ?? rebased

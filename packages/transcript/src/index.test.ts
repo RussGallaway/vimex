@@ -264,3 +264,14 @@ test("all folds affect foldable blocks only and repeated commands preserve ident
   expect(open.projectionById).toBe(state.projectionById)
   expect(open.viewport).toBe(state.viewport)
 })
+
+test("default folds initialize complete semantic kinds without overriding an explicit choice", () => {
+  const reasoning = itemId("default-reasoning"), tool = itemId("default-tool"), edit = itemId("default-edit")
+  let state = syncTranscriptItem(initialTranscript(), { id: reasoning, turnId: turnId("turn"), kind: "reasoning", markdown: "why", status: "complete" })
+  state = syncTranscriptItem(state, { id: tool, turnId: turnId("turn"), kind: "tool", title: "Read", detail: "output", status: "complete" })
+  state = syncTranscriptItem(state, { id: edit, turnId: turnId("turn"), kind: "edit", title: "file", patch: "@@", status: "complete" })
+  state = setFold(state, reasoning, false)
+  const defaults = reduceTranscript(state, { type: "fold.defaults", reasoning: true, tools: true })
+  expect(defaults.folded).toEqual({ [reasoning]: false, [tool]: true })
+  expect(reduceTranscript(defaults, { type: "fold.defaults", reasoning: true, tools: true })).toBe(defaults)
+})

@@ -1,7 +1,7 @@
 import { compactionBlockReason } from "./compaction"
 import { executeGoalCommand } from "./goal-command"
 import { SideChatCoordinator, currentSideChat, sideChatForChild, sideChatForThread, type SideChatAction } from "./side-chat"
-import { adjacentSearchMatch, findSearchMatches, firstContentPoint, moveByWord, moveBySemanticBlock, moveByUrl, referenceText, selectedText, urlAt, urlCandidates, graphemeCount, TranscriptRuntime, type LogicalPoint, type TranscriptDamage, type TranscriptRevealRequest, type TranscriptRuntimeInput, type TranscriptState } from "@vimex/transcript"
+import { adjacentSearchMatch, defaultTranscriptWindowPolicy, findSearchMatches, firstContentPoint, moveByWord, moveBySemanticBlock, moveByUrl, referenceText, selectedText, urlAt, urlCandidates, graphemeCount, TranscriptRuntime, type LogicalPoint, type TranscriptDamage, type TranscriptRevealRequest, type TranscriptRuntimeInput, type TranscriptState } from "@vimex/transcript"
 import { isThemeName, themeNames, type PreferenceStore } from "./display-preferences"
 import { parseCommand, validateCommand, resolveCommandName, commandDescriptors, type ExCommand } from "@vimex/interaction"
 import { captureLocalState, emptyLocalState, localViewChanged, restoreThreadView, type LocalState, type SavedThreadView } from "./local-state"
@@ -256,7 +256,7 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     if (!input) return undefined
     let runtime = this.transcriptRuntimes.get(presentationId)
     if (!runtime) {
-      runtime = new TranscriptRuntime(input)
+      runtime = new TranscriptRuntime(input, { windowPolicy: defaultTranscriptWindowPolicy })
       this.transcriptRuntimes.set(presentationId, runtime)
     }
     return runtime
@@ -965,7 +965,7 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
         if (point) this.dispatch({ type: "transcript.command", command: { type: "viewport.anchor", point, preferredScreenRow: 0 } })
         break
       }
-      case "fold.set": case "fold.all": this.dispatch({ type: "transcript.command", command }); break
+      case "fold.set": case "fold.all": case "fold.defaults": this.dispatch({ type: "transcript.command", command }); break
       case "fork": this.requestFork(command.itemId); break
     }
   }

@@ -7,7 +7,7 @@ import { referenceText, urlCandidates } from "./application/transcript-navigatio
 import type { TranscriptState } from "./domain/transcript-document"
 import type { BlockGeometry } from "./geometry"
 import { TranscriptRuntime, type TranscriptFrame, type TranscriptRuntimeInput } from "./runtime"
-import { blockKey, buildTranscriptBlocks, passThroughWindow } from "./window"
+import { blockKey, buildTranscriptBlocks, passThroughWindow, pointIsMaterialized } from "./window"
 
 function runtimeInput(
   fixture: ReturnType<typeof buildTranscriptScalingFixture>,
@@ -177,5 +177,71 @@ test("identical scaling workloads retain pass-through semantics and deterministi
     expect(reattached.displayedCanonicalRevision).toBe(latest.canonicalRevision)
     expectPassThroughEquivalent(reattached, latest)
     runtime.dispose()
+  }
+}, 15_000)
+
+test("production window policy bounds initial, detached, reveal, and measured materialization at every scale", () => {
+  const policy = Object.freeze({ viewportRows: 24, overscanRows: 24 })
+  for (const blockCount of transcriptScalingBlockCounts) {
+    const fixture = buildTranscriptScalingFixture(blockCount)
+    const runtime = new TranscriptRuntime(runtimeInput(fixture, fixture.before, "follow", { canonicalDamage: { kind: "full" } }), { windowPolicy: policy })
+    const initial = runtime.getSnapshot()
+    expect(initial.blocks).toHaveLength(blockCount)
+    expect(initial.window.blocks).toHaveLength(48)
+    expect(initial.window.bottomSpacerRows).toBe(0)
+    expect(initial.window.topSpacerRows).toBe(blockCount - 48)
+    expect(initial.window.blocks.every((block, index) => block === initial.blocks[blockCount - 48 + index])).toBe(true)
+    expectPassThroughEquivalent(initial, fixture.before)
+
+    let publications = 0
+    runtime.subscribe(() => { publications++ })
+    expect(runtime.setWindowViewport(24, 24)).toBe(initial)
+    expect(publications).toBe(0)
+    const narrower = runtime.setWindowViewport(12, 12)
+    expect(publications).toBe(1)
+    expect(narrower.window.blocks).toHaveLength(24)
+    expect(narrower.window.bottomSpacerRows).toBe(0)
+
+    const offWindow = narrower.blocks[0]!
+    const staleNative: BlockGeometry = {
+      key: { blockKey: blockKey(offWindow), contentRevision: offWindow.contentRevision, width: 80, styleRevision: "scaling-test", folded: false },
+      nativeRevision: 1,
+      rows: 1,
+      points: point,
+      lines,
+    }
+    expect(runtime.reportMeasurements({ ...runtime.measurementBase(), measurements: [staleNative] })).toBe(narrower)
+    expect(publications).toBe(1)
+
+    const detachedPoint = Object.freeze({ itemId: fixture.targets.quarter, graphemeOffset: 0 })
+    const detachedTranscript = Object.freeze({
+      ...fixture.before.transcript,
+      cursor: detachedPoint,
+      viewport: Object.freeze({ kind: "point" as const, point: detachedPoint, preferredScreenRow: 5 }),
+    })
+    const detachedSnapshot = Object.freeze({ ...fixture.before, transcript: detachedTranscript })
+    const detached = new TranscriptRuntime(runtimeInput(fixture, detachedSnapshot, "detached", { canonicalDamage: { kind: "full" } }), { windowPolicy: policy })
+    const pinned = detached.getSnapshot()
+    expect(pinned.blocks).toHaveLength(blockCount)
+    expect(pinned.window.blocks.length).toBeLessThanOrEqual(72)
+    expect(pointIsMaterialized(pinned.window.blocks, detachedPoint)).toBe(true)
+    expect(pinned.window.topSpacerRows + pinned.window.blocks.length + pinned.window.bottomSpacerRows).toBe(blockCount)
+
+    const tailPoint = Object.freeze({ itemId: fixture.targets.tail, graphemeOffset: 0 })
+    const revealedTranscript = Object.freeze({
+      ...detachedTranscript,
+      cursor: tailPoint,
+      viewport: Object.freeze({ kind: "point" as const, point: tailPoint, preferredScreenRow: 5 }),
+    })
+    const revealedSnapshot = Object.freeze({ ...fixture.before, transcript: revealedTranscript })
+    const revealed = detached.update(runtimeInput(fixture, revealedSnapshot, "detached", {
+      reveal: { id: blockCount, point: tailPoint, reason: "jump" },
+      presentationDamage: { kind: "view" },
+    }))
+    expect(revealed.window.blocks.length).toBeLessThanOrEqual(72)
+    expect(pointIsMaterialized(revealed.window.blocks, tailPoint)).toBe(true)
+    expect(revealed.blocks).toHaveLength(blockCount)
+    runtime.dispose()
+    detached.dispose()
   }
 }, 15_000)

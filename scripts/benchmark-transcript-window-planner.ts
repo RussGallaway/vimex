@@ -64,6 +64,7 @@ function stableSubBlockFixture(blockCount: number) {
     sourceSpan: Object.freeze({ from: index, to: index + 1 }),
     contentRevision: 1,
     estimatedRows: 1,
+    followedByActivity: false,
   })))
   return Object.freeze({
     blocks,

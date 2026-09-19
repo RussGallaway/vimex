@@ -90,6 +90,15 @@ export function setAllFolds(state: TranscriptState, folded: boolean): Transcript
   if (Object.keys(state.folded).length === ids.length && ids.every(id => state.folded[id] === folded)) return state
   return { ...state, folded: Object.fromEntries(ids.map(id => [id, folded])) }
 }
+export function setDefaultFolds(state: TranscriptState, defaults: { readonly reasoning: boolean; readonly tools: boolean }): TranscriptState {
+  if (!defaults.reasoning && !defaults.tools) return state
+  const additions = state.order.flatMap(id => {
+    if (Object.hasOwn(state.folded, id)) return []
+    const kind = state.projectionById[id]?.nodeKind
+    return (defaults.reasoning && kind === "reasoning") || (defaults.tools && kind === "tool") ? [[id, true] as const] : []
+  })
+  return additions.length ? { ...state, folded: { ...state.folded, ...Object.fromEntries(additions) } } : state
+}
 function comparePoint(state: TranscriptState, a: LogicalPoint, b: LogicalPoint): number {
   const ai = state.order.indexOf(a.itemId)
   const bi = state.order.indexOf(b.itemId)
@@ -163,5 +172,6 @@ export function reduceTranscript(state: TranscriptState, command: TranscriptComm
     case "fold.set": return setFold(state, command.itemId, command.folded)
     case "fold.toggle": return setFold(state, command.itemId, !state.folded[command.itemId])
     case "fold.all": return setAllFolds(state, command.folded)
+    case "fold.defaults": return setDefaultFolds(state, command)
   }
 }

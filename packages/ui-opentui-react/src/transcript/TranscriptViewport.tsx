@@ -56,8 +56,8 @@ export const TranscriptViewport = memo(function TranscriptViewport(props: Transc
           <text fg={emberTide.textMuted}>Start a conversation</text>
         </box>
       ) : null}
-      {props.window.topSpacerRows > 0 ? <box id="transcript-top-spacer" height={props.window.topSpacerRows} flexShrink={0} /> : null}
-      {props.window.blocks.map((block, index) => {
+      <box id="transcript-top-spacer" visible={props.window.topSpacerRows > 0} height={Math.max(1, props.window.topSpacerRows)} flexShrink={0} />
+      {props.window.blocks.map((block) => {
         if ("turn" in block) return <box key={`turn:${block.key.turnId}`} id={transcriptBlockRenderableId(block)} flexShrink={0}>
           <TurnActivity turn={block.turn} />
           <box height={1} flexShrink={0} />
@@ -66,11 +66,9 @@ export const TranscriptViewport = memo(function TranscriptViewport(props: Transc
         const folded = Boolean(props.state.folded[block.key.itemId])
         const current = cursorId === block.key.itemId && props.surface === "transcript"
         const selected = Boolean(selectedRangeForItem(props.state, block.key.itemId))
-        const next = props.window.blocks[index + 1]
-        const followedByActivity = Boolean(next && "turn" in next && next.key.turnId === block.turnId)
-        return <TranscriptRow key={`item:${block.key.itemId}:${block.key.blockId}`} renderableId={transcriptBlockRenderableId(block)} item={block.renderItem} folded={folded} current={current} selected={selected} followedByActivity={followedByActivity} syntax={props.syntax} />
+        return <TranscriptRow key={`item:${block.key.itemId}:${block.key.blockId}`} renderableId={transcriptBlockRenderableId(block)} item={block.renderItem} folded={folded} current={current} selected={selected} followedByActivity={block.followedByActivity} syntax={props.syntax} />
       })}
-      {props.window.bottomSpacerRows > 0 ? <box id="transcript-bottom-spacer" height={props.window.bottomSpacerRows} flexShrink={0} /> : null}
+      <box id="transcript-bottom-spacer" visible={props.window.bottomSpacerRows > 0} height={Math.max(1, props.window.bottomSpacerRows)} flexShrink={0} />
     </scrollbox>
   )
 }, sameTranscriptViewportProps)

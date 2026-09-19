@@ -26,6 +26,8 @@ export interface TranscriptItemBlock {
   readonly sourceSpan: Readonly<SourceSpan>
   readonly contentRevision: number
   readonly estimatedRows: number
+  /** Complete-plan adjacency; native height must not depend on a window boundary. */
+  readonly followedByActivity: boolean
 }
 
 export interface TranscriptTurnActivityBlock {
@@ -93,7 +95,7 @@ function immutableClone<T>(value: T): Immutable<T> {
 }
 
 const itemSnapshots = new WeakMap<ConversationItem, Map<ItemStatus, TranscriptBlockItem>>()
-const itemRevisions = new WeakMap<ConversationItem, Map<ItemStatus, WeakMap<TextProjection, number>>>()
+const itemRevisions = new WeakMap<ConversationItem, Map<string, WeakMap<TextProjection, number>>>()
 let nextItemRevision = 1
 
 function snapshotItem(conversation: ConversationState, item: ConversationItem): TranscriptBlockItem {
@@ -116,16 +118,17 @@ function snapshotProjection(projection: TextProjection): TranscriptBlockProjecti
   return projection
 }
 
-function itemContentRevision(sourceItem: ConversationItem, status: ItemStatus, sourceProjection: TextProjection): number {
+function itemContentRevision(sourceItem: ConversationItem, status: ItemStatus, sourceProjection: TextProjection, followedByActivity: boolean): number {
   let byStatus = itemRevisions.get(sourceItem)
   if (!byStatus) {
     byStatus = new Map()
     itemRevisions.set(sourceItem, byStatus)
   }
-  let byProjection = byStatus.get(status)
+  const presentation = `${status}:${followedByActivity ? 1 : 0}`
+  let byProjection = byStatus.get(presentation)
   if (!byProjection) {
     byProjection = new WeakMap()
-    byStatus.set(status, byProjection)
+    byStatus.set(presentation, byProjection)
   }
   const existing = byProjection.get(sourceProjection)
   if (existing !== undefined) return existing
@@ -141,8 +144,11 @@ function snapshotTurn(turn: Turn): Turn {
   return Object.freeze({ ...turn, itemIds: Object.freeze([...turn.itemIds]) })
 }
 
-/** Builds the Stage 2 root block for one known semantic item. */
-export function buildTranscriptItemBlock(input: Pick<BuildTranscriptBlocksInput, "conversation" | "transcript">, itemId: ItemId): TranscriptItemBlock | undefined {
+function buildItemBlock(
+  input: Pick<BuildTranscriptBlocksInput, "conversation" | "transcript">,
+  itemId: ItemId,
+  followedByActivity: boolean,
+): TranscriptItemBlock | undefined {
   const item = input.conversation.items[itemId]
   const projection = input.transcript.projectionById[itemId]
   if (!item || !projection) return undefined
@@ -156,9 +162,20 @@ export function buildTranscriptItemBlock(input: Pick<BuildTranscriptBlocksInput,
     renderItem: itemSnapshot,
     projection: projectionSnapshot,
     sourceSpan: Object.freeze({ from: 0, to: projectionSnapshot.source.length }),
-    contentRevision: itemContentRevision(item, status, projection),
+    contentRevision: itemContentRevision(item, status, projection, followedByActivity),
     estimatedRows: 1,
+    followedByActivity,
   })
+}
+
+/** Builds the Stage 2 root block for one known semantic item. */
+export function buildTranscriptItemBlock(input: Pick<BuildTranscriptBlocksInput, "conversation" | "transcript">, itemId: ItemId): TranscriptItemBlock | undefined {
+  const item = input.conversation.items[itemId]
+  const turn = item && input.conversation.turns[item.turnId]
+  const lastSemanticItemId = turn?.itemIds.findLast(candidate => Boolean(
+    input.conversation.items[candidate] && input.transcript.projectionById[candidate],
+  ))
+  return buildItemBlock(input, itemId, Boolean(turn && lastSemanticItemId === itemId && hasTurnActivity(turn)))
 }
 
 /**
@@ -178,10 +195,14 @@ export function buildTranscriptBlocks(input: BuildTranscriptBlocksInput): readon
     if (excluded.has(turnId)) continue
     const turn = conversation.turns[turnId]
     if (!turn) continue
+    const followedItemId = hasTurnActivity(turn)
+      ? turn.itemIds.findLast(itemId => semanticItems.has(itemId)
+        && Boolean(conversation.items[itemId] && transcript.projectionById[itemId]))
+      : undefined
 
     for (const itemId of turn.itemIds) {
       if (!semanticItems.has(itemId)) continue
-      const block = buildTranscriptItemBlock(input, itemId)
+      const block = buildItemBlock(input, itemId, itemId === followedItemId)
       if (block) blocks.push(block)
     }
 

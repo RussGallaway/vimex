@@ -429,7 +429,9 @@ test("Flash jumps from Insert composer to labeled transcript text, preserving dr
   const h = await visualHarness()
   try {
     const transcriptBlock = h.renderer.root.findDescendantById(`transcript-block:${answer}:root`) as Renderable
+    await act(async () => { await h.flush(); await h.renderOnce() })
     const nativeRevision = blockNativeRevision(transcriptBlock)
+    expect(nativeRevision).toBeGreaterThan(0)
     await h.keys("i")
     await h.keys("Draft untouched")
     await flashKey(h, "g", true)

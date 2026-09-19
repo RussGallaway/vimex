@@ -22,18 +22,21 @@ function harness(options: {
   const starts: string[] = []
   const copied: string[] = []
   const opened: string[] = []
+  const retired: string[] = []
   let turnCounter = 0
   const backend: TestRuntime = {
     restart: async () => {}, connect: async () => {}, subscribe: fn => { listener = fn; return () => { listener = () => {} } },
     listThreads: async () => [summary(a), summary(b)], startThread: async () => ({ summary: summary(), events: [] }),
     resumeThread: async id => ({ summary: summary(id), events: [] }),
     forkThread: async () => ({ summary: summary(threadId("fork")), events: [] }),
+    forkSideThread: async () => ({ summary: summary(threadId("side")), events: [] }),
+    retireThread: async id => { retired.push(id) },
     startTurn: async (id, text) => { starts.push(text); return [{ type: "turn.started", threadId: id, turnId: turnId(`turn-${++turnCounter}`) }] },
     listModels: async () => [{ id: "test", label: "Test", efforts: ["low", "high"] }], updateSettings: async () => {},
     steerTurn: async () => {}, interruptTurn: async () => {}, resolveApproval: async () => {}, renameThread: async () => {}, close: async () => {},
   }
   const controller = new VimexController({ conversation: backend, approvals: backend, connection: backend, models: backend, resolveDirectory: resolve, localState: options.localState, onState: options.onState, onLocalState: options.onLocalState, onLifecycle: options.onLifecycle, preferences: options.preferences, conversationIngressScheduler: options.conversationIngressScheduler, clipboard: { writeText: async text => { copied.push(text) } }, openUrl: async url => { opened.push(url) }, quit() {} })
-  return { controller, backend, starts, copied, opened, emit: (event: RuntimeEvent) => listener(event) }
+  return { controller, backend, starts, copied, opened, retired, emit: (event: RuntimeEvent) => listener(event) }
 }
 
 function manualIngressScheduler() {
@@ -272,6 +275,56 @@ test("controller-owned transcript runtime freezes detached content and follows l
   expect(runtime.getSnapshot()).toBe(followed)
   await h.controller.close()
   expect(h.controller.transcriptRuntime("main")).toBeUndefined()
+})
+
+test("Workbench owns independent bounded main and side transcript runtime lifetimes", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  for (let index = 0; index < 100; index++) h.emit({ type: "conversation", event: {
+    type: "item.started", threadId: a, item: {
+      id: itemId(`main-${index}`), turnId: turnId(`main-turn-${index}`), kind: "assistant",
+      markdown: `main ${index}`, status: "complete",
+    },
+  } })
+  await h.controller.settle()
+  const main = h.controller.transcriptRuntime("main")!
+  expect(main.getSnapshot().window.blocks.length).toBe(48)
+
+  h.controller.sideChat("open")
+  await h.controller.settle()
+  for (let index = 0; index < 100; index++) h.emit({ type: "conversation", event: {
+    type: "item.started", threadId: threadId("side"), item: {
+      id: itemId(`side-${index}`), turnId: turnId(`side-turn-${index}`), kind: "assistant",
+      markdown: `side ${index}`, status: "complete",
+    },
+  } })
+  await h.controller.settle()
+  const side = h.controller.transcriptRuntime("side")!
+  expect(side).not.toBe(main)
+  expect(side.getSnapshot().window.blocks.length).toBe(48)
+
+  let mainPublications = 0, sidePublications = 0
+  const stopMain = main.subscribe(() => { mainPublications++ })
+  const stopSide = side.subscribe(() => { sidePublications++ })
+  const sideFrame = side.getSnapshot()
+  main.setWindowViewport(4, 4)
+  expect(main.getSnapshot().window.blocks.length).toBe(8)
+  expect(side.getSnapshot()).toBe(sideFrame)
+  expect([mainPublications, sidePublications]).toEqual([1, 0])
+
+  const mainFrame = main.getSnapshot()
+  side.setWindowViewport(6, 6)
+  expect(side.getSnapshot().window.blocks.length).toBe(12)
+  expect(main.getSnapshot()).toBe(mainFrame)
+  expect([mainPublications, sidePublications]).toEqual([1, 1])
+  stopMain(); stopSide()
+
+  h.controller.sideChat("quit")
+  await h.controller.settle()
+  expect(h.retired).toEqual(["side"])
+  expect(h.controller.transcriptRuntime("side")).toBeUndefined()
+  expect(h.controller.transcriptRuntime("main")).toBe(main)
+  await h.controller.close()
 })
 
 test("detached copy, reference, and URL reads use the displayed presentation until follow", async () => {

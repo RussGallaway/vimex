@@ -1,7 +1,8 @@
 import type { ConversationState, ItemId, ThreadId, TurnId } from "@vimex/conversation"
-import type { LogicalPoint, TranscriptState } from "./domain/transcript-document"
+import { transcriptOrderIndex, type LogicalPoint, type TranscriptState } from "./domain/transcript-document"
 import { composeTranscriptGeometry, emptyTranscriptGeometry, freezeBlockGeometry, geometryMatchesBlock, type BlockMeasurementBase, type BlockMeasurementBatch, type LayoutResetReason, type TranscriptGeometry } from "./geometry"
-import { blockKey, buildTranscriptBlocks, buildTranscriptItemBlock, passThroughWindow, type TranscriptBlock, type TranscriptItemBlock, type TranscriptWindow } from "./window"
+import { createHeightIndex, type TranscriptHeightIndex } from "./height-index"
+import { blockKey, buildTranscriptBlocks, buildTranscriptItemBlock, passThroughWindow, planTranscriptWindow, type TranscriptBlock, type TranscriptItemBlock, type TranscriptWindow } from "./window"
 
 export type TranscriptDamage =
   | Readonly<{ kind: "none" }>
@@ -47,6 +48,18 @@ export interface TranscriptFrame {
   readonly geometry: TranscriptGeometry
   readonly damage: TranscriptDamage
 }
+
+export interface TranscriptWindowPolicy {
+  readonly viewportRows: number
+  readonly overscanRows: number
+}
+
+export interface TranscriptRuntimeOptions {
+  /** Omit only for inert/test consumers that intentionally retain pass-through materialization. */
+  readonly windowPolicy?: TranscriptWindowPolicy
+}
+
+export const defaultTranscriptWindowPolicy: TranscriptWindowPolicy = Object.freeze({ viewportRows: 24, overscanRows: 24 })
 
 const noneDamage = Object.freeze({ kind: "none" } as const)
 const fullDamage = Object.freeze({ kind: "full" } as const)
@@ -96,6 +109,7 @@ function sameBlock(left: TranscriptBlock, right: TranscriptBlock): boolean {
     && left.projection === right.projection
     && left.sourceSpan.from === right.sourceSpan.from
     && left.sourceSpan.to === right.sourceSpan.to
+    && left.followedByActivity === right.followedByActivity
     && shallowRecordEqual(left.item, right.item)
     && shallowRecordEqual(left.renderItem, right.renderItem)
   if (!("turn" in left) || !("turn" in right)) return false
@@ -103,6 +117,14 @@ function sameBlock(left: TranscriptBlock, right: TranscriptBlock): boolean {
     && left.turn.startedAt === right.turn.startedAt
     && left.turn.completedAt === right.turn.completedAt
     && left.turn.durationMs === right.turn.durationMs
+}
+
+function sameWindow(left: TranscriptWindow, right: TranscriptWindow): boolean {
+  return left === right || (left.topSpacerRows === right.topSpacerRows
+    && left.bottomSpacerRows === right.bottomSpacerRows
+    && left.overscanRows === right.overscanRows
+    && left.blocks.length === right.blocks.length
+    && left.blocks.every((block, index) => block === right.blocks[index]))
 }
 
 function reconcileBlocks(previous: readonly TranscriptBlock[], next: readonly TranscriptBlock[]): readonly TranscriptBlock[] {
@@ -162,7 +184,7 @@ function presentationTranscriptWithProjections(
     const mapped = location(value)
     return mapped ? [[name, mapped]] : []
   })))
-  return Object.freeze({
+  const presented = Object.freeze({
     ...state,
     search: state.search && Object.freeze({ ...state.search }),
     order,
@@ -178,6 +200,8 @@ function presentationTranscriptWithProjections(
     jumps,
     marks,
   })
+  transcriptOrderIndex(presented.order)
+  return presented
 }
 
 function presentationTranscript(state: TranscriptState, blocks: readonly TranscriptBlock[]): TranscriptState {
@@ -192,6 +216,11 @@ function validReveal(input: TranscriptRuntimeInput): LogicalPoint | undefined {
   const projection = input.transcript.projectionById[point.itemId]
   if (!projection || !input.transcript.order.includes(point.itemId) || point.graphemeOffset > projection.sourceSpans.length) return undefined
   return point
+}
+
+function displayedReveal(input: TranscriptRuntimeInput, frame: TranscriptFrame): LogicalPoint | undefined {
+  const point = validReveal(input)
+  return point ? mapPoint(input.transcript, frame.transcript.projectionById, point) : undefined
 }
 
 function revealIsMaterialized(input: TranscriptRuntimeInput, blocks: readonly TranscriptBlock[], point: LogicalPoint): boolean {
@@ -242,6 +271,8 @@ export function createTranscriptFrame(input: TranscriptRuntimeInput): Transcript
 export class TranscriptRuntime {
   private frame: TranscriptFrame
   private latestInput: TranscriptRuntimeInput
+  private windowPolicy: TranscriptWindowPolicy | undefined
+  private heightIndex: TranscriptHeightIndex | undefined
   private readonly itemBlockIndexes = new Map<ItemId, number>()
   private hiddenDamage: TranscriptDamage = noneDamage
   private readonly listeners = new Set<() => void>()
@@ -250,9 +281,11 @@ export class TranscriptRuntime {
   private readonly queuedInputs: TranscriptRuntimeInput[] = []
   private lastRevealId = -1
 
-  constructor(input: TranscriptRuntimeInput) {
+  constructor(input: TranscriptRuntimeInput, options: TranscriptRuntimeOptions = {}) {
     this.latestInput = input
-    this.frame = createTranscriptFrame(input)
+    this.windowPolicy = options.windowPolicy && Object.freeze({ ...options.windowPolicy })
+    const frame = createTranscriptFrame(input)
+    this.frame = this.withPlannedWindow(frame, displayedReveal(input, frame))
     this.reindex(this.frame.blocks)
     this.lastRevealId = input.reveal?.id ?? -1
   }
@@ -271,6 +304,39 @@ export class TranscriptRuntime {
     if (this.disposed) return () => {}
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+
+  private withPlannedWindow(frame: TranscriptFrame, reveal?: LogicalPoint): TranscriptFrame {
+    if (!this.windowPolicy) return frame
+    if (!this.heightIndex?.supports(frame.blocks)) this.heightIndex = createHeightIndex(frame.blocks)
+    const viewport = frame.transcript.viewport
+    const attachment = frame.mode === "follow" || viewport.kind === "tail"
+      ? Object.freeze({ kind: "tail" as const })
+      : Object.freeze({ kind: "point" as const, point: viewport.point, preferredScreenRow: viewport.preferredScreenRow })
+    const planned = this.heightIndex ? planTranscriptWindow({
+      blocks: frame.blocks,
+      heights: this.heightIndex,
+      viewportRows: this.windowPolicy.viewportRows,
+      overscanRows: this.windowPolicy.overscanRows,
+      attachment,
+      ...(reveal ? { reveal } : {}),
+    }) : passThroughWindow(frame.blocks)
+    const window = sameWindow(frame.window, planned) ? frame.window : planned
+    return window === frame.window ? frame : Object.freeze({ ...frame, window })
+  }
+
+  /** Renderer dimensions refine this presentation's bounded policy; semantic authority stays upstream. */
+  setWindowViewport(viewportRows: number, overscanRows = viewportRows): TranscriptFrame {
+    if (this.disposed || this.notifying || !Number.isSafeInteger(viewportRows) || viewportRows < 1
+      || !Number.isSafeInteger(overscanRows) || overscanRows < 0) return this.frame
+    if (this.windowPolicy?.viewportRows === viewportRows && this.windowPolicy.overscanRows === overscanRows) return this.frame
+    this.windowPolicy = Object.freeze({ viewportRows, overscanRows })
+    const next = this.withPlannedWindow(Object.freeze({
+      ...this.frame,
+      presentationRevision: this.frame.presentationRevision + 1,
+      damage: Object.freeze({ kind: "view" as const }),
+    }))
+    return sameWindow(this.frame.window, next.window) ? this.frame : this.publish(next)
   }
 
   private publish(frame: TranscriptFrame): TranscriptFrame {
@@ -314,7 +380,7 @@ export class TranscriptRuntime {
     }
     const blocks = nextBlocks ? Object.freeze(nextBlocks) : this.frame.blocks
     const transcript = presentationTranscriptWithProjections(input.transcript, this.frame.transcript.order, Object.freeze(projections))
-    return Object.freeze({
+    const frame = Object.freeze({
       threadId: input.threadId,
       canonicalGeneration: input.canonicalGeneration,
       displayedCanonicalRevision: input.canonicalRevision,
@@ -326,12 +392,13 @@ export class TranscriptRuntime {
       geometry: reconciledGeometry(this.frame.geometry, input, blocks),
       damage: frozenDamage(damage),
     })
+    return this.withPlannedWindow(frame, displayedReveal(input, frame))
   }
 
   private presentationFrame(input: TranscriptRuntimeInput, damage: TranscriptDamage): TranscriptFrame {
     const geometry = shallowRecordEqual(input.transcript.folded, this.frame.transcript.folded)
       ? this.frame.geometry : reconciledGeometry(this.frame.geometry, input, this.frame.blocks)
-    return Object.freeze({
+    const frame = Object.freeze({
       ...this.frame,
       presentationRevision: this.frame.presentationRevision + 1,
       mode: input.mode,
@@ -339,6 +406,7 @@ export class TranscriptRuntime {
       geometry,
       damage: frozenDamage(damage),
     })
+    return this.withPlannedWindow(frame, displayedReveal(input, frame))
   }
 
   /**
@@ -354,7 +422,7 @@ export class TranscriptRuntime {
       || batch.basePresentationRevision !== this.frame.presentationRevision
       || batch.geometryGeneration !== this.frame.geometry.generation) return this.frame
 
-    const blocks = new Map(this.frame.blocks.map(block => [blockKey(block), block]))
+    const blocks = new Map(this.frame.window.blocks.map(block => [blockKey(block), block]))
     const measuredKeys = new Set<string>()
     for (const measurement of batch.measurements) {
       if (measuredKeys.has(measurement.key.blockKey)) return this.frame
@@ -410,7 +478,8 @@ export class TranscriptRuntime {
   private rebuild(input: TranscriptRuntimeInput, damage: TranscriptDamage, reuse = true, incrementalItemIds?: readonly ItemId[]): TranscriptFrame {
     this.hiddenDamage = noneDamage
     const incremental = reuse && incrementalItemIds ? this.incrementalFrame(input, incrementalItemIds, damage) : undefined
-    const next = incremental ?? buildFrame(input, reuse ? this.frame : undefined, this.frame.presentationRevision + 1, damage)
+    const rebuilt = incremental ? undefined : buildFrame(input, reuse ? this.frame : undefined, this.frame.presentationRevision + 1, damage)
+    const next = incremental ?? this.withPlannedWindow(rebuilt!, displayedReveal(input, rebuilt!))
     if (!incremental) this.reindex(next.blocks)
     return this.publish(next)
   }
@@ -448,7 +517,7 @@ export class TranscriptRuntime {
       if (revealIsNew) {
         const reveal = validReveal(input)
         if (!reveal) return priorFrame
-        if (!revealIsMaterialized(input, priorFrame.blocks, reveal)) {
+        if (!revealIsMaterialized(input, priorFrame.window.blocks, reveal)) {
           const hiddenDamage = this.hiddenDamage
           return this.rebuild(input, mergeDamage(presentationDamage, mergeDamage({ kind: "view" }, hiddenDamage)), true, blockDamageIds(hiddenDamage))
         }

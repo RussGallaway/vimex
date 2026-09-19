@@ -20,10 +20,27 @@ export interface RuntimeLayoutSource {
   readonly frame: TranscriptFrame
   readonly runtime?: TranscriptRuntime
   readonly styleRevision: GeometryStyleRevision
+  readonly diagnostics?: RenderedLayoutDiagnostics
+}
+
+/** Mutable deterministic counters for focused tests and diagnostic benchmarks. */
+export interface RenderedLayoutDiagnostics {
+  candidateBlocks: number
+  visibleCandidates: number
+  overscanCandidates: number
+  attemptedMeasurements: number
+  changedMeasurements: number
+  cachedMeasurements: number
+  pendingAfter: number
+  trackedMountedRoots: number
+  prunedRoots: number
+  visibleBeforeOverscan: boolean
+  attemptedKeys?: string[]
 }
 
 interface LayoutCache {
   readonly geometry: TranscriptFrame["geometry"]
+  readonly materializedBlocks?: readonly TranscriptBlock[]
   readonly originX: number
   readonly originY: number
   readonly layout: TranscriptLayout
@@ -67,6 +84,60 @@ function indexBlocks(schedule: MeasurementSchedule, blocks: readonly TranscriptB
     schedule.indexByKey.set(key, index)
     if (block.key.kind === "item") schedule.keysByItem.set(block.key.itemId, Object.freeze([...(schedule.keysByItem.get(block.key.itemId) ?? []), key]))
   })
+}
+
+interface ScheduleSynchronization {
+  readonly lineageChanged: boolean
+  readonly layoutReset: boolean
+  readonly windowChanged: boolean
+  readonly priorByKey: ReadonlyMap<string, TranscriptBlock>
+}
+
+function synchronizeMeasurementSchedule(
+  scrollbox: ScrollBoxRenderable,
+  frame: TranscriptFrame,
+  diagnostics?: RenderedLayoutDiagnostics,
+): ScheduleSynchronization {
+  const schedule = scheduleFor(scrollbox)
+  const blocks = frame.window.blocks
+  const lineageChanged = schedule.threadId !== frame.threadId || schedule.canonicalGeneration !== frame.canonicalGeneration
+  const layoutReset = schedule.geometryGeneration !== frame.geometry.generation
+  const windowChanged = schedule.windowBlocks !== blocks
+  const priorByKey = new Map((schedule.windowBlocks ?? []).map(block => [blockKey(block), block]))
+  if (lineageChanged || layoutReset) {
+    schedule.pending.clear()
+    if (diagnostics) diagnostics.prunedRoots += schedule.renderableByKey.size
+    schedule.renderableByKey.clear()
+    indexBlocks(schedule, blocks)
+    for (const block of blocks) schedule.pending.add(blockKey(block))
+  } else if (windowChanged) {
+    const mountedKeys = new Set(blocks.map(blockKey))
+    for (const key of schedule.pending) if (!mountedKeys.has(key)) schedule.pending.delete(key)
+    for (const key of schedule.renderableByKey.keys()) if (!mountedKeys.has(key)) {
+      schedule.renderableByKey.delete(key)
+      if (diagnostics) diagnostics.prunedRoots += 1
+    }
+    indexBlocks(schedule, blocks)
+    for (const block of blocks) if (priorByKey.get(blockKey(block)) !== block) schedule.pending.add(blockKey(block))
+  }
+  schedule.threadId = frame.threadId
+  schedule.canonicalGeneration = frame.canonicalGeneration
+  schedule.geometryGeneration = frame.geometry.generation
+  schedule.windowBlocks = blocks
+  if (diagnostics) {
+    diagnostics.pendingAfter = schedule.pending.size
+    diagnostics.trackedMountedRoots = schedule.renderableByKey.size
+  }
+  return { lineageChanged, layoutReset, windowChanged, priorByKey }
+}
+
+/** Drop scheduler ownership for departed roots without inspecting or measuring native content. */
+export function synchronizeRenderedTranscriptWindow(
+  scrollbox: ScrollBoxRenderable,
+  frame: TranscriptFrame,
+  diagnostics?: RenderedLayoutDiagnostics,
+): void {
+  synchronizeMeasurementSchedule(scrollbox, frame, diagnostics)
 }
 
 export function transcriptBlockRenderableId(block: Pick<TranscriptBlock, "key">): string {
@@ -115,6 +186,7 @@ function syntheticBlocks(state: TranscriptState): readonly TranscriptItemBlock[]
       sourceSpan: { from: 0, to: projection.source.length },
       contentRevision: projection.revision,
       estimatedRows: 1,
+      followedByActivity: false,
     } satisfies TranscriptItemBlock]
   })
 }
@@ -135,10 +207,11 @@ function linesFor(geometry: TranscriptFrame["geometry"], blocks: readonly Transc
 
 function lazyPoints(layout: TranscriptLayout, blocks: readonly TranscriptBlock[]): TranscriptLayout["points"] {
   const itemBlocks = blocks.filter((block): block is TranscriptItemBlock => "projection" in block)
+  const itemIds = [...new Set(itemBlocks.map(block => block.key.itemId))]
   const itemRecords = new Map<string, object>()
   return new Proxy(Object.create(null) as Record<string, Readonly<Record<number, MeasuredPoint>>>, {
-    ownKeys: () => itemBlocks.map(block => block.key.itemId),
-    getOwnPropertyDescriptor: (_target, property) => typeof property === "string" && itemBlocks.some(block => block.key.itemId === property)
+    ownKeys: () => itemIds,
+    getOwnPropertyDescriptor: (_target, property) => typeof property === "string" && itemIds.includes(property as ItemId)
       ? { enumerable: true, configurable: true } : undefined,
     get: (_target, property) => {
       if (typeof property !== "string") return undefined
@@ -162,7 +235,12 @@ function lazyPoints(layout: TranscriptLayout, blocks: readonly TranscriptBlock[]
   })
 }
 
-function buildLayout(scrollbox: ScrollBoxRenderable, blocks: readonly TranscriptBlock[], geometry: TranscriptFrame["geometry"]): TranscriptLayout {
+function buildLayout(
+  scrollbox: ScrollBoxRenderable,
+  blocks: readonly TranscriptBlock[],
+  geometry: TranscriptFrame["geometry"],
+  materializedBlocks?: readonly TranscriptBlock[],
+): TranscriptLayout {
   const placementByBlockKey: Record<string, { screenX: number; screenY: number }> = {}
   const blockKeyByItem: Record<string, string> = {}
   const blockKeysByItem: Record<string, { blockKey: string; blockId: string; from: number; to: number }[]> = {}
@@ -178,13 +256,18 @@ function buildLayout(scrollbox: ScrollBoxRenderable, blocks: readonly Transcript
   }
   const layout = {
     width: scrollbox.viewport.width,
+    ...(materializedBlocks ? { materializedBlocks } : {}),
     geometry,
     placementByBlockKey: Object.freeze(placementByBlockKey),
     blockKeysByItem: Object.freeze(Object.fromEntries(Object.entries(blockKeysByItem).map(([itemId, refs]) => [itemId, Object.freeze(refs.map(ref => Object.freeze(ref)))]))),
     blockKeyByItem: Object.freeze(blockKeyByItem),
-    screenBlockRows: Object.freeze(geometry.blockRows.flatMap(row => {
-      const placement = placementByBlockKey[row.blockKey]
-      return row.itemId && placement ? [Object.freeze({ blockKey: row.blockKey, itemId: row.itemId as ItemId, screenY: placement.screenY, rows: row.rows })] : []
+    screenBlockRows: Object.freeze(blocks.flatMap(block => {
+      if (!("projection" in block)) return []
+      const key = blockKey(block)
+      const placement = placementByBlockKey[key]
+      if (!placement) return []
+      const rows = geometry.byBlockKey[key]?.rows ?? Math.max(1, block.estimatedRows)
+      return [Object.freeze({ blockKey: key, itemId: block.key.itemId, screenY: placement.screenY, rows })]
     })),
   } as TranscriptLayout
   let indexed: ReturnType<typeof linesFor> | undefined
@@ -197,8 +280,22 @@ function buildLayout(scrollbox: ScrollBoxRenderable, blocks: readonly Transcript
 
 function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, source: RuntimeLayoutSource | TranscriptState): { blocks: readonly TranscriptBlock[]; geometry: TranscriptFrame["geometry"] } {
   const runtimeSource = "frame" in source ? source : undefined
+  const diagnostics = runtimeSource?.diagnostics
+  if (diagnostics) {
+    diagnostics.candidateBlocks = 0
+    diagnostics.visibleCandidates = 0
+    diagnostics.overscanCandidates = 0
+    diagnostics.attemptedMeasurements = 0
+    diagnostics.changedMeasurements = 0
+    diagnostics.cachedMeasurements = 0
+    diagnostics.pendingAfter = 0
+    diagnostics.trackedMountedRoots = 0
+    diagnostics.prunedRoots = 0
+    diagnostics.visibleBeforeOverscan = true
+    if (diagnostics.attemptedKeys) diagnostics.attemptedKeys.length = 0
+  }
   const frame = runtimeSource?.frame
-  const blocks: readonly TranscriptBlock[] = frame?.blocks ?? syntheticBlocks(source as TranscriptState)
+  const blocks: readonly TranscriptBlock[] = frame?.window.blocks ?? syntheticBlocks(source as TranscriptState)
   const state = frame?.transcript ?? source as TranscriptState
   const width = Math.max(1, scrollbox.viewport.width)
   const styleRevision = runtimeSource?.styleRevision ?? "legacy"
@@ -212,46 +309,26 @@ function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, 
   if (!runtimeSource?.runtime) {
     for (const block of blocks) if ("projection" in block) candidates.add(blockKey(block))
   } else {
-    const lineageChanged = schedule.threadId !== frame!.threadId || schedule.canonicalGeneration !== frame!.canonicalGeneration
-    const layoutReset = schedule.geometryGeneration !== frame!.geometry.generation
-    if (lineageChanged || layoutReset || frame!.damage.kind === "full" || frame!.damage.kind === "layout") {
-      schedule.pending.clear()
-      schedule.renderableByKey.clear()
-      indexBlocks(schedule, blocks)
+    const { lineageChanged, layoutReset, windowChanged, priorByKey } = synchronizeMeasurementSchedule(scrollbox, frame!, diagnostics)
+    if (lineageChanged || layoutReset) {
       for (const block of blocks) candidates.add(blockKey(block))
-    } else if (frame!.damage.kind === "blocks") {
-      const missing = new Set<string>()
-      for (const itemId of frame!.damage.itemIds) {
-        const keys = schedule.keysByItem.get(itemId)
-        if (keys?.length) for (const key of keys) candidates.add(key)
-        else missing.add(itemId)
-      }
-      // Existing streaming items stay O(changed). A newly appended semantic
-      // item is absent from the prior index, so discover only missing IDs once.
-      if (missing.size) {
-        const discovered = new Map<string, string[]>()
-        blocks.forEach((block, index) => {
-          if (block.key.kind !== "item" || !missing.has(block.key.itemId)) return
+    } else {
+      if (windowChanged) {
+        for (const block of blocks) {
           const key = blockKey(block)
-          schedule.indexByKey.set(key, index)
-          let keys = discovered.get(block.key.itemId)
-          if (!keys) {
-            keys = []
-            discovered.set(block.key.itemId, keys)
-          }
-          keys.push(key)
-          candidates.add(key)
-        })
-        for (const [itemId, keys] of discovered) schedule.keysByItem.set(itemId, Object.freeze(keys))
+          const geometry = frame!.geometry.byBlockKey[key]
+          const folded = block.key.kind === "item" && Boolean(state.folded[block.key.itemId])
+          if (priorByKey.get(key) !== block || !geometry || geometry.key.contentRevision !== block.contentRevision
+            || geometry.key.folded !== folded || geometry.key.width !== width || geometry.key.styleRevision !== styleRevision) candidates.add(key)
+        }
       }
-    }
-    if (schedule.windowBlocks !== frame!.window.blocks && frame!.damage.kind === "view") {
-      // Reattachment and explicit reveals can replace a pinned plan under view
-      // damage. The transition is infrequent (and Stage 5 bounds the window),
-      // so recover every newly materialized or geometry-invalidated block.
-      for (const block of frame!.window.blocks) {
-        const key = blockKey(block)
-        if (!schedule.indexByKey.has(key) || !frame!.geometry.byBlockKey[key]) candidates.add(key)
+      if (frame!.damage.kind === "full" || frame!.damage.kind === "layout") {
+        for (const block of blocks) candidates.add(blockKey(block))
+      } else if (frame!.damage.kind === "blocks") {
+        for (const itemId of frame!.damage.itemIds) {
+          const keys = schedule.keysByItem.get(itemId)
+          if (keys?.length) for (const key of keys) candidates.add(key)
+        }
       }
     }
     for (const dirty of takeDirtyRenderedBlocks()) {
@@ -260,20 +337,32 @@ function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, 
     for (const key of schedule.pending) {
       candidates.add(key)
     }
-    schedule.threadId = frame!.threadId
-    schedule.canonicalGeneration = frame!.canonicalGeneration
-    schedule.geometryGeneration = frame!.geometry.generation
-    schedule.windowBlocks = frame!.window.blocks
   }
   const measurementBase = runtimeSource?.runtime?.measurementBase(frame)
   const measured: BlockGeometry[] = []
-  for (const key of candidates) {
+  const top = scrollbox.viewport.screenY
+  const bottom = top + scrollbox.viewport.height
+  const orderedCandidates = [...candidates].flatMap(key => {
     const index = schedule.indexByKey.get(key)
     const block = index === undefined ? blocks.find(candidate => blockKey(candidate) === key) : blocks[index]
-    if (!block) continue
+    if (!block) return []
     const renderable = findBlockRenderable(scrollbox, block)
-    if (!renderable) continue
+    if (!renderable) return []
     schedule.renderableByKey.set(key, renderable)
+    const visible = renderable.screenY < bottom && renderable.screenY + renderable.height > top
+    const distance = visible ? 0 : renderable.screenY >= bottom ? renderable.screenY - bottom : top - (renderable.screenY + renderable.height)
+    return [{ key, block, renderable, visible, distance, index: index ?? Number.MAX_SAFE_INTEGER }]
+  }).sort((left, right) => Number(right.visible) - Number(left.visible) || left.distance - right.distance || left.index - right.index)
+  if (diagnostics) {
+    diagnostics.candidateBlocks = candidates.size
+    diagnostics.visibleCandidates = orderedCandidates.filter(candidate => candidate.visible).length
+    diagnostics.overscanCandidates = orderedCandidates.length - diagnostics.visibleCandidates
+    diagnostics.attemptedMeasurements = orderedCandidates.length
+    diagnostics.visibleBeforeOverscan = orderedCandidates.slice(0, diagnostics.visibleCandidates).every(candidate => candidate.visible)
+      && orderedCandidates.slice(diagnostics.visibleCandidates).every(candidate => !candidate.visible)
+    diagnostics.attemptedKeys?.push(...orderedCandidates.map(candidate => candidate.key))
+  }
+  for (const { key, block, renderable } of orderedCandidates) {
     const next = measureRenderedBlock({ renderer, renderable, block, width, styleRevision,
       folded: block.key.kind === "item" && Boolean(state.folded[block.key.itemId]) })
     const prior = frame?.geometry.byBlockKey[blockKey(block)]
@@ -284,7 +373,19 @@ function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, 
   if (runtimeSource?.runtime && measured.length) {
     for (const geometry of measured) schedule.pending.add(geometry.key.blockKey)
     runtimeSource.runtime.reportMeasurements({ ...measurementBase!, measurements: measured })
+    if (diagnostics) {
+      diagnostics.changedMeasurements = measured.length
+      diagnostics.cachedMeasurements = orderedCandidates.length - measured.length
+      diagnostics.pendingAfter = schedule.pending.size
+      diagnostics.trackedMountedRoots = schedule.renderableByKey.size
+    }
     return { blocks, geometry: frame!.geometry }
+  }
+  if (diagnostics) {
+    diagnostics.changedMeasurements = measured.length
+    diagnostics.cachedMeasurements = orderedCandidates.length - measured.length
+    diagnostics.pendingAfter = schedule.pending.size
+    diagnostics.trackedMountedRoots = schedule.renderableByKey.size
   }
   if (frame && runtimeSource?.runtime) return { blocks, geometry: frame.geometry }
   const legacy = legacyGeometryCache.get(scrollbox)
@@ -299,19 +400,20 @@ function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, 
 
 export function measureRenderedTranscript(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, source: RuntimeLayoutSource | TranscriptState): TranscriptLayout | undefined {
   const { blocks, geometry } = currentGeometry(renderer, scrollbox, source)
+  const materializedBlocks = "frame" in source ? blocks : undefined
   if (geometry.measuredBlockCount === 0) return undefined
   const originX = scrollbox.viewport.screenX - scrollbox.scrollLeft
   const originY = scrollbox.viewport.screenY - scrollbox.scrollTop
   const cached = layoutCache.get(scrollbox)
-  if (cached?.geometry === geometry) {
+  if (cached?.geometry === geometry && cached.materializedBlocks === materializedBlocks) {
     const offset = { x: originX - cached.originX, y: originY - cached.originY }
     if (offset.x === (cached.layout.screenOffset?.x ?? 0) && offset.y === (cached.layout.screenOffset?.y ?? 0)) return cached.layout
     const translated = translatedLayout(cached.layout, offset.x, offset.y)
     layoutCache.set(scrollbox, { ...cached, layout: translated })
     return translated
   }
-  const layout = buildLayout(scrollbox, blocks, geometry)
-  layoutCache.set(scrollbox, { geometry, originX, originY, layout })
+  const layout = buildLayout(scrollbox, blocks, geometry, materializedBlocks)
+  layoutCache.set(scrollbox, { geometry, materializedBlocks, originX, originY, layout })
   return layout
 }
 
@@ -321,12 +423,13 @@ export function measuredPoint(layout: TranscriptLayout, point: LogicalPoint | un
 
 /** Current runtime geometry with the last known native placements; never exposes stale block geometry. */
 export function rebaseTranscriptLayout(layout: TranscriptLayout, geometry: TranscriptFrame["geometry"]): TranscriptLayout {
-  const screenBlockRows = geometry.blockRows.flatMap(row => {
+  const screenBlockRows = (layout.screenBlockRows ?? []).flatMap(row => {
     const placement = layout.placementByBlockKey?.[row.blockKey]
-    return row.itemId && placement ? [Object.freeze({ blockKey: row.blockKey, itemId: row.itemId as ItemId, screenY: placement.screenY, rows: row.rows })] : []
+    return placement ? [Object.freeze({ ...row, screenY: placement.screenY, rows: geometry.byBlockKey[row.blockKey]?.rows ?? row.rows })] : []
   })
   return Object.freeze({
     width: layout.width,
+    ...(layout.materializedBlocks ? { materializedBlocks: layout.materializedBlocks } : {}),
     lines: Object.freeze([]),
     linesByItem: Object.freeze({}),
     geometry,

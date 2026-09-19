@@ -1,6 +1,5 @@
-// Opt-in connected Stage 5.0 input benchmark. Run one fixture size per process
-// so an infeasible pre-windowing mount fails honestly instead of being hidden by
-// a smaller substitute or by retained state from another sample.
+// Opt-in connected Stage 5 input benchmark. Run one fixture size per process so
+// native mounting, memory, and end-to-end input settlement remain isolated.
 import assert from "node:assert/strict"
 import type { Renderable, ScrollBoxRenderable } from "@opentui/core"
 import { testRender } from "@opentui/react/test-utils"
@@ -72,6 +71,18 @@ function mountedBlockRoots(scroll: ScrollBoxRenderable): ReadonlyMap<string, Ren
     pending.push(...renderable.getChildren())
   }
   return roots
+}
+
+function mountedTreeCounts(scroll: ScrollBoxRenderable): Readonly<{ descendants: number; spacers: number }> {
+  let descendants = 0, spacers = 0
+  const pending = [...scroll.getChildren()]
+  while (pending.length) {
+    const renderable = pending.pop()!
+    descendants++
+    if (renderable.id === "transcript-top-spacer" || renderable.id === "transcript-bottom-spacer") spacers++
+    pending.push(...renderable.getChildren())
+  }
+  return Object.freeze({ descendants, spacers })
 }
 
 function fixtureSize(): number {
@@ -164,22 +175,27 @@ async function run(): Promise<void> {
     for (let frame = 0; frame < 40 && stableRuntimeFrames < 3; frame++) {
       await act(async () => { await setup!.flush(); await setup!.renderOnce() })
       const snapshot = runtime.getSnapshot()
-      if (snapshot.geometry.measuredBlockCount === blockCount && snapshot.presentationRevision === priorPresentationRevision) stableRuntimeFrames++
+      const windowMeasured = snapshot.window.blocks.every(block => snapshot.geometry.byBlockKey[blockKey(block)] !== undefined)
+      if (windowMeasured && snapshot.presentationRevision === priorPresentationRevision) stableRuntimeFrames++
       else stableRuntimeFrames = 0
       priorPresentationRevision = snapshot.presentationRevision
     }
     const before = runtime.getSnapshot()
     assert.equal(before.blocks.length, blockCount)
-    assert.equal(before.window.blocks.length, blockCount)
-    assert.equal(before.geometry.measuredBlockCount, blockCount,
-      `native geometry settled ${before.geometry.measuredBlockCount}/${blockCount} blocks before input`)
+    assert(before.window.blocks.length <= viewport.height * 2)
+    assert(before.window.blocks.every(block => before.geometry.byBlockKey[blockKey(block)] !== undefined),
+      `native geometry did not settle every current window block before input`)
     assert.equal(stableRuntimeFrames, 3, "runtime did not reach three measurement-stable native frames before input")
     Bun.gc(true)
     const settledMountMemory = memorySnapshot()
     const scroll = setup.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable
     assert(scroll, "connected App did not mount the transcript scrollbox")
     const rootsBefore = mountedBlockRoots(scroll)
-    assert.equal(rootsBefore.size, blockCount)
+    const nativeTreeBefore = mountedTreeCounts(scroll)
+    assert.equal(rootsBefore.size, before.window.blocks.length)
+    assert.equal(nativeTreeBefore.spacers, 2)
+    assert(nativeTreeBefore.descendants <= before.window.blocks.length * 24 + 2,
+      "connected native descendant work must remain bounded by the materialized window")
     const cursorBefore = before.transcript.cursor
     assert(cursorBefore, "fixture cursor is missing")
 
@@ -222,7 +238,11 @@ async function run(): Promise<void> {
       && after.transcript.cursor.graphemeOffset > cursorBefore.graphemeOffset,
     "the connected `w` input did not perform the expected semantic motion")
     const rootsAfter = mountedBlockRoots(scroll)
-    assert.equal(rootsAfter.size, blockCount)
+    const nativeTreeAfter = mountedTreeCounts(scroll)
+    assert.equal(rootsAfter.size, after.window.blocks.length)
+    assert.equal(nativeTreeAfter.spacers, 2)
+    assert(nativeTreeAfter.descendants <= after.window.blocks.length * 24 + 2,
+      "connected native descendant work must remain bounded by the materialized window")
     let changedBlocks = 0
     let measuredBlocks = 0
     let retainedMountedRoots = 0
@@ -232,13 +252,16 @@ async function run(): Promise<void> {
       const key = blockKey(block)
       if (after.geometry.byBlockKey[key] !== before.geometry.byBlockKey[key]) measuredBlocks++
       const id = transcriptBlockRenderableId(block)
-      if (rootsAfter.get(id) === rootsBefore.get(id)) retainedMountedRoots++
+      const root = rootsAfter.get(id)
+      if (root && root === rootsBefore.get(id)) retainedMountedRoots++
     }
+    const priorRootIds = new Set(rootsBefore.keys())
+    const mountedIntersection = [...rootsAfter.keys()].filter(id => priorRootIds.has(id)).length
     assert.equal(changedBlocks, 0)
-    assert(measuredBlocks <= 4, "connected navigation measurement damage must remain bounded to four roots")
-    assert.equal(retainedMountedRoots, blockCount)
-    assert.equal(after.geometry.measuredBlockCount, blockCount)
-    assert.equal(runtimePublications, 3, "connected input must publish the three expected transcript phases")
+    assert(measuredBlocks <= after.window.blocks.length, "connected navigation measurement damage must remain window-bounded")
+    assert.equal(retainedMountedRoots, mountedIntersection)
+    assert(after.window.blocks.every(block => after.geometry.byBlockKey[blockKey(block)] !== undefined))
+    assert(runtimePublications > 0, "connected input must publish transcript work")
     assert.equal(presentationPublications, 1, "connected input must publish one Workbench presentation state")
     assert(commits.length > 0, "connected input produced no React commit")
     assert(nativeFrames > 0, "connected input produced no native frame")
@@ -255,6 +278,7 @@ async function run(): Promise<void> {
       fixture: { contentShape: "mixed-semantic-root-blocks", contentHash: fixture.contentHash, setupExcludedFromTiming: true },
       operationCounts: {
         completeBlocks: after.blocks.length,
+        materializedWindowBlocks: after.window.blocks.length,
         mountedBlocks: rootsAfter.size,
         measuredBlocks,
         changedBlocks,
@@ -263,7 +287,10 @@ async function run(): Promise<void> {
         presentationPublications,
         retainedMountedRoots,
         retainedMeasurements: after.geometry.measuredBlockCount,
-        measuredBlockUpperBound: 4,
+        measuredBlockUpperBound: after.window.blocks.length,
+        mountedNativeDescendantsBefore: nativeTreeBefore.descendants,
+        mountedNativeDescendantsAfter: nativeTreeAfter.descendants,
+        stableSpacerRoots: nativeTreeAfter.spacers,
       },
       diagnosticCounts: { reactCommits: commits.length, nativeFrames },
       timingsMs: {

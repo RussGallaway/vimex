@@ -28,6 +28,7 @@ export type TranscriptAction =
   | { type: "viewport.anchor"; point: LogicalPoint; preferredScreenRow: number }
   | { type: "fold.set"; itemId: ItemId; folded: boolean }
   | { type: "fold.all"; folded: boolean }
+  | { type: "fold.defaults"; reasoning: boolean; tools: boolean }
   | { type: "copy"; format: "plain" | "source"; presentationId: TranscriptPresentationId }
   | { type: "url.open"; url?: string; presentationId: TranscriptPresentationId }
   | { type: "fork"; itemId?: ItemId }

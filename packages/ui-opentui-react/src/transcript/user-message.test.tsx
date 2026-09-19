@@ -17,7 +17,7 @@ test("sent user panels preserve exact selectable Markdown without a role label t
   const scrollRef = createRef<ScrollBoxRenderable>()
   const syntax = createEmberTideSyntax()
   const blocks = [{ key: { kind: "item" as const, itemId: item.id, blockId: "root" as const }, turnId: item.turnId, item, renderItem: item,
-    projection: state.projectionById[item.id]!, sourceSpan: { from: 0, to: item.markdown.length }, contentRevision: 1, estimatedRows: 1 }]
+    projection: state.projectionById[item.id]!, sourceSpan: { from: 0, to: item.markdown.length }, contentRevision: 1, estimatedRows: 1, followedByActivity: false }]
   const h = await testRender(<TranscriptViewport window={{ blocks, topSpacerRows: 2, bottomSpacerRows: 3, overscanRows: 1 }} state={state} surface="transcript" syntax={syntax} scrollRef={scrollRef} />, { width: 80, height: 20 })
   try {
     for (const width of [80, 38]) {

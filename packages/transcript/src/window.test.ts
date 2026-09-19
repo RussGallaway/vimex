@@ -45,13 +45,17 @@ test("builds frozen item and activity blocks in canonical turn chronology", () =
 })
 
 test("item blocks snapshot effective status, share readonly projections, and retain full source spans", () => {
-  const { conversation, transcript, firstItem, emptyItem } = fixture()
+  const { conversation, transcript, firstItem, emptyItem, finalItem } = fixture()
   const blocks = buildTranscriptBlocks({ conversation, transcript })
   const first = blocks.find(block => block.key.kind === "item" && block.key.itemId === firstItem)
   const empty = blocks.find(block => block.key.kind === "item" && block.key.itemId === emptyItem)
+  const final = blocks.find(block => block.key.kind === "item" && block.key.itemId === finalItem)
 
   expect(first).toMatchObject({ turnId: "first-turn", item: { status: "complete" }, sourceSpan: { from: 0, to: 5 }, estimatedRows: 1 })
   expect(empty).toMatchObject({ item: { status: "interrupted" }, sourceSpan: { from: 0, to: 0 }, estimatedRows: 1 })
+  expect(first).toMatchObject({ followedByActivity: true })
+  expect(empty && "projection" in empty ? empty.followedByActivity : undefined).toBe(false)
+  expect(final).toMatchObject({ followedByActivity: true })
   if (!first || !("projection" in first)) throw new Error("Expected first item block")
   expect(first.projection).toBe(transcript.projectionById[firstItem]!)
   expect(Object.isFrozen(first.item)).toBe(true)
@@ -106,6 +110,35 @@ test("item revisions include render-visible metadata as well as projection revis
   expect(changed && "projection" in changed ? changed.projection.revision : undefined)
     .toBe(first && "projection" in first ? first.projection.revision : undefined)
   expect(changed?.contentRevision).not.toBe(first?.contentRevision)
+})
+
+test("activity adjacency is immutable block metadata and invalidates the final item footprint", () => {
+  const { conversation, transcript, finalTurn, finalItem } = fixture()
+  const withActivity = buildTranscriptBlocks({ conversation, transcript }).find(block => block.key.kind === "item" && block.key.itemId === finalItem)
+  const runningConversation = {
+    ...conversation,
+    turns: { ...conversation.turns, [finalTurn]: { ...conversation.turns[finalTurn]!, status: "running" as const, completedAt: undefined, durationMs: undefined } },
+  }
+  const withoutActivity = buildTranscriptBlocks({ conversation: runningConversation, transcript }).find(block => block.key.kind === "item" && block.key.itemId === finalItem)
+  expect(withActivity).toMatchObject({ followedByActivity: true })
+  expect(withoutActivity && "projection" in withoutActivity ? withoutActivity.followedByActivity : undefined).toBe(false)
+  expect(withoutActivity?.contentRevision).not.toBe(withActivity?.contentRevision)
+})
+
+test("activity adjacency follows the last semantic item when later telemetry is omitted", () => {
+  const thread = threadId("telemetry-thread"), turn = turnId("telemetry-turn")
+  const answer = itemId("telemetry-answer"), telemetry = itemId("telemetry-only")
+  const events: ConversationEvent[] = [
+    { type: "turn.started", threadId: thread, turnId: turn },
+    { type: "item.started", threadId: thread, item: { id: answer, turnId: turn, kind: "assistant", markdown: "answer", status: "complete" } },
+    { type: "item.started", threadId: thread, item: { id: telemetry, turnId: turn, kind: "agent", action: "wait", detail: "", agentThreadIds: [], status: "complete" } },
+    { type: "turn.completed", threadId: thread, turnId: turn, outcome: "complete", durationMs: 10 },
+  ]
+  const conversation = events.reduce(reduceConversation, createConversation(thread))
+  const transcript = syncTranscriptItem(initialTranscript(), conversation.items[answer]!)
+  const blocks = buildTranscriptBlocks({ conversation, transcript })
+  expect(blocks.map(blockKey)).toEqual([`item:${answer}:root`, `turn-activity:${turn}`])
+  expect(blocks[0]).toMatchObject({ followedByActivity: true })
 })
 
 test("pass-through materializes every block with no spacers or overscan", () => {
