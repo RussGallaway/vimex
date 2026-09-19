@@ -1,6 +1,6 @@
 # Transcript windowing implementation
 
-Status: Stages 5.0–5.4 are complete and verified. Stage 5.5 is in progress; bounded same-item follow, reattachment, canonical ingress, monotonic cross-presentation settlement, and hidden-presentation resource suspension are complete.
+Status: Stages 5.0–5.4 are complete and verified. Stage 5.5 is in progress; bounded same-item follow, reattachment, canonical ingress, monotonic cross-presentation settlement, hidden-presentation resource suspension, and exact structural tail admission are complete.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
@@ -26,7 +26,7 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 | Stage 5b: windowed mounting | Complete | Commit `3e24002`; bounded production runtime, React/native mounting, observer lifetime, scaling evidence, and review sign-off below |
 | Stage 5c: anchor correction | Complete | Commit `97f163f`; atomic height correction, window-local geometry, logical-anchor restoration, scaling evidence, and review sign-off below |
 | Stage 5d: off-window semantics | Complete | Commits `a24f5af`, `df243a1`, `9266837`, `0e1ad6d`; indexed target materialization and URL motion, bounded selection clipping, canonical cross-window copy, atomic navigation/fold/picker settlement, and evidence below |
-| Stage 5e: follow and detachment | In progress | Stage 5.5a commit `9e8974e`, Stage 5.5b commit `e5dfc61`, Stage 5.5c commit `b3d26f9`, and Stage 5.5d commit `4189d25`; bounded same-item canonical ingress, follow/reattach reconciliation, monotonic independent-presentation settlement, hidden-presentation resource suspension, and evidence below |
+| Stage 5e: follow and detachment | In progress | Stage 5.5a commit `9e8974e`, Stage 5.5b commit `e5dfc61`, Stage 5.5c commit `b3d26f9`, Stage 5.5d commit `4189d25`, and Stage 5.5e commit `70733dc`; bounded same-item canonical ingress, follow/reattach reconciliation, monotonic independent-presentation settlement, hidden-presentation resource suspension, exact structural tail admission, and evidence below |
 | Stage 5f: stress, review, and evidence | Not started | — |
 
 “Complete” means the slice's exit criteria pass, evidence is recorded here, and the implementation is committed. Partial working-tree changes do not count as complete.
@@ -1081,3 +1081,52 @@ The one retained-runtime publication is intentional cache reconciliation and is 
 - Parallel architecture, correctness, and performance reviews ran after the slice and again after repair. Repairs replaced declarative benchmark literals with a production bridge probe, added real visible measurement and hidden-delta observation, cleared renderer-global native selection before unmount, retained semantic selection for reveal, and explicitly released departed-root caches. All three final reviewers signed off with no blocker.
 
 Stage 5.5d closes hidden/maximized presentation mounting and measurement work across the required scaling range. It deliberately retains the disposable Workbench runtime cache so canonical streaming can reconcile there without keeping presentation/native resources alive. Structural tail insertion, detached unseen-item accumulation, structural canonical-damage derivation, and stable production sub-blocks for oversized Markdown, command output, and diffs remain open before Stage 5.5 and overall Stage 5 can be marked complete.
+
+### Stage 5.5e — bounded structural tail admission
+
+Implementation commit: `70733dc` (`perf: bound structural transcript admission`). This slice bounds the exact production sequence of a new empty `turn.started` followed immediately by the first semantic `item.started` in that final running turn. Turn completion, activity-only structure, detached unseen-item accumulation, and stable production sub-blocks remain later work.
+
+#### Exact persistent append lineage
+
+- Canonical conversation state now carries persistent ordered turn IDs, turn records, and per-turn item IDs. Exact final-turn and final-item appends path-copy only the affected persistent paths while preserving every historical item, turn, and sequence identity. Serialization, lookup, fork, and the complete reference reducer remain semantically equivalent.
+- Semantic transcript order, order index, projections, and fold membership expose exact append lineages. The runtime accepts the bounded path only when canonical turn/item lineage, semantic order/projection/fold lineage, mode, presentation, reveal state, exclusions, and damage all prove the supported relationship. Duplicate prior order, tampered projections or folds, ambiguous same-batch chronology, and every unsupported relationship select the correct full rebuild.
+- The empty turn advances only displayed canonical revision and publishes once while retaining transcript, complete blocks, window, and geometry by identity. The following semantic item path-copies the complete block plan and height index, appends to the filtered presentation order, preserves all historical block identities, and replans only the bounded follow window.
+- Presentation exclusions remain disposable policy, not semantic authority. A disposable exclusion set and normalized persistent filtered order permit an included tail append without rescanning total history; excluded or uncertain changes use the full reference path.
+- Disposable text-length and URL indexes append from their already-warm lineage. The first post-admission semantic query performs one index update and no complete index build or item visit.
+- Workbench damage derivation emits an exact empty block set for a new turn and the new item ID for an item admitted into the final running turn. Batched damage preserves the empty set, inspects every ID, and proves that a same-batch turn began empty before offering the structural fast path.
+
+#### Deterministic canonical-to-runtime scaling
+
+The structural fixture uses the same one-semantic-item-per-turn workload at 100/1k/10k/100k complete render blocks. Setup bulk construction, cold persistent normalization, disposable-index priming, complete references, and exhaustive identity checks are excluded from timing but remain asserted. The measured boundary contains both canonical reductions, semantic projection, runtime reconciliation, window planning, and two synchronous runtime publications.
+
+| Complete blocks before | Mounted after | Publications | Historical item / turn / projection / block identities preserved | Complete plan / order / height / geometry builds or visits | Plan + height appends | Maximum persistent path work | Text / URL complete builds or visits | Complete two-event settlement |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 48 | 2 | 100 / 100 / 100 / 100 | 0 | 1 / 1 | 8 | 0 / 0 | 1.007 ms |
+| 1k | 48 | 2 | 1k / 1k / 1k / 1k | 0 | 1 / 1 | 11 | 0 / 0 | 0.379 ms |
+| 10k | 48 | 2 | 10k / 10k / 10k / 10k | 0 | 1 / 1 | 15 | 0 / 0 | 0.572 ms |
+| 100k | 48 | 2 | 100k / 100k / 100k / 100k | 0 | 1 / 1 | 18 | 0 / 0 | 1.236 ms |
+
+Every cell also performs one text-length and one URL index append, visits at most 48 window blocks, and equals the complete canonical reducer and pass-through transcript frame. The logarithmic path depth is the only total-size term; mounted work, publications, complete-history work, and historical identity replacement are invariant. Timings are one-sample machine diagnostics, not acceptance thresholds.
+
+#### Production React, native mounting, and measurement boundary
+
+The production probe starts only after the initial runtime, React/OpenTUI tree, and native geometry have fully settled. It then admits the same empty-turn/item sequence through `TranscriptRuntime`, the real runtime hook, `TranscriptViewport`, native roots, and rendered-block measurement. This deliberately measures the presentation boundary rather than claiming controller-driven end-to-end timing.
+
+| Complete blocks before | Mounted roots before → after | Retained / mounted / unmounted roots | Runtime publications | Empty / item React commits | Candidate / attempted / measured blocks | Measurement publications | Item runtime update | Item React Profiler duration | Post-runtime React/native settlement |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 24 → 25 | 24 / 1 / 0 | 2 | 1 / 1 | 1 / 1 / 1 | 1 | 0.186 ms | 0.455 ms | 36.5 ms |
+| 1k | 24 → 25 | 24 / 1 / 0 | 2 | 1 / 1 | 1 / 1 / 1 | 1 | 0.268 ms | 0.410 ms | 38.8 ms |
+| 10k | 24 → 25 | 24 / 1 / 0 | 2 | 1 / 1 | 1 / 1 / 1 | 1 | 0.225 ms | 0.470 ms | 43.4 ms |
+| 100k | 24 → 25 | 24 / 1 / 0 | 2 | 1 / 1 | 1 / 1 / 1 | 1 | 0.719 ms | 0.461 ms | 334.7 ms |
+
+Mounted, retained, publication, commit, candidate, attempted-measurement, accepted-measurement, and measurement-publication counts are identical across the recorded range. Runtime update and React Profiler curves remain bounded. The combined 100k post-runtime settlement rises inside OpenTUI's test-renderer `setup.flush()` despite unchanged native work counts; that machine-specific curve is retained as a diagnostic rather than presented as a flat timing result.
+
+#### Equivalence, fallback, repository, and review gates
+
+- Focused conversation, transcript, Workbench, controller, scaling, React bridge, native mounting, and geometry tests passed: 196 tests, 21,672 assertions. They cover direct and same-batch structural admission; defaults and exclusions; historical projection/fold tampering; duplicate order; mode, detached, reveal, and presentation ambiguity; warm disposable indexes; historical identity; and complete pass-through semantic equivalence.
+- The controller integration proves the ordinary ingress sequence reaches the exact damage contracts. Ordinary non-delta ingress flushes each semantic boundary, so the combined turn/item fast path is additionally exercised directly at the runtime contract.
+- `bun run check` passed typecheck, dependency boundaries, generated-doc validation, and every non-sandbox-sensitive test: 758 passed and 5 intentional profiling skips. Its only failure was the sandbox-denied isolated tmux socket; the other four real PTY cases passed. The exact host-level rerun passed: `bun test tests/terminal/terminal.test.ts --test-name-pattern "isolated tmux"` — 1 passed in 695 ms. `git diff --check` passed.
+- The executable core and native 100/1k/10k/100k benchmarks passed every semantic-equivalence, identity-preservation, full-work-zero, bounded-window, native-root, React-commit, and measurement-count assertion shown above.
+- Parallel architecture, correctness, and performance reviews ran throughout the slice and after repairs. Repairs closed mode crossing, exclusions, exact projection/fold lineage, duplicate-order rejection, reveal/presentation ambiguity, same-batch empty-turn proof, cold derived-presentation normalization, warm derived indexes, and native seed-settlement gaps. All three final reviewers signed off with no blocker.
+
+Stage 5.5e is complete for exact empty-turn plus first-item structural tail admission. Completion/activity changes, detached unseen accumulation, and stable production sub-blocks for oversized Markdown, command output, and diffs remain open before Stage 5.5 and overall Stage 5 can be marked complete.
