@@ -7,7 +7,7 @@ function appendDelta(item: ConversationItem, delta: string): ConversationItem {
   switch (item.kind) {
     case "user": case "assistant": case "reasoning": return { ...item, markdown: item.markdown + delta }
     case "edit": return { ...item, patch: item.patch + delta }
-    case "command": case "tool": case "unknown": return { ...item, detail: item.detail + delta }
+    case "command": case "tool": case "agent": case "unknown": return { ...item, detail: item.detail + delta }
   }
 }
 export function reduceConversation(state: ConversationState, event: ConversationEvent): ConversationState {
@@ -15,14 +15,33 @@ export function reduceConversation(state: ConversationState, event: Conversation
   switch (event.type) {
     case "turn.started": {
       const exists = state.turns[event.turnId]
-      if (exists && exists.status !== "running") return state
-      return { ...state, activeTurnId: event.turnId, turnIds: exists ? state.turnIds : [...state.turnIds, event.turnId], turns: exists ? state.turns : { ...state.turns, [event.turnId]: { id: event.turnId, status: "running", itemIds: [] } } }
+      if (exists && exists.status !== "running") {
+        if (exists.startedAt !== undefined || event.startedAt === undefined) return state
+        return { ...state, turns: { ...state.turns, [event.turnId]: { ...exists, startedAt: event.startedAt } } }
+      }
+      if (exists && state.activeTurnId !== undefined && state.activeTurnId !== event.turnId) {
+        if (exists.startedAt !== undefined || event.startedAt === undefined) return state
+        return { ...state, turns: { ...state.turns, [event.turnId]: { ...exists, startedAt: event.startedAt } } }
+      }
+      if (exists && state.activeTurnId === event.turnId && (exists.startedAt !== undefined || event.startedAt === undefined)) return state
+      const turn = exists ? { ...exists, startedAt: exists.startedAt ?? event.startedAt } : { id: event.turnId, status: "running" as const, itemIds: [], startedAt: event.startedAt }
+      return { ...state, activeTurnId: event.turnId, turnIds: exists ? state.turnIds : [...state.turnIds, event.turnId], turns: { ...state.turns, [event.turnId]: turn } }
     }
     case "turn.completed": {
       const current = state.turns[event.turnId]
-      if (current && current.status !== "running") return state.activeTurnId === event.turnId ? { ...state, activeTurnId: undefined } : state
+      if (current && current.status !== "running") {
+        const turn = {
+          ...current,
+          startedAt: current.startedAt ?? event.startedAt,
+          completedAt: current.completedAt ?? event.completedAt,
+          durationMs: current.durationMs ?? event.durationMs,
+        }
+        const changed = turn.startedAt !== current.startedAt || turn.completedAt !== current.completedAt || turn.durationMs !== current.durationMs
+        if (!changed && state.activeTurnId !== event.turnId) return state
+        return { ...state, activeTurnId: state.activeTurnId === event.turnId ? undefined : state.activeTurnId, turns: changed ? { ...state.turns, [event.turnId]: turn } : state.turns }
+      }
       const turn = current ?? { id: event.turnId, status: event.outcome, itemIds: [] }
-      return { ...state, activeTurnId: state.activeTurnId === event.turnId ? undefined : state.activeTurnId, turnIds: current ? state.turnIds : [...state.turnIds, event.turnId], turns: { ...state.turns, [event.turnId]: { ...turn, status: event.outcome } } }
+      return { ...state, activeTurnId: state.activeTurnId === event.turnId ? undefined : state.activeTurnId, turnIds: current ? state.turnIds : [...state.turnIds, event.turnId], turns: { ...state.turns, [event.turnId]: { ...turn, status: event.outcome, startedAt: turn.startedAt ?? event.startedAt, completedAt: event.completedAt ?? turn.completedAt, durationMs: event.durationMs ?? turn.durationMs } } }
     }
     case "item.started": {
       const turn = state.turns[event.item.turnId] ?? { id: event.item.turnId, status: "running" as const, itemIds: [] }

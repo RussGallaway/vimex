@@ -11,7 +11,7 @@ describe("workbench", () => {
     let state = run(initialWorkbench(), { type: "thread.open", summary: { ...summary("a"), status: "working" } }).state
     state = run(state, { type: "conversation.event", event: { type: "turn.started", threadId: thread, turnId: turn } }).state
     state = run(state, { type: "conversation.event", event: { type: "item.started", threadId: thread, item: { id: item, turnId: turn, kind: "reasoning", markdown: "thinking", status: "running" } } }).state
-    expect(liveActivity(state)).toEqual({ working: true, label: "Thinking" })
+    expect(liveActivity(state)).toEqual({ working: true, label: "Working", startedAt: undefined })
     state = run(state, { type: "turn.interrupt.requested", threadId: thread, turnId: turn }).state
     expect(liveActivity(state)).toEqual({ working: true, label: "Stopping" })
     state = run(state, { type: "conversation.event", event: { type: "turn.completed", threadId: thread, turnId: turn, outcome: "interrupted" } }).state
@@ -86,6 +86,31 @@ describe("workbench", () => {
     expect(result.effects).toEqual([{ type: "conversation.turn.start", threadId: thread, text: "next", clientMessageId: "m1" }])
     const duplicate = run(result.state, { type: "conversation.event", event: { type: "turn.completed", threadId: thread, turnId: firstTurn, outcome: "complete" } })
     expect(duplicate.effects).toEqual([])
+  })
+
+  test("keeps protocol telemetry canonical while omitting empty churn from the semantic transcript", () => {
+    const thread = threadId("telemetry"), turn = turnId("turn"), child = threadId("child")
+    let state = run(initialWorkbench(), { type: "thread.open", summary: summary("telemetry") }).state
+    const items = [
+      { id: itemId("activity"), kind: "agent" as const, action: "activity" as const, activity: "interacted" as const, agentPath: "/root/reviewer", detail: "", agentThreadIds: [child], status: "complete" as const },
+      { id: itemId("wait"), kind: "agent" as const, action: "wait" as const, detail: "", agentThreadIds: [child], status: "complete" as const },
+      { id: itemId("list"), kind: "agent" as const, action: "list" as const, detail: "", agentThreadIds: [child], status: "complete" as const },
+      { id: itemId("spawn"), kind: "agent" as const, action: "spawn" as const, detail: "Review the runtime", agentThreadIds: [child], status: "complete" as const },
+    ]
+    for (const item of items) state = run(state, { type: "conversation.event", event: { type: "item.started", threadId: thread, item: { ...item, turnId: turn } } }).state
+    const workspace = state.workspaces[thread]!
+    expect(Object.keys(workspace.conversation.items)).toEqual(["activity", "wait", "list", "spawn"])
+    expect(workspace.transcript.order).toEqual([itemId("spawn")])
+    expect(workspace.transcript.projectionById[itemId("spawn")]?.source).toBe("Review the runtime")
+  })
+
+  test("turn timing enrichment does not invalidate transcript projections", () => {
+    const thread = threadId("timing"), turn = turnId("turn"), item = itemId("answer")
+    let state = run(initialWorkbench(), { type: "thread.open", summary: summary("timing") }).state
+    state = run(state, { type: "conversation.event", event: { type: "item.started", threadId: thread, item: { id: item, turnId: turn, kind: "assistant", markdown: "Answer", status: "complete" } } }).state
+    const transcript = state.workspaces[thread]!.transcript
+    state = run(state, { type: "conversation.event", event: { type: "turn.completed", threadId: thread, turnId: turn, outcome: "complete", startedAt: 1_000, completedAt: 2_000, durationMs: 1_000 } }).state
+    expect(state.workspaces[thread]!.transcript).toBe(transcript)
   })
 
   test("steers immediately and approvals never steal composer focus", () => {

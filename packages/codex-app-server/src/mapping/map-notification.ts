@@ -5,7 +5,7 @@ import type { Thread } from "../generated/v0_154_0/v2/Thread"
 import type { ThreadItem } from "../generated/v0_154_0/v2/ThreadItem"
 import type { ThreadTokenUsage } from "../generated/v0_154_0/v2/ThreadTokenUsage"
 import { isRecord, type ServerNotificationMessage } from "../rpc/request-router"
-import { mapThreadItem, mapTurnStatus, safeStringify } from "./map-item"
+import { mapTerminalTurnStatus, mapThreadItem, mapTurnStatus, safeStringify } from "./map-item"
 import { isThreadLike, isThreadStatus, mapThreadRelation, mapThreadStatus, mapThreadSummary, type NormalizedThreadStatus, type ThreadRelation } from "./map-thread"
 import type { ServerRequestEvent } from "./map-server-request"
 
@@ -63,19 +63,25 @@ export function mapNotification(notification: ServerNotificationMessage): CodexA
     }
     case "turn/started": {
       const turn = params.turn
-      if (typeof params.threadId === "string" && isRecord(turn) && typeof turn.id === "string") return { type: "conversation", event: { type: "turn.started", threadId: threadId(params.threadId), turnId: turnId(turn.id) } }
+      if (typeof params.threadId === "string" && isRecord(turn) && typeof turn.id === "string") return { type: "conversation", event: { type: "turn.started", threadId: threadId(params.threadId), turnId: turnId(turn.id), startedAt: timestampMs(turn.startedAt) } }
       break
     }
     case "turn/completed": {
       const turn = params.turn
-      if (typeof params.threadId === "string" && isRecord(turn) && typeof turn.id === "string") return { type: "conversation", event: { type: "turn.completed", threadId: threadId(params.threadId), turnId: turnId(turn.id), outcome: mapTurnStatus(turn.status) } }
+      const outcome = isRecord(turn) ? mapTerminalTurnStatus(turn.status) : undefined
+      if (typeof params.threadId === "string" && isRecord(turn) && typeof turn.id === "string" && outcome) return { type: "conversation", event: {
+        type: "turn.completed", threadId: threadId(params.threadId), turnId: turnId(turn.id), outcome,
+        startedAt: timestampMs(turn.startedAt), completedAt: timestampMs(turn.completedAt), durationMs: finiteNumber(turn.durationMs),
+      } }
       break
     }
     case "item/started":
     case "item/completed": {
-      if (typeof params.threadId !== "string" || typeof params.turnId !== "string" || !isRecord(params.item)) break
+      if (typeof params.threadId !== "string" || typeof params.turnId !== "string" || !isRecord(params.item) || typeof params.item.id !== "string") break
       const completed = notification.method === "item/completed"
-      return { type: "conversation", event: { type: completed ? "item.completed" : "item.started", threadId: threadId(params.threadId), item: mapThreadItem(params.item as ThreadItem, params.turnId, completed) } }
+      const item = safeMapThreadItem(params.item, params.turnId, completed)
+      if (item) return { type: "conversation", event: { type: completed ? "item.completed" : "item.started", threadId: threadId(params.threadId), item } }
+      break
     }
     case "item/agentMessage/delta":
     case "item/reasoning/summaryTextDelta":
@@ -114,7 +120,8 @@ export function mapNotification(notification: ServerNotificationMessage): CodexA
 
 /** Adds structural subagent relationships beside the primary normalized event. */
 export function mapNotificationEvents(notification: ServerNotificationMessage): CodexAdapterEvent[] {
-  const events: CodexAdapterEvent[] = [mapNotification(notification)]
+  const primary = mapNotification(notification)
+  const events: CodexAdapterEvent[] = [primary]
   const params = notification.params
   if (notification.method === "thread/started" && isRecord(params) && isThreadLike(params.thread)) {
     const relation = mapThreadRelation(params.thread)
@@ -122,11 +129,12 @@ export function mapNotificationEvents(notification: ServerNotificationMessage): 
   }
   if ((notification.method === "item/started" || notification.method === "item/completed") && isRecord(params) && typeof params.threadId === "string" && isRecord(params.item) && typeof params.item.id === "string") {
     if (params.item.type === "contextCompaction" && typeof params.turnId === "string") events.push({ type: "compaction", phase: notification.method === "item/started" ? "started" : "completed", threadId: threadId(params.threadId), turnId: turnId(params.turnId) })
-    if (params.item.type === "subAgentActivity" && typeof params.item.agentThreadId === "string") events.push({
-      type: "subagent.link", link: { ownerThreadId: threadId(params.threadId), agentThreadId: threadId(params.item.agentThreadId), itemId: itemId(params.item.id), relation: "activity", ...(typeof params.item.agentPath === "string" ? { agentPath: params.item.agentPath } : {}) },
+    const normalized = primary.type === "conversation" && (primary.event.type === "item.started" || primary.event.type === "item.completed") ? primary.event.item : undefined
+    if (normalized?.kind === "agent" && normalized.action === "activity") events.push({
+      type: "subagent.link", link: { ownerThreadId: threadId(params.threadId), agentThreadId: normalized.agentThreadIds[0]!, itemId: normalized.id, relation: "activity", agentPath: normalized.agentPath },
     })
-    if (params.item.type === "collabAgentToolCall" && Array.isArray(params.item.receiverThreadIds)) for (const receiver of params.item.receiverThreadIds) {
-      if (typeof receiver === "string") events.push({ type: "subagent.link", link: { ownerThreadId: threadId(params.threadId), agentThreadId: threadId(receiver), itemId: itemId(params.item.id), relation: params.item.tool === "spawnAgent" ? "spawned" : "target" } })
+    if (normalized?.kind === "agent" && normalized.action !== "activity") for (const receiver of normalized.agentThreadIds) {
+      events.push({ type: "subagent.link", link: { ownerThreadId: threadId(params.threadId), agentThreadId: receiver, itemId: normalized.id, relation: normalized.action === "spawn" ? "spawned" : "target" } })
     }
   }
   return events
@@ -138,6 +146,16 @@ function isTokenUsage(value: unknown): value is ThreadTokenUsage {
     && (value.modelContextWindow === null || typeof value.modelContextWindow === "number")
 }
 function isRequestId(value: unknown): value is RequestId { return typeof value === "string" || typeof value === "number" }
+function safeMapThreadItem(value: Record<string, unknown>, ownerTurnId: string, completed: boolean) {
+  try { return mapThreadItem(value as ThreadItem, ownerTurnId, completed) } catch { return undefined }
+}
+function finiteNumber(value: unknown): number | undefined { return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined }
+function timestampMs(value: unknown): number | undefined {
+  const seconds = finiteNumber(value)
+  if (seconds === undefined) return undefined
+  const milliseconds = seconds * 1000
+  return Number.isFinite(milliseconds) ? milliseconds : undefined
+}
 
 export type { NormalizedUserQuestion, ServerRequestEvent } from "./map-server-request"
 export type { NormalizedThreadStatus, ThreadRelation } from "./map-thread"

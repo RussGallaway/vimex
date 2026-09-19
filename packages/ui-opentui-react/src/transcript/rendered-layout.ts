@@ -92,6 +92,11 @@ function measureRaw(renderer: CliRenderer, renderable: Renderable, itemId: ItemI
   let cellIndex = 0
   let last: ScreenCell | undefined
   let firstRow = cells[0]?.y ?? renderable.screenY
+  if (parts.length === 0 && cells[0]) {
+    const cell = cells[0]
+    result[0] = { itemId, graphemeOffset: 0, row: 0, column: cell.x - renderable.screenX, screenX: cell.x, screenY: cell.y }
+    return result
+  }
   for (let offset = 0; offset < parts.length; offset += 1) {
     const part = parts[offset] ?? ""
     if (part === "\n") {

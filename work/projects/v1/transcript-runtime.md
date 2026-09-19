@@ -224,12 +224,19 @@ Move responsibility in tested vertical slices. The legacy hook and the runtime m
 Stage 5 makes steady-state rendering independent of total history size. Windowing operates on render blocks, not conversation items, because one Markdown message, command output, or diff may itself be enormous.
 
 ```ts
-interface TranscriptBlock {
-  key: { itemId: ItemId; blockId: string }
-  sourceSpan: SourceSpan
-  contentRevision: number
-  estimatedRows: number
-}
+type TranscriptBlock =
+  | {
+      key: { kind: "item"; itemId: ItemId; blockId: string }
+      sourceSpan: SourceSpan
+      contentRevision: number
+      estimatedRows: number
+    }
+  | {
+      key: { kind: "turn-activity"; turnId: TurnId }
+      sourceSpan?: undefined
+      contentRevision: number
+      estimatedRows: number
+    }
 
 interface TranscriptWindow {
   blocks: readonly TranscriptBlock[]
@@ -240,6 +247,8 @@ interface TranscriptWindow {
 ```
 
 Stages 1–4 use a pass-through window planner that returns all blocks. Stage 5 changes the policy and materialization strategy, not transcript semantics or the renderer contract.
+
+Item blocks address canonical source; an item with empty canonical source uses a zero-width span and retains one logical anchor point. Turn-activity blocks are runtime-owned, source-less decoration so empty terminal turns retain chronology without entering cursor, selection, search, copy, or fork semantics. The temporary Stage 1 UI join that places turn footers beside rows must move into the runtime block plan in Stage 2.
 
 The future planner owns:
 

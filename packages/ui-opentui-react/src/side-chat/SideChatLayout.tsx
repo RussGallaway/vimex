@@ -42,9 +42,10 @@ export function SideChatLayout(props: VimexAppProps) {
     : { width: dimensions.width - mainWidth - 1, height, x: mainWidth + 1, y: headerHeight }
   const pane = (id: ThreadId | undefined, label: "MAIN" | "SIDE", geometry: PaneGeometry) => {
     const focused = active === id
-    return <box key={id ?? "empty"} onMouseDown={() => { if (!focused && !overlay) flushSync(() => controller.sideChat(label === "MAIN" ? "parent" : "side")) }} id={label === "MAIN" ? "main-pane" : "side-pane"} visible={!maximized || focused} width={geometry.width} height={geometry.height} flexShrink={0} overflow="hidden">
+    const presentationVisible = !maximized || focused
+    return <box key={id ?? "empty"} onMouseDown={() => { if (!focused && !overlay) flushSync(() => controller.sideChat(label === "MAIN" ? "parent" : "side")) }} id={label === "MAIN" ? "main-pane" : "side-pane"} visible={presentationVisible} width={geometry.width} height={geometry.height} flexShrink={0} overflow="hidden">
       <PaneGeometryContext.Provider value={geometry}>
-        <VimexApp {...props} state={focused ? state : { ...state, activeThreadId: id }} interactive={focused} paneLabel={side?.visible ? label : undefined} />
+        <VimexApp {...props} state={focused ? state : { ...state, activeThreadId: id }} interactive={focused} presentationVisible={presentationVisible} paneLabel={side?.visible ? label : undefined} />
       </PaneGeometryContext.Provider>
     </box>
   }

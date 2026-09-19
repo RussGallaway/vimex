@@ -1,15 +1,15 @@
 import type { ConversationItem } from "@vimex/conversation"
-import { ActivityIndicator } from "../activity/ActivityIndicator"
 import { emberTide } from "../theme"
 import { itemStatusGlyph } from "./item-status"
 
 export function ToolCall(props: { item: Extract<ConversationItem, { kind: "command" | "tool" | "unknown" }>; folded: boolean }) {
   const running = props.item.status === "running"
   const executionCommand = props.item.kind === "command" ? props.item.executionCommand : undefined
-  return <box backgroundColor={emberTide.backgroundRaised} paddingX={1} paddingY={1}>
+  return <box backgroundColor={emberTide.backgroundRaised} paddingX={1} paddingY={props.folded ? 0 : 1}>
     <box height={1} flexDirection="row" gap={1}>
       <text id={`decoration:fold:${props.item.id}`} flexShrink={0} fg={emberTide.textMuted}>{props.folded ? "▸" : "▾"}</text>
-      <box id={`decoration:status:${props.item.id}`} flexShrink={0}>{running ? <ActivityIndicator active label={props.item.kind === "command" ? "Running" : "Calling"} /> : <text fg={props.item.status === "error" ? emberTide.red : emberTide.sage}>{itemStatusGlyph[props.item.status]}</text>}</box>
+      <text id={`decoration:status:${props.item.id}`} flexShrink={0} fg={running ? emberTide.blueBright : props.item.status === "error" ? emberTide.red : emberTide.sage}>{running ? "⋯" : itemStatusGlyph[props.item.status]}</text>
+      {running ? <text id={`decoration:phase:${props.item.id}`} flexShrink={0} fg={emberTide.textSoft}>{props.item.kind === "command" ? "Running" : "Calling"}</text> : null}
       <text fg={emberTide.text} flexGrow={1} flexShrink={1} minWidth={0} wrapMode="none" truncate>{props.item.title}</text>
       {props.item.durationMs !== undefined ? <text id={`decoration:duration:${props.item.id}`} flexShrink={0} fg={emberTide.textMuted}>{props.item.durationMs < 1000 ? `${props.item.durationMs}ms` : `${(props.item.durationMs / 1000).toFixed(1)}s`}</text> : null}
     </box>

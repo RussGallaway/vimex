@@ -10,8 +10,17 @@ export function createRpcEventReplay(conversation: ConversationState) {
   return (current: ConversationState, event: ConversationEvent): boolean => {
     if (event.threadId !== current.threadId) return false
     switch (event.type) {
-      case "turn.started": return !current.turns[event.turnId]
-      case "turn.completed": return current.turns[event.turnId]?.status === "running" || !current.turns[event.turnId]
+      case "turn.started": {
+        const turn = current.turns[event.turnId]
+        return !turn || (turn.startedAt === undefined && event.startedAt !== undefined)
+      }
+      case "turn.completed": {
+        const turn = current.turns[event.turnId]
+        return !turn || turn.status === "running"
+          || (turn.startedAt === undefined && event.startedAt !== undefined)
+          || (turn.completedAt === undefined && event.completedAt !== undefined)
+          || (turn.durationMs === undefined && event.durationMs !== undefined)
+      }
       case "item.started": return !current.items[event.item.id]
       case "item.completed": return !protectedItems.has(event.item.id)
       case "item.delta": return !protectedItems.has(event.itemId) && Boolean(current.items[event.itemId])

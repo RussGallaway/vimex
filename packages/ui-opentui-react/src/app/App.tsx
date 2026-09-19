@@ -53,7 +53,7 @@ function selectableAt(renderable: Renderable, x: number, y: number): Renderable 
   return renderable.selectable ? renderable : undefined
 }
 
-export function VimexApp({ state, controller, settings: settingsInput, paneLabel, interactive = true }: VimexAppProps) {
+export function VimexApp({ state, controller, settings: settingsInput, paneLabel, interactive = true, presentationVisible = true }: VimexAppProps) {
   const renderer = useRenderer()
   const distinctControlI = useSyncExternalStore(useCallback((notify: () => void) => {
     renderer.on(CliRenderEvents.CAPABILITIES, notify)
@@ -67,6 +67,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   const composer = workspace?.composer ?? blankComposer
   const interaction = workspace?.interaction ?? blankInteraction
   const parentLink = state.agentRelationships.find(link => link.childId === state.activeThreadId)
+  const inheritedTurnIds = Object.values(state.sideChats).find(side => side.threadId === state.activeThreadId)?.inheritedTurnIds
   const parentTitle = parentLink ? state.summaries[parentLink.parentId]?.title || parentLink.parentId : undefined
   const summary = state.activeThreadId ? state.summaries[state.activeThreadId] : undefined
   const items = useMemo(() => transcript.order.flatMap((id) => {
@@ -147,7 +148,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
       const foldKey = `${state.activeThreadId ?? ""}:${item.id}`
       if (initializedFolds.current.has(foldKey) || Object.hasOwn(transcript.folded, item.id)) continue
       initializedFolds.current.add(foldKey)
-      if ((settings.foldReasoning && item.kind === "reasoning") || (settings.foldTools && (item.kind === "tool" || item.kind === "command"))) {
+      if ((settings.foldReasoning && item.kind === "reasoning") || (settings.foldTools && (item.kind === "tool" || item.kind === "command" || item.kind === "agent"))) {
         controller.transcript({ type: "fold.set", itemId: item.id, folded: true })
       }
     }
@@ -505,9 +506,9 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   }), [interactive, activateOverlay, interaction.overlay, closeOverlay, controller, modelPicker, overlayLength, pendingApproval, questionOwnsReturn, state.availableModels])
 
   return (
-    <FullscreenShell paneLabel={paneLabel} title={summary?.title} parentTitle={parentTitle} connection={state.connection} working={activity.working} activityLabel={activityLabel} waiting={Boolean(pendingApproval || pendingQuestion)}
+    <FullscreenShell paneLabel={paneLabel} title={summary?.title} parentTitle={parentTitle} connection={state.connection} working={activity.working} activityLabel={activityLabel} activityStartedAt={activity.startedAt} waiting={Boolean(pendingApproval || pendingQuestion)} presentationVisible={presentationVisible}
       notice={interactive ? <NoticeStrip message={state.error} /> : undefined}
-      transcript={<TranscriptViewport items={items} state={transcript} interaction={interaction} syntax={syntax} scrollRef={scrollRef} onManualScroll={onManualScroll} />}
+      transcript={<TranscriptViewport items={items} hiddenTurnIds={inheritedTurnIds} turns={workspace?.conversation.turns ?? {}} turnIds={workspace?.conversation.turnIds ?? []} state={transcript} interaction={interaction} syntax={syntax} scrollRef={scrollRef} onManualScroll={onManualScroll} />}
       commandLine={interactive && !jumpActive && interaction.mode === "command" ? <CommandLine currentTitle={summary?.title} sessionIds={state.threadOrder} currentModel={summary?.model} models={state.availableModels} value={interaction.commandLine} inputRef={commandRef} controller={controller} onSubmit={(line) => {
         commandHistoryRef.current = recordCommand(commandHistoryRef.current, line)
         controller.executeCommand(line)

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { itemId, turnId, type ConversationItem } from "@vimex/conversation"
-import { attachTail, beginSelection, graphemeCount, initialTranscript, moveCursor, projectItem, reduceTranscript, selectedText, setFold, syncTranscriptItem, urlAt } from "./index"
+import { itemId, threadId, turnId, type ConversationItem } from "@vimex/conversation"
+import { attachTail, beginSelection, findSearchMatches, graphemeCount, initialTranscript, moveCursor, projectItem, reduceTranscript, selectedText, setFold, syncTranscriptItem, urlAt } from "./index"
 
 import { assistantMessage as message } from "@vimex/testkit"
 
@@ -176,6 +176,45 @@ test("command projection keeps readable action, exact execution, and literal out
   const projection = projectItem({ id: itemId("command-detail"), turnId: turnId("turn"), kind: "command", title: "List files · packages", executionCommand, detail: output, status: "complete" })
   expect(projection.source).toBe(`List files · packages\n${executionCommand}\n${output}`)
   expect(projection.plain).toBe(projection.source)
+})
+
+test("agent presentation labels and opaque identity stay outside canonical search and copy", () => {
+  const id = itemId("agent")
+  let state = syncTranscriptItem(initialTranscript(), {
+    id, turnId: turnId("turn"), kind: "agent", action: "spawn", detail: "Review transcript semantics",
+    agentThreadIds: [threadId("opaque-child")],
+    agentStates: [{ threadId: threadId("opaque-child"), status: "running", message: "Inspecting" }], status: "complete",
+  })
+  expect(state.projectionById[id]?.source).toBe("Review transcript semantics")
+  expect(findSearchMatches(state, "Start agent")).toEqual([])
+  expect(findSearchMatches(state, "opaque-child")).toEqual([])
+  state = beginSelection(moveCursor(state, { itemId: id, graphemeOffset: 0 }), "character")
+  state = moveCursor(state, { itemId: id, graphemeOffset: 999 })
+  expect(selectedText(state, "plain")).toBe("Review transcript semantics")
+  expect(selectedText(state, "source")).toBe("Review transcript semantics")
+})
+
+test("empty agent telemetry is retained outside the semantic transcript", () => {
+  let state = initialTranscript()
+  for (const item of [
+    { id: itemId("activity"), action: "activity" as const, activity: "interacted" as const, agentPath: "/root/reviewer" },
+    { id: itemId("wait"), action: "wait" as const },
+    { id: itemId("list"), action: "list" as const },
+  ]) {
+    state = syncTranscriptItem(state, {
+      ...item, turnId: turnId("turn"), kind: "agent", detail: "", agentThreadIds: [threadId("child")], status: "complete",
+    })
+  }
+  expect(state.order).toEqual([])
+})
+
+test("diagnostic unknown items stay out of canonical projection", () => {
+  const state = syncTranscriptItem(initialTranscript(), {
+    id: itemId("diagnostic"), turnId: turnId("turn"), kind: "unknown", title: "Invalid agent activity",
+    detail: '{"senderThreadId":"opaque-parent","receiverThreadIds":["opaque-child"]}', status: "complete", transcript: "diagnostic",
+  })
+  expect(state.order).toEqual([])
+  expect(findSearchMatches(state, "opaque-child")).toEqual([])
 })
 
 

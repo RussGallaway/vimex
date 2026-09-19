@@ -8,6 +8,8 @@ export interface VimexAppProps {
   controller: VimexUiController
   settings?: Partial<VimexUiSettings>
   interactive?: boolean
+  /** Whether this mounted pane is physically presented. Hidden panes keep state but own no animation timers. */
+  presentationVisible?: boolean
   paneLabel?: "MAIN" | "SIDE"
 }
 

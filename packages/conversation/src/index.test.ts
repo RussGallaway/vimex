@@ -2,6 +2,30 @@ import { describe, expect, test } from "bun:test"
 import { createConversation, effectiveItemStatus, forkConversation, itemId, reduceConversation, threadId, turnId } from "./index"
 
 describe("conversation", () => {
+  test("duplicate running turn starts preserve state identity", () => {
+    const thread = threadId("identity"), turn = turnId("turn")
+    const started = reduceConversation(createConversation(thread), { type: "turn.started", threadId: thread, turnId: turn, startedAt: 1_000 })
+    expect(reduceConversation(started, { type: "turn.started", threadId: thread, turnId: turn, startedAt: 2_000 })).toBe(started)
+  })
+
+  test("a stale start enriches its turn without replacing the newer active turn", () => {
+    const thread = threadId("ordered"), older = turnId("older"), newer = turnId("newer")
+    let state = reduceConversation(createConversation(thread), { type: "turn.started", threadId: thread, turnId: older })
+    state = reduceConversation(state, { type: "turn.started", threadId: thread, turnId: newer, startedAt: 2_000 })
+    state = reduceConversation(state, { type: "turn.started", threadId: thread, turnId: older, startedAt: 1_000 })
+    expect(state.activeTurnId).toBe(newer)
+    expect(state.turns[older]?.startedAt).toBe(1_000)
+  })
+
+  test("preserves observed turn timing and enriches terminal replay without regressing status", () => {
+    const thread = threadId("timing"), turn = turnId("turn")
+    let state = reduceConversation(createConversation(thread), { type: "turn.completed", threadId: thread, turnId: turn, outcome: "complete" })
+    state = reduceConversation(state, { type: "turn.started", threadId: thread, turnId: turn, startedAt: 1_000 })
+    state = reduceConversation(state, { type: "turn.completed", threadId: thread, turnId: turn, outcome: "failed", startedAt: 900, completedAt: 3_500, durationMs: 2_500 })
+    expect(state.turns[turn]).toEqual({ id: turn, status: "complete", itemIds: [], startedAt: 1_000, completedAt: 3_500, durationMs: 2_500 })
+    expect(state.activeTurnId).toBeUndefined()
+  })
+
   test("streams deltas without duplicating items and forks through a completed turn", () => {
     const source = threadId("source"), turn = turnId("turn-1"), item = itemId("item-1")
     let state = reduceConversation(createConversation(source), { type: "turn.started", threadId: source, turnId: turn })

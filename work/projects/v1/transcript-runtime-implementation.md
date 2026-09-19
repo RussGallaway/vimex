@@ -18,7 +18,7 @@ Stages 1–4 are the current delivery target. Stage 5 contracts must be supporte
 |---|---|---|
 | Architecture and research | Complete | Commit `8f6bba9` |
 | Baseline profiling | Complete | Measurements recorded below |
-| Stage 1: compact activity | Started, unverified | Partial local domain edits; no implementation commit |
+| Stage 1: compact activity | Verified, commit pending | Full gate plus isolated tmux rerun; evidence below |
 | Stage 2: ingress and detachment | Not started | — |
 | Stage 3: block-local geometry | Not started | — |
 | Stage 4: narrow observation | Not started | — |
@@ -94,38 +94,41 @@ packages/codex-app-server/src/mapping/
 
 packages/workbench/src/application/
   live-activity.ts
+  rpc-event-replay.ts
 
 packages/ui-opentui-react/src/
   activity/ActivityIndicator.tsx
   app/App.tsx
   app/FullscreenShell.tsx
+  side-chat/SideChatLayout.tsx
   transcript/TurnActivity.tsx
   transcript/AgentActivity.tsx
   transcript/ReasoningBlock.tsx
   transcript/ToolCall.tsx
   transcript/TranscriptNode.tsx
   transcript/TranscriptViewport.tsx
+  transcript/rendered-layout.ts
 ```
 
 ### Work
 
-- [ ] Preserve server-observed `startedAt`, `completedAt`, and `durationMs` on turns.
-- [ ] Preserve collaborator actions, target thread IDs, agent path, and status as structured domain data.
-- [ ] Map generated Codex types at the adapter boundary without title parsing downstream.
-- [ ] Project one pane-level `Working · elapsed` heartbeat from the active turn.
-- [ ] Render `Worked for …` from observed runtime duration when available.
-- [ ] Remove per-item animation timers from reasoning and tool rows.
-- [ ] Render agent coordination as compact foldable activity.
-- [ ] Keep activity decoration outside canonical copy, search, and fork content.
+- [x] Preserve server-observed `startedAt`, `completedAt`, and `durationMs` on turns.
+- [x] Preserve collaborator actions, target thread IDs, agent path, and status as structured domain data.
+- [x] Map generated Codex types at the adapter boundary without title parsing downstream.
+- [x] Project one pane-level `Working · elapsed` heartbeat from the active turn.
+- [x] Render `Worked for …` from observed runtime duration when available.
+- [x] Remove per-item animation timers from reasoning and tool rows.
+- [x] Render agent coordination as compact foldable activity.
+- [x] Keep activity decoration outside canonical copy, search, and fork content.
 
 ### Tests
 
-- [ ] Conversation reducer preserves and reconciles turn timing.
-- [ ] Codex mapper covers collaboration tool actions and subagent activity variants.
-- [ ] Live activity handles working, waiting, stopping, compacting, failed, and interrupted turns.
-- [ ] UI snapshots cover running and completed activity.
-- [ ] Navigation and copy tests prove decorations are non-canonical.
-- [ ] A visible pane owns at most one elapsed-time interval.
+- [x] Conversation reducer preserves and reconciles turn timing.
+- [x] Codex mapper covers collaboration tool actions and subagent activity variants.
+- [x] Live activity handles working, waiting, stopping, compacting, failed, and interrupted turns.
+- [x] UI render tests cover running and completed activity.
+- [x] Navigation and copy tests prove decorations are non-canonical.
+- [x] A visible pane owns at most one elapsed-time interval.
 
 ### Exit criteria
 
@@ -140,6 +143,16 @@ packages/ui-opentui-react/src/
 - Detached presentation isolation.
 - Geometry refactoring.
 - Windowing.
+
+### Verification evidence
+
+- `bun run typecheck`: pass.
+- `bun run boundaries`: pass.
+- `bun run docs:check`: pass.
+- Repository suite: 563 pass, 5 intentional skips. The managed sandbox removed the detached tmux server socket; the exact isolated tmux test passed separately outside the sandbox.
+- Focused Stage 1 regression set: 98 pass.
+- Parallel adapter/domain, UI/performance, and contract review: no remaining Stage 1 blockers after repair.
+- Transcript benchmark after Stage 1: 135,389 characters; measure 0.038 ms, anchor 0.243 ms, frame 0.160 ms. This is effectively unchanged from the warm baseline, as expected for a presentation-semantics stage.
 
 ## Stage 2 — bounded ingress and coherent detachment
 
@@ -180,6 +193,7 @@ packages/ui-opentui-react/src/
 
 - [ ] Introduce `TranscriptRuntime` with cached immutable `TranscriptFrame` output.
 - [ ] Introduce Stage 5-compatible block and window contracts.
+- [ ] Model blocks as a union of source-backed item blocks and source-less, turn-owned activity decoration blocks.
 - [ ] Begin with a pass-through planner that materializes all blocks.
 - [ ] Track canonical and presentation revisions explicitly.
 - [ ] Keep the displayed content revision stable while detached.
@@ -330,6 +344,7 @@ Mounted render work and native layout cost become independent of total transcrip
 - Correct estimates without visually moving the logical anchor.
 - Materialize search, mark, jump, cursor, and selection targets before navigation.
 - Perform copy against canonical projections, including unmounted blocks.
+- Preserve source-less turn-activity blocks in chronological windows without making them cursor, selection, search, copy, or fork targets.
 - Keep follow pinned to the trailing window and detached reading pinned to the anchor window.
 - Add indexed search separately when search cost becomes size-dependent.
 - Add paged history access only if canonical history moves to a secondary resource.

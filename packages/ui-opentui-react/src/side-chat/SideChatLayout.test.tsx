@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test"
+import { expect, spyOn, test } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
 import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
 import { act, useMemo, useState } from "react"
@@ -12,10 +12,12 @@ async function harness(width = 140, height = 36, initiallyOpen = true) {
   let initial = initialWorkbench()
   for (const id of [parent, child]) {
     initial = transitionWorkbench(initial, { type: "thread.open", summary: { id, title: id === parent ? "Parent task" : "Side questions", cwd: "/tmp", model: "test", reasoningEffort: "medium", status: "working" } }).state
+    initial = transitionWorkbench(initial, { type: "conversation.event", event: { type: "turn.started", threadId: id, turnId: turnId(`${id}-turn`), startedAt: Date.now() - 2_000 } }).state
     initial = transitionWorkbench(initial, { type: "conversation.event", event: { type: "item.started", threadId: id, item: { id: itemId(`${id}-answer`), turnId: turnId(`${id}-turn`), kind: "assistant", markdown: `${id} unique answer\n\n` + Array.from({ length: 35 }, (_, n) => `${id} line ${n}`).join("\n\n"), status: "running" } } }).state
     initial = transitionWorkbench(initial, { type: "composer.change", text: `${id} draft`, cursorOffset: 2 }).state
     initial = transitionWorkbench(initial, { type: "interaction.command", command: { type: "focus.set", surface: "composer" } }).state
   }
+  initial = transitionWorkbench(initial, { type: "connection.changed", connection: "connected" }).state
   initial = { ...initial, sideChats: { [parent]: { parentId: parent, threadId: child, visible: true, maximized: false, contextLabel: "Parent snapshot" } } }
   if (!initiallyOpen) initial = { ...initial, activeThreadId: parent, sideChats: {} }
   let beginOpening!: () => void
@@ -156,6 +158,24 @@ test("short terminals maximize active pane while retaining live parent status", 
     expect(h.renderer.root.findDescendantById("main-pane")!.visible).toBe(true)
     expect(h.renderer.root.findDescendantById("side-pane")!.visible).toBe(false)
   } finally { await h.close() }
+})
+
+test("a maximized layout schedules no heartbeat for its mounted hidden pane", async () => {
+  const intervals = spyOn(globalThis, "setInterval")
+  const cleared = spyOn(globalThis, "clearInterval")
+  const h = await harness(80, 16)
+  try {
+    const heartbeatCalls = intervals.mock.calls.map((args, index) => ({ args, timer: intervals.mock.results[index]?.value })).filter(call => call.args[1] === 120)
+    expect(heartbeatCalls).toHaveLength(1)
+    const firstTimer = heartbeatCalls[0]!.timer
+    await h.windowKey("h")
+    expect(intervals.mock.calls.filter(args => args[1] === 120)).toHaveLength(2)
+    expect(cleared.mock.calls.some(args => args[0] === firstTimer)).toBe(true)
+  } finally {
+    await h.close()
+    intervals.mockRestore()
+    cleared.mockRestore()
+  }
 })
 
 test("mouse wheel in unfocused parent preserves side draft and updates only parent anchor", async () => {

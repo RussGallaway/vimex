@@ -3,6 +3,21 @@ import { testRender } from "@opentui/react/test-utils"
 import { act } from "react"
 import { ActivityIndicator } from "./ActivityIndicator"
 
+test("uses an injected clock and scheduler", async () => {
+  let heartbeat: (() => void) | undefined
+  let cancelled = false
+  const clock = { now: () => 66_000, schedule(task: () => void, intervalMs: number) { expect(intervalMs).toBe(120); heartbeat = task; return () => { cancelled = true } } }
+  const setup = await testRender(<ActivityIndicator active label="Working" startedAt={1_000} clock={clock} />, { width: 40, height: 2 })
+  try {
+    await act(async () => setup.flush())
+    expect(setup.captureCharFrame()).toContain("Working · 1m 5s")
+    expect(heartbeat).toBeFunction()
+  } finally {
+    await act(async () => setup.renderer.destroy())
+    expect(cancelled).toBe(true)
+  }
+})
+
 test("active heartbeat changes without inventing server progress", async () => {
   const setup = await testRender(<ActivityIndicator active label="Thinking" />, { width: 40, height: 2 })
   try {
@@ -21,7 +36,7 @@ test("static fallback retains a clear waiting label and observed elapsed time", 
   const setup = await testRender(<ActivityIndicator active animate={false} label="Awaiting approval" tone="waiting" startedAt={Date.now() - 65_000} />, { width: 60, height: 2 })
   try {
     await act(async () => setup.flush())
-    expect(setup.captureCharFrame()).toContain("⋯ Awaiting approval 1m 5s elapsed")
+    expect(setup.captureCharFrame()).toContain("⋯ Awaiting approval · 1m 5s")
   } finally { await act(async () => setup.renderer.destroy()) }
 })
 

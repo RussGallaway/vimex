@@ -8,9 +8,9 @@ exports[`terminal frame regressions composer stays anchored through tool streami
   │
   │  A stable transcript with a link (https://example.com).
 
-  │
-  │   ▸ ⠋ Calling Read files
-  │
+  │   ▸ ⋯ Calling Read files
+
+
 
 
 
@@ -41,9 +41,9 @@ exports[`terminal frame regressions composer stays anchored through tool streami
   │
   │  A stable transcript with a link (https://example.com).
 
-  │
-  │   ▸ ⠋ Calling Read files
-  │
+  │   ▸ ⋯ Calling Read files
+
+
 
 
 
@@ -71,8 +71,8 @@ exports[`terminal frame regressions composer stays anchored through tool streami
   │  A stable transcript with a link (https://
   │  example.com).
 
-  │
-  │   ▸ ⠋ Calling Read files
+  │   ▸ ⋯ Calling Read files
+
 │
 │  Draft stays here
 │

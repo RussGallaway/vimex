@@ -6,17 +6,22 @@ function sourceOf(item: ConversationItem): string {
     case "user": case "assistant": case "reasoning": return item.markdown
     case "edit": return item.patch
     case "command": return [item.title, item.executionCommand, item.detail].filter(Boolean).join("\n")
-    default: return [item.title, item.detail].filter(Boolean).join("\n")
+    case "agent": return item.detail
+    case "tool": case "unknown": return [item.title, item.detail].filter(Boolean).join("\n")
+    default: return unreachable(item)
   }
 }
+function unreachable(item: never): never { throw new Error(`Unsupported conversation item: ${String(item)}`) }
 export function projectItem(item: ConversationItem, previous?: TextProjection): TextProjection {
   const project = item.kind === "user" || item.kind === "assistant" || item.kind === "reasoning" ? projectMarkdown : projectPlainText
-  const nodeKind = item.kind === "user" || item.kind === "assistant" ? "message" : item.kind === "command" ? "tool" : item.kind
+  const nodeKind = item.kind === "user" || item.kind === "assistant" ? "message" : item.kind === "command" || item.kind === "agent" ? "tool" : item.kind
   const source = sourceOf(item)
   if (previous?.source === source && previous.nodeKind === nodeKind) return previous
   return { ...project(source), nodeKind, revision: (previous?.revision ?? 0) + 1 }
 }
 export function syncTranscriptItem(state: TranscriptState, item: ConversationItem): TranscriptState {
+  if (item.kind === "unknown" && item.transcript === "diagnostic") return state
+  if (item.kind === "agent" && (item.action === "activity" || item.action === "wait" || item.action === "list") && !item.detail) return state
   const previous = state.projectionById[item.id]
   const projection = projectItem(item, previous)
   if (projection === previous) return state
