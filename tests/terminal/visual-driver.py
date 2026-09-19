@@ -87,7 +87,7 @@ with tempfile.TemporaryDirectory(prefix='vimex-visual-') as temporary:
         send(b'i');wait('INSERT');send(b'/');wait('Commands');capture('08-slash-command-drawer')
         send(b'help');send(b'\r');wait('Vimex keys');capture('08-slash-help');send(b'\x1b');wait('NORMAL')
         checks.append('visual-delete-and-slash-commands')
-        send(b'\x1b[B');send(b'i');wait('INSERT');send(b'Draft stays separate from status');send(b'\rNEXT_DRAFT_AFTER_SEND');wait('Responding')
+        send(b'\x1b[B');send(b'i');wait('INSERT');send(b'Draft stays separate from status');send(b'\rNEXT_DRAFT_AFTER_SEND');wait('Working')
         assert 'NEXT_DRAFT_AFTER_SEND' in '\n'.join(screen.display[-9:]), 'Next draft missing after submit'
         assert 'statusNEXT_DRAFT_AFTER_SEND' not in '\n'.join(screen.display), 'Submitted native text was resurrected'
         checks.append('submit-clears-before-next-keystroke')
