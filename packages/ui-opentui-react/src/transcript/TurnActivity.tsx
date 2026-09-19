@@ -1,4 +1,5 @@
 import type { Turn } from "@vimex/conversation"
+import { hasTurnActivity } from "@vimex/transcript"
 import { memo } from "react"
 import { formatDuration } from "../activity/duration"
 import { emberTide } from "../theme"
@@ -16,8 +17,3 @@ export const TurnActivity = memo(function TurnActivity({ turn }: { turn: Turn })
     <text fg={emberTide.textMuted}>{label}</text>
   </box>
 })
-
-export function hasTurnActivity(turn: Turn): boolean {
-  return turn.status === "failed" || turn.status === "interrupted"
-    || (turn.status === "complete" && (turn.durationMs !== undefined || (turn.startedAt !== undefined && turn.completedAt !== undefined)))
-}

@@ -82,7 +82,7 @@ export function transitionWorkbench(state: WorkbenchState, command: WorkbenchCom
       const workspace = state.workspaces[id]
       if (!workspace) return done(state)
       const transcript = reduceTranscript(workspace.transcript, command.command)
-      const next = updateWorkspace(state, id, (current) => ({ ...current, transcript }))
+      const next = updateWorkspace(state, id, (current) => transcript === current.transcript ? current : { ...current, transcript })
       const restores = command.command.type.startsWith("fold.") ? [{ type: "viewport.restore" as const, threadId: id, anchor: workspace.transcript.viewport }] : []
       return done(next, ...restores)
     }

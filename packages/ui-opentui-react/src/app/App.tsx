@@ -5,9 +5,8 @@ import { CliRenderEvents, type InputRenderable, type Renderable, type ScrollBoxR
 import { useBindings } from "@opentui/keymap/react"
 import { flushSync, useRenderer } from "@opentui/react"
 import { initialComposer, type SubmissionIntent } from "@vimex/composer"
-import { effectiveItemStatus } from "@vimex/conversation"
 import { applyComposerVimAction, codeUnitOffsetToGraphemeOffset, commandCompletions, graphemeOffsetToCodeUnitOffset, initialCommandHistory, initialInteraction, recallCommand, recordCommand, resolveComposerKey, type ComposerVimAction, type InteractionState } from "@vimex/interaction"
-import { graphemeCount, initialTranscript, selectedText, type TranscriptState } from "@vimex/transcript"
+import { graphemeCount, initialTranscript, selectedText, type TranscriptRuntimeInput, type TranscriptState, type TranscriptWindow } from "@vimex/transcript"
 import { activeWorkspace, liveActivity } from "@vimex/workbench"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { Composer } from "../composer/Composer"
@@ -31,8 +30,10 @@ import { FullscreenShell } from "./FullscreenShell"
 import { commandBody, commandPrompt, CommandLine } from "../composer/CommandLine"
 import { searchSessions } from "../sessions/session-search"
 import { agentNavigationRows } from "../agents/AgentsOverlay"
+import { useTranscriptRuntime } from "../transcript/use-transcript-runtime"
 
 const blankTranscript = initialTranscript()
+const blankTranscriptWindow: TranscriptWindow = Object.freeze({ blocks: Object.freeze([]), topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
 const blankComposer = initialComposer()
 const blankInteraction = initialInteraction()
 
@@ -53,7 +54,7 @@ function selectableAt(renderable: Renderable, x: number, y: number): Renderable 
   return renderable.selectable ? renderable : undefined
 }
 
-export function VimexApp({ state, controller, settings: settingsInput, paneLabel, interactive = true, presentationVisible = true }: VimexAppProps) {
+export function VimexApp({ state, controller, settings: settingsInput, paneLabel, presentationId = "main", interactive = true, presentationVisible = true }: VimexAppProps) {
   const renderer = useRenderer()
   const distinctControlI = useSyncExternalStore(useCallback((notify: () => void) => {
     renderer.on(CliRenderEvents.CAPABILITIES, notify)
@@ -63,19 +64,28 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   selectTheme(settings.theme, settings.reducedColor)
   const dimensions = usePaneGeometry()
   const workspace = activeWorkspace(state)
-  const transcript = workspace?.transcript ?? blankTranscript
+  const semanticTranscript = workspace?.transcript ?? blankTranscript
   const composer = workspace?.composer ?? blankComposer
   const interaction = workspace?.interaction ?? blankInteraction
   const parentLink = state.agentRelationships.find(link => link.childId === state.activeThreadId)
   const inheritedTurnIds = Object.values(state.sideChats).find(side => side.threadId === state.activeThreadId)?.inheritedTurnIds
   const parentTitle = parentLink ? state.summaries[parentLink.parentId]?.title || parentLink.parentId : undefined
   const summary = state.activeThreadId ? state.summaries[state.activeThreadId] : undefined
-  const items = useMemo(() => transcript.order.flatMap((id) => {
-    const item = workspace?.conversation.items[id]
-    if (!item || !workspace) return []
-    const status = effectiveItemStatus(workspace.conversation, item)
-    return [status === item.status ? item : { ...item, status }]
-  }), [transcript.order, workspace?.conversation.items, workspace?.conversation.turns])
+  const runtimeInput = useMemo<TranscriptRuntimeInput | undefined>(() => workspace && state.activeThreadId ? {
+    threadId: state.activeThreadId,
+    canonicalGeneration: workspace.canonicalGeneration,
+    canonicalRevision: workspace.canonicalRevision,
+    conversation: workspace.conversation,
+    transcript: workspace.transcript,
+    mode: workspace.transcript.viewport.kind === "tail" ? "follow" : "detached",
+    canonicalDamage: { kind: "full" },
+    excludedTurnIds: inheritedTurnIds,
+  } : undefined, [inheritedTurnIds, state.activeThreadId, workspace])
+  const transcriptFrame = useTranscriptRuntime(controller, presentationId, runtimeInput)
+  const transcript = workspace ? transcriptFrame.transcript : blankTranscript
+  const transcriptWindow = workspace ? transcriptFrame.window : blankTranscriptWindow
+  const blocks = transcriptWindow.blocks
+  const items = useMemo(() => blocks.flatMap(block => "item" in block ? [block.item] : []), [blocks])
   const syntax = useMemo(() => createEmberTideSyntax(settings.syntaxTheme === "theme" ? settings.theme : settings.syntaxTheme, settings.reducedColor), [settings.reducedColor, settings.syntaxTheme, settings.theme])
   const scrollRef = useRef<ScrollBoxRenderable>(null)
   const textareaRef = useRef<TextareaRenderable>(null)
@@ -508,7 +518,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   return (
     <FullscreenShell paneLabel={paneLabel} title={summary?.title} parentTitle={parentTitle} connection={state.connection} working={activity.working} activityLabel={activityLabel} activityStartedAt={activity.startedAt} waiting={Boolean(pendingApproval || pendingQuestion)} presentationVisible={presentationVisible}
       notice={interactive ? <NoticeStrip message={state.error} /> : undefined}
-      transcript={<TranscriptViewport items={items} hiddenTurnIds={inheritedTurnIds} turns={workspace?.conversation.turns ?? {}} turnIds={workspace?.conversation.turnIds ?? []} state={transcript} interaction={interaction} syntax={syntax} scrollRef={scrollRef} onManualScroll={onManualScroll} />}
+      transcript={<TranscriptViewport window={transcriptWindow} state={transcript} interaction={interaction} syntax={syntax} scrollRef={scrollRef} onManualScroll={onManualScroll} />}
       commandLine={interactive && !jumpActive && interaction.mode === "command" ? <CommandLine currentTitle={summary?.title} sessionIds={state.threadOrder} currentModel={summary?.model} models={state.availableModels} value={interaction.commandLine} inputRef={commandRef} controller={controller} onSubmit={(line) => {
         commandHistoryRef.current = recordCommand(commandHistoryRef.current, line)
         controller.executeCommand(line)
@@ -540,7 +550,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
         mode={interaction.mode}
         summary={summary}
         pendingKeys={interaction.pendingKeys}
-        unseenEntries={transcript.unseenEntries}
+        unseenEntries={semanticTranscript.unseenEntries}
         selectionCount={selectionCount ? graphemeCount(selectionCount) : undefined}
         pendingApprovals={state.approvals.order.length}
         pendingQuestions={Object.keys(state.questions).length}

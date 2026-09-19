@@ -130,6 +130,49 @@ test("one cadence publishes interleaved item deltas as one canonical settlement"
   await h.controller.close()
 })
 
+test("controller-owned transcript runtime freezes detached content and follows latest once", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const runtime = h.controller.transcriptRuntime("main")!
+  const turn = turnId("runtime"), id = itemId("runtime-answer")
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id, turnId: turn, kind: "assistant", markdown: "visible", status: "running" } } })
+  expect(runtime.getSnapshot().damage.kind).toBe("full")
+  h.controller.transcript({ type: "cursor.move", target: { itemId: id, graphemeOffset: 2 }, preferredScreenRow: 3, extend: false })
+  const pinned = runtime.getSnapshot()
+  h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: id, delta: " hidden tail" } })
+  await h.controller.settle()
+  expect(runtime.getSnapshot()).toBe(pinned)
+  expect(runtime.getSnapshot().transcript.projectionById[id]?.source).toBe("visible")
+  expect(h.controller.getSnapshot().workspaces[a]?.transcript.unseenEntries).toBe(1)
+  h.controller.transcript({ type: "viewport.tail" })
+  const followed = runtime.getSnapshot()
+  expect(followed).not.toBe(pinned)
+  expect(followed.transcript.projectionById[id]?.source).toBe("visible hidden tail")
+  expect(followed.displayedCanonicalRevision).toBe(h.controller.getSnapshot().workspaces[a]!.canonicalRevision)
+  h.controller.transcript({ type: "viewport.tail" })
+  expect(runtime.getSnapshot()).toBe(followed)
+  await h.controller.close()
+  expect(h.controller.transcriptRuntime("main")).toBeUndefined()
+})
+
+test("explicit navigation materializes an item created beyond a detached frame", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const runtime = h.controller.transcriptRuntime("main")!
+  const turn = turnId("reveal"), first = itemId("first-visible"), hidden = itemId("hidden-target")
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id: first, turnId: turn, kind: "assistant", markdown: "first", status: "complete" } } })
+  h.controller.transcript({ type: "cursor.move", target: { itemId: first, graphemeOffset: 0 }, preferredScreenRow: 2, extend: false })
+  const pinned = runtime.getSnapshot()
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id: hidden, turnId: turn, kind: "assistant", markdown: "target", status: "complete" } } })
+  expect(runtime.getSnapshot()).toBe(pinned)
+  h.controller.transcript({ type: "jump", target: { itemId: hidden, graphemeOffset: 0 } })
+  expect(runtime.getSnapshot().blocks.some(block => block.key.kind === "item" && block.key.itemId === hidden)).toBe(true)
+  expect(runtime.getSnapshot().mode).toBe("detached")
+  await h.controller.close()
+})
+
 test("conversation boundaries, disconnect, restart, and close cannot strand pending deltas", async () => {
   const setup = async (suffix: string) => {
     const manual = manualIngressScheduler()

@@ -1,7 +1,7 @@
 import type { ThemeName } from "@vimex/interaction"
-import type { WorkbenchState, WorkbenchActions } from "@vimex/workbench"
-export type { WorkbenchActions as VimexUiController, TranscriptAction as TranscriptUiCommand } from "@vimex/workbench"
-type VimexUiController = WorkbenchActions
+import type { WorkbenchState, WorkbenchActions, TranscriptPresentationHost, TranscriptPresentationId } from "@vimex/workbench"
+export type { TranscriptAction as TranscriptUiCommand } from "@vimex/workbench"
+export type VimexUiController = WorkbenchActions & TranscriptPresentationHost
 
 export interface VimexAppProps {
   state: WorkbenchState
@@ -11,6 +11,7 @@ export interface VimexAppProps {
   /** Whether this mounted pane is physically presented. Hidden panes keep state but own no animation timers. */
   presentationVisible?: boolean
   paneLabel?: "MAIN" | "SIDE"
+  presentationId?: TranscriptPresentationId
 }
 
 export interface VimexUiSettings {
@@ -38,6 +39,7 @@ export const defaultVimexUiSettings: VimexUiSettings = {
 }
 
 export const inertController: VimexUiController = {
+  transcriptRuntime() { return undefined },
   dispatchInteraction() {},
   changeDraft() {},
   submit() {},

@@ -17,12 +17,16 @@ test("sent user panels preserve exact selectable Markdown without a role label t
   const state = { ...base, cursor: from, selection: { anchor: from, head: to, shape: "character" as const } }
   const scrollRef = createRef<ScrollBoxRenderable>()
   const syntax = createEmberTideSyntax()
-  const h = await testRender(<TranscriptViewport items={[item]} state={state} interaction={{ ...initialInteraction(), mode: "visual", surface: "transcript" }} syntax={syntax} scrollRef={scrollRef} />, { width: 80, height: 20 })
+  const blocks = [{ key: { kind: "item" as const, itemId: item.id, blockId: "root" as const }, turnId: item.turnId, item,
+    projection: state.projectionById[item.id]!, sourceSpan: { from: 0, to: item.markdown.length }, contentRevision: 1, estimatedRows: 1 }]
+  const h = await testRender(<TranscriptViewport window={{ blocks, topSpacerRows: 2, bottomSpacerRows: 3, overscanRows: 1 }} state={state} interaction={{ ...initialInteraction(), mode: "visual", surface: "transcript" }} syntax={syntax} scrollRef={scrollRef} />, { width: 80, height: 20 })
   try {
     for (const width of [80, 38]) {
       h.resize(width, 20)
       for (let frame = 0; frame < 3; frame++) await act(async () => { await h.flush(); await h.renderOnce() })
       expect(h.renderer.root.findDescendantById(`decoration:user-label:${item.id}`)).toBeUndefined()
+      expect(h.renderer.root.findDescendantById("transcript-top-spacer")?.height).toBe(2)
+      expect(h.renderer.root.findDescendantById("transcript-bottom-spacer")?.height).toBe(3)
       const markdown = h.renderer.root.findDescendantById(`markdown:${item.id}`)!
       expect(markdown.id).toBe(`markdown:${item.id}`)
       const layout = measureRenderedTranscript(h.renderer, scrollRef.current!, state)!

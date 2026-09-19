@@ -242,6 +242,34 @@ test("independent parents keep side forks isolated when creation completes out o
   await h.controller.close()
 })
 
+test("late retirement of one side does not dispose another parent's presentation runtime", async () => {
+  const h = harness(); await h.controller.initialize("/tmp")
+  h.controller.sideChat("open"); await h.controller.settle()
+  const sideA = threadId("side-1")
+  h.controller.sideChat("close"); await h.controller.settle()
+  h.controller.openThread(b); await h.controller.settle()
+  h.controller.sideChat("open"); await h.controller.settle()
+  const sideB = threadId("side-2")
+
+  h.controller.openThread(a); await h.controller.settle()
+  h.controller.sideChat("open"); await h.controller.settle()
+  let finishRetirement: (() => void) | undefined
+  h.backend.retireThread = id => id === sideA ? new Promise(resolve => { finishRetirement = resolve }) : Promise.resolve()
+  h.controller.sideChat("quit")
+  for (let attempt = 0; attempt < 10 && !finishRetirement; attempt++) await Promise.resolve()
+
+  h.controller.openThread(b)
+  h.controller.sideChat("open")
+  const runtimeB = h.controller.transcriptRuntime("side")
+  expect(runtimeB?.getThreadId()).toBe(sideB)
+  expect(finishRetirement).toBeDefined()
+  finishRetirement?.()
+  await h.controller.settle()
+  expect(h.controller.transcriptRuntime("side")).toBe(runtimeB)
+  expect(runtimeB?.getThreadId()).toBe(sideB)
+  await h.controller.close()
+})
+
 test("quit drains an in-flight goal update, suppresses queued goals, then clears before archive", async () => {
   const h = harness(); await h.controller.initialize("/tmp")
   h.controller.sideChat("open"); await h.controller.settle()

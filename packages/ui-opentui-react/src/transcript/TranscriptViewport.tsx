@@ -1,18 +1,15 @@
 import { LinearScrollAccel, type ScrollBoxRenderable, type SyntaxStyle } from "@opentui/core"
-import type { ConversationItem, Turn, TurnId } from "@vimex/conversation"
+import type { ConversationItem } from "@vimex/conversation"
 import type { InteractionState } from "@vimex/interaction"
-import type { TranscriptState } from "@vimex/transcript"
-import { Fragment, memo, useMemo, type RefObject } from "react"
+import type { TranscriptState, TranscriptWindow } from "@vimex/transcript"
+import { memo, useMemo, type RefObject } from "react"
 import { selectedRangeForItem } from "./layout"
 import { emberTide } from "../theme"
 import { TranscriptNode } from "./TranscriptNode"
-import { hasTurnActivity, TurnActivity } from "./TurnActivity"
+import { TurnActivity } from "./TurnActivity"
 
 export function TranscriptViewport(props: {
-  items: readonly ConversationItem[]
-  hiddenTurnIds?: readonly string[]
-  turns?: Readonly<Record<string, Turn>>
-  turnIds?: readonly TurnId[]
+  window: TranscriptWindow
   state: TranscriptState
   interaction: InteractionState
   syntax: SyntaxStyle
@@ -23,25 +20,6 @@ export function TranscriptViewport(props: {
   // accelerating trackpad bursts into large, unexpected viewport jumps.
   const scrollAcceleration = useMemo(() => new LinearScrollAccel(), [])
   const cursorId = props.state.cursor?.itemId
-  const emptyTurnPlacement = useMemo(() => {
-    const before: Record<string, Turn[]> = {}
-    const trailing: Turn[] = []
-    const visible = new Set(props.state.order)
-    const hiddenTurns = new Set(props.hiddenTurnIds)
-    let pending: Turn[] = []
-    for (const id of props.turnIds ?? []) {
-      const turn = props.turns?.[id]
-      if (!turn) continue
-      const firstVisible = turn.itemIds.find(itemId => visible.has(itemId))
-      if (firstVisible) {
-        if (pending.length) before[firstVisible] = pending
-        pending = []
-      } else if (hasTurnActivity(turn) && !hiddenTurns.has(id)) pending.push(turn)
-    }
-    trailing.push(...pending)
-    return { before, trailing }
-  }, [props.hiddenTurnIds, props.state.order, props.turnIds, props.turns])
-  const hasContent = props.items.length > 0 || Object.keys(emptyTurnPlacement.before).length > 0 || emptyTurnPlacement.trailing.length > 0
   return (
     <scrollbox
       id="transcript"
@@ -53,8 +31,6 @@ export function TranscriptViewport(props: {
       onMouseScroll={(event) => {
         if (event.scroll?.direction !== "up" && event.scroll?.direction !== "down") return
         if (event.modifiers.shift) return
-        // Disable native edge reattachment immediately, including a wheel-down
-        // at the bottom. Only an explicit follow action may attach the tail.
         if (props.scrollRef.current) props.scrollRef.current.stickyScroll = false
         props.onManualScroll?.()
         event.stopPropagation()
@@ -67,35 +43,35 @@ export function TranscriptViewport(props: {
         trackOptions: { foregroundColor: emberTide.border, backgroundColor: emberTide.background },
       }}
     >
-      {!hasContent ? (
+      {!props.window.blocks.length ? (
         <box flexGrow={1} alignItems="center" justifyContent="center">
           <text fg={emberTide.textMuted}>Start a conversation</text>
         </box>
       ) : null}
-      {props.items.map((item, index) => {
-        const folded = Boolean(props.state.folded[item.id])
-        const current = cursorId === item.id && props.interaction.surface === "transcript"
-        const selected = Boolean(selectedRangeForItem(props.state, item.id))
-        const turn = props.turns?.[item.turnId]
-        const completesTurn = props.items[index + 1]?.turnId !== item.turnId
-        const showTurnActivity = Boolean(turn && completesTurn && hasTurnActivity(turn))
-        return (
-          <Fragment key={item.id}>
-            {emptyTurnPlacement.before[item.id]?.map(empty => <TurnActivity key={empty.id} turn={empty} />)}
-            <TranscriptRow item={item} folded={folded} current={current} selected={selected} followedByActivity={showTurnActivity} syntax={props.syntax} />
-            {turn && showTurnActivity ? <TurnActivity turn={turn} /> : null}
-          </Fragment>
-        )
+      {props.window.topSpacerRows > 0 ? <box id="transcript-top-spacer" height={props.window.topSpacerRows} flexShrink={0} /> : null}
+      {props.window.blocks.map((block, index) => {
+        if ("turn" in block) return <TurnActivity key={`turn:${block.key.turnId}`} turn={block.turn} />
+        if (!("item" in block)) return null
+        const folded = Boolean(props.state.folded[block.key.itemId])
+        const current = cursorId === block.key.itemId && props.interaction.surface === "transcript"
+        const selected = Boolean(selectedRangeForItem(props.state, block.key.itemId))
+        const next = props.window.blocks[index + 1]
+        const followedByActivity = Boolean(next && "turn" in next && next.key.turnId === block.turnId)
+        return <TranscriptRow key={`item:${block.key.itemId}:${block.key.blockId}`} item={block.item} folded={folded} current={current} selected={selected} followedByActivity={followedByActivity} syntax={props.syntax} />
       })}
-      {emptyTurnPlacement.trailing.map(turn => <TurnActivity key={turn.id} turn={turn} />)}
+      {props.window.bottomSpacerRows > 0 ? <box id="transcript-bottom-spacer" height={props.window.bottomSpacerRows} flexShrink={0} /> : null}
     </scrollbox>
   )
 }
 
-
 // Stable historical rows skip Markdown reconciliation during typing and scrolling.
 const TranscriptRow = memo(function TranscriptRow(props: {
-  item: ConversationItem; folded: boolean; current: boolean; selected: boolean; followedByActivity: boolean; syntax: SyntaxStyle
+  item: ConversationItem
+  folded: boolean
+  current: boolean
+  selected: boolean
+  followedByActivity: boolean
+  syntax: SyntaxStyle
 }) {
   return (
     <box id={`transcript-item:${props.item.id}`} flexShrink={0} marginBottom={props.followedByActivity ? 0 : 1}

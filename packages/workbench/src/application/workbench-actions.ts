@@ -2,7 +2,12 @@ import type { Approval } from "@vimex/approvals"
 import type { SubmissionIntent } from "@vimex/composer"
 import type { ItemId, ThreadId } from "@vimex/conversation"
 import type { InteractionCommand } from "@vimex/interaction"
-import type { LogicalPoint } from "@vimex/transcript"
+import type { LogicalPoint, TranscriptRuntime } from "@vimex/transcript"
+
+export type TranscriptPresentationId = "main" | "side"
+export interface TranscriptPresentationHost {
+  transcriptRuntime(presentationId: TranscriptPresentationId): TranscriptRuntime | undefined
+}
 
 export type TranscriptAction =
   | { type: "navigate"; motion: "block-next" | "block-previous" | "message-next" | "message-previous" | "url-next" | "url-previous" | "first-content" | "word-next" | "word-previous" | "word-end" | "WORD-next" | "WORD-previous" | "WORD-end"; count?: number }

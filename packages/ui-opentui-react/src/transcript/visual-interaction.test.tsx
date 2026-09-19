@@ -160,12 +160,12 @@ test("batched vwwy observes each mode and motion before copying", async () => {
 test("transcript cursor hides outside the viewport and yields to session search", async () => {
   const h = await visualHarness()
   try {
-    await h.keys("gg")
     await act(async () => {
       h.emit({ type: "conversation", event: { type: "item.delta", threadId: thread, itemId: answer, delta: "\n\n" + Array.from({ length: 40 }, (_, i) => `More output ${i}`).join("\n\n") } })
       await h.flush()
     })
     await act(async () => { await h.flush(); await h.renderOnce() })
+    await h.keys("gg")
     const scrollbox = h.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable
     await act(async () => { scrollbox.scrollTo(scrollbox.scrollHeight); await h.flush(); await h.renderOnce() })
     expect(h.renderer.getCursorState().visible).toBe(false)
@@ -182,13 +182,13 @@ for (const [label, down, up] of [["raw Ctrl-J/K", "\n", "\x0b"], ["arrow keys", 
 test(`${label} change focus without scrolling or deleting the draft`, async () => {
   const h = await visualHarness()
   try {
-    await h.keys("gg")
     await act(async () => {
       h.controller.changeDraft("keep this draft", 4)
       h.emit({ type: "conversation", event: { type: "item.delta", threadId: thread, itemId: answer, delta: "\n\n" + Array.from({ length: 40 }, (_, i) => `More output ${i}`).join("\n\n") } })
       await h.flush()
     })
     await act(async () => { await h.flush(); await h.renderOnce() })
+    await h.keys("gg")
     const scrollbox = h.renderer.root.findDescendantById("transcript") as ScrollBoxRenderable
     await act(async () => { scrollbox.scrollTo(8); await h.flush(); await h.renderOnce() })
     const before = scrollbox.scrollTop
@@ -367,6 +367,7 @@ test("Escape interrupts active turns in Normal mode after dismissing editing mod
       await h.flush()
     })
     await escape()
+    await h.keys("t")
     await act(async () => { await h.flush(); await h.renderOnce() })
     expect(h.captureCharFrame()).not.toContain("Stopping")
     expect(h.captureCharFrame()).not.toContain("Thinking")

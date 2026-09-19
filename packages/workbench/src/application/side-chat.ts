@@ -1,5 +1,5 @@
 import { referenceText } from "@vimex/transcript"
-import type { ThreadId, SessionSnapshot } from "@vimex/conversation"
+import type { ThreadId, TurnId, SessionSnapshot } from "@vimex/conversation"
 import type { WorkbenchState } from "./workbench-state"
 export interface SideChat {
   parentId: ThreadId
@@ -9,7 +9,7 @@ export interface SideChat {
   status?: "creating" | "quitting"
   contextLabel?: string
   /** Retained as model context, omitted from the side transcript. */
-  inheritedTurnIds?: readonly string[]
+  inheritedTurnIds?: readonly TurnId[]
 }
 export type SideChatAction = "open" | "close" | "quit" | "refresh" | "maximize" | "reset" | "parent" | "side" | "cycle" | "quote"
 export function currentSideChat(state: WorkbenchState): SideChat | undefined {

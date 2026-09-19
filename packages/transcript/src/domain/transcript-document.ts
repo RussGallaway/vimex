@@ -1,18 +1,18 @@
 import type { ItemId } from "@vimex/conversation"
 
-export interface LinkTarget { from: number; to: number; url: string }
-export interface SourceSpan { from: number; to: number }
+export interface LinkTarget { readonly from: number; readonly to: number; readonly url: string }
+export interface SourceSpan { readonly from: number; readonly to: number }
 export interface TextProjection {
   /** Semantic node class used by message-wise navigation. */
-  nodeKind?: "message" | "reasoning" | "tool" | "edit" | "unknown"
-  plain: string
-  source: string
+  readonly nodeKind?: "message" | "reasoning" | "tool" | "edit" | "unknown"
+  readonly plain: string
+  readonly source: string
   /** One exact source span for each rendered grapheme. */
-  sourceSpans: readonly SourceSpan[]
-  links: readonly LinkTarget[]
+  readonly sourceSpans: readonly SourceSpan[]
+  readonly links: readonly LinkTarget[]
   /** Syntax envelopes included when their entire rendered content is selected. */
-  sourceRegions?: readonly { from: number; to: number; sourceFrom: number; sourceTo: number }[]
-  revision: number
+  readonly sourceRegions?: readonly { readonly from: number; readonly to: number; readonly sourceFrom: number; readonly sourceTo: number }[]
+  readonly revision: number
 }
 export interface LogicalPoint { itemId: ItemId; graphemeOffset: number }
 export interface JumpLocation { point: LogicalPoint; preferredScreenRow: number }

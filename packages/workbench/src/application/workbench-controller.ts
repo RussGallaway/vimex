@@ -1,18 +1,18 @@
 import { compactionBlockReason } from "./compaction"
 import { executeGoalCommand } from "./goal-command"
-import { SideChatCoordinator, type SideChatAction } from "./side-chat"
-import { adjacentSearchMatch, findSearchMatches, firstContentPoint, moveByWord, moveBySemanticBlock, moveByUrl, referenceText, urlAt, urlCandidates, graphemeCount, type LogicalPoint } from "@vimex/transcript"
+import { SideChatCoordinator, currentSideChat, type SideChatAction } from "./side-chat"
+import { adjacentSearchMatch, findSearchMatches, firstContentPoint, moveByWord, moveBySemanticBlock, moveByUrl, referenceText, urlAt, urlCandidates, graphemeCount, TranscriptRuntime, type LogicalPoint, type TranscriptDamage, type TranscriptRevealRequest, type TranscriptRuntimeInput } from "@vimex/transcript"
 import { isThemeName, themeNames, type PreferenceStore } from "./display-preferences"
 import { parseCommand, validateCommand, resolveCommandName, commandDescriptors, type ExCommand } from "@vimex/interaction"
 import { captureLocalState, emptyLocalState, restoreThreadView, type LocalState, type SavedThreadView } from "./local-state"
-import { initialWorkbench, activeWorkspace, createWorkspace, type WorkbenchState, type WorkbenchCommand, type WorkbenchEffect } from "./workbench-state"
+import { initialWorkbench, activeWorkspace, createWorkspace, type ThreadWorkspace, type WorkbenchState, type WorkbenchCommand, type WorkbenchEffect } from "./workbench-state"
 import { transitionWorkbench } from "./reduce-workbench"
 import { forkBoundary, threadId, type ThreadId, type TurnId, type ItemId, type ConversationEvent } from "@vimex/conversation"
 import type { ConversationGateway, SessionSnapshot } from "@vimex/conversation"
 import type { ApprovalGateway } from "@vimex/approvals"
 import type { RuntimeConnection, RuntimeEvent } from "./runtime-connection"
 import type { AvailableModel, ModelCatalog } from "./model-catalog"
-import type { WorkbenchActions, TranscriptAction } from "./workbench-actions"
+import type { WorkbenchActions, TranscriptAction, TranscriptPresentationHost, TranscriptPresentationId } from "./workbench-actions"
 import { validateAnswers } from "@vimex/approvals"
 import type { DisplayPreferences } from "./display-preferences"
 import { createRpcEventReplay } from "./rpc-event-replay"
@@ -36,9 +36,17 @@ export interface ControllerPorts {
   conversationIngressScheduler?: ConversationIngressScheduler
   conversationIngressCadenceMs?: number
 }
-export class VimexController implements WorkbenchActions {
+interface TranscriptRuntimeHint {
+  canonicalOnly?: boolean
+  canonicalDamageByThread?: Readonly<Record<string, TranscriptDamage>>
+  reveal?: { threadId: ThreadId; request: TranscriptRevealRequest }
+}
+
+export class VimexController implements WorkbenchActions, TranscriptPresentationHost {
   private state = initialWorkbench()
   private readonly ingress: ConversationIngress
+  private readonly transcriptRuntimes = new Map<TranscriptPresentationId, TranscriptRuntime>()
+  private revealRevision = 0
   private readonly sides = new SideChatCoordinator({
     state: () => this.state,
     update: side => {
@@ -55,6 +63,11 @@ export class VimexController implements WorkbenchActions {
     },
     remove: (parent, retired) => {
       this.ingress.flush()
+      const sideRuntime = this.transcriptRuntimes.get("side")
+      if (sideRuntime?.getThreadId() === retired) {
+        sideRuntime.dispose()
+        this.transcriptRuntimes.delete("side")
+      }
       const sideChats = { ...this.state.sideChats }; delete sideChats[parent]
       const summaries = { ...this.state.summaries }; delete summaries[retired]
       const workspaces = { ...this.state.workspaces }; delete workspaces[retired]
@@ -164,10 +177,67 @@ export class VimexController implements WorkbenchActions {
   getSnapshot = (): WorkbenchState => this.state
   subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => this.listeners.delete(listener) }
 
-  private setState(state: WorkbenchState): void {
+  private presentationThread(state: WorkbenchState, presentationId: TranscriptPresentationId): ThreadId | undefined {
+    const side = currentSideChat(state)
+    return presentationId === "main" ? side?.parentId ?? state.activeThreadId : side?.threadId
+  }
+  private canonicalDamage(before: ThreadWorkspace | undefined, after: ThreadWorkspace): TranscriptDamage {
+    if (!before || before.canonicalGeneration !== after.canonicalGeneration) return { kind: "full" }
+    if (before.canonicalRevision === after.canonicalRevision) return { kind: "none" }
+    const ids = new Set<ItemId>([...Object.keys(before.conversation.items), ...Object.keys(after.conversation.items)].map(id => id as ItemId))
+    const changed = [...ids].filter(id => before.conversation.items[id] !== after.conversation.items[id])
+    const structureChanged = before.conversation.turnIds !== after.conversation.turnIds
+      || Object.keys(before.conversation.turns).some(id => before.conversation.turns[id] !== after.conversation.turns[id])
+      || Object.keys(after.conversation.turns).some(id => before.conversation.turns[id] !== after.conversation.turns[id])
+      || changed.some(id => !before.conversation.items[id] || !after.conversation.items[id])
+    return structureChanged ? { kind: "full" } : changed.length ? { kind: "blocks", itemIds: changed } : { kind: "full" }
+  }
+  private runtimeInput(presentationId: TranscriptPresentationId, state: WorkbenchState, before?: WorkbenchState, hint: TranscriptRuntimeHint = {}): TranscriptRuntimeInput | undefined {
+    const thread = this.presentationThread(state, presentationId)
+    const workspace = thread ? state.workspaces[thread] : undefined
+    if (!thread || !workspace) return undefined
+    const previous = before?.workspaces[thread]
+    const side = Object.values(state.sideChats).find(candidate => candidate.threadId === thread)
+    const transcriptChanged = previous && previous.transcript !== workspace.transcript
+    const presentationDamage: TranscriptDamage = hint.canonicalOnly || !transcriptChanged ? { kind: "none" }
+      : previous.transcript.folded !== workspace.transcript.folded ? { kind: "layout" } : { kind: "view" }
+    return {
+      threadId: thread,
+      canonicalGeneration: workspace.canonicalGeneration,
+      canonicalRevision: workspace.canonicalRevision,
+      conversation: workspace.conversation,
+      transcript: workspace.transcript,
+      mode: workspace.transcript.viewport.kind === "tail" ? "follow" : "detached",
+      canonicalDamage: hint.canonicalDamageByThread?.[thread] ?? this.canonicalDamage(previous, workspace),
+      presentationDamage,
+      reveal: hint.reveal?.threadId === thread ? hint.reveal.request : undefined,
+      excludedTurnIds: side?.inheritedTurnIds?.map(id => id as TurnId),
+    }
+  }
+  private syncTranscriptRuntimes(before: WorkbenchState, state: WorkbenchState, hint: TranscriptRuntimeHint = {}): void {
+    for (const [presentationId, runtime] of this.transcriptRuntimes) {
+      const input = this.runtimeInput(presentationId, state, before, hint)
+      if (input) runtime.update(input)
+    }
+  }
+  transcriptRuntime = (presentationId: TranscriptPresentationId): TranscriptRuntime | undefined => {
+    if (this.closing) return undefined
+    const input = this.runtimeInput(presentationId, this.state)
+    if (!input) return undefined
+    let runtime = this.transcriptRuntimes.get(presentationId)
+    if (!runtime) {
+      runtime = new TranscriptRuntime(input)
+      this.transcriptRuntimes.set(presentationId, runtime)
+    }
+    return runtime
+  }
+
+  private setState(state: WorkbenchState, hint: TranscriptRuntimeHint = {}): void {
     if (this.closing) return
     if (this.state === state) return
+    const before = this.state
     this.state = state
+    this.syncTranscriptRuntimes(before, state, hint)
     for (const listener of this.listeners) listener()
     this.ports.onState?.(state)
   }
@@ -182,30 +252,47 @@ export class VimexController implements WorkbenchActions {
   }
   /** Applies one ingress cadence as one canonical publication. */
   private commitConversationEvents(events: readonly ConversationEvent[]): void {
-    let state = this.state
+    const beforeBatch = this.state
+    let state = beforeBatch
     const navigationHistory = this.navigationHistory.clone()
     const effects: WorkbenchEffect[] = []
+    const damagedItems = new Map<ThreadId, Set<ItemId>>()
+    const fullDamage = new Set<ThreadId>()
     for (const event of events) {
       if (state.retiredSideThreadIds.includes(event.threadId)) continue
       const before = state
       const result = transitionWorkbench(before, { type: "conversation.event", event })
+      if (result.state !== before) {
+        if (event.type === "turn.started" || event.type === "turn.completed" || event.type === "item.started"
+          || (event.type === "item.completed" && !before.workspaces[event.threadId]?.conversation.items[event.item.id])) {
+          fullDamage.add(event.threadId)
+          damagedItems.delete(event.threadId)
+        } else if (!fullDamage.has(event.threadId) && (event.type === "item.delta" || event.type === "item.completed")) {
+          const ids = damagedItems.get(event.threadId) ?? new Set<ItemId>()
+          ids.add(event.type === "item.delta" ? event.itemId : event.item.id)
+          damagedItems.set(event.threadId, ids)
+        }
+      }
       navigationHistory.reproject(before, result.state, event.threadId)
       state = result.state
       effects.push(...result.effects)
     }
     if (state === this.state) return
     this.navigationHistory.adopt(navigationHistory)
-    if (this.closing) this.state = state
-    else {
+    const canonicalDamageByThread: Record<string, TranscriptDamage> = {}
+    for (const id of fullDamage) canonicalDamageByThread[id] = { kind: "full" }
+    for (const [id, itemIds] of damagedItems) canonicalDamageByThread[id] = { kind: "blocks", itemIds: [...itemIds] }
+    this.state = state
+    this.syncTranscriptRuntimes(beforeBatch, state, { canonicalOnly: true, canonicalDamageByThread })
+    if (!this.closing) {
       // Canonical commit is authoritative even if a renderer observer is faulty.
-      this.state = state
       for (const listener of this.listeners) {
         try { listener() } catch { /* observers cannot roll back an ingress commit */ }
       }
-      try { this.ports.onState?.(state) } catch { /* persistence observers are isolated too */ }
+      try { this.ports.onState?.(this.state) } catch { /* persistence observers are isolated too */ }
     }
     if (this.closing) {
-      try { this.ports.onState?.(state) } catch { /* persistence failure is handled by its owning store */ }
+      try { this.ports.onState?.(this.state) } catch { /* persistence failure is handled by its owning store */ }
       return
     }
     for (const effect of effects) {
@@ -235,7 +322,16 @@ export class VimexController implements WorkbenchActions {
       }
       if (localJump) { this.navigationRevision++; this.historyNavigation = undefined }
     }
-    this.setState(result.state)
+    const revealThread = command.type === "transcript.command" ? command.threadId ?? before.activeThreadId : undefined
+    const revealPoint = command.type === "transcript.command" && revealThread
+      ? command.command.type === "cursor.move" ? command.command.point
+        : command.command.type === "jump.to" ? command.command.target.point
+          : command.command.type === "jump.back" || command.command.type === "jump.forward" || command.command.type === "mark.jump"
+            ? result.state.workspaces[revealThread]?.transcript.cursor : undefined
+      : undefined
+    const revealReason: TranscriptRevealRequest["reason"] = command.type === "transcript.command" && command.command.type === "mark.jump" ? "mark"
+      : command.type === "transcript.command" && (command.command.type === "jump.to" || command.command.type === "jump.back" || command.command.type === "jump.forward") ? "jump" : "cursor"
+    this.setState(result.state, revealThread && revealPoint ? { reveal: { threadId: revealThread, request: { id: ++this.revealRevision, point: revealPoint, reason: revealReason } } } : undefined)
     for (const effect of result.effects) {
       const pending = this.launch(() => this.effect(effect))
       if (effect.type === "conversation.turn.start" || effect.type === "conversation.turn.steer") this.trackContinuation(effect.threadId, pending)
@@ -283,7 +379,8 @@ export class VimexController implements WorkbenchActions {
       this.setState({ ...this.state, sideChats: { ...this.state.sideChats, [side.parentId]: { ...side, inheritedTurnIds } } })
     }
     if (this.recoveryViews[snapshot.summary.id] && !this.loaded.has(snapshot.summary.id)) {
-      this.setState({ ...this.state, workspaces: { ...this.state.workspaces, [snapshot.summary.id]: createWorkspace(snapshot.summary.id) } })
+      const generation = (this.state.workspaces[snapshot.summary.id]?.canonicalGeneration ?? -1) + 1
+      this.setState({ ...this.state, workspaces: { ...this.state.workspaces, [snapshot.summary.id]: createWorkspace(snapshot.summary.id, generation) } })
     }
     this.ingress.replay(snapshot.events)
     const saved = this.recoveryViews[snapshot.summary.id] ?? this.ports.localState?.threads[snapshot.summary.id]
@@ -580,7 +677,11 @@ export class VimexController implements WorkbenchActions {
         this.restoringNavigation = Boolean(restore)
         try { this.dispatch({ type: "thread.switch", threadId: id }) }
         finally { this.restoringNavigation = false }
-        if (restore) this.setState(restoreNavigationLocation(this.state, restore.target))
+        if (restore) {
+          const restored = restoreNavigationLocation(this.state, restore.target)
+          const point = restore.target.cursor ?? (restore.target.viewport.kind === "point" ? restore.target.viewport.point : undefined)
+          this.setState(restored, point ? { reveal: { threadId: id, request: { id: ++this.revealRevision, point, reason: "history" } } } : undefined)
+        }
       }
     })
   }
@@ -709,8 +810,6 @@ export class VimexController implements WorkbenchActions {
       case "selection.clear": this.dispatch({ type: "transcript.command", command }); break
       case "viewport.anchor": this.dispatch({ type: "transcript.command", command }); break
       case "viewport.tail": {
-        const itemId = workspace.transcript.order.at(-1), projection = itemId ? workspace.transcript.projectionById[itemId] : undefined
-        if (itemId && projection) this.dispatch({ type: "transcript.command", command: { type: "jump.to", target: { point: { itemId, graphemeOffset: projection.sourceSpans.length }, preferredScreenRow: 0 } } })
         this.dispatch({ type: "transcript.command", command: { type: "tail.attach" } })
         break
       }
@@ -1038,6 +1137,8 @@ export class VimexController implements WorkbenchActions {
     try { await this.settle() } catch (error) { errors.push(error) }
     this.buffered.clear()
     this.resumes.clear()
+    for (const runtime of this.transcriptRuntimes.values()) runtime.dispose()
+    this.transcriptRuntimes.clear()
     this.listeners.clear()
     if (errors.length) throw new AggregateError(errors, "Vimex controller shutdown failed")
   }

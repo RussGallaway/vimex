@@ -7,6 +7,10 @@ import { initialInteraction, type InteractionCommand, type InteractionState } fr
 import { initialApprovals, type Approval, type ApprovalsState, type UserQuestionRequest } from "@vimex/approvals"
 export interface ThreadWorkspace {
   conversation: ConversationState
+  /** Changes when the canonical lineage is rebuilt for the same thread id. */
+  canonicalGeneration: number
+  /** Monotonic canonical conversation revision for presentation guards. */
+  canonicalRevision: number
   transcript: TranscriptState
   composer: ComposerState
   interaction: InteractionState
@@ -79,8 +83,8 @@ export type WorkbenchCommand =
 export const initialWorkbench = (): WorkbenchState => ({
   compactingThreads: {}, sideChats: {}, retiredSideThreadIds: [], interruptingTurns: {}, favoriteThreadIds: [], threadOrder: [], summaries: {}, workspaces: {}, approvals: initialApprovals(), questions: {}, agentRelationships: [], connection: "connecting",
 })
-export function createWorkspace(id: ThreadId): ThreadWorkspace {
-  return { conversation: createConversation(id), transcript: initialTranscript(), composer: initialComposer(), interaction: initialInteraction() }
+export function createWorkspace(id: ThreadId, canonicalGeneration = 0): ThreadWorkspace {
+  return { conversation: createConversation(id), canonicalGeneration, canonicalRevision: 0, transcript: initialTranscript(), composer: initialComposer(), interaction: initialInteraction() }
 }
 export function openThread(state: WorkbenchState, summary: ThreadSummary): WorkbenchState {
   return {

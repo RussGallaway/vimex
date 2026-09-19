@@ -124,8 +124,17 @@ test("wheel preserves transcript Visual selection and only explicit follow reatt
     expect(h.workspace().transcript.selection).toEqual(selected)
     expect(h.workspace().transcript.cursor).toEqual(cursor)
     expect(h.workspace().transcript.viewport.kind).toBe("point")
+    await act(async () => {
+      h.emit({ type: "conversation", event: { type: "item.delta", threadId: thread, itemId: answer, delta: "\n\nDETACHED HIDDEN TAIL" } })
+      await h.flush(); await h.renderOnce()
+    })
+    await act(async () => { await h.flush(); await h.renderOnce() })
+    expect(h.captureCharFrame()).not.toContain("DETACHED HIDDEN TAIL")
+    expect(h.workspace().transcript.unseenEntries).toBe(1)
     await act(async () => { h.controller.transcript({ type: "viewport.tail" }); await h.flush() })
     await act(async () => { await h.flush(); await h.renderOnce() })
+    expect(h.captureCharFrame()).toContain("DETACHED HIDDEN TAIL")
+    expect(h.workspace().transcript.unseenEntries).toBe(0)
     expect(scrollbox.stickyScroll).toBe(true)
     expect(h.workspace().transcript.viewport.kind).toBe("tail")
     const bottom = scrollbox.scrollTop

@@ -29,7 +29,13 @@ export function applyConversationEvent(state: WorkbenchState, event: Conversatio
     composer = scheduled.composer
     if (scheduled.effect) effects.push(scheduled.effect)
   }
-  return done(updateWorkspace(state, event.threadId, (current) => ({ ...current, conversation, transcript, composer })), ...effects)
+  return done(updateWorkspace(state, event.threadId, (current) => ({
+    ...current,
+    conversation,
+    canonicalRevision: conversation === current.conversation ? current.canonicalRevision : current.canonicalRevision + 1,
+    transcript,
+    composer,
+  })), ...effects)
 }
 
 export function forkWorkspace(source: ThreadWorkspace, nextThreadId: ThreadId, throughTurnId: TurnId): ThreadWorkspace | undefined {
@@ -49,5 +55,5 @@ export function forkWorkspace(source: ThreadWorkspace, nextThreadId: ThreadId, t
     marks: Object.fromEntries(Object.entries(source.transcript.marks).filter(([, location]) => retained(location))),
     jumps: { back: source.transcript.jumps.back.filter(retained), forward: source.transcript.jumps.forward.filter(retained) },
   }
-  return { conversation, transcript, composer: initialComposer(), interaction: initialInteraction() }
+  return { conversation, canonicalGeneration: 0, canonicalRevision: conversation.turnIds.length ? 1 : 0, transcript, composer: initialComposer(), interaction: initialInteraction() }
 }

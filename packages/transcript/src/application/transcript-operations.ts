@@ -63,9 +63,12 @@ function jumpHistory(state: TranscriptState, direction: "back" | "forward", orig
 export function attachTail(state: TranscriptState): TranscriptState {
   const last = state.order.at(-1)
   const projection = last ? state.projectionById[last] : undefined
+  const cursor = last && projection ? { itemId: last, graphemeOffset: graphemeCount(projection.plain) } : state.cursor
+  if (state.viewport.kind === "tail" && state.unseenEntries === 0 && state.unseenItemIds.length === 0
+    && state.cursor?.itemId === cursor?.itemId && state.cursor?.graphemeOffset === cursor?.graphemeOffset) return state
   return {
     ...state,
-    cursor: last && projection ? { itemId: last, graphemeOffset: graphemeCount(projection.plain) } : state.cursor,
+    cursor,
     viewport: { kind: "tail" }, unseenEntries: 0, unseenItemIds: [],
   }
 }
