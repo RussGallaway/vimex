@@ -14,7 +14,7 @@ import {
   type TranscriptState,
 } from "@vimex/transcript"
 import { blockRefForPoint, pointInLayout, type MeasuredPoint, type TranscriptLayout, type VisualLine } from "./layout"
-import { measureRenderedBlock, takeDirtyRenderedBlocks } from "./measure-rendered-block"
+import { invalidateRenderedBlock, measureRenderedBlock, takeDirtyRenderedBlocks } from "./measure-rendered-block"
 
 export interface RuntimeLayoutSource {
   readonly frame: TranscriptFrame
@@ -31,6 +31,8 @@ export interface RenderedLayoutDiagnostics {
   attemptedMeasurements: number
   changedMeasurements: number
   cachedMeasurements: number
+  rejectedMeasurements: number
+  placementValidationVisits: number
   pendingAfter: number
   trackedMountedRoots: number
   prunedRoots: number
@@ -61,16 +63,18 @@ interface MeasurementSchedule {
   geometryGeneration?: number
   windowBlocks?: readonly TranscriptBlock[]
   readonly pending: Set<string>
+  readonly rejectedRetries: Map<string, number>
   readonly indexByKey: Map<string, number>
   readonly keysByItem: Map<string, readonly string[]>
   readonly renderableByKey: Map<string, Renderable>
 }
+const TRANSIENT_MEASUREMENT_RETRY_LIMIT = 8
 const measurementSchedules = new WeakMap<ScrollBoxRenderable, MeasurementSchedule>()
 
 function scheduleFor(scrollbox: ScrollBoxRenderable): MeasurementSchedule {
   let schedule = measurementSchedules.get(scrollbox)
   if (!schedule) {
-    schedule = { pending: new Set(), indexByKey: new Map(), keysByItem: new Map(), renderableByKey: new Map() }
+    schedule = { pending: new Set(), rejectedRetries: new Map(), indexByKey: new Map(), keysByItem: new Map(), renderableByKey: new Map() }
     measurementSchedules.set(scrollbox, schedule)
   }
   return schedule
@@ -106,15 +110,20 @@ function synchronizeMeasurementSchedule(
   const priorByKey = new Map((schedule.windowBlocks ?? []).map(block => [blockKey(block), block]))
   if (lineageChanged || layoutReset) {
     schedule.pending.clear()
+    schedule.rejectedRetries.clear()
     if (diagnostics) diagnostics.prunedRoots += schedule.renderableByKey.size
     schedule.renderableByKey.clear()
     indexBlocks(schedule, blocks)
     for (const block of blocks) schedule.pending.add(blockKey(block))
   } else if (windowChanged) {
     const mountedKeys = new Set(blocks.map(blockKey))
-    for (const key of schedule.pending) if (!mountedKeys.has(key)) schedule.pending.delete(key)
+    for (const key of schedule.pending) if (!mountedKeys.has(key)) {
+      schedule.pending.delete(key)
+      schedule.rejectedRetries.delete(key)
+    }
     for (const key of schedule.renderableByKey.keys()) if (!mountedKeys.has(key)) {
       schedule.renderableByKey.delete(key)
+      schedule.rejectedRetries.delete(key)
       if (diagnostics) diagnostics.prunedRoots += 1
     }
     indexBlocks(schedule, blocks)
@@ -284,6 +293,26 @@ function buildLayout(
   return Object.freeze(layout)
 }
 
+function placementsMatch(
+  scrollbox: ScrollBoxRenderable,
+  blocks: readonly TranscriptBlock[],
+  layout: TranscriptLayout,
+  offset: Readonly<{ x: number; y: number }>,
+  diagnostics?: RenderedLayoutDiagnostics,
+): boolean {
+  for (const block of blocks) {
+    if (diagnostics) diagnostics.placementValidationVisits += 1
+    const renderable = findBlockRenderable(scrollbox, block)
+    const placement = layout.placementByBlockKey?.[blockKey(block)]
+    if (!renderable || !placement) {
+      if (renderable || placement) return false
+      continue
+    }
+    if (renderable.screenX !== placement.screenX + offset.x || renderable.screenY !== placement.screenY + offset.y) return false
+  }
+  return true
+}
+
 function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, source: RuntimeLayoutSource | TranscriptState): { blocks: readonly TranscriptBlock[]; geometry: TranscriptFrame["geometry"] } {
   const runtimeSource = "frame" in source ? source : undefined
   const diagnostics = runtimeSource?.diagnostics
@@ -294,6 +323,8 @@ function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, 
     diagnostics.attemptedMeasurements = 0
     diagnostics.changedMeasurements = 0
     diagnostics.cachedMeasurements = 0
+    diagnostics.rejectedMeasurements = 0
+    diagnostics.placementValidationVisits = 0
     diagnostics.pendingAfter = 0
     diagnostics.trackedMountedRoots = 0
     diagnostics.prunedRoots = 0
@@ -327,6 +358,12 @@ function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, 
           if (priorByKey.get(key) !== block || !geometry || geometry.key.contentRevision !== block.contentRevision
             || geometry.key.folded !== folded || geometry.key.width !== width || geometry.key.styleRevision !== styleRevision) candidates.add(key)
         }
+      }
+      for (const block of blocks) {
+        const key = blockKey(block)
+        const renderable = findBlockRenderable(scrollbox, block)
+        const tracked = schedule.renderableByKey.get(key)
+        if (renderable && tracked && renderable !== tracked) candidates.add(key)
       }
       if (frame!.damage.kind === "full" || frame!.damage.kind === "layout") {
         for (const block of blocks) candidates.add(blockKey(block))
@@ -368,9 +405,26 @@ function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, 
       && orderedCandidates.slice(diagnostics.visibleCandidates).every(candidate => !candidate.visible)
     diagnostics.attemptedKeys?.push(...orderedCandidates.map(candidate => candidate.key))
   }
+  let rejectedMeasurements = 0
   for (const { key, block, renderable } of orderedCandidates) {
     const next = measureRenderedBlock({ renderer, renderable, block, width, styleRevision,
       folded: block.key.kind === "item" && Boolean(state.folded[block.key.itemId]) })
+    // React/OpenTUI can briefly expose a newly reconciled child at its final
+    // coordinate while the owning block still reports its prior placement.
+    // Such a sample is not block-local geometry; retry it on the next frame
+    // instead of poisoning the height index with a transient global delta.
+    if (next.rows > Math.max(1, renderable.height)) {
+      const retry = (schedule.rejectedRetries.get(key) ?? 0) + 1
+      schedule.rejectedRetries.set(key, retry)
+      if (retry <= TRANSIENT_MEASUREMENT_RETRY_LIMIT) {
+        schedule.pending.add(key)
+        invalidateRenderedBlock(renderable)
+        renderer.requestRender()
+      } else schedule.pending.delete(key)
+      rejectedMeasurements += 1
+      continue
+    }
+    schedule.rejectedRetries.delete(key)
     const prior = frame?.geometry.byBlockKey[blockKey(block)]
     if (!prior || prior.nativeRevision !== next.nativeRevision || prior.key.contentRevision !== next.key.contentRevision
       || prior.key.width !== next.key.width || prior.key.styleRevision !== next.key.styleRevision || prior.key.folded !== next.key.folded) measured.push(next)
@@ -381,7 +435,8 @@ function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, 
     runtimeSource.runtime.reportMeasurements({ ...measurementBase!, measurements: measured })
     if (diagnostics) {
       diagnostics.changedMeasurements = measured.length
-      diagnostics.cachedMeasurements = orderedCandidates.length - measured.length
+      diagnostics.cachedMeasurements = orderedCandidates.length - measured.length - rejectedMeasurements
+      diagnostics.rejectedMeasurements = rejectedMeasurements
       diagnostics.pendingAfter = schedule.pending.size
       diagnostics.trackedMountedRoots = schedule.renderableByKey.size
     }
@@ -389,7 +444,8 @@ function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, 
   }
   if (diagnostics) {
     diagnostics.changedMeasurements = measured.length
-    diagnostics.cachedMeasurements = orderedCandidates.length - measured.length
+    diagnostics.cachedMeasurements = orderedCandidates.length - measured.length - rejectedMeasurements
+    diagnostics.rejectedMeasurements = rejectedMeasurements
     diagnostics.pendingAfter = schedule.pending.size
     diagnostics.trackedMountedRoots = schedule.renderableByKey.size
   }
@@ -413,10 +469,12 @@ export function measureRenderedTranscript(renderer: CliRenderer, scrollbox: Scro
   const cached = layoutCache.get(scrollbox)
   if (cached?.geometry === geometry && cached.materializedBlocks === materializedBlocks) {
     const offset = { x: originX - cached.originX, y: originY - cached.originY }
-    if (offset.x === (cached.layout.screenOffset?.x ?? 0) && offset.y === (cached.layout.screenOffset?.y ?? 0)) return cached.layout
-    const translated = translatedLayout(cached.layout, offset.x, offset.y)
-    layoutCache.set(scrollbox, { ...cached, layout: translated })
-    return translated
+    if (placementsMatch(scrollbox, blocks, cached.layout, offset, "frame" in source ? source.diagnostics : undefined)) {
+      if (offset.x === (cached.layout.screenOffset?.x ?? 0) && offset.y === (cached.layout.screenOffset?.y ?? 0)) return cached.layout
+      const translated = translatedLayout(cached.layout, offset.x, offset.y)
+      layoutCache.set(scrollbox, { ...cached, layout: translated })
+      return translated
+    }
   }
   const layout = buildLayout(scrollbox, blocks, geometry, materializedBlocks)
   layoutCache.set(scrollbox, { geometry, materializedBlocks, originX, originY, layout })

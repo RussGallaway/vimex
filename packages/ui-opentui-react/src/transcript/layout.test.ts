@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { itemId } from "@vimex/conversation"
 import { composeTranscriptGeometry, graphemeCount, initialTranscript, projectMarkdown, transcriptOrderIndex, type BlockGeometry, type TranscriptState } from "@vimex/transcript"
-import { blockRefForPoint, buildTranscriptLayout, graphemeCellWidth, movePoint, movePointInTranscript, pointInLayout, selectedRangeForItem } from "./layout"
+import { blockRefForPoint, buildTranscriptLayout, graphemeCellWidth, materializedSelectionEndpoints, movePoint, movePointInTranscript, pointInLayout, selectedRangeForItem } from "./layout"
 
 const first = itemId("first")
 const second = itemId("second")
@@ -232,6 +232,119 @@ test("block-local geometry composes navigation without cloning historical points
   expect(movePoint(layout, { itemId: first, graphemeOffset: 3 }, "down")?.point).toEqual({ itemId: second, graphemeOffset: 1 })
   expect(movePoint(layout, { itemId: second, graphemeOffset: 0 }, "first")?.point).toEqual({ itemId: first, graphemeOffset: 0 })
   expect(geometry.byBlockKey[`item:${first}:root`]!.points).toBe(firstGeometry.points)
+})
+
+test("native selection clips distant semantic endpoints to bounded materialized geometry", () => {
+  const ids = Object.freeze(Array.from({ length: 100_000 }, (_, index) => itemId(`selection-${index}`)))
+  const projection = { ...projectMarkdown("x"), revision: 1 }
+  const state: TranscriptState = {
+    ...initialTranscript(),
+    order: ids,
+    projectionById: Object.fromEntries(ids.map(id => [id, projection])),
+    selection: {
+      anchor: { itemId: ids[10]!, graphemeOffset: 0 },
+      head: { itemId: ids[99_990]!, graphemeOffset: 0 },
+      shape: "character",
+    },
+  }
+  transcriptOrderIndex(ids)
+  const mountedIds = ids.slice(50_000, 50_003)
+  const blocks = mountedIds.map(id => ({
+    key: { kind: "item" as const, itemId: id, blockId: "root" },
+    projection,
+    sourceSpan: { from: 0, to: 1 },
+    contentRevision: 1,
+    estimatedRows: 1,
+  })) as never
+  const geometries = Object.fromEntries(mountedIds.map(id => [`item:${id}:root`, {
+    key: { blockKey: `item:${id}:root`, contentRevision: 1, width: 10, styleRevision: "selection", folded: false },
+    nativeRevision: 1,
+    rows: 1,
+    points: { 0: { graphemeOffset: 0, x: 0, y: 0, row: 0, column: 0 } },
+    lines: [{ from: 0, to: 0, row: 0 }],
+  } satisfies BlockGeometry]))
+  const geometry = composeTranscriptGeometry(blocks, state.folded, geometries, 0, 0)
+  const layout = {
+    width: 10,
+    materializedBlocks: blocks,
+    lines: [], linesByItem: {}, geometry,
+    placementByBlockKey: Object.fromEntries(mountedIds.map((id, index) => [`item:${id}:root`, { screenX: 0, screenY: index }])),
+    blockKeysByItem: Object.fromEntries(mountedIds.map(id => [id, [{ blockKey: `item:${id}:root`, blockId: "root", from: 0, to: 1 }]])),
+  }
+  const diagnostics = { blockVisits: 0, pointVisits: 0 }
+  expect(materializedSelectionEndpoints(state, layout, diagnostics)).toMatchObject({
+    anchor: { itemId: mountedIds[0], graphemeOffset: 0 },
+    head: { itemId: mountedIds[2], graphemeOffset: 0 },
+  })
+  expect(diagnostics).toEqual({ blockVisits: 3, pointVisits: 3 })
+
+  const reverse = { ...state, selection: { ...state.selection!, anchor: state.selection!.head, head: state.selection!.anchor } }
+  expect(materializedSelectionEndpoints(reverse, layout)).toMatchObject({
+    anchor: { itemId: mountedIds[2] }, head: { itemId: mountedIds[0] },
+  })
+  const outside = { ...state, selection: {
+    anchor: { itemId: ids[1]!, graphemeOffset: 0 }, head: { itemId: ids[2]!, graphemeOffset: 0 }, shape: "character" as const,
+  } }
+  expect(materializedSelectionEndpoints(outside, layout)).toBeUndefined()
+})
+
+test("native selection maps folded interior and empty final-sentinel ranges without expanding hidden text", () => {
+  const foldedId = itemId("folded-selection")
+  const projection = { ...projectMarkdown("abcdef"), revision: 1 }
+  const block = {
+    key: { kind: "item" as const, itemId: foldedId, blockId: "root" },
+    projection, sourceSpan: { from: 0, to: 6 }, contentRevision: 1, estimatedRows: 1,
+  } as never
+  const geometry = composeTranscriptGeometry([block], { [foldedId]: true }, {
+    [`item:${foldedId}:root`]: {
+      key: { blockKey: `item:${foldedId}:root`, contentRevision: 1, width: 10, styleRevision: "selection", folded: true },
+      nativeRevision: 1, rows: 1,
+      points: {
+        0: { graphemeOffset: 0, x: 0, y: 0, row: 0, column: 0, hidden: true },
+        6: { graphemeOffset: 6, x: 0, y: 0, row: 0, column: 0, hidden: true },
+      },
+      lines: [{ from: 0, to: 6, row: 0 }],
+    },
+  }, 0, 0)
+  const layout = {
+    width: 10, materializedBlocks: [block], lines: [], linesByItem: {}, geometry,
+    placementByBlockKey: { [`item:${foldedId}:root`]: { screenX: 0, screenY: 0 } },
+    blockKeysByItem: { [foldedId]: [{ blockKey: `item:${foldedId}:root`, blockId: "root", from: 0, to: 6 }] },
+  }
+  const state: TranscriptState = {
+    ...initialTranscript(), order: [foldedId], projectionById: { [foldedId]: projection }, folded: { [foldedId]: true },
+    selection: { anchor: { itemId: foldedId, graphemeOffset: 2 }, head: { itemId: foldedId, graphemeOffset: 3 }, shape: "character" },
+  }
+  expect(materializedSelectionEndpoints(state, layout)).toMatchObject({
+    anchor: { itemId: foldedId, graphemeOffset: 2, hidden: true },
+    head: { itemId: foldedId, graphemeOffset: 3, hidden: true },
+  })
+  expect(materializedSelectionEndpoints({ ...state, selection: { ...state.selection!, anchor: state.selection!.head, head: state.selection!.anchor } }, layout)).toMatchObject({
+    anchor: { graphemeOffset: 3 }, head: { graphemeOffset: 2 },
+  })
+
+  const emptyId = itemId("empty-folded-selection")
+  const emptyProjection = { ...projectMarkdown(""), revision: 1 }
+  const emptyBlock = {
+    key: { kind: "item" as const, itemId: emptyId, blockId: "root" },
+    projection: emptyProjection, sourceSpan: { from: 0, to: 0 }, contentRevision: 1, estimatedRows: 1,
+  } as never
+  const emptyGeometry = composeTranscriptGeometry([emptyBlock], { [emptyId]: true }, {
+    [`item:${emptyId}:root`]: {
+      key: { blockKey: `item:${emptyId}:root`, contentRevision: 1, width: 10, styleRevision: "selection", folded: true },
+      nativeRevision: 1, rows: 1,
+      points: { 0: { graphemeOffset: 0, x: 0, y: 0, row: 0, column: 0, hidden: true } },
+      lines: [{ from: 0, to: 0, row: 0 }],
+    },
+  }, 0, 0)
+  expect(materializedSelectionEndpoints({
+    ...initialTranscript(), order: [emptyId], projectionById: { [emptyId]: emptyProjection }, folded: { [emptyId]: true },
+    selection: { anchor: { itemId: emptyId, graphemeOffset: 0 }, head: { itemId: emptyId, graphemeOffset: 0 }, shape: "character" },
+  }, {
+    width: 10, materializedBlocks: [emptyBlock], lines: [], linesByItem: {}, geometry: emptyGeometry,
+    placementByBlockKey: { [`item:${emptyId}:root`]: { screenX: 0, screenY: 0 } },
+    blockKeysByItem: { [emptyId]: [{ blockKey: `item:${emptyId}:root`, blockId: "root", from: 0, to: 0 }] },
+  })).toMatchObject({ anchor: { graphemeOffset: 0 }, head: { graphemeOffset: 0 } })
 })
 
 test("one semantic item navigates across multiple render blocks", () => {

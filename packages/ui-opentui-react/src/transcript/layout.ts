@@ -1,5 +1,5 @@
 import type { ItemId } from "@vimex/conversation"
-import { adjacentTranscriptItem, graphemes, transcriptBoundaryItem, transcriptOrderIndex, type LogicalPoint, type TranscriptBlock, type TranscriptGeometry, type TranscriptState } from "@vimex/transcript"
+import { adjacentTranscriptItem, blockKey, graphemes, transcriptBoundaryItem, transcriptOrderIndex, type LogicalPoint, type TranscriptBlock, type TranscriptGeometry, type TranscriptState } from "@vimex/transcript"
 
 export interface VisualLine {
   itemId: ItemId
@@ -56,6 +56,16 @@ export interface MeasuredPoint {
   column: number
   screenX: number
   screenY: number
+}
+
+export interface MaterializedSelectionEndpoints {
+  readonly anchor: MeasuredPoint
+  readonly head: MeasuredPoint
+}
+
+export interface MaterializedSelectionDiagnostics {
+  blockVisits: number
+  pointVisits: number
 }
 
 export function graphemeCellWidth(value: string): number {
@@ -502,4 +512,86 @@ export function selectedRangeForItem(state: TranscriptState, itemId: ItemId): { 
     to = Math.min(parts.length, inclusiveEnd + 1)
   }
   return { from, to }
+}
+
+/**
+ * Intersect a complete semantic selection with the currently materialized
+ * native geometry. The result preserves selection direction and never asks an
+ * unmounted endpoint to provide a native node.
+ */
+export function materializedSelectionEndpoints(
+  state: TranscriptState,
+  layout: TranscriptLayout,
+  diagnostics?: MaterializedSelectionDiagnostics,
+  viewport?: Readonly<{ screenY: number; height: number }>,
+): MaterializedSelectionEndpoints | undefined {
+  if (!state.selection) return undefined
+  const order = transcriptOrderIndex(state.order)
+  const ranges = new Map<ItemId, { from: number; to: number } | undefined>()
+  const rangeFor = (itemId: ItemId) => {
+    if (ranges.has(itemId)) return ranges.get(itemId)
+    const range = selectedRangeForItem(state, itemId)
+    ranges.set(itemId, range)
+    return range
+  }
+  const compare = (left: MeasuredPoint, right: MeasuredPoint) => {
+    const item = (order.get(left.itemId) ?? -1) - (order.get(right.itemId) ?? -1)
+    return item || left.graphemeOffset - right.graphemeOffset
+  }
+  let first: MeasuredPoint | undefined
+  let last: MeasuredPoint | undefined
+  const visitPoint = (point: MeasuredPoint) => {
+    if (diagnostics) diagnostics.pointVisits += 1
+    if (viewport && (point.screenY < viewport.screenY || point.screenY >= viewport.screenY + viewport.height)) return
+    const range = rangeFor(point.itemId)
+    if (!range || point.graphemeOffset < range.from || point.graphemeOffset >= range.to) return
+    if (!first || compare(point, first) < 0) first = point
+    if (!last || compare(point, last) > 0) last = point
+  }
+
+  if (layout.geometry && (layout.screenBlockRows || layout.materializedBlocks)) {
+    const mounted = layout.screenBlockRows ?? layout.materializedBlocks!.flatMap(block => block.key.kind === "item"
+      ? [{ blockKey: blockKey(block), itemId: block.key.itemId, screenY: 0, rows: block.estimatedRows }]
+      : [])
+    for (const block of mounted) {
+      if (diagnostics) diagnostics.blockVisits += 1
+      if (viewport && (block.screenY + block.rows <= viewport.screenY || block.screenY >= viewport.screenY + viewport.height)) continue
+      const selected = rangeFor(block.itemId)
+      if (!selected) continue
+      const geometry = layout.geometry.byBlockKey[block.blockKey]
+      if (!geometry) continue
+      if (geometry.key.folded) {
+        const ref = layout.blockKeysByItem?.[block.itemId]?.find(candidate => candidate.blockKey === block.blockKey)
+        if (!ref) continue
+        const from = Math.max(selected.from, ref.from)
+        const to = Math.min(selected.to, ref.to)
+        const offsets = from < to ? [from, to - 1] : []
+        const projectionLength = state.projectionById[block.itemId]?.sourceSpans.length
+        if (projectionLength === ref.to && selected.from <= ref.to && selected.to > ref.to) offsets.push(ref.to)
+        for (const offset of new Set(offsets)) {
+          const point = pointInLayout(layout, { itemId: block.itemId, graphemeOffset: offset })
+          if (point) visitPoint(point)
+        }
+        continue
+      }
+      const firstRow = viewport ? Math.max(0, Math.floor(viewport.screenY - block.screenY)) : 0
+      const lastRow = viewport ? Math.min(block.rows, Math.ceil(viewport.screenY + viewport.height - block.screenY)) : block.rows
+      const offsets = viewport && geometry.pointOffsetsByRow
+        ? Array.from({ length: Math.max(0, lastRow - firstRow) }, (_, index) => firstRow + index)
+          .flatMap(row => geometry.pointOffsetsByRow?.[row] ?? [])
+        : Object.keys(geometry.points).map(Number)
+      for (const graphemeOffset of offsets) {
+        const point = pointInLayout(layout, { itemId: block.itemId, graphemeOffset })
+        if (point) visitPoint(point)
+      }
+    }
+  } else {
+    for (const points of Object.values(layout.points ?? {})) for (const point of Object.values(points)) visitPoint(point)
+  }
+  if (!first || !last) return undefined
+  const anchorIndex = order.get(state.selection.anchor.itemId) ?? -1
+  const headIndex = order.get(state.selection.head.itemId) ?? -1
+  const forward = anchorIndex < headIndex || (anchorIndex === headIndex
+    && state.selection.anchor.graphemeOffset <= state.selection.head.graphemeOffset)
+  return forward ? { anchor: first, head: last } : { anchor: last, head: first }
 }

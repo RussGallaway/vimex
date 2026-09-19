@@ -1,6 +1,6 @@
 import type { ConversationItem } from "@vimex/conversation"
 import { projectMarkdown, projectPlainText } from "../domain/markdown-source-map"
-import type { LogicalPoint, TextProjection, TranscriptState } from "../domain/transcript-document"
+import { inheritTranscriptTextLengthIndex, type LogicalPoint, type TextProjection, type TranscriptState } from "../domain/transcript-document"
 function sourceOf(item: ConversationItem): string {
   switch (item.kind) {
     case "user": case "assistant": case "reasoning": return item.markdown
@@ -37,7 +37,7 @@ export function syncTranscriptItem(state: TranscriptState, item: ConversationIte
     const offset = projection.sourceSpans.findIndex(span => span.to > sourceOffset)
     return { ...point, graphemeOffset: offset < 0 ? projection.sourceSpans.length : offset }
   }
-  return clampTranscript({
+  const next = clampTranscript({
     ...state,
     order: isNew ? [...state.order, item.id] : state.order,
     projectionById: { ...state.projectionById, [item.id]: projection },
@@ -49,6 +49,8 @@ export function syncTranscriptItem(state: TranscriptState, item: ConversationIte
     unseenEntries: newlyUnseen ? state.unseenEntries + 1 : state.unseenEntries,
     unseenItemIds: newlyUnseen ? [...unseenItemIds, item.id] : unseenItemIds,
   })
+  inheritTranscriptTextLengthIndex(state, next, item.id, isNew)
+  return next
 }
 export function clampTranscript(state: TranscriptState): TranscriptState {
   const clampPoint = (point: LogicalPoint): LogicalPoint => {

@@ -6,7 +6,7 @@ import { act, useSyncExternalStore } from "react"
 import { itemId, threadId, turnId, type ConversationGateway } from "@vimex/conversation"
 import type { ApprovalGateway } from "@vimex/approvals"
 import { VimexController, type ModelCatalog, type RuntimeConnection, type RuntimeEvent } from "@vimex/workbench"
-import { selectedText } from "@vimex/transcript"
+import { graphemeCount, selectedText } from "@vimex/transcript"
 import { VimexRoot } from "../index"
 import { blockNativeRevision } from "./measure-rendered-block"
 
@@ -95,6 +95,68 @@ test("Visual line copy omits Markdown syntax and focus exit clears semantic sele
     expect(h.workspace().interaction.surface).toBe("composer")
     expect(h.workspace().interaction.mode).toBe("normal")
     expect(h.workspace().transcript.selection).toBeUndefined()
+    expect(h.renderer.getSelection()).toBeNull()
+  } finally { await h.close() }
+})
+
+test("distant Visual selection clips native highlight to each bounded window", async () => {
+  const h = await visualHarness()
+  try {
+    let selectionStarts = 0
+    let selectionUpdates = 0
+    const startSelection = h.renderer.startSelection.bind(h.renderer)
+    const updateSelection = h.renderer.updateSelection.bind(h.renderer)
+    h.renderer.startSelection = (...args) => { selectionStarts += 1; return startSelection(...args) }
+    h.renderer.updateSelection = (...args) => { selectionUpdates += 1; return updateSelection(...args) }
+    const ids = Array.from({ length: 100 }, (_, index) => itemId(`clip-${index}`))
+    await act(async () => {
+      ids.forEach((id, index) => h.emit({ type: "conversation", event: { type: "item.started", threadId: thread, item: {
+        id, turnId: turnId(`clip-turn-${index}`), kind: "assistant", markdown: `clip row ${index}`, status: "complete",
+      } } }))
+      await h.controller.settle(); await h.flush(); await h.renderOnce()
+    })
+    const start = { itemId: ids[5]!, graphemeOffset: 0 }
+    const end = { itemId: ids[95]!, graphemeOffset: 0 }
+    await act(async () => {
+      h.controller.transcript({ type: "cursor.move", target: start, preferredScreenRow: 2, extend: false })
+      h.controller.transcript({ type: "selection.begin", shape: "character" })
+      h.controller.dispatchInteraction({ type: "mode.visual" })
+      h.controller.transcript({ type: "cursor.move", target: end, preferredScreenRow: 2, extend: true })
+      await h.flush(); await h.renderOnce()
+    })
+    const nearEnd = h.renderer.getSelection()?.getSelectedText()
+    expect(nearEnd).toBeTruthy()
+    expect(nearEnd).toContain("clip row")
+
+    await act(async () => {
+      h.controller.transcript({ type: "selection.swap" })
+      await h.flush(); await h.renderOnce()
+    })
+    for (let count = 0; count < 10 && !h.renderer.getSelection(); count++) await act(async () => {
+      await Bun.sleep(5); await h.flush(); await h.renderOnce()
+    })
+    const swappedFrame = h.controller.transcriptRuntime("main")!.getSnapshot()
+    expect(swappedFrame.transcript.selection).toEqual({ anchor: end, head: start, shape: "character" })
+    expect(swappedFrame.transcript.viewport).toEqual({ kind: "point", point: start, preferredScreenRow: 2 })
+    expect(swappedFrame.window.blocks.some(block => block.key.kind === "item" && block.key.itemId === start.itemId)).toBe(true)
+    expect(swappedFrame.geometry.measuredBlockCount).toBeGreaterThan(0)
+    const nearStart = h.renderer.getSelection()?.getSelectedText()
+    expect(nearStart).toBeTruthy()
+    expect(nearStart).toContain("clip row 5")
+    expect(h.workspace().transcript.selection).toEqual({ anchor: end, head: start, shape: "character" })
+    const semanticText = selectedText(h.workspace().transcript, "plain")!
+    expect(h.captureCharFrame()).toContain(`${graphemeCount(semanticText)} selected`)
+
+    const stableStarts = selectionStarts
+    const stableUpdates = selectionUpdates
+    for (let count = 0; count < 5; count++) await act(async () => { await h.flush(); await h.renderOnce() })
+    expect(selectionStarts).toBe(stableStarts)
+    expect(selectionUpdates).toBe(stableUpdates)
+
+    await act(async () => {
+      h.controller.transcript({ type: "selection.clear" })
+      await h.flush(); await h.renderOnce()
+    })
     expect(h.renderer.getSelection()).toBeNull()
   } finally { await h.close() }
 })

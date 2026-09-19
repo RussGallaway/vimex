@@ -1,11 +1,11 @@
 import { CliRenderEvents, type ScrollBoxRenderable } from "@opentui/core"
 import { useRenderer } from "@opentui/react"
 import type { ThreadId } from "@vimex/conversation"
-import type { GeometryStyleRevision, LogicalPoint, TranscriptFrame, TranscriptRuntime, TranscriptState } from "@vimex/transcript"
+import { blockGraphemeRange, blockKey, type GeometryStyleRevision, type LogicalPoint, type TranscriptFrame, type TranscriptRuntime, type TranscriptState } from "@vimex/transcript"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react"
 import type { VimexUiController } from "../contracts"
 import { buildTranscriptLayout, type TranscriptLayout } from "./layout"
-import { measureRenderedTranscript, measuredPoint, topVisiblePoint, bottomVisiblePoint, rebaseTranscriptLayout, synchronizeRenderedTranscriptWindow, transcriptItemRenderableId, translateTranscriptLayout } from "./rendered-layout"
+import { measureRenderedTranscript, measuredPoint, topVisiblePoint, bottomVisiblePoint, rebaseTranscriptLayout, synchronizeRenderedTranscriptWindow, transcriptBlockRenderableId, transcriptItemRenderableId, translateTranscriptLayout } from "./rendered-layout"
 
 /** Owns the volatile bridge between semantic anchors and terminal geometry. */
 export function useTranscriptLayout(options: {
@@ -87,6 +87,29 @@ export function useTranscriptLayout(options: {
     renderer.requestRender()
   }, [renderer])
 
+  const prepositionWindowForPoint = useCallback((frame: TranscriptFrame, point: LogicalPoint, preferredScreenRow: number): void => {
+    const scrollbox = scrollRef.current
+    if (!scrollbox) return
+    const target = frame.window.blocks.find(block => {
+      if (!("projection" in block) || block.key.itemId !== point.itemId) return false
+      const range = blockGraphemeRange(block)
+      return point.graphemeOffset >= range.from
+        && (point.graphemeOffset < range.to
+          || (range.to === block.projection.sourceSpans.length && point.graphemeOffset === range.to))
+    })
+    if (!target || !("projection" in target)) return
+    scrollbox.scrollChildIntoView(transcriptBlockRenderableId(target))
+    const key = blockKey(target)
+    const blockRow = frame.geometry.rowByBlockKey[key] ?? frame.window.topSpacerRows
+    const localRow = frame.geometry.byBlockKey[key]?.points[point.graphemeOffset]?.row ?? 0
+    const renderable = scrollbox.getRenderable(transcriptBlockRenderableId(target))
+    if (!renderable || renderable.screenY < scrollbox.viewport.screenY
+      || renderable.screenY >= scrollbox.viewport.screenY + scrollbox.viewport.height) {
+      scrollbox.scrollTo(Math.max(0, blockRow + localRow - preferredScreenRow))
+    }
+    lastScrollTop.current = scrollbox.scrollTop
+  }, [scrollRef])
+
   useEffect(() => {
     const measure = () => {
       const current = latest.current
@@ -99,6 +122,10 @@ export function useTranscriptLayout(options: {
       if (current.runtime && current.frame) {
         const configured = current.runtime.setWindowViewport(Math.max(1, scrollbox.viewport.height))
         if (configured !== current.frame) { renderer.requestRender(); return }
+        if (pendingRestore.current && current.transcript.viewport.kind === "point"
+          && measuredLayout.current?.materializedBlocks !== current.frame.window.blocks) {
+          prepositionWindowForPoint(current.frame, current.transcript.viewport.point, current.transcript.viewport.preferredScreenRow)
+        }
       }
       // A manual scroll establishes semantic meaning before dirty native
       // reflow is allowed to publish corrected heights around the old anchor.
@@ -147,7 +174,7 @@ export function useTranscriptLayout(options: {
     renderer.on(CliRenderEvents.FRAME, measure)
     renderer.requestRender()
     return () => { renderer.off(CliRenderEvents.FRAME, measure) }
-  }, [captureScrolledAnchor, controller, renderer, scrollRef])
+  }, [captureScrolledAnchor, controller, prepositionWindowForPoint, renderer, scrollRef])
   const enterVisibleTranscript = useCallback(() => {
     const scrollbox = scrollRef.current
     if (!scrollbox) return

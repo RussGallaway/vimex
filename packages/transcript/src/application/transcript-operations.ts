@@ -1,6 +1,6 @@
 import type { ItemId } from "@vimex/conversation"
 import { graphemes, graphemeCount } from "../domain/markdown-source-map"
-import { transcriptOrderIndex, type JumpLocation, type LogicalPoint, type TextProjection, type TranscriptCommand, type TranscriptSelection, type TranscriptState } from "../domain/transcript-document"
+import { transcriptOrderIndex, transcriptTextLengthRange, type JumpLocation, type LogicalPoint, type TextProjection, type TranscriptCommand, type TranscriptSelection, type TranscriptState, type TranscriptTextLengthIndexDiagnostics } from "../domain/transcript-document"
 import { clampTranscript } from "./project-conversation"
 export function moveCursor(state: TranscriptState, point: LogicalPoint, preferredScreenRow = 0): TranscriptState {
   return clampTranscript({
@@ -78,7 +78,8 @@ export function beginSelection(state: TranscriptState, shape: TranscriptSelectio
 export function swapSelection(state: TranscriptState): TranscriptState {
   if (!state.selection) return state
   const { anchor, head } = state.selection
-  return { ...state, cursor: anchor, selection: { ...state.selection, anchor: head, head: anchor } }
+  const preferredScreenRow = state.viewport.kind === "point" ? state.viewport.preferredScreenRow : 0
+  return moveCursor({ ...state, selection: { ...state.selection, anchor: head, head: anchor } }, anchor, preferredScreenRow)
 }
 export function clearSelection(state: TranscriptState): TranscriptState { return { ...state, selection: undefined } }
 export function setFold(state: TranscriptState, id: ItemId, folded: boolean): TranscriptState {
@@ -149,6 +150,43 @@ export function selectedText(state: TranscriptState, format: "plain" | "source")
     if (state.selection?.shape === "line") [from, to] = lineRange(parts, from, to)
     return projectedSlice(projection, from, to, format)
   }).join("\n")
+}
+
+/** Count rendered selection graphemes without constructing or scanning the selected transcript text. */
+export function selectedGraphemeCount(
+  state: TranscriptState,
+  diagnostics?: TranscriptTextLengthIndexDiagnostics,
+): number | undefined {
+  if (!state.selection) return undefined
+  const forward = comparePoint(state, state.selection.anchor, state.selection.head) <= 0
+  const start = forward ? state.selection.anchor : state.selection.head
+  const end = forward ? state.selection.head : state.selection.anchor
+  const order = transcriptOrderIndex(state.order)
+  const startIndex = order.get(start.itemId)
+  const endIndex = order.get(end.itemId)
+  if (startIndex === undefined || endIndex === undefined) return undefined
+  const boundary = (point: LogicalPoint, side: "start" | "end"): readonly [number, number] => {
+    const projection = state.projectionById[point.itemId]
+    const length = projection?.sourceSpans.length ?? 0
+    let from = side === "start" ? point.graphemeOffset : 0
+    let to = side === "end" ? point.graphemeOffset : Math.max(0, length - 1)
+    if (state.selection?.shape === "line" && projection) [from, to] = lineRange(graphemes(projection.plain), from, to)
+    const clampedFrom = Math.max(0, Math.min(length, from))
+    const clampedTo = Math.max(clampedFrom, Math.min(length, to + 1))
+    return [clampedFrom, clampedTo]
+  }
+  if (startIndex === endIndex) {
+    const projection = state.projectionById[start.itemId]
+    const length = projection?.sourceSpans.length ?? 0
+    let from = start.graphemeOffset
+    let to = end.graphemeOffset
+    if (state.selection.shape === "line" && projection) [from, to] = lineRange(graphemes(projection.plain), from, to)
+    return Math.max(0, Math.min(length, to + 1) - Math.max(0, Math.min(length, from)))
+  }
+  const [startFrom, startTo] = boundary(start, "start")
+  const [endFrom, endTo] = boundary(end, "end")
+  const middle = transcriptTextLengthRange(state, startIndex + 1, endIndex, diagnostics)
+  return (startTo - startFrom) + middle + (endTo - endFrom) + (endIndex - startIndex)
 }
 export function urlAt(state: TranscriptState, point = state.cursor): string | undefined {
   if (!point) return undefined

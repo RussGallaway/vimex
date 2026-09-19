@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { itemId, threadId, turnId, type ConversationItem } from "@vimex/conversation"
-import { attachTail, beginSelection, findSearchMatches, graphemeCount, initialTranscript, moveCursor, projectItem, reduceTranscript, selectedText, setFold, syncTranscriptItem, urlAt } from "./index"
+import { attachTail, beginSelection, findSearchMatches, graphemeCount, initialTranscript, moveCursor, projectItem, reduceTranscript, selectedGraphemeCount, selectedText, setFold, syncTranscriptItem, transcriptTextLengthRange, urlAt } from "./index"
 
 import { assistantMessage as message } from "@vimex/testkit"
 
@@ -59,6 +59,60 @@ describe("transcript", () => {
     state = beginSelection(state, "line")
     state = moveCursor(state, { itemId: itemId("a"), graphemeOffset: 8 })
     expect(selectedText(state, "plain")).toBe("second\n")
+  })
+
+  test("selection swap atomically moves the cursor and viewport to the new head", () => {
+    let state = syncTranscriptItem(initialTranscript(), message("a", "first"))
+    state = syncTranscriptItem(state, message("b", "second"))
+    state = moveCursor(state, { itemId: itemId("a"), graphemeOffset: 1 }, 7)
+    state = beginSelection(state, "character")
+    state = moveCursor(state, { itemId: itemId("b"), graphemeOffset: 3 }, 7)
+    state = reduceTranscript(state, { type: "selection.swap" })
+    expect(state.selection).toEqual({
+      anchor: { itemId: itemId("b"), graphemeOffset: 3 },
+      head: { itemId: itemId("a"), graphemeOffset: 1 },
+      shape: "character",
+    })
+    expect(state.cursor).toEqual(state.selection?.head)
+    expect(state.viewport).toEqual({ kind: "point", point: state.selection!.head, preferredScreenRow: 7 })
+  })
+
+  test("selection count uses a warm logarithmic length index instead of materializing selected history", () => {
+    const ids = Object.freeze(Array.from({ length: 100_000 }, (_, index) => itemId(`count-${index}`)))
+    const projection = projectItem(message("count-projection", "x"))
+    const state = {
+      ...initialTranscript(),
+      order: ids,
+      projectionById: Object.freeze(Object.fromEntries(ids.map(id => [id, projection]))),
+      selection: {
+        anchor: { itemId: ids[10]!, graphemeOffset: 0 },
+        head: { itemId: ids[99_990]!, graphemeOffset: 0 },
+        shape: "character" as const,
+      },
+    }
+    expect(selectedGraphemeCount(state)).toBe(199_961)
+    const diagnostics = {
+      textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0,
+      textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
+    }
+    expect(selectedGraphemeCount(state, diagnostics)).toBe(graphemeCount(selectedText(state, "plain")!))
+    expect(diagnostics.textLengthIndexBuilds).toBe(0)
+    expect(diagnostics.textLengthItemVisits).toBe(0)
+    expect(diagnostics.textLengthIndexCacheHits).toBe(1)
+    expect(diagnostics.textLengthNodeVisits).toBeLessThan(64)
+
+    let incremental = syncTranscriptItem(initialTranscript(), message("count-a", "alpha"))
+    incremental = syncTranscriptItem(incremental, message("count-b", "beta"))
+    incremental = moveCursor(incremental, { itemId: itemId("count-a"), graphemeOffset: 1 })
+    incremental = beginSelection(incremental, "line")
+    incremental = moveCursor(incremental, { itemId: itemId("count-b"), graphemeOffset: 2 })
+    expect(selectedGraphemeCount(incremental)).toBe(graphemeCount(selectedText(incremental, "plain")!))
+
+    const sharedProjectionById = { short: projectItem(message("short", "x")), long: projectItem(message("long", "12345")) }
+    const shortFirst = { ...initialTranscript(), order: [itemId("short"), itemId("long")], projectionById: sharedProjectionById }
+    const longFirst = { ...shortFirst, order: [itemId("long"), itemId("short")] }
+    expect(transcriptTextLengthRange(shortFirst, 0, 1)).toBe(1)
+    expect(transcriptTextLengthRange(longFirst, 0, 1)).toBe(5)
   })
 
   test("folds preserve semantic cursor and URL lookup is keyboard-addressable", () => {

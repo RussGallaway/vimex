@@ -52,7 +52,7 @@ const styleRevision = "stage-5.0-baseline"
 function createDiagnostics(): RenderedLayoutDiagnostics {
   return {
     candidateBlocks: 0, visibleCandidates: 0, overscanCandidates: 0,
-    attemptedMeasurements: 0, changedMeasurements: 0, cachedMeasurements: 0,
+    attemptedMeasurements: 0, changedMeasurements: 0, cachedMeasurements: 0, rejectedMeasurements: 0, placementValidationVisits: 0,
     pendingAfter: 0, trackedMountedRoots: 0, prunedRoots: 0,
     visibleBeforeOverscan: true, attemptedKeys: [],
   }
@@ -393,6 +393,11 @@ function offWindowTargetBaseline(fixture: ReturnType<typeof buildTranscriptScali
     orderIndexBuilds: 0,
     orderIndexItemVisits: 0,
     orderIndexCacheHits: 0,
+    textLengthIndexBuilds: 0,
+    textLengthItemVisits: 0,
+    textLengthIndexCacheHits: 0,
+    textLengthIndexUpdates: 0,
+    textLengthNodeVisits: 0,
   }
   const runtime = new TranscriptRuntime(runtimeInput(fixture, detachedSnapshot, "detached", { canonicalDamage: { kind: "full" } }), {
     windowPolicy: { viewportRows: 24, overscanRows: 24 },

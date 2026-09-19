@@ -1,5 +1,5 @@
 import type { ConversationState, ItemId, ThreadId, TurnId } from "@vimex/conversation"
-import { transcriptOrderIndex, type LogicalPoint, type TranscriptOrderIndexDiagnostics, type TranscriptState } from "./domain/transcript-document"
+import { inheritTranscriptTextLengthIndexChanges, transcriptOrderIndex, transcriptTextLengthRange, type LogicalPoint, type TranscriptOrderIndexDiagnostics, type TranscriptState, type TranscriptTextLengthIndexDiagnostics } from "./domain/transcript-document"
 import { composeTranscriptGeometry, composeTranscriptWindowGeometry, emptyTranscriptGeometry, freezeBlockGeometry, geometryMatchesBlock, type BlockGeometry, type BlockMeasurementBase, type BlockMeasurementBatch, type LayoutResetReason, type TranscriptGeometry } from "./geometry"
 import { createHeightIndex, type TranscriptHeightIndex } from "./height-index"
 import { blockKey, buildTranscriptBlocks, buildTranscriptItemBlock, passThroughWindow, planTranscriptWindow, pointIsMaterialized, transcriptPointBlockIndex, type TranscriptBlock, type TranscriptItemBlock, type TranscriptWindow } from "./window"
@@ -61,7 +61,7 @@ export interface TranscriptRuntimeOptions {
   readonly diagnostics?: TranscriptRuntimeDiagnostics
 }
 
-export interface TranscriptRuntimeDiagnostics extends TranscriptOrderIndexDiagnostics {
+export interface TranscriptRuntimeDiagnostics extends TranscriptOrderIndexDiagnostics, TranscriptTextLengthIndexDiagnostics {
   completePlanBuilds: number
   completePlanBlockVisits: number
 }
@@ -302,6 +302,7 @@ export class TranscriptRuntime {
     // first user-visible reveal against this authoritative snapshot.
     transcriptOrderIndex(input.transcript.order, this.diagnostics)
     const initial = createTranscriptFrame(input)
+    transcriptTextLengthRange(initial.transcript, 0, 0, this.diagnostics)
     if (this.diagnostics) {
       this.diagnostics.completePlanBuilds += 1
       this.diagnostics.completePlanBlockVisits += initial.blocks.length
@@ -459,6 +460,7 @@ export class TranscriptRuntime {
     }
     const blocks = nextBlocks ? Object.freeze(nextBlocks) : this.frame.blocks
     const transcript = presentationTranscriptWithProjections(input.transcript, this.frame.transcript.order, Object.freeze(projections))
+    inheritTranscriptTextLengthIndexChanges(this.frame.transcript, transcript, itemIds, this.diagnostics)
     const frame = Object.freeze({
       threadId: input.threadId,
       canonicalGeneration: input.canonicalGeneration,
@@ -603,6 +605,7 @@ export class TranscriptRuntime {
       this.diagnostics.completePlanBlockVisits += rebuilt.blocks.length
     }
     const raw = incremental ?? rebuilt!
+    if (rebuilt) transcriptTextLengthRange(raw.transcript, 0, 0, this.diagnostics)
     const index = this.heightIndex?.supports(raw.blocks) ? this.heightIndex : this.heightIndexForFrame(raw)
     const next = this.withPlannedWindow(raw, index, displayedReveal(input, raw, this.diagnostics))
     if (!incremental) this.reindex(next.blocks)

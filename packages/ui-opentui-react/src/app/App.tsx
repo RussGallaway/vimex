@@ -6,7 +6,7 @@ import { useBindings } from "@opentui/keymap/react"
 import { flushSync, useRenderer } from "@opentui/react"
 import { initialComposer, type SubmissionIntent } from "@vimex/composer"
 import { applyComposerVimAction, codeUnitOffsetToGraphemeOffset, commandCompletions, graphemeOffsetToCodeUnitOffset, initialCommandHistory, initialInteraction, recallCommand, recordCommand, resolveComposerKey, type ComposerVimAction, type InteractionState } from "@vimex/interaction"
-import { graphemeCount, initialTranscript, selectedText, type TranscriptRuntimeInput, type TranscriptState, type TranscriptWindow } from "@vimex/transcript"
+import { initialTranscript, selectedGraphemeCount, type TranscriptRuntimeInput, type TranscriptState, type TranscriptWindow } from "@vimex/transcript"
 import { activeWorkspace, liveActivity, sideChatForChild } from "@vimex/workbench"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { Composer } from "../composer/Composer"
@@ -16,7 +16,7 @@ import { Statusline } from "../statusline/Statusline"
 import { useTranscriptLayout } from "../transcript/use-transcript-layout"
 import { TranscriptViewport } from "../transcript/TranscriptViewport"
 import { defaultVimexUiSettings, type VimexAppProps } from "../contracts"
-import { movePoint, movePointInTranscript, type TranscriptLayout } from "../transcript/layout"
+import { materializedSelectionEndpoints, movePoint, movePointInTranscript, type TranscriptLayout } from "../transcript/layout"
 import { measureRenderedTranscript, measuredPoint, transcriptRenderableIdForPoint } from "../transcript/rendered-layout"
 import { createEmberTideSyntax, selectTheme } from "../theme"
 import { commonBindings } from "../keymap/common-bindings"
@@ -96,6 +96,19 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   const questionInputRef = useRef<InputRenderable>(null)
   const commandHistoryRef = useRef(initialCommandHistory())
   const composerSelectionRef = useRef<{ anchor: number; head: number } | undefined>(undefined)
+  const appliedNativeSelection = useRef<{
+    token: object
+    selection: NonNullable<TranscriptState["selection"]>
+    scrollTop: number
+    startRoot: Renderable
+    endRoot: Renderable
+    startTarget: Renderable
+    endTarget: Renderable
+    startX: number
+    startY: number
+    endX: number
+    endY: number
+  } | undefined>(undefined)
   const [overlayIndex, setOverlayIndex] = useState(0)
   const overlayIndexRef = useRef(0)
   const [sessionQuery, setSessionQuery] = useState("")
@@ -135,7 +148,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
     : activity.label
   const sessionRows = useMemo(() => searchSessions(state.threadOrder, state.summaries, sessionQuery, state.favoriteThreadIds, sessionCwd), [sessionQuery, state.summaries, state.threadOrder, state.favoriteThreadIds, sessionCwd])
   const agentRows = useMemo(() => agentNavigationRows(state.activeThreadId, state.agentRelationships), [state.activeThreadId, state.agentRelationships])
-  const selectionCount = useMemo(() => selectedText(transcript, "plain"), [transcript.selection, transcript.order, transcript.projectionById])
+  const selectionCount = useMemo(() => selectedGraphemeCount(transcript), [transcript.selection, transcript.order, transcript.projectionById])
   const selectedPickerModel = modelPicker.stage === "efforts" ? state.availableModels?.find(model => model.id === modelPicker.modelId) : undefined
   const overlayLength = interaction.overlay === "models" ? (modelPicker.stage === "efforts" ? (selectedPickerModel?.efforts.length ?? 0) : (state.availableModels?.length ?? 0))
     : interaction.overlay === "sessions" ? sessionRows.length
@@ -252,24 +265,68 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   }, [interactive, jumpActive, interaction.mode, interaction.overlay, interaction.surface, layout, renderer, transcript.cursor, transcript.selection, transcriptRuntime, transcriptStyleRevision])
   useEffect(() => {
     if (!interactive) return
-    if (jumpActive || interaction.surface !== "transcript" || !transcript.selection) {
-      if (renderer.getSelection()) renderer.clearSelection()
-      return
+    const updateSelection = () => {
+      const runtimeFrame = transcriptRuntime?.getSnapshot()
+      const selectionTranscript = runtimeFrame?.transcript ?? transcript
+      const clear = () => {
+        if (renderer.getSelection()) renderer.clearSelection()
+        appliedNativeSelection.current = undefined
+      }
+      if (jumpActive || interaction.surface !== "transcript" || !selectionTranscript.selection) {
+        clear()
+        return
+      }
+      const scrollbox = scrollRef.current
+      if (!scrollbox) { clear(); return }
+      const token = runtimeFrame ?? layout
+      const applied = appliedNativeSelection.current
+      if (applied && applied.token === token && applied.selection === selectionTranscript.selection
+        && applied.scrollTop === scrollbox.scrollTop
+        && !applied.startRoot.isDestroyed && !applied.endRoot.isDestroyed
+        && !applied.startTarget.isDestroyed && !applied.endTarget.isDestroyed
+        && applied.startRoot.screenX === applied.startX && applied.startRoot.screenY === applied.startY
+        && applied.endRoot.screenX === applied.endX && applied.endRoot.screenY === applied.endY
+        && renderer.getSelection()) return
+
+      let activeLayout = layout
+      if (runtimeFrame && transcriptRuntime) {
+        const refreshed = measureRenderedTranscript(renderer, scrollbox, {
+          frame: runtimeFrame, runtime: transcriptRuntime, styleRevision: transcriptStyleRevision,
+        })
+        if (!refreshed || refreshed.materializedBlocks !== runtimeFrame.window.blocks) { clear(); return }
+        measuredLayout.current = refreshed
+        activeLayout = refreshed
+      } else activeLayout = measuredLayout.current ?? layout
+      const clipped = materializedSelectionEndpoints(selectionTranscript, activeLayout, undefined, scrollbox.viewport)
+      if (!clipped) {
+        clear()
+        return
+      }
+      const forward = clipped.anchor.screenY < clipped.head.screenY
+        || (clipped.anchor.screenY === clipped.head.screenY && clipped.anchor.screenX <= clipped.head.screenX)
+      const start = forward ? clipped.anchor : clipped.head
+      const end = forward ? clipped.head : clipped.anchor
+      const startItem = scrollbox.getRenderable(transcriptRenderableIdForPoint(activeLayout, start))
+      const endItem = scrollbox.getRenderable(transcriptRenderableIdForPoint(activeLayout, end))
+      const startTarget = startItem ? selectableAt(startItem, start.screenX, start.screenY) : undefined
+      const endTarget = endItem ? selectableAt(endItem, end.screenX, end.screenY) : undefined
+      if (!startTarget || !endTarget) {
+        clear()
+        return
+      }
+      renderer.startSelection(startTarget, start.screenX, start.screenY, selectionTranscript.selection.shape === "line" ? "line" : "cell")
+      renderer.updateSelection(endTarget, end.screenX, end.screenY, { finishDragging: true })
+      appliedNativeSelection.current = {
+        token, selection: selectionTranscript.selection, scrollTop: scrollbox.scrollTop,
+        startRoot: startItem!, endRoot: endItem!, startTarget, endTarget,
+        startX: startItem!.screenX, startY: startItem!.screenY,
+        endX: endItem!.screenX, endY: endItem!.screenY,
+      }
     }
-    const anchorPoint = transcript.selection?.anchor ?? transcript.cursor
-    const headPoint = transcript.selection?.head ?? transcript.cursor
-    const anchor = measuredPoint(layout, anchorPoint)
-    const head = measuredPoint(layout, headPoint)
-    const scrollbox = scrollRef.current
-    if (!anchor || !head || !scrollbox) return
-    const anchorItem = scrollbox.getRenderable(transcriptRenderableIdForPoint(layout, anchor))
-    const headItem = scrollbox.getRenderable(transcriptRenderableIdForPoint(layout, head))
-    const anchorTarget = anchorItem ? selectableAt(anchorItem, anchor.screenX, anchor.screenY) : undefined
-    const headTarget = headItem ? selectableAt(headItem, head.screenX, head.screenY) : undefined
-    if (!anchorTarget || !headTarget) return
-    renderer.startSelection(anchorTarget, anchor.screenX, anchor.screenY, transcript.selection?.shape === "line" ? "line" : "cell")
-    renderer.updateSelection(headTarget, head.screenX, head.screenY, { finishDragging: true })
-  }, [interactive, jumpActive, interaction.surface, layout, renderer, transcript.cursor, transcript.selection])
+    updateSelection()
+    renderer.on(CliRenderEvents.FRAME, updateSelection)
+    return () => { renderer.off(CliRenderEvents.FRAME, updateSelection) }
+  }, [interactive, jumpActive, interaction.surface, layout, renderer, transcript.cursor, transcript.selection, transcriptRuntime, transcriptStyleRevision])
   useEffect(() => {
     if (!interactive || interaction.surface !== "transcript" || transcript.viewport.kind === "tail" || !transcript.cursor) return
     const scrollbox = scrollRef.current
@@ -593,10 +650,10 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
         summary={summary}
         pendingKeys={interaction.pendingKeys}
         unseenEntries={semanticTranscript.unseenEntries}
-        selectionCount={selectionCount ? graphemeCount(selectionCount) : undefined}
         pendingApprovals={state.approvals.order.length}
         pendingQuestions={Object.keys(state.questions).length}
         activeTurn={busy}
+        selectionCount={selectionCount}
       />}
       overlay={interactive ? <>{jumpActive ? <FlashJump fromComposer={interaction.surface === "composer"} transcript={transcript} frame={transcriptFrame} runtime={transcriptRuntime} styleRevision={transcriptStyleRevision} layout={layout} scrollRef={scrollRef} controller={controller} extend={interaction.mode === "visual" && interaction.surface === "transcript"} onClose={() => setJumpOpen(false)} /> : null}<OverlayLayer
         models={state.availableModels}

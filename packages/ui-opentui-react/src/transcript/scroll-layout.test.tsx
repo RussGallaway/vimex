@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
 import { act, useEffect, useState } from "react"
-import type { ScrollBoxRenderable } from "@opentui/core"
+import type { Renderable, ScrollBoxRenderable } from "@opentui/core"
 import { createConversation, itemId, reduceConversation, threadId, turnId, type ConversationEvent, type ConversationItem } from "@vimex/conversation"
 import { blockKey, initialTranscript, syncTranscriptItem, TranscriptRuntime, type TranscriptState } from "@vimex/transcript"
 import { buildTranscriptScalingFixture } from "@vimex/testkit"
@@ -10,6 +10,7 @@ import { measureRenderedTranscript, measuredPoint, synchronizeRenderedTranscript
 import { movePoint, type TranscriptLayout } from "./layout"
 import { createEmberTideSyntax } from "../theme"
 import { TranscriptViewport } from "./TranscriptViewport"
+import { invalidateRenderedBlock, takeDirtyRenderedBlocks } from "./measure-rendered-block"
 
 test("native scroll translates cached points without remapping; resize invalidates geometry", async () => {
   const item = { id: itemId("scroll-cache"), turnId: turnId("turn"), kind: "command" as const, title: "Output", detail: Array.from({ length: 80 }, (_, i) => `${i}: ${"result ".repeat(12)}`).join("\n"), status: "complete" as const }
@@ -104,6 +105,84 @@ test("cached native text avoids repeated reads and observes late equal-height re
     expect(measuredPoint(changed, point)!.screenY).toBe(1)
     expect(measuredPoint(first, point)!.screenY).toBe(0)
   } finally { await act(async () => h.renderer.destroy()) }
+})
+
+test("transient out-of-root geometry is rejected, invalidated, and freshly accepted after settlement", async () => {
+  const fixture = buildTranscriptScalingFixture(1)
+  const runtime = new TranscriptRuntime({
+    threadId: fixture.threadId,
+    canonicalGeneration: 0,
+    canonicalRevision: fixture.before.canonicalRevision,
+    conversation: fixture.before.conversation,
+    transcript: fixture.before.transcript,
+    mode: "follow",
+    canonicalDamage: { kind: "full" },
+  }, { windowPolicy: { viewportRows: 8, overscanRows: 8 } })
+  const block = runtime.getSnapshot().window.blocks.find(candidate => "projection" in candidate)!
+  if (!("projection" in block)) throw new Error("Expected item block")
+  let setPlacement = (_settled: boolean) => {}
+  function Harness() {
+    const [settled, setSettled] = useState(false)
+    setPlacement = setSettled
+    return <scrollbox id="transient-scroll" width={40} height={8}>
+      <box id={transcriptBlockRenderableId(block)} height={1} flexShrink={0}>
+        <text id="transient-text" position="absolute" top={settled ? 0 : 5}>{block.projection.plain}</text>
+      </box>
+    </scrollbox>
+  }
+  const setup = await testRender(<Harness />, { width: 40, height: 8 })
+  try {
+    await act(async () => { await setup.flush(); await setup.renderOnce() })
+    takeDirtyRenderedBlocks()
+    const scroll = setup.renderer.root.findDescendantById("transient-scroll") as ScrollBoxRenderable
+    const rejected = { candidateBlocks: 0, visibleCandidates: 0, overscanCandidates: 0, attemptedMeasurements: 0,
+      changedMeasurements: 0, cachedMeasurements: 0, rejectedMeasurements: 0, pendingAfter: 0, trackedMountedRoots: 0,
+      placementValidationVisits: 0, prunedRoots: 0, visibleBeforeOverscan: true }
+    expect(measureRenderedTranscript(setup.renderer, scroll, {
+      frame: runtime.getSnapshot(), runtime, styleRevision: "transient-test", diagnostics: rejected,
+    })).toBeUndefined()
+    expect(rejected).toMatchObject({ attemptedMeasurements: 1, changedMeasurements: 0, cachedMeasurements: 0, rejectedMeasurements: 1, pendingAfter: 1 })
+    const root = setup.renderer.root.findDescendantById(transcriptBlockRenderableId(block)) as Renderable
+    expect(takeDirtyRenderedBlocks().some(entry => entry.renderable === root)).toBe(true)
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const held = { ...rejected, attemptedMeasurements: 0, rejectedMeasurements: 0, pendingAfter: 0 }
+      expect(measureRenderedTranscript(setup.renderer, scroll, {
+        frame: runtime.getSnapshot(), runtime, styleRevision: "transient-test", diagnostics: held,
+      })).toBeUndefined()
+      expect(held).toMatchObject({ attemptedMeasurements: 1, rejectedMeasurements: 1, pendingAfter: 1 })
+    }
+
+    await act(async () => { setPlacement(true); await setup.flush(); await setup.renderOnce() })
+    for (let frame = 0; frame < 3; frame++) await act(async () => { await setup.flush(); await setup.renderOnce() })
+    const accepted = { ...rejected, attemptedMeasurements: 0, rejectedMeasurements: 0, pendingAfter: 0 }
+    measureRenderedTranscript(setup.renderer, scroll, {
+      frame: runtime.getSnapshot(), runtime, styleRevision: "transient-test", diagnostics: accepted,
+    })
+    const frame = runtime.getSnapshot()
+    const layout = measureRenderedTranscript(setup.renderer, scroll, { frame, runtime, styleRevision: "transient-test" })!
+    expect(accepted).toMatchObject({ attemptedMeasurements: 1, changedMeasurements: 1, cachedMeasurements: 0, rejectedMeasurements: 0, pendingAfter: 1 })
+    expect(frame.geometry.measuredBlockCount).toBe(1)
+    expect(Object.values(frame.geometry.byBlockKey)[0]?.rows).toBeLessThanOrEqual(root.height)
+    expect(layout.materializedBlocks).toBe(frame.window.blocks)
+
+    await act(async () => { setPlacement(false); await setup.flush(); await setup.renderOnce() })
+    for (let frame = 0; frame < 3; frame++) await act(async () => { await setup.flush(); await setup.renderOnce() })
+    invalidateRenderedBlock(root)
+    let terminal = accepted
+    let reachedRetryLimit = false
+    for (let attempt = 0; attempt < 10; attempt++) {
+      terminal = { ...rejected, attemptedMeasurements: 0, rejectedMeasurements: 0, pendingAfter: 0 }
+      measureRenderedTranscript(setup.renderer, scroll, {
+        frame: runtime.getSnapshot(), runtime, styleRevision: "transient-test", diagnostics: terminal,
+      })
+      if (terminal.rejectedMeasurements === 1 && terminal.pendingAfter === 0) reachedRetryLimit = true
+    }
+    expect(reachedRetryLimit).toBe(true)
+    expect(terminal).toMatchObject({ attemptedMeasurements: 0, pendingAfter: 0 })
+  } finally {
+    runtime.dispose()
+    await act(async () => setup.renderer.destroy())
+  }
 })
 
 test("a block-damage append is discovered after an initially empty render plan", async () => {

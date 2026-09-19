@@ -475,6 +475,7 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     const revealPoint = command.type === "transcript.command" && revealThread
       ? command.command.type === "cursor.move" ? command.command.point
         : command.command.type === "jump.to" ? command.command.target.point
+          : command.command.type === "selection.swap" ? result.state.workspaces[revealThread]?.transcript.cursor
           : command.command.type === "jump.back" || command.command.type === "jump.forward" || command.command.type === "mark.jump"
             ? result.state.workspaces[revealThread]?.transcript.cursor : undefined
       : undefined

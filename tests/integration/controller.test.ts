@@ -7,6 +7,7 @@ import { resolve } from "node:path"
 type TestRuntime = ConversationGateway & ApprovalGateway & RuntimeConnection & ModelCatalog
 import { threadId, turnId, itemId, type ConversationEvent, type ThreadSummary } from "@vimex/conversation"
 import type { LocalState } from "@vimex/workbench"
+import { pointIsMaterialized, selectedText } from "@vimex/transcript"
 
 const a = threadId("a"), b = threadId("b")
 const summary = (id = a): ThreadSummary => ({ id, title: id, cwd: "/tmp", model: "test", reasoningEffort: "high", status: "idle" })
@@ -390,6 +391,56 @@ test("explicit navigation materializes an item created beyond a detached frame",
   h.controller.transcript({ type: "jump", target: { itemId: hidden, graphemeOffset: 0 } })
   expect(runtime.getSnapshot().blocks.some(block => block.key.kind === "item" && block.key.itemId === hidden)).toBe(true)
   expect(runtime.getSnapshot().mode).toBe("detached")
+  await h.controller.close()
+})
+
+test("distant selection swap reveals one bounded endpoint and copy spans unmounted blocks", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const runtime = h.controller.transcriptRuntime("main")!
+  const ids = Array.from({ length: 100 }, (_, index) => itemId(`selection-${index}`))
+  for (let index = 0; index < ids.length; index++) h.emit({ type: "conversation", event: {
+    type: "item.started", threadId: a, item: {
+      id: ids[index]!, turnId: turnId(`selection-turn-${index}`), kind: "assistant",
+      markdown: index === 50 ? "**item-50**" : `item-${index}`, status: "complete",
+    },
+  } })
+  const start = { itemId: ids[5]!, graphemeOffset: 0 }
+  const end = { itemId: ids[95]!, graphemeOffset: 0 }
+  h.controller.transcript({ type: "cursor.move", target: start, preferredScreenRow: 3, extend: false })
+  h.controller.transcript({ type: "selection.begin", shape: "character" })
+  h.controller.transcript({ type: "cursor.move", target: end, preferredScreenRow: 3, extend: true })
+  const before = runtime.getSnapshot()
+  expect(pointIsMaterialized(before.window.blocks, start)).toBe(false)
+  let publications = 0
+  runtime.subscribe(() => { publications++ })
+  h.controller.transcript({ type: "selection.swap" })
+  const swapped = runtime.getSnapshot()
+  expect(publications).toBe(1)
+  expect(swapped.window.blocks.length).toBeLessThanOrEqual(72)
+  expect(pointIsMaterialized(swapped.window.blocks, start)).toBe(true)
+  expect(swapped.transcript.selection).toEqual({ anchor: end, head: start, shape: "character" })
+  expect(swapped.transcript.viewport).toEqual({ kind: "point", point: start, preferredScreenRow: 3 })
+
+  const expectedPlain = ids.slice(5, 96).map((_, index, selected) => index === selected.length - 1 ? "i" : `item-${index + 5}`).join("\n")
+  const expectedSource = ids.slice(5, 96).map((_, index, selected) => index === selected.length - 1 ? "i"
+    : index + 5 === 50 ? "**item-50**" : `item-${index + 5}`).join("\n")
+  expect(selectedText(swapped.transcript, "source")).toBe(expectedSource)
+  const copiesBeforeSource = h.copied.length
+  h.controller.transcript({ type: "copy", format: "source", presentationId: "main" })
+  await h.controller.settle()
+  for (let attempt = 0; attempt < 10 && h.copied.length === copiesBeforeSource; attempt++) await Bun.sleep(1)
+  expect(h.copied.at(-1)).toBe(expectedSource)
+
+  h.controller.transcript({ type: "cursor.move", target: start, preferredScreenRow: 3, extend: false })
+  h.controller.transcript({ type: "selection.begin", shape: "character" })
+  h.controller.transcript({ type: "cursor.move", target: end, preferredScreenRow: 3, extend: true })
+  const blocks = runtime.getSnapshot().blocks
+  h.controller.transcript({ type: "copy", format: "plain", presentationId: "main" })
+  await h.controller.settle()
+  expect(h.copied.at(-1)).toBe(expectedPlain)
+  expect(runtime.getSnapshot().blocks).toBe(blocks)
+  expect(runtime.getSnapshot().window.blocks.length).toBeLessThanOrEqual(72)
   await h.controller.close()
 })
 

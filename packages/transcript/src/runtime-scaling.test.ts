@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { forkBoundary, type ConversationState } from "@vimex/conversation"
 import { appendTranscriptScalingTail, buildTranscriptScalingFixture, transcriptScalingBlockCounts, type TranscriptFixtureSnapshot } from "@vimex/testkit"
 import { findSearchMatches } from "./application/transcript-search"
-import { selectedText, urlAt } from "./application/transcript-operations"
+import { selectedGraphemeCount, selectedText, urlAt } from "./application/transcript-operations"
 import { referenceText, urlCandidates } from "./application/transcript-navigation"
 import type { TranscriptState } from "./domain/transcript-document"
 import type { BlockGeometry } from "./geometry"
@@ -223,6 +223,8 @@ test("production window policy bounds initial, detached, reveal, and measured ma
     const runtimeDiagnostics = {
       completePlanBuilds: 0, completePlanBlockVisits: 0,
       orderIndexBuilds: 0, orderIndexItemVisits: 0, orderIndexCacheHits: 0,
+      textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0,
+      textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
     }
     const detached = new TranscriptRuntime(runtimeInput(fixture, detachedSnapshot, "detached", { canonicalDamage: { kind: "full" } }), {
       windowPolicy: policy,
@@ -317,6 +319,37 @@ test("accepted height correction is atomic, window-local, immutable, and bounded
     expect(reset.geometry.measuredBlockCount).toBe(0)
     expect(reset.geometry.totalRows).toBe(blockCount)
     expect(reset.window.blocks.length).toBe(48)
+    runtime.dispose()
+  }
+})
+
+test("incremental runtime projection updates preserve the warm selection-length index at every scale", () => {
+  for (const blockCount of transcriptScalingBlockCounts) {
+    const fixture = buildTranscriptScalingFixture(blockCount)
+    const diagnostics = {
+      completePlanBuilds: 0, completePlanBlockVisits: 0,
+      orderIndexBuilds: 0, orderIndexItemVisits: 0, orderIndexCacheHits: 0,
+      textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0,
+      textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
+    }
+    const runtime = new TranscriptRuntime(runtimeInput(fixture, fixture.before, "follow", { canonicalDamage: { kind: "full" } }), {
+      windowPolicy: { viewportRows: 24, overscanRows: 24 },
+      diagnostics,
+    })
+    const before = selectedGraphemeCount(runtime.getSnapshot().transcript)
+    const beforeUpdate = { ...diagnostics }
+    const followed = runtime.update(runtimeInput(fixture, fixture.afterTailDelta, "follow", {
+      canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
+    }))
+    expect(diagnostics.textLengthIndexBuilds - beforeUpdate.textLengthIndexBuilds).toBe(0)
+    expect(diagnostics.textLengthItemVisits - beforeUpdate.textLengthItemVisits).toBe(0)
+    expect(diagnostics.textLengthIndexUpdates - beforeUpdate.textLengthIndexUpdates).toBe(1)
+    const beforeQuery = { ...diagnostics }
+    expect(selectedGraphemeCount(followed.transcript, diagnostics)).toBe(before)
+    expect(diagnostics.textLengthIndexBuilds - beforeQuery.textLengthIndexBuilds).toBe(0)
+    expect(diagnostics.textLengthItemVisits - beforeQuery.textLengthItemVisits).toBe(0)
+    expect(diagnostics.textLengthIndexCacheHits - beforeQuery.textLengthIndexCacheHits).toBe(1)
+    expect(diagnostics.textLengthNodeVisits - beforeQuery.textLengthNodeVisits).toBeLessThan(64)
     runtime.dispose()
   }
 })
