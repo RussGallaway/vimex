@@ -133,6 +133,162 @@ function timed<T>(operation: () => T): Readonly<{ value: T; milliseconds: number
   return Object.freeze({ value, milliseconds: performance.now() - started })
 }
 
+function createRuntimeDiagnostics() {
+  return {
+    completePlanBuilds: 0, completePlanBlockVisits: 0,
+    orderIndexBuilds: 0, orderIndexItemVisits: 0, orderIndexCacheHits: 0,
+    textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0, textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
+    urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0, urlIndexUpdates: 0, urlIndexNodeVisits: 0,
+    projectionRecordUpdates: 0, projectionRecordNodeVisits: 0, projectionRecordNodesCopied: 0,
+    blockPlanUpdates: 0, blockPlanNodeVisits: 0, blockPlanNodesCopied: 0,
+    heightIndexBuilds: 0, heightIndexBlockVisits: 0, heightIndexUpdates: 0, heightIndexNodeVisits: 0, heightIndexNodesCopied: 0,
+    completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0, blockPlanWindowSliceItems: 0, changedItemBuilds: 0,
+  }
+}
+
+function boundedFollowRuntimeBaseline(fixture: ReturnType<typeof buildTranscriptScalingFixture>): void {
+  forceGc()
+  const diagnostics = createRuntimeDiagnostics()
+  const runtime = new TranscriptRuntime(runtimeInput(fixture, fixture.before, "follow", { canonicalDamage: { kind: "full" } }), {
+    windowPolicy: { viewportRows: 24, overscanRows: 24 }, diagnostics,
+  })
+  try {
+    let publications = 0
+    const unsubscribe = runtime.subscribe(() => { publications++ })
+    const beforeFollow = { ...diagnostics }
+    const followed = timed(() => runtime.update(runtimeInput(fixture, fixture.afterTailDelta, "follow", {
+      canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
+    })))
+    assert.equal(publications, 1)
+    assert(followed.value.window.blocks.length <= 48)
+    const followCounts = {
+      completePlanBuilds: diagnostics.completePlanBuilds - beforeFollow.completePlanBuilds,
+      completePlanBlockVisits: diagnostics.completePlanBlockVisits - beforeFollow.completePlanBlockVisits,
+      projectionRecordUpdates: diagnostics.projectionRecordUpdates - beforeFollow.projectionRecordUpdates,
+      projectionRecordNodeVisits: diagnostics.projectionRecordNodeVisits - beforeFollow.projectionRecordNodeVisits,
+      projectionRecordNodesCopied: diagnostics.projectionRecordNodesCopied - beforeFollow.projectionRecordNodesCopied,
+      blockPlanUpdates: diagnostics.blockPlanUpdates - beforeFollow.blockPlanUpdates,
+      blockPlanNodeVisits: diagnostics.blockPlanNodeVisits - beforeFollow.blockPlanNodeVisits,
+      blockPlanNodesCopied: diagnostics.blockPlanNodesCopied - beforeFollow.blockPlanNodesCopied,
+      blockPlanWindowSliceItems: diagnostics.blockPlanWindowSliceItems - beforeFollow.blockPlanWindowSliceItems,
+      heightIndexBuilds: diagnostics.heightIndexBuilds - beforeFollow.heightIndexBuilds,
+      heightIndexBlockVisits: diagnostics.heightIndexBlockVisits - beforeFollow.heightIndexBlockVisits,
+      heightIndexUpdates: diagnostics.heightIndexUpdates - beforeFollow.heightIndexUpdates,
+      heightIndexNodeVisits: diagnostics.heightIndexNodeVisits - beforeFollow.heightIndexNodeVisits,
+      heightIndexNodesCopied: diagnostics.heightIndexNodesCopied - beforeFollow.heightIndexNodesCopied,
+      completeGeometryBlockVisits: diagnostics.completeGeometryBlockVisits - beforeFollow.completeGeometryBlockVisits,
+      windowGeometryBlockVisits: diagnostics.windowGeometryBlockVisits - beforeFollow.windowGeometryBlockVisits,
+      changedItemBuilds: diagnostics.changedItemBuilds - beforeFollow.changedItemBuilds,
+    }
+    assert.equal(followCounts.completePlanBuilds, 0)
+    assert.equal(followCounts.completePlanBlockVisits, 0)
+    assert.equal(followCounts.projectionRecordUpdates, 1)
+    assert.equal(followCounts.changedItemBuilds, 1)
+    assert.equal(followCounts.blockPlanUpdates, 1)
+    assert.equal(followCounts.heightIndexBuilds, 0)
+    assert.equal(followCounts.heightIndexBlockVisits, 0)
+    assert.equal(followCounts.heightIndexUpdates, 1)
+    assert.equal(followCounts.completeGeometryBlockVisits, 0)
+    assert(followCounts.projectionRecordNodeVisits <= 2 * Math.ceil(Math.log2(fixture.blockCount + 1)) + 1)
+    assert(followCounts.projectionRecordNodesCopied > 0)
+    assert(followCounts.projectionRecordNodesCopied <= 2 * Math.ceil(Math.log2(fixture.blockCount + 1)) + 1)
+    assert(followCounts.blockPlanNodeVisits <= 2 * (Math.ceil(Math.log2(fixture.blockCount)) + 1))
+    assert(followCounts.blockPlanNodesCopied > 0)
+    assert(followCounts.blockPlanNodesCopied <= Math.ceil(Math.log2(fixture.blockCount)) + 1)
+    assert(followCounts.heightIndexNodeVisits <= Math.ceil(Math.log2(fixture.blockCount)) + 1)
+    assert(followCounts.heightIndexNodesCopied <= Math.ceil(Math.log2(fixture.blockCount)) + 1)
+    assert(followCounts.windowGeometryBlockVisits <= 48)
+    assert(followCounts.blockPlanWindowSliceItems <= 48)
+
+    const anchor = Object.freeze({ itemId: fixture.targets.quarter, graphemeOffset: 0 })
+    const detachedTranscript = Object.freeze({
+      ...fixture.afterTailDelta.transcript,
+      cursor: anchor,
+      viewport: Object.freeze({ kind: "point" as const, point: anchor, preferredScreenRow: 5 }),
+    })
+    const detachedSnapshot = Object.freeze({ ...fixture.afterTailDelta, transcript: detachedTranscript })
+    runtime.update(runtimeInput(fixture, detachedSnapshot, "detached", { presentationDamage: { kind: "view" } }))
+    const pinned = runtime.getSnapshot()
+    const hidden = appendTranscriptScalingTail(detachedSnapshot, fixture.tailItemId, fixture.tailDelta)
+    publications = 0
+    assert.equal(runtime.update(runtimeInput(fixture, hidden, "detached", {
+      canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
+    })), pinned)
+    const detachedHiddenPublications = publications
+    assert.equal(detachedHiddenPublications, 0)
+    const latest = Object.freeze({ ...hidden, transcript: Object.freeze({
+      ...hidden.transcript, viewport: Object.freeze({ kind: "tail" as const }), unseenEntries: 0, unseenItemIds: Object.freeze([]),
+    }) })
+    publications = 0
+    const beforeReattach = { ...diagnostics }
+    const reattached = timed(() => runtime.update(runtimeInput(fixture, latest, "follow", { presentationDamage: { kind: "view" } })))
+    const reattachCounts = {
+      completePlanBuilds: diagnostics.completePlanBuilds - beforeReattach.completePlanBuilds,
+      completePlanBlockVisits: diagnostics.completePlanBlockVisits - beforeReattach.completePlanBlockVisits,
+      projectionRecordUpdates: diagnostics.projectionRecordUpdates - beforeReattach.projectionRecordUpdates,
+      projectionRecordNodeVisits: diagnostics.projectionRecordNodeVisits - beforeReattach.projectionRecordNodeVisits,
+      projectionRecordNodesCopied: diagnostics.projectionRecordNodesCopied - beforeReattach.projectionRecordNodesCopied,
+      blockPlanUpdates: diagnostics.blockPlanUpdates - beforeReattach.blockPlanUpdates,
+      blockPlanNodeVisits: diagnostics.blockPlanNodeVisits - beforeReattach.blockPlanNodeVisits,
+      blockPlanNodesCopied: diagnostics.blockPlanNodesCopied - beforeReattach.blockPlanNodesCopied,
+      blockPlanWindowSliceItems: diagnostics.blockPlanWindowSliceItems - beforeReattach.blockPlanWindowSliceItems,
+      heightIndexBuilds: diagnostics.heightIndexBuilds - beforeReattach.heightIndexBuilds,
+      heightIndexBlockVisits: diagnostics.heightIndexBlockVisits - beforeReattach.heightIndexBlockVisits,
+      heightIndexUpdates: diagnostics.heightIndexUpdates - beforeReattach.heightIndexUpdates,
+      heightIndexNodeVisits: diagnostics.heightIndexNodeVisits - beforeReattach.heightIndexNodeVisits,
+      heightIndexNodesCopied: diagnostics.heightIndexNodesCopied - beforeReattach.heightIndexNodesCopied,
+      completeGeometryBlockVisits: diagnostics.completeGeometryBlockVisits - beforeReattach.completeGeometryBlockVisits,
+      windowGeometryBlockVisits: diagnostics.windowGeometryBlockVisits - beforeReattach.windowGeometryBlockVisits,
+      changedItemBuilds: diagnostics.changedItemBuilds - beforeReattach.changedItemBuilds,
+    }
+    assert.equal(publications, 1)
+    assert.equal(reattached.value.displayedCanonicalRevision, latest.canonicalRevision)
+    assert.equal(reattached.value.window.bottomSpacerRows, 0)
+    assert(reattached.value.window.blocks.length <= 48)
+    assert.equal(reattachCounts.completePlanBuilds, 0)
+    assert.equal(reattachCounts.completePlanBlockVisits, 0)
+    assert.equal(reattachCounts.heightIndexBuilds, 0)
+    assert.equal(reattachCounts.heightIndexBlockVisits, 0)
+    assert.equal(reattachCounts.heightIndexUpdates, 1)
+    assert.equal(reattachCounts.changedItemBuilds, 1)
+    assert.equal(reattachCounts.completeGeometryBlockVisits, 0)
+    assert(reattachCounts.projectionRecordNodeVisits <= 2 * Math.ceil(Math.log2(fixture.blockCount + 1)) + 1)
+    assert(reattachCounts.projectionRecordNodesCopied > 0)
+    assert(reattachCounts.projectionRecordNodesCopied <= 2 * Math.ceil(Math.log2(fixture.blockCount + 1)) + 1)
+    assert(reattachCounts.blockPlanNodeVisits <= 2 * (Math.ceil(Math.log2(fixture.blockCount)) + 1))
+    assert(reattachCounts.blockPlanNodesCopied > 0)
+    assert(reattachCounts.blockPlanNodesCopied <= Math.ceil(Math.log2(fixture.blockCount)) + 1)
+    assert(reattachCounts.heightIndexNodeVisits <= Math.ceil(Math.log2(fixture.blockCount)) + 1)
+    assert(reattachCounts.heightIndexNodesCopied <= Math.ceil(Math.log2(fixture.blockCount)) + 1)
+    assert(reattachCounts.windowGeometryBlockVisits <= 48)
+    assert(reattachCounts.blockPlanWindowSliceItems <= 48)
+    unsubscribe()
+
+    printResult({
+      scenario: "bounded-follow-and-reattach-runtime",
+      materialization: "windowed-production",
+      boundary: "runtime-index-window-geometry-publication",
+      blockCount: fixture.blockCount,
+      viewport: { width: 80, height: 24 },
+      mode: "follow-and-detached",
+      fixture: { contentShape: "mixed-semantic-root-blocks", contentHash: fixture.contentHash, setupExcludedFromTiming: true,
+        excludedSetup: "canonical snapshot construction, cold persistent-plan normalization, and full-rebuild fallback" },
+      operationCounts: {
+        completeBlocks: fixture.blockCount,
+        mountedBlocksAfterFollow: followed.value.window.blocks.length,
+        mountedBlocksAfterReattach: reattached.value.window.blocks.length,
+        followPublications: 1,
+        detachedHiddenPublications,
+        reattachPublications: publications,
+        follow: followCounts,
+        reattach: reattachCounts,
+      },
+      timingsMs: { followReconciliation: Number(followed.milliseconds.toFixed(6)), reattachReconciliation: Number(reattached.milliseconds.toFixed(6)) },
+      samples: { warmup: 0, measured: 1 },
+    })
+  } finally { runtime.dispose() }
+}
+
 function runtimeBaseline(fixture: ReturnType<typeof buildTranscriptScalingFixture>): void {
   forceGc()
   const constructed = timed(() => new TranscriptRuntime(runtimeInput(fixture, fixture.before, "follow", { canonicalDamage: { kind: "full" } })))
@@ -413,6 +569,9 @@ function offWindowTargetBaseline(fixture: ReturnType<typeof buildTranscriptScali
     heightIndexNodesCopied: 0,
     completeGeometryBlockVisits: 0,
     windowGeometryBlockVisits: 0,
+    blockPlanWindowSliceItems: 0,
+    projectionRecordUpdates: 0, projectionRecordNodeVisits: 0, projectionRecordNodesCopied: 0,
+    blockPlanUpdates: 0, blockPlanNodeVisits: 0, blockPlanNodesCopied: 0, changedItemBuilds: 0,
   }
   const runtime = new TranscriptRuntime(runtimeInput(fixture, detachedSnapshot, "detached", { canonicalDamage: { kind: "full" } }), {
     windowPolicy: { viewportRows: 24, overscanRows: 24 },
@@ -509,7 +668,9 @@ function indexedUrlAndFoldBaseline(fixture: ReturnType<typeof buildTranscriptSca
     textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0, textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
     urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0, urlIndexUpdates: 0, urlIndexNodeVisits: 0,
     heightIndexBuilds: 0, heightIndexBlockVisits: 0, heightIndexUpdates: 0, heightIndexNodeVisits: 0, heightIndexNodesCopied: 0,
-    completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0,
+    completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0, blockPlanWindowSliceItems: 0,
+    projectionRecordUpdates: 0, projectionRecordNodeVisits: 0, projectionRecordNodesCopied: 0,
+    blockPlanUpdates: 0, blockPlanNodeVisits: 0, blockPlanNodesCopied: 0, changedItemBuilds: 0,
   }
   const runtime = new TranscriptRuntime(runtimeInput(fixture, targetSnapshot, "detached", { canonicalDamage: { kind: "full" } }), {
     windowPolicy: { viewportRows: 24, overscanRows: 24 }, diagnostics,
@@ -982,6 +1143,7 @@ for (const blockCount of requestedSizes) {
   assert(transcriptScalingBlockCounts.includes(blockCount as typeof transcriptScalingBlockCounts[number]), `unsupported block count ${blockCount}`)
   const fixture = buildTranscriptScalingFixture(blockCount)
   runtimeBaseline(fixture)
+  boundedFollowRuntimeBaseline(fixture)
   await reactPublicationBaseline(fixture)
   runtimeCorrectionBaseline(fixture)
   offWindowTargetBaseline(fixture)

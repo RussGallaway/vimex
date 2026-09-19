@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { itemId, turnId, type TurnId } from "@vimex/conversation"
 import { createHeightIndex, type BlockHeightOverride, type HeightIndexDiagnostics } from "./height-index"
-import { blockKey, type TranscriptBlock, type TranscriptItemBlock, type TranscriptTurnActivityBlock } from "./window"
+import { blockKey, persistentTranscriptBlockPlan, replaceTranscriptBlock, type TranscriptBlock, type TranscriptItemBlock, type TranscriptTurnActivityBlock } from "./window"
 
 function block(index: number, rows: number, id: TurnId = turnId(`height-${index}`)): TranscriptTurnActivityBlock {
   return Object.freeze({
@@ -105,6 +105,32 @@ test("height replacement path-copies logarithmically while old snapshots and no-
   expect(updated.replaceHeight({ blockKey: key, contentRevision: target.contentRevision + 1, rows: 20 })).toBe(updated)
   expect(updated.replaceHeight({ blockKey: key, contentRevision: target.contentRevision, rows: 0 })).toBe(updated)
   expect(updated.replaceHeight({ blockKey: "missing", contentRevision: target.contentRevision, rows: 20 })).toBe(updated)
+})
+
+test("block replacement requires exact one-root persistent-plan lineage", () => {
+  const dense = Object.freeze([item("lineage-a"), item("lineage-b"), item("lineage-c")])
+  const before = persistentTranscriptBlockPlan(dense)
+  const index = createHeightIndex(before)!
+  const previous = before[1]!
+  const next = Object.freeze({ ...previous, contentRevision: previous.contentRevision + 1 })
+  const after = replaceTranscriptBlock(before, 1, previous, next)!
+  const rebound = index.replaceBlock(after, previous, next, next.estimatedRows)
+  expect(rebound?.supports(after)).toBe(true)
+
+  const unrelated = persistentTranscriptBlockPlan(Object.freeze([before[0]!, next, before[2]!]))
+  expect(index.replaceBlock(unrelated, previous, next, next.estimatedRows)).toBeUndefined()
+  const reordered = persistentTranscriptBlockPlan(Object.freeze([before[2]!, next, before[0]!]))
+  expect(index.replaceBlock(reordered, previous, next, next.estimatedRows)).toBeUndefined()
+  const wrongPrior = before[0]!
+  expect(index.replaceBlock(after, wrongPrior, next, next.estimatedRows)).toBeUndefined()
+
+  const split = item("lineage-split", "ab")
+  const first = Object.freeze({ ...split, key: Object.freeze({ ...split.key, blockId: "part:0" }), sourceSpan: Object.freeze({ from: 0, to: 1 }) })
+  const second = Object.freeze({ ...split, key: Object.freeze({ ...split.key, blockId: "part:1" }), sourceSpan: Object.freeze({ from: 1, to: 2 }) })
+  const splitBefore = persistentTranscriptBlockPlan(Object.freeze([first, second]))
+  const splitNext = Object.freeze({ ...first, contentRevision: first.contentRevision + 1 })
+  const splitAfter = replaceTranscriptBlock(splitBefore, 0, first, splitNext)!
+  expect(createHeightIndex(splitBefore)?.replaceBlock(splitAfter, first, splitNext, 1)).toBeUndefined()
 })
 
 test("duplicate block keys reject indexed planning and invalid estimates remain safe", () => {

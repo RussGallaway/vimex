@@ -4,8 +4,10 @@ import { createHeightIndex } from "./height-index"
 import {
   blockKey,
   passThroughWindow,
+  persistentTranscriptBlockPlan,
   planTranscriptWindow,
   pointIsMaterialized,
+  replaceTranscriptBlock,
   type TranscriptBlock,
   type TranscriptItemBlock,
 } from "./window"
@@ -32,6 +34,49 @@ function item(name: string, estimatedRows = 1, source = "x"): TranscriptItemBloc
     followedByActivity: false,
   })
 }
+
+test("persistent complete plans replace one slot logarithmically without mutating old snapshots", () => {
+  const source = Object.freeze(Array.from({ length: 100_000 }, (_, index) => item(`persistent-${index}`)))
+  const before = persistentTranscriptBlockPlan(source)
+  const position = 61_731
+  const previous = before[position]!
+  const next = Object.freeze({ ...previous, contentRevision: previous.contentRevision + 1 })
+  const diagnostics = { blockPlanUpdates: 0, blockPlanNodeVisits: 0, blockPlanNodesCopied: 0 }
+  const after = replaceTranscriptBlock(before, position, previous, next, diagnostics)!
+
+  expect(Array.isArray(after)).toBe(true)
+  expect(after).toHaveLength(source.length)
+  expect(before[position]).toBe(previous)
+  expect(after[position]).toBe(next)
+  expect(after[position - 1]).toBe(before[position - 1])
+  expect(after.slice(position - 1, position + 2)).toEqual([before[position - 1]!, next, before[position + 1]!])
+  expect(JSON.parse(JSON.stringify(after.slice(position, position + 1)))[0].contentRevision).toBe(next.contentRevision)
+  expect(Reflect.set(after, String(position), previous)).toBe(false)
+  expect(diagnostics.blockPlanUpdates).toBe(1)
+  expect(diagnostics.blockPlanNodeVisits).toBeLessThanOrEqual(2 * (Math.ceil(Math.log2(source.length)) + 1))
+  expect(diagnostics.blockPlanNodesCopied).toBeGreaterThan(0)
+  expect(diagnostics.blockPlanNodesCopied).toBeLessThanOrEqual(Math.ceil(Math.log2(source.length)) + 1)
+})
+
+test("persistent complete plans preserve array reflection and reject integrity mutation", () => {
+  const source = Object.freeze([item("array-a"), item("array-b"), item("array-c")])
+  const plan = persistentTranscriptBlockPlan(source)
+  expect(plan.length).toBe(3)
+  expect(Object.getOwnPropertyDescriptor(plan, "length")?.value).toBe(3)
+  expect(Object.keys(plan)).toEqual(["0", "1", "2"])
+  expect(Reflect.ownKeys(plan)).toEqual(["0", "1", "2", "length"])
+  expect([...plan]).toEqual([...source])
+  expect(plan.map(blockKey)).toEqual(source.map(blockKey))
+  expect(plan.slice(1)).toEqual(source.slice(1))
+  expect(plan.concat(source[0]!)).toEqual([...source, source[0]!])
+  expect([...plan.entries()]).toEqual([...source.entries()])
+  expect(JSON.stringify(plan)).toBe(JSON.stringify(source))
+  expect(Reflect.setPrototypeOf(plan, { polluted: true })).toBe(false)
+  expect(Reflect.preventExtensions(plan)).toBe(false)
+  expect(() => Object.freeze(plan)).toThrow()
+  expect([...plan]).toEqual([...source])
+  expect(Object.keys(plan)).toEqual(["0", "1", "2"])
+})
 
 function activity(name: string, estimatedRows = 1): TranscriptBlock {
   const id = turnId(name)

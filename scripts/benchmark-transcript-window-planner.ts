@@ -84,6 +84,8 @@ function observingIndex(index: TranscriptHeightIndex, counters: HeightIndexDiagn
     blockIndex: (key: string) => index.blockIndex(key),
     itemBlockIndexes: (id: ItemId) => index.itemBlockIndexes(id),
     replaceHeight: (override: BlockHeightOverride, explicit?: HeightIndexDiagnostics) => index.replaceHeight(override, explicit ?? counters),
+    replaceBlock: (blocks: readonly TranscriptBlock[], previous: TranscriptBlock, next: TranscriptBlock, rows: number,
+      explicit?: HeightIndexDiagnostics) => index.replaceBlock(blocks, previous, next, rows, explicit ?? counters),
     supports: (blocks: readonly TranscriptBlock[]) => index.supports(blocks),
   })
 }

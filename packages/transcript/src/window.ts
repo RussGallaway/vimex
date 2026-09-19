@@ -40,6 +40,170 @@ export interface TranscriptTurnActivityBlock {
 
 export type TranscriptBlock = TranscriptItemBlock | TranscriptTurnActivityBlock
 
+interface BlockPlanLeaf {
+  readonly kind: "leaf"
+  readonly count: 1
+  readonly block: TranscriptBlock
+}
+
+interface BlockPlanBranch {
+  readonly kind: "branch"
+  readonly count: number
+  readonly left: BlockPlanNode
+  readonly right: BlockPlanNode
+}
+
+type BlockPlanNode = BlockPlanLeaf | BlockPlanBranch
+
+interface BlockPlanReplacement {
+  readonly source: readonly TranscriptBlock[]
+  readonly index: number
+  readonly previous: TranscriptBlock
+  readonly next: TranscriptBlock
+}
+
+interface BlockPlanData {
+  readonly root?: BlockPlanNode
+  readonly length: number
+  readonly replacement?: BlockPlanReplacement
+}
+
+export interface TranscriptBlockPlanDiagnostics {
+  blockPlanUpdates: number
+  /** Validation plus path-copy work for point updates; ordinary reads are outside this counter. */
+  blockPlanNodeVisits: number
+  blockPlanNodesCopied: number
+}
+
+const blockPlanData = new WeakMap<object, BlockPlanData>()
+const normalizedBlockPlans = new WeakMap<object, readonly TranscriptBlock[]>()
+
+function buildBlockPlan(values: readonly TranscriptBlock[], from: number, to: number): BlockPlanNode | undefined {
+  if (from >= to) return undefined
+  if (to - from === 1) return Object.freeze({ kind: "leaf" as const, count: 1 as const, block: values[from]! })
+  const middle = from + ((to - from) >>> 1)
+  const left = buildBlockPlan(values, from, middle)!
+  const right = buildBlockPlan(values, middle, to)!
+  return Object.freeze({ kind: "branch" as const, count: left.count + right.count, left, right })
+}
+
+function blockPlanValue(node: BlockPlanNode | undefined, index: number, diagnostics?: TranscriptBlockPlanDiagnostics): TranscriptBlock | undefined {
+  while (node) {
+    if (diagnostics) diagnostics.blockPlanNodeVisits += 1
+    if (node.kind === "leaf") return index === 0 ? node.block : undefined
+    if (index < node.left.count) node = node.left
+    else { index -= node.left.count; node = node.right }
+  }
+  return undefined
+}
+
+function replaceBlockPlanNode(
+  node: BlockPlanNode,
+  index: number,
+  block: TranscriptBlock,
+  diagnostics?: TranscriptBlockPlanDiagnostics,
+): BlockPlanNode {
+  if (diagnostics) diagnostics.blockPlanNodeVisits += 1
+  if (node.kind === "leaf") {
+    if (node.block === block) return node
+    if (diagnostics) diagnostics.blockPlanNodesCopied += 1
+    return Object.freeze({ kind: "leaf" as const, count: 1 as const, block })
+  }
+  if (index < node.left.count) {
+    const left = replaceBlockPlanNode(node.left, index, block, diagnostics)
+    if (left === node.left) return node
+    if (diagnostics) diagnostics.blockPlanNodesCopied += 1
+    return Object.freeze({ kind: "branch" as const, count: node.count, left, right: node.right })
+  }
+  const right = replaceBlockPlanNode(node.right, index - node.left.count, block, diagnostics)
+  if (right === node.right) return node
+  if (diagnostics) diagnostics.blockPlanNodesCopied += 1
+  return Object.freeze({ kind: "branch" as const, count: node.count, left: node.left, right })
+}
+
+function *blockPlanValues(root: BlockPlanNode | undefined): IterableIterator<TranscriptBlock> {
+  if (!root) return
+  const pending: BlockPlanNode[] = [root]
+  while (pending.length) {
+    const node = pending.pop()!
+    if (node.kind === "leaf") yield node.block
+    else { pending.push(node.right); pending.push(node.left) }
+  }
+}
+
+function numericIndex(property: PropertyKey, length: number): number | undefined {
+  if (typeof property !== "string" || property === "") return undefined
+  const index = Number(property)
+  return Number.isSafeInteger(index) && index >= 0 && index < length && String(index) === property ? index : undefined
+}
+
+function blockPlan(data: BlockPlanData): readonly TranscriptBlock[] {
+  const target: TranscriptBlock[] = new Array(data.length)
+  const proxy = new Proxy(target, {
+    get: (_target, property, receiver) => {
+      if (property === "length") return data.length
+      if (property === Symbol.iterator) return () => blockPlanValues(data.root)
+      const index = numericIndex(property, data.length)
+      return index === undefined ? Reflect.get(target, property, receiver) : blockPlanValue(data.root, index)
+    },
+    has: (_target, property) => property === "length" || numericIndex(property, data.length) !== undefined || Reflect.has(target, property),
+    ownKeys: () => [...Array.from({ length: data.length }, (_, index) => String(index)), "length"],
+    getOwnPropertyDescriptor: (_target, property) => {
+      if (property === "length") return Reflect.getOwnPropertyDescriptor(target, property)
+      const index = numericIndex(property, data.length)
+      return index === undefined ? Reflect.getOwnPropertyDescriptor(target, property) : {
+        configurable: true, enumerable: true, writable: false, value: blockPlanValue(data.root, index),
+      }
+    },
+    set: () => false,
+    deleteProperty: () => false,
+    defineProperty: () => false,
+    setPrototypeOf: () => false,
+    preventExtensions: () => false,
+  })
+  blockPlanData.set(proxy, data)
+  return proxy
+}
+
+/** Immutable indexed complete plan whose point replacements path-copy O(log n). */
+export function persistentTranscriptBlockPlan(blocks: readonly TranscriptBlock[]): readonly TranscriptBlock[] {
+  if (blockPlanData.has(blocks)) return blocks
+  const cached = normalizedBlockPlans.get(blocks)
+  if (cached) return cached
+  const plan = blockPlan({ root: buildBlockPlan(blocks, 0, blocks.length), length: blocks.length })
+  normalizedBlockPlans.set(blocks, plan)
+  return plan
+}
+
+/** Replace one stable-key block without copying historical slots. */
+export function replaceTranscriptBlock(
+  blocks: readonly TranscriptBlock[],
+  index: number,
+  previous: TranscriptBlock,
+  next: TranscriptBlock,
+  diagnostics?: TranscriptBlockPlanDiagnostics,
+): readonly TranscriptBlock[] | undefined {
+  const plan = persistentTranscriptBlockPlan(blocks)
+  const data = blockPlanData.get(plan)!
+  if (!Number.isSafeInteger(index) || index < 0 || index >= data.length
+    || blockPlanValue(data.root, index, diagnostics) !== previous || blockKey(previous) !== blockKey(next)) return undefined
+  const root = replaceBlockPlanNode(data.root!, index, next, diagnostics)
+  if (root === data.root) return plan
+  if (diagnostics) diagnostics.blockPlanUpdates += 1
+  return blockPlan({ root, length: data.length, replacement: Object.freeze({ source: plan, index, previous, next }) })
+}
+
+/** O(1) lineage proof consumed by indexes that retain complete-plan ordinals. */
+export function isTranscriptBlockReplacement(
+  source: readonly TranscriptBlock[],
+  blocks: readonly TranscriptBlock[],
+  previous: TranscriptBlock,
+  next: TranscriptBlock,
+): boolean {
+  const replacement = blockPlanData.get(blocks)?.replacement
+  return replacement?.source === source && replacement.previous === previous && replacement.next === next
+}
+
 export interface TranscriptWindow {
   readonly blocks: readonly TranscriptBlock[]
   readonly topSpacerRows: number

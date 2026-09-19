@@ -228,7 +228,9 @@ test("production window policy bounds initial, detached, reveal, and measured ma
       urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0,
       urlIndexUpdates: 0, urlIndexNodeVisits: 0,
       heightIndexBuilds: 0, heightIndexBlockVisits: 0, heightIndexUpdates: 0, heightIndexNodeVisits: 0, heightIndexNodesCopied: 0,
-      completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0,
+      completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0, blockPlanWindowSliceItems: 0,
+      projectionRecordUpdates: 0, projectionRecordNodeVisits: 0, projectionRecordNodesCopied: 0,
+      blockPlanUpdates: 0, blockPlanNodeVisits: 0, blockPlanNodesCopied: 0, changedItemBuilds: 0,
     }
     const detached = new TranscriptRuntime(runtimeInput(fixture, detachedSnapshot, "detached", { canonicalDamage: { kind: "full" } }), {
       windowPolicy: policy,
@@ -338,7 +340,9 @@ test("incremental runtime projection updates preserve the warm selection-length 
       urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0,
       urlIndexUpdates: 0, urlIndexNodeVisits: 0,
       heightIndexBuilds: 0, heightIndexBlockVisits: 0, heightIndexUpdates: 0, heightIndexNodeVisits: 0, heightIndexNodesCopied: 0,
-      completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0,
+      completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0, blockPlanWindowSliceItems: 0,
+      projectionRecordUpdates: 0, projectionRecordNodeVisits: 0, projectionRecordNodesCopied: 0,
+      blockPlanUpdates: 0, blockPlanNodeVisits: 0, blockPlanNodesCopied: 0, changedItemBuilds: 0,
     }
     const runtime = new TranscriptRuntime(runtimeInput(fixture, fixture.before, "follow", { canonicalDamage: { kind: "full" } }), {
       windowPolicy: { viewportRows: 24, overscanRows: 24 },
@@ -349,6 +353,24 @@ test("incremental runtime projection updates preserve the warm selection-length 
     const followed = runtime.update(runtimeInput(fixture, fixture.afterTailDelta, "follow", {
       canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
     }))
+    expect(diagnostics.changedItemBuilds - beforeUpdate.changedItemBuilds).toBe(1)
+    expect(diagnostics.completePlanBuilds - beforeUpdate.completePlanBuilds).toBe(0)
+    expect(diagnostics.completePlanBlockVisits - beforeUpdate.completePlanBlockVisits).toBe(0)
+    expect(diagnostics.projectionRecordUpdates - beforeUpdate.projectionRecordUpdates).toBe(1)
+    expect(diagnostics.projectionRecordNodeVisits - beforeUpdate.projectionRecordNodeVisits).toBeLessThanOrEqual(2 * Math.ceil(Math.log2(blockCount + 1)) + 1)
+    expect(diagnostics.projectionRecordNodesCopied - beforeUpdate.projectionRecordNodesCopied)
+      .toBe(diagnostics.projectionRecordNodeVisits - beforeUpdate.projectionRecordNodeVisits)
+    expect(diagnostics.blockPlanUpdates - beforeUpdate.blockPlanUpdates).toBe(1)
+    expect(diagnostics.blockPlanNodeVisits - beforeUpdate.blockPlanNodeVisits).toBeLessThanOrEqual(2 * (Math.ceil(Math.log2(blockCount)) + 1))
+    expect(diagnostics.blockPlanNodesCopied - beforeUpdate.blockPlanNodesCopied).toBeGreaterThan(0)
+    expect(diagnostics.blockPlanNodesCopied - beforeUpdate.blockPlanNodesCopied).toBeLessThanOrEqual(Math.ceil(Math.log2(blockCount)) + 1)
+    expect(diagnostics.heightIndexBuilds - beforeUpdate.heightIndexBuilds).toBe(0)
+    expect(diagnostics.heightIndexBlockVisits - beforeUpdate.heightIndexBlockVisits).toBe(0)
+    expect(diagnostics.heightIndexUpdates - beforeUpdate.heightIndexUpdates).toBe(1)
+    expect(diagnostics.heightIndexNodeVisits - beforeUpdate.heightIndexNodeVisits).toBeLessThanOrEqual(Math.ceil(Math.log2(blockCount)) + 1)
+    expect(diagnostics.completeGeometryBlockVisits - beforeUpdate.completeGeometryBlockVisits).toBe(0)
+    expect(diagnostics.windowGeometryBlockVisits - beforeUpdate.windowGeometryBlockVisits).toBeLessThanOrEqual(48)
+    expect(diagnostics.blockPlanWindowSliceItems - beforeUpdate.blockPlanWindowSliceItems).toBeLessThanOrEqual(48)
     expect(diagnostics.textLengthIndexBuilds - beforeUpdate.textLengthIndexBuilds).toBe(0)
     expect(diagnostics.textLengthItemVisits - beforeUpdate.textLengthItemVisits).toBe(0)
     expect(diagnostics.textLengthIndexUpdates - beforeUpdate.textLengthIndexUpdates).toBe(1)
@@ -361,6 +383,76 @@ test("incremental runtime projection updates preserve the warm selection-length 
     runtime.dispose()
   }
 })
+
+test("hidden same-item output reattaches once with bounded reconciliation at every scale", () => {
+  for (const blockCount of transcriptScalingBlockCounts) {
+    const fixture = buildTranscriptScalingFixture(blockCount)
+    const diagnostics = {
+      completePlanBuilds: 0, completePlanBlockVisits: 0,
+      orderIndexBuilds: 0, orderIndexItemVisits: 0, orderIndexCacheHits: 0,
+      textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0, textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
+      urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0, urlIndexUpdates: 0, urlIndexNodeVisits: 0,
+      heightIndexBuilds: 0, heightIndexBlockVisits: 0, heightIndexUpdates: 0, heightIndexNodeVisits: 0, heightIndexNodesCopied: 0,
+      completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0, blockPlanWindowSliceItems: 0,
+      projectionRecordUpdates: 0, projectionRecordNodeVisits: 0, projectionRecordNodesCopied: 0,
+      blockPlanUpdates: 0, blockPlanNodeVisits: 0, blockPlanNodesCopied: 0, changedItemBuilds: 0,
+    }
+    const runtime = new TranscriptRuntime(runtimeInput(fixture, fixture.before, "follow", { canonicalDamage: { kind: "full" } }), {
+      windowPolicy: { viewportRows: 24, overscanRows: 24 }, diagnostics,
+    })
+    const anchor = Object.freeze({ itemId: fixture.targets.quarter, graphemeOffset: 0 })
+    const detachedTranscript = Object.freeze({
+      ...fixture.before.transcript,
+      cursor: anchor,
+      viewport: Object.freeze({ kind: "point" as const, point: anchor, preferredScreenRow: 5 }),
+    })
+    const detachedSnapshot = Object.freeze({ ...fixture.before, transcript: detachedTranscript })
+    runtime.update(runtimeInput(fixture, detachedSnapshot, "detached", { presentationDamage: { kind: "view" } }))
+    const pinned = runtime.getSnapshot()
+    const staleBase = runtime.measurementBase(pinned)
+    const hidden = appendTranscriptScalingTail(detachedSnapshot, fixture.tailItemId, fixture.tailDelta)
+    expect(runtime.update(runtimeInput(fixture, hidden, "detached", {
+      canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
+    }))).toBe(pinned)
+    const latestTranscript = Object.freeze({
+      ...hidden.transcript,
+      viewport: Object.freeze({ kind: "tail" as const }),
+      unseenEntries: 0,
+      unseenItemIds: Object.freeze([]),
+    })
+    const latest = Object.freeze({ ...hidden, transcript: latestTranscript })
+    const before = { ...diagnostics }
+    let publications = 0
+    const unsubscribe = runtime.subscribe(() => { publications++ })
+    const reattached = runtime.update(runtimeInput(fixture, latest, "follow", { presentationDamage: { kind: "view" } }))
+    unsubscribe()
+
+    expect(publications).toBe(1)
+    expect(reattached.mode).toBe("follow")
+    expect(reattached.displayedCanonicalRevision).toBe(latest.canonicalRevision)
+    expect(reattached.window.bottomSpacerRows).toBe(0)
+    expect(reattached.window.blocks.length).toBeLessThanOrEqual(48)
+    expectPassThroughEquivalent(reattached, latest)
+    expect(diagnostics.completePlanBuilds - before.completePlanBuilds).toBe(0)
+    expect(diagnostics.completePlanBlockVisits - before.completePlanBlockVisits).toBe(0)
+    expect(diagnostics.heightIndexBuilds - before.heightIndexBuilds).toBe(0)
+    expect(diagnostics.heightIndexBlockVisits - before.heightIndexBlockVisits).toBe(0)
+    expect(diagnostics.heightIndexUpdates - before.heightIndexUpdates).toBe(1)
+    expect(diagnostics.heightIndexNodeVisits - before.heightIndexNodeVisits).toBeLessThanOrEqual(Math.ceil(Math.log2(blockCount)) + 1)
+    expect(diagnostics.blockPlanUpdates - before.blockPlanUpdates).toBe(1)
+    expect(diagnostics.blockPlanNodeVisits - before.blockPlanNodeVisits).toBeLessThanOrEqual(2 * (Math.ceil(Math.log2(blockCount)) + 1))
+    expect(diagnostics.completeGeometryBlockVisits - before.completeGeometryBlockVisits).toBe(0)
+    expect(diagnostics.windowGeometryBlockVisits - before.windowGeometryBlockVisits).toBeLessThanOrEqual(48)
+    expect(diagnostics.blockPlanWindowSliceItems - before.blockPlanWindowSliceItems).toBeLessThanOrEqual(48)
+
+    const staleBlock = pinned.window.blocks[0]!
+    expect(runtime.reportMeasurements({ ...staleBase, measurements: [{
+      key: { blockKey: blockKey(staleBlock), contentRevision: staleBlock.contentRevision, width: 80, styleRevision: "stale-reattach", folded: false },
+      nativeRevision: 1, rows: 2, points: point, lines,
+    }] })).toBe(reattached)
+    runtime.dispose()
+  }
+}, 15_000)
 
 test("an equal-height native revision publishes once and its acknowledgement is a no-op", () => {
   const fixture = buildTranscriptScalingFixture(100)
@@ -525,7 +617,9 @@ test("single off-window folds update logarithmic height paths and bounded geomet
       textLengthIndexBuilds: 0, textLengthItemVisits: 0, textLengthIndexCacheHits: 0, textLengthIndexUpdates: 0, textLengthNodeVisits: 0,
       urlIndexBuilds: 0, urlIndexItemVisits: 0, urlIndexCacheHits: 0, urlIndexUpdates: 0, urlIndexNodeVisits: 0,
       heightIndexBuilds: 0, heightIndexBlockVisits: 0, heightIndexUpdates: 0, heightIndexNodeVisits: 0, heightIndexNodesCopied: 0,
-      completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0,
+      completeGeometryBlockVisits: 0, windowGeometryBlockVisits: 0, blockPlanWindowSliceItems: 0,
+      projectionRecordUpdates: 0, projectionRecordNodeVisits: 0, projectionRecordNodesCopied: 0,
+      blockPlanUpdates: 0, blockPlanNodeVisits: 0, blockPlanNodesCopied: 0, changedItemBuilds: 0,
     }
     const runtime = new TranscriptRuntime(runtimeInput(fixture, targetSnapshot, "detached", { canonicalDamage: { kind: "full" } }), {
       windowPolicy: { viewportRows: 24, overscanRows: 24 }, diagnostics,

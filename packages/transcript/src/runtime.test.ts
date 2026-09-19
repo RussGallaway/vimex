@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { createConversation, itemId, reduceConversation, threadId, turnId, type ConversationEvent, type ItemId } from "@vimex/conversation"
 import { syncTranscriptItem } from "./application/project-conversation"
 import { initialTranscript, type TranscriptState } from "./domain/transcript-document"
-import { TranscriptRuntime, type TranscriptDamage, type TranscriptRuntimeInput } from "./runtime"
+import { createTranscriptFrame, TranscriptRuntime, type TranscriptDamage, type TranscriptRuntimeInput } from "./runtime"
 import { blockKey } from "./window"
 import type { BlockGeometry, BlockMeasurementBatch } from "./geometry"
 
@@ -175,7 +175,26 @@ test("returns one cached immutable snapshot until selected frame data changes", 
   expect(notifications).toBe(0)
   expect(Object.isFrozen(initial)).toBe(true)
   expect(Object.isFrozen(initial.blocks)).toBe(true)
+  expect(Reflect.set(initial.blocks, "0", initial.blocks.at(-1))).toBe(false)
+  expect(initial.blocks[0]).toBe(initial.window.blocks[0])
   expect(Object.isFrozen(initial.window)).toBe(true)
+})
+
+test("the frozen dense pass-through reference stays distinct from the windowed persistent plan", () => {
+  const source = fixture()
+  const reference = createTranscriptFrame(input(source, "follow", { kind: "full" }))
+  const runtime = new TranscriptRuntime(input(source, "follow", { kind: "full" }), {
+    windowPolicy: { viewportRows: 1, overscanRows: 1 },
+  })
+  const windowed = runtime.getSnapshot()
+
+  expect(Object.isFrozen(reference.blocks)).toBe(true)
+  expect(reference.window.blocks).toBe(reference.blocks)
+  expect(windowed.blocks).not.toBe(reference.blocks)
+  expect(Object.isFrozen(windowed.blocks)).toBe(false)
+  expect([...windowed.blocks]).toEqual([...reference.blocks])
+  expect(windowed.transcript).toEqual(reference.transcript)
+  runtime.dispose()
 })
 
 test("follow reconciliation replaces a changed item and retains historical block identity", () => {

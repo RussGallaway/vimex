@@ -1,6 +1,6 @@
 import type { ConversationItem } from "@vimex/conversation"
 import { projectMarkdown, projectPlainText } from "../domain/markdown-source-map"
-import { inheritTranscriptTextLengthIndex, persistentTranscriptFolds, setTranscriptFoldValue, type LogicalPoint, type TextProjection, type TranscriptState } from "../domain/transcript-document"
+import { inheritTranscriptTextLengthIndex, persistentTranscriptFolds, setTranscriptFoldValue, setTranscriptProjection, type LogicalPoint, type TextProjection, type TranscriptState } from "../domain/transcript-document"
 import { inheritTranscriptUrlIndex } from "./transcript-url-index"
 function sourceOf(item: ConversationItem): string {
   switch (item.kind) {
@@ -41,7 +41,7 @@ export function syncTranscriptItem(state: TranscriptState, item: ConversationIte
   let next = clampTranscript({
     ...state,
     order: isNew ? [...state.order, item.id] : state.order,
-    projectionById: { ...state.projectionById, [item.id]: projection },
+    projectionById: setTranscriptProjection(state.projectionById, item.id, projection),
     cursor: state.cursor ? reproject(state.cursor) : undefined,
     selection: state.selection ? { ...state.selection, anchor: reproject(state.selection.anchor), head: reproject(state.selection.head) } : undefined,
     viewport: state.viewport.kind === "point" ? { ...state.viewport, point: reproject(state.viewport.point) } : state.viewport,

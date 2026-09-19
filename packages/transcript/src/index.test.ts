@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { itemId, threadId, turnId, type ConversationItem } from "@vimex/conversation"
-import { attachTail, beginSelection, findSearchMatches, graphemeCount, initialTranscript, moveCursor, persistentTranscriptFolds, projectItem, reduceTranscript, selectedGraphemeCount, selectedText, setFold, setTranscriptFoldValue, syncTranscriptItem, transcriptTextLengthRange, urlAt } from "./index"
+import { attachTail, beginSelection, findSearchMatches, graphemeCount, initialTranscript, moveCursor, persistentTranscriptFolds, persistentTranscriptProjections, projectItem, reduceTranscript, selectedGraphemeCount, selectedText, setFold, setTranscriptFoldValue, setTranscriptProjection, syncTranscriptItem, transcriptTextLengthRange, urlAt } from "./index"
 
 import { assistantMessage as message } from "@vimex/testkit"
 
@@ -178,6 +178,43 @@ describe("transcript", () => {
     }
     const updated = setTranscriptFoldValue(folded, itemId("B"), true)
     expect(JSON.parse(JSON.stringify(updated))).toEqual({ A: false, B: true, a: true, aa: true, z: true, "Á": false })
+  })
+
+  test("persistent projections path-copy one opaque id while retaining record compatibility", () => {
+    const values = Object.fromEntries(Array.from({ length: 1_000 }, (_, index) => {
+      const id = itemId(`projection-${index}`)
+      return [id, projectItem(message(id, `value ${index}`))]
+    }))
+    const before = persistentTranscriptProjections(values)
+    const target = itemId("projection-617")
+    const replacement = projectItem(message(target, "replacement"))
+    const diagnostics = { projectionRecordUpdates: 0, projectionRecordNodeVisits: 0, projectionRecordNodesCopied: 0 }
+    const after = setTranscriptProjection(before, target, replacement, diagnostics)
+
+    expect(before[target]).toBe(values[target])
+    expect(after[target]).toBe(replacement)
+    expect(after[itemId("projection-616")]).toBe(before[itemId("projection-616")])
+    expect(Object.keys(after)).toHaveLength(1_000)
+    expect(JSON.parse(JSON.stringify(after))[target].source).toBe("replacement")
+    expect(diagnostics.projectionRecordUpdates).toBe(1)
+    expect(diagnostics.projectionRecordNodeVisits).toBeLessThanOrEqual(Math.ceil(Math.log2(1_000)) + 1)
+    expect(diagnostics.projectionRecordNodesCopied).toBe(diagnostics.projectionRecordNodeVisits)
+    expect(setTranscriptProjection(after, target, replacement)).toBe(after)
+    expect(Reflect.setPrototypeOf(after, { polluted: true })).toBe(false)
+    expect(Reflect.preventExtensions(after)).toBe(false)
+    expect(after[target]).toBe(replacement)
+
+    const special = Object.create(null) as Record<string, typeof replacement>
+    special["10"] = replacement
+    special["2"] = replacement
+    special.a = replacement
+    special["__proto__"] = replacement
+    special["constructor"] = replacement
+    const normalized = persistentTranscriptProjections(special)
+    expect(Object.keys(normalized)).toEqual(["2", "10", "__proto__", "a", "constructor"])
+    expect(Object.hasOwn(normalized, "__proto__")).toBe(true)
+    expect(Object.prototype.propertyIsEnumerable.call(normalized, "constructor")).toBe(true)
+    expect(({ ...normalized } as Record<string, typeof replacement>)["__proto__"]).toBe(replacement)
   })
 
   test("records bounded branching jumps, skips stale entries, and reprojects marks", () => {

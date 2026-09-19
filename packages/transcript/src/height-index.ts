@@ -1,6 +1,6 @@
 import type { ItemId } from "@vimex/conversation"
 import type { TranscriptBlock, TranscriptBlockProjection } from "./window"
-import { blockKey } from "./window"
+import { blockKey, isTranscriptBlockReplacement } from "./window"
 
 /** A measured height is usable only for the exact block revision it describes. */
 export interface BlockHeightOverride {
@@ -41,6 +41,14 @@ export interface TranscriptHeightIndex {
   itemBlockIndexes(itemId: ItemId): readonly number[] | undefined
   /** Replace one compatible height, preserving every untouched subtree. */
   replaceHeight(override: BlockHeightOverride, diagnostics?: HeightIndexDiagnostics): TranscriptHeightIndex
+  /** Rebind one stable-key block revision and invalidate its prior measured height. */
+  replaceBlock(
+    blocks: readonly TranscriptBlock[],
+    previous: TranscriptBlock,
+    next: TranscriptBlock,
+    rows: number,
+    diagnostics?: HeightIndexDiagnostics,
+  ): TranscriptHeightIndex | undefined
   /** O(1) compatibility check for the exact complete-plan snapshot indexed at construction. */
   supports(blocks: readonly TranscriptBlock[]): boolean
 }
@@ -139,7 +147,6 @@ class PersistentTranscriptHeightIndex implements TranscriptHeightIndex {
     private readonly root: HeightNode | undefined,
     private readonly sourceBlocks: readonly TranscriptBlock[],
     private readonly blockKeys: readonly string[],
-    private readonly contentRevisions: readonly number[],
     private readonly indexByKey: Readonly<Record<string, number>>,
     private readonly indexesByItem: Readonly<Record<string, readonly number[]>>,
   ) {
@@ -179,10 +186,29 @@ class PersistentTranscriptHeightIndex implements TranscriptHeightIndex {
   replaceHeight(override: BlockHeightOverride, diagnostics?: HeightIndexDiagnostics): TranscriptHeightIndex {
     if (!this.root || !validRows(override.rows)) return this
     const index = this.blockIndex(override.blockKey)
-    if (index === undefined || this.contentRevisions[index] !== override.contentRevision) return this
+    if (index === undefined || this.sourceBlocks[index]?.contentRevision !== override.contentRevision) return this
     const root = replaceNode(this.root, index, override.rows, this.totalRows, diagnostics)
     if (root === this.root) return this
-    return new PersistentTranscriptHeightIndex(root, this.sourceBlocks, this.blockKeys, this.contentRevisions, this.indexByKey, this.indexesByItem)
+    return new PersistentTranscriptHeightIndex(root, this.sourceBlocks, this.blockKeys, this.indexByKey, this.indexesByItem)
+  }
+
+  replaceBlock(
+    blocks: readonly TranscriptBlock[],
+    previous: TranscriptBlock,
+    next: TranscriptBlock,
+    rows: number,
+    diagnostics?: HeightIndexDiagnostics,
+  ): TranscriptHeightIndex | undefined {
+    if (!this.root || blocks.length !== this.blockCount || !validRows(rows) || blockKey(previous) !== blockKey(next)
+      || previous.key.kind !== "item" || next.key.kind !== "item"
+      || previous.key.blockId !== "root" || next.key.blockId !== "root"
+      || previous.key.itemId !== next.key.itemId
+      || !isTranscriptBlockReplacement(this.sourceBlocks, blocks, previous, next)) return undefined
+    const index = this.blockIndex(blockKey(previous))
+    const itemIndexes = this.itemBlockIndexes(previous.key.itemId)
+    if (index === undefined || itemIndexes?.length !== 1 || itemIndexes[0] !== index) return undefined
+    const root = replaceNode(this.root, index, rows, this.totalRows, diagnostics)
+    return new PersistentTranscriptHeightIndex(root, blocks, this.blockKeys, this.indexByKey, this.indexesByItem)
   }
 
   supports(blocks: readonly TranscriptBlock[]): boolean {
@@ -203,7 +229,6 @@ export function createHeightIndex(
   for (const override of overrides) if (validRows(override.rows)) overridesByKey.set(override.blockKey, override)
 
   const keys: string[] = []
-  const revisions: number[] = []
   const rows: number[] = []
   const indexByKey: Record<string, number> = Object.create(null) as Record<string, number>
   const spanRefsByItem: Record<string, ItemSpanRef[]> = Object.create(null) as Record<string, ItemSpanRef[]>
@@ -214,7 +239,6 @@ export function createHeightIndex(
     if (indexByKey[key] !== undefined) return undefined
     indexByKey[key] = index
     keys.push(key)
-    revisions.push(block.contentRevision)
     if ("projection" in block) (spanRefsByItem[block.key.itemId] ??= []).push(Object.freeze({
       index,
       from: block.sourceSpan.from,
@@ -250,7 +274,6 @@ export function createHeightIndex(
     root,
     blocks,
     Object.freeze(keys),
-    Object.freeze(revisions),
     Object.freeze(indexByKey),
     Object.freeze(indexesByItem),
   )

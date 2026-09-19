@@ -40,6 +40,157 @@ export interface TranscriptState {
   marks: Readonly<Record<string, JumpLocation>>
 }
 
+interface ProjectionNode {
+  readonly key: string
+  readonly value: TextProjection
+  readonly height: number
+  readonly left?: ProjectionNode
+  readonly right?: ProjectionNode
+}
+
+interface ProjectionRecordData { readonly root?: ProjectionNode; readonly size: number }
+
+export interface TranscriptProjectionRecordDiagnostics {
+  projectionRecordUpdates: number
+  projectionRecordNodeVisits: number
+  projectionRecordNodesCopied: number
+}
+
+const projectionRecordData = new WeakMap<object, ProjectionRecordData>()
+const normalizedProjectionRecords = new WeakMap<object, Readonly<Record<string, TextProjection>>>()
+
+const projectionHeight = (value: ProjectionNode | undefined) => value?.height ?? 0
+function projectionNode(key: string, value: TextProjection, left?: ProjectionNode, right?: ProjectionNode): ProjectionNode {
+  return Object.freeze({ key, value, height: Math.max(projectionHeight(left), projectionHeight(right)) + 1,
+    ...(left ? { left } : {}), ...(right ? { right } : {}) })
+}
+function copiedProjectionNode(key: string, value: TextProjection, left: ProjectionNode | undefined, right: ProjectionNode | undefined,
+  diagnostics: TranscriptProjectionRecordDiagnostics | undefined): ProjectionNode {
+  if (diagnostics) diagnostics.projectionRecordNodesCopied += 1
+  return projectionNode(key, value, left, right)
+}
+function rotateProjectionLeft(root: ProjectionNode, diagnostics?: TranscriptProjectionRecordDiagnostics): ProjectionNode {
+  const right = root.right!
+  return copiedProjectionNode(right.key, right.value,
+    copiedProjectionNode(root.key, root.value, root.left, right.left, diagnostics), right.right, diagnostics)
+}
+function rotateProjectionRight(root: ProjectionNode, diagnostics?: TranscriptProjectionRecordDiagnostics): ProjectionNode {
+  const left = root.left!
+  return copiedProjectionNode(left.key, left.value, left.left,
+    copiedProjectionNode(root.key, root.value, left.right, root.right, diagnostics), diagnostics)
+}
+function balanceProjection(root: ProjectionNode, diagnostics?: TranscriptProjectionRecordDiagnostics): ProjectionNode {
+  const delta = projectionHeight(root.left) - projectionHeight(root.right)
+  if (delta > 1) {
+    const left = root.left!
+    return rotateProjectionRight(projectionHeight(left.left) < projectionHeight(left.right)
+      ? copiedProjectionNode(root.key, root.value, rotateProjectionLeft(left, diagnostics), root.right, diagnostics) : root, diagnostics)
+  }
+  if (delta < -1) {
+    const right = root.right!
+    return rotateProjectionLeft(projectionHeight(right.right) < projectionHeight(right.left)
+      ? copiedProjectionNode(root.key, root.value, root.left, rotateProjectionRight(right, diagnostics), diagnostics) : root, diagnostics)
+  }
+  return root
+}
+function projectionValue(root: ProjectionNode | undefined, key: string): TextProjection | undefined {
+  while (root) {
+    if (key === root.key) return root.value
+    root = key < root.key ? root.left : root.right
+  }
+  return undefined
+}
+function setProjectionNode(
+  root: ProjectionNode | undefined,
+  key: string,
+  value: TextProjection,
+  diagnostics?: TranscriptProjectionRecordDiagnostics,
+): { readonly root: ProjectionNode; readonly added: boolean; readonly changed: boolean } {
+  if (diagnostics) diagnostics.projectionRecordNodeVisits += 1
+  if (!root) {
+    return { root: copiedProjectionNode(key, value, undefined, undefined, diagnostics), added: true, changed: true }
+  }
+  if (key === root.key) {
+    if (root.value === value) return { root, added: false, changed: false }
+    return { root: copiedProjectionNode(key, value, root.left, root.right, diagnostics), added: false, changed: true }
+  }
+  if (key < root.key) {
+    const next = setProjectionNode(root.left, key, value, diagnostics)
+    if (!next.changed) return { root, added: false, changed: false }
+    return { root: balanceProjection(copiedProjectionNode(root.key, root.value, next.root, root.right, diagnostics), diagnostics), added: next.added, changed: true }
+  }
+  const next = setProjectionNode(root.right, key, value, diagnostics)
+  if (!next.changed) return { root, added: false, changed: false }
+  return { root: balanceProjection(copiedProjectionNode(root.key, root.value, root.left, next.root, diagnostics), diagnostics), added: next.added, changed: true }
+}
+function projectionEntries(root: ProjectionNode | undefined, result: [string, TextProjection][]): void {
+  if (!root) return
+  projectionEntries(root.left, result)
+  result.push([root.key, root.value])
+  projectionEntries(root.right, result)
+}
+function ordinaryRecordKeys(entries: readonly [string, unknown][]): string[] {
+  const indexed: number[] = []
+  const named: string[] = []
+  for (const [key] of entries) {
+    const value = Number(key)
+    if (Number.isInteger(value) && value >= 0 && value < 0xffff_ffff && String(value) === key) indexed.push(value)
+    else named.push(key)
+  }
+  indexed.sort((left, right) => left - right)
+  return [...indexed.map(String), ...named]
+}
+function projectionRecord(data: ProjectionRecordData): Readonly<Record<string, TextProjection>> {
+  const target = Object.create(null) as Record<string, TextProjection>
+  const proxy = new Proxy(target, {
+    get: (_target, property) => typeof property === "string" ? projectionValue(data.root, property) : Reflect.get(target, property),
+    has: (_target, property) => typeof property === "string" ? projectionValue(data.root, property) !== undefined : false,
+    ownKeys: () => { const entries: [string, TextProjection][] = []; projectionEntries(data.root, entries); return ordinaryRecordKeys(entries) },
+    getOwnPropertyDescriptor: (_target, property) => typeof property === "string" && projectionValue(data.root, property) !== undefined
+      ? { configurable: true, enumerable: true, writable: false, value: projectionValue(data.root, property) } : undefined,
+    set: () => false,
+    deleteProperty: () => false,
+    defineProperty: () => false,
+    setPrototypeOf: () => false,
+    preventExtensions: () => false,
+  })
+  projectionRecordData.set(proxy, data)
+  return proxy
+}
+
+/** Normalize persisted/plain projections into an immutable path-copying record. */
+export function persistentTranscriptProjections(
+  value: Readonly<Record<string, TextProjection>> = {},
+): Readonly<Record<string, TextProjection>> {
+  if (projectionRecordData.has(value)) return value
+  const cached = normalizedProjectionRecords.get(value)
+  if (cached) return cached
+  const entries = Object.entries(value).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+  const build = (from: number, to: number): ProjectionNode | undefined => {
+    if (from >= to) return undefined
+    const middle = (from + to) >>> 1
+    const [key, projection] = entries[middle]!
+    return projectionNode(key, projection, build(from, middle), build(middle + 1, to))
+  }
+  const record = projectionRecord({ root: build(0, entries.length), size: entries.length })
+  normalizedProjectionRecords.set(value, record)
+  return record
+}
+
+export function setTranscriptProjection(
+  value: Readonly<Record<string, TextProjection>>,
+  itemId: ItemId,
+  projection: TextProjection,
+  diagnostics?: TranscriptProjectionRecordDiagnostics,
+): Readonly<Record<string, TextProjection>> {
+  const record = persistentTranscriptProjections(value)
+  const data = projectionRecordData.get(record)!
+  const next = setProjectionNode(data.root, itemId, projection, diagnostics)
+  if (!next.changed) return record
+  if (diagnostics) diagnostics.projectionRecordUpdates += 1
+  return projectionRecord({ root: next.root, size: data.size + (next.added ? 1 : 0) })
+}
+
 interface FoldNode {
   readonly key: string
   readonly value: boolean
@@ -121,6 +272,8 @@ function foldRecord(data: FoldRecordData): Readonly<Record<string, boolean>> {
     set: () => false,
     deleteProperty: () => false,
     defineProperty: () => false,
+    setPrototypeOf: () => false,
+    preventExtensions: () => false,
   })
   foldRecordData.set(proxy, data)
   return proxy
@@ -341,5 +494,5 @@ export type TranscriptCommand =
   | { type: "fold.defaults"; reasoning: boolean; tools: boolean }
 
 export const initialTranscript = (): TranscriptState => ({
-  order: [], projectionById: {}, folded: persistentTranscriptFolds(), foldDefaults: Object.freeze({ reasoning: false, tools: false }), viewport: { kind: "tail" }, unseenEntries: 0, unseenItemIds: [], jumps: { back: [], forward: [] }, marks: {},
+  order: [], projectionById: persistentTranscriptProjections(), folded: persistentTranscriptFolds(), foldDefaults: Object.freeze({ reasoning: false, tools: false }), viewport: { kind: "tail" }, unseenEntries: 0, unseenItemIds: [], jumps: { back: [], forward: [] }, marks: {},
 })
