@@ -18,7 +18,7 @@ Stages 1–4 are the current delivery target. Stage 5 contracts must be supporte
 |---|---|---|
 | Architecture and research | Complete | Commit `8f6bba9` |
 | Baseline profiling | Complete | Measurements recorded below |
-| Stage 1: compact activity | Verified, commit pending | Full gate plus isolated tmux rerun; evidence below |
+| Stage 1: compact activity | Complete | Commit `7a4209d`; full gate plus isolated tmux rerun |
 | Stage 2: ingress and detachment | Not started | — |
 | Stage 3: block-local geometry | Not started | — |
 | Stage 4: narrow observation | Not started | — |
@@ -384,6 +384,7 @@ Add one row after each coherent implementation commit.
 | Date | Stage | Commit | Verification | Measurements | Notes |
 |---|---|---|---|---|---|
 | 2026-09-18 | Architecture | `8f6bba9` | Documentation review; `git diff --check` | Baseline recorded above | Runtime design and research committed |
+| 2026-09-18 | Stage 1 | `7a4209d` | Typecheck, boundaries, docs, 563-test repository run plus isolated tmux rerun, 98 focused tests, three parallel review scopes | 135,389 chars: measure 0.038 ms, anchor 0.243 ms, frame 0.160 ms | Compact turn-aware activity, structured agent vocabulary, observed timing, non-canonical decorations, one heartbeat per visible pane |
 
 ## Deferred questions
 
