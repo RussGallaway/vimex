@@ -1,6 +1,6 @@
 # Transcript windowing implementation
 
-Status: Stages 5.0–5.2 are complete and verified. Production mounting and native measurement are window-bounded; Stage 5.3 is next.
+Status: Stages 5.0–5.3 are complete and verified. Estimate correction is atomic and anchor-stable; Stage 5.4 is next.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
@@ -24,7 +24,7 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 | Stage 5 scaling fixtures | Complete | Commit `edc28c0`; deterministic runtime/React curves, real native cells, connected-input ceiling, and evidence below |
 | Stage 5a: pure window planner | Complete | Commit `4021939`; indexed height queries, bounded follow/detached/reveal windows, pass-through fallback, and evidence below |
 | Stage 5b: windowed mounting | Complete | Commit `3e24002`; bounded production runtime, React/native mounting, observer lifetime, scaling evidence, and review sign-off below |
-| Stage 5c: anchor correction | Not started | — |
+| Stage 5c: anchor correction | Complete | Commit `97f163f`; atomic height correction, window-local geometry, logical-anchor restoration, scaling evidence, and review sign-off below |
 | Stage 5d: off-window semantics | Not started | — |
 | Stage 5e: follow and detachment | Not started | — |
 | Stage 5f: stress, review, and evidence | Not started | — |
@@ -378,12 +378,12 @@ Exit criteria:
 
 ### Stage 5.3 — estimate correction and anchor stability
 
-- [ ] Commit guarded visible measurement batches atomically.
-- [ ] Replace estimates with measured rows in the height index.
-- [ ] Replan the window after accepted height changes.
-- [ ] Preserve the logical anchor at its preferred screen row.
-- [ ] Handle asynchronous Markdown, table, diff, and syntax settlement.
-- [ ] Prevent estimate-correction oscillation and repeated no-op publications.
+- [x] Commit guarded visible measurement batches atomically.
+- [x] Replace estimates with measured rows in the height index.
+- [x] Replan the window after accepted height changes.
+- [x] Preserve the logical anchor at its preferred screen row.
+- [x] Handle asynchronous Markdown, table, diff, and syntax settlement.
+- [x] Prevent estimate-correction oscillation and repeated no-op publications.
 
 Exit criteria:
 
@@ -741,3 +741,52 @@ The inherited 100k cell failed while attempting pass-through native allocation. 
 - Parallel architecture, correctness, and performance reviews ran before and after repair. Repairs covered complete-plan activity adjacency, stale layout/cache pruning, hidden-pane cleanup, visible-first evidence, selection indexing, semantic default folds, off-window navigation, independent Workbench ownership, real publication and native-node counts, and retained-callback observer release. Final reviewers found no Stage 5.2 blocker.
 
 Stage 5.2 satisfies its bounded mounting and native-measurement exit criteria across the recorded scaling range. Overall Stage 5 acceptance remains open: estimate correction and anchor stability, fully indexed off-window semantics, bounded follow/reconciliation work, and stable render sub-block production for oversized individual Markdown, command, and diff items remain later ledger slices.
+
+### Stage 5.3 — estimate correction and anchor stability
+
+Implementation commit: `97f163f` (`feat: correct transcript window estimates atomically`). The runtime now accepts native measurement as an immutable transaction across the height index, planned window, and window-local geometry. The direct no-policy runtime remains the complete pass-through reference.
+
+#### Atomic correction and logical anchoring
+
+- The runtime validates the complete batch, freezes every accepted block geometry, path-copies measured height replacements, replans from the resulting index, composes only the resulting materialized window, and installs the frame/index pair before notifying listeners. A stale or mixed-invalid batch cannot leak a partial height replacement.
+- Detailed point geometry is retained only for the current window. Global `firstRow`, `totalRows`, and spacer conservation still describe the complete plan, while row lookup scans only the materialized detailed range.
+- Detached planning carries the measured block-local row of the logical point into the height-index query. Reflow above, inside, or below a nonzero-offset anchor restores that point to its semantic `preferredScreenRow`; logical positions never become block keys or terminal coordinates.
+- Manual scrolling captures and publishes the new top logical point before dirty native reflow may report height correction. Runtime-backed restoration waits when the target has not yet remounted instead of jumping to a native root fallback.
+- Width/style resets rebuild estimates in a new geometry generation, and fold changes discard incompatible measured heights. Equal-height native revisions still publish changed point geometry once; their scheduler acknowledgement is a strict no-op.
+- The application no longer emits a competing cursor-derived `viewport.scroll` transaction after physical scrolling. The layout bridge is the sole owner of translating a mounted top-visible point into the semantic viewport anchor.
+
+#### Deterministic correction scaling
+
+The runtime correction cell changes one one-row tail block to four rows. Operation counts are identical at every requested size; timings are machine-specific diagnostic samples from the reviewed run.
+
+| Complete blocks | Mounted before / after | Geometry blocks composed / retained detail | Accepted / changed heights | Publications / stale replay | Total-row delta | Correction time |
+|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 48 / 45 | 45 / 1 | 1 / 1 | 1 / 0 | +3 | 0.181 ms |
+| 1k | 48 / 45 | 45 / 1 | 1 / 1 | 1 / 0 | +3 | 0.110 ms |
+| 10k | 48 / 45 | 45 / 1 | 1 / 1 | 1 / 0 | +3 | 0.107 ms |
+| 100k | 48 / 45 | 45 / 1 | 1 / 1 | 1 / 0 | +3 | 0.172 ms |
+
+At 80×24, cold native measurement starts with 48 mounted roots, accepts 48 height corrections, then replans to 24 materialized blocks and retains 24 detailed geometry records. Follow-tail damage remains bounded to the current window, and detached hidden tail changes publish, commit, mount, and unmount zero work. The 100-block viewport matrix passed at 48×18, 80×24, and 140×40. The wide detached case required two bounded acknowledgement passes after correction; it settled with zero pending measurements, 66 attempts across 89 mounted roots, and zero hidden publications.
+
+#### Connected input boundary
+
+The connected input cell includes Workbench dispatch, runtime and presentation publication, React, native roots, measurement, and final frame settlement. Counts remain identical across the complete scaling range.
+
+| Complete blocks | Materialized / mounted / measured | Runtime / presentation publications | Native descendants before / after + spacers | Dispatch / final settlement | Result |
+|---:|---:|---:|---:|---:|---|
+| 100 | 25 / 25 / 25 | 2 / 1 | 72 / 139 + 2 | 69.884 / 108.604 ms | Passed |
+| 1k | 25 / 25 / 25 | 2 / 1 | 72 / 139 + 2 | 71.178 / 112.186 ms | Passed |
+| 10k | 25 / 25 / 25 | 2 / 1 | 72 / 139 + 2 | 101.209 / 140.014 ms | Passed |
+| 100k | 25 / 25 / 25 | 2 / 1 | 72 / 139 + 2 | 414.586 / 481.704 ms | Passed |
+
+The increasing dispatch curve and 100k memory remain diagnostic evidence of complete semantic construction and total-plan reconciliation, not mounted or measured growth. Those total-size paths remain explicit later-slice debt.
+
+#### Repository, PTY, benchmark, and review gates
+
+- Focused typecheck, dependency-boundary, generated-doc, transcript, controller, App, and renderer gates passed: 310 passed, 5 intentional profiling skips, 0 failed. Additional repair tests cover equal-height convergence, nonzero block-local anchoring, and manual-scroll publication before dirty native correction.
+- `bun run check` passed typecheck, boundaries, generated-doc validation, and all non-sandbox-sensitive tests: 692 passed and 5 intentional skips. Its only failure was the sandbox-denied tmux socket.
+- The exact isolated rerun outside the sandbox passed: `bun test tests/terminal/terminal.test.ts --test-name-pattern "isolated tmux"` — 1 passed in 711 ms.
+- The complete 100/1k/10k/100k runtime, production-native, and connected-input matrices passed, as did the 48×18, 80×24, and 140×40 viewport matrix. `git diff --check` passed.
+- Parallel architecture, correctness/geometry, and performance reviews ran after the slice. Repairs clarified pre-/post-correction benchmark counts, allowed bounded multi-pass acknowledgement after window movement, proved equal-height no-op convergence, exercised a nonzero logical anchor, and proved manual-scroll anchoring precedes dirty reflow. Final reviewers found no Stage 5.3 blocker.
+
+Stage 5.3 satisfies its atomic correction, immutability, stale-guard, no-oscillation, and anchor-stability exit criteria. Overall Stage 5 acceptance remains open: canonical reconciliation, reset, and fold rebuild paths still traverse the complete plan; off-window semantic operations retain complete-reference scans until Stage 5.4; and one oversized Markdown, command-output, or diff root remains content-sized until stable production sub-blocks are introduced.
