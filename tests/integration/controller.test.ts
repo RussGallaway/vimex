@@ -360,6 +360,57 @@ test("Workbench owns independent bounded main and side transcript runtime lifeti
   await h.controller.close()
 })
 
+test("reentrant runtime listeners cannot overwrite a newer side presentation", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const mainTurn = turnId("reentrant-main-turn"), mainItem = itemId("reentrant-main-item")
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: mainTurn } })
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: {
+    id: mainItem, turnId: mainTurn, kind: "assistant", markdown: "main", status: "running",
+  } } })
+  await h.controller.settle()
+  // Preserve Map insertion order main -> side: the regression requires the
+  // main publication to reenter before the older pass reaches side.
+  const main = h.controller.transcriptRuntime("main")!
+
+  h.controller.sideChat("open")
+  await h.controller.settle()
+  const sideThread = threadId("side"), sideTurn = turnId("reentrant-side-turn"), sideItem = itemId("reentrant-side-item")
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: sideThread, turnId: sideTurn } })
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: sideThread, item: {
+    id: sideItem, turnId: sideTurn, kind: "assistant", markdown: "side", status: "running",
+  } } })
+  await h.controller.settle()
+  const side = h.controller.transcriptRuntime("side")!
+  const target = { itemId: sideItem, graphemeOffset: 0 }
+  let sidePublications = 0
+  let reentered = false
+  const stopSide = side.subscribe(() => { sidePublications++ })
+  const stopMain = main.subscribe(() => {
+    if (reentered) return
+    reentered = true
+    h.controller.transcript({ type: "cursor.move", target, preferredScreenRow: 2, extend: false })
+  })
+
+  h.emit({ type: "conversation", event: {
+    type: "item.delta", threadId: a, itemId: mainItem, delta: " updated",
+  } })
+  await h.controller.settle()
+
+  const authority = h.controller.getSnapshot().workspaces[sideThread]!.transcript
+  const frame = side.getSnapshot()
+  expect(reentered).toBe(true)
+  expect(sidePublications).toBe(1)
+  expect(authority.viewport).toEqual({ kind: "point", point: target, preferredScreenRow: 2 })
+  expect(frame.transcript.viewport).toEqual(authority.viewport)
+  expect(frame.mode).toBe("detached")
+  expect(pointIsMaterialized(frame.window.blocks, target)).toBe(true)
+  expect(main.getSnapshot().transcript.projectionById[mainItem]?.source).toBe("main updated")
+
+  stopMain(); stopSide()
+  await h.controller.close()
+})
+
 test("detached copy, reference, and URL reads use the displayed presentation until follow", async () => {
   const h = harness()
   await h.controller.initialize("/tmp")

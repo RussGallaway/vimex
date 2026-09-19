@@ -67,6 +67,8 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
   private state = initialWorkbench()
   private readonly ingress: ConversationIngress
   private readonly transcriptRuntimes = new Map<TranscriptPresentationId, TranscriptRuntime>()
+  /** Invalidates an older presentation pass when a runtime listener mutates authority reentrantly. */
+  private runtimeSyncEpoch = 0
   private readonly urlChoiceIndexes = new WeakMap<readonly UrlCandidate[], Readonly<{
     members: WeakSet<object>; firstByUrl: ReadonlyMap<string, UrlCandidate>
   }>>()
@@ -266,9 +268,16 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     }
   }
   private syncTranscriptRuntimes(before: WorkbenchState, state: WorkbenchState, hint: TranscriptRuntimeHint = {}): void {
+    const epoch = ++this.runtimeSyncEpoch
     for (const [presentationId, runtime] of this.transcriptRuntimes) {
+      if (epoch !== this.runtimeSyncEpoch) return
       const input = this.runtimeInput(presentationId, state, before, hint)
       if (input) runtime.update(input)
+      // Runtime listeners are synchronous and may commit a newer Workbench
+      // state. That nested pass starts again at the first presentation; the
+      // older pass must not continue and overwrite a later presentation with
+      // its captured state.
+      if (epoch !== this.runtimeSyncEpoch) return
     }
   }
   transcriptRuntime = (presentationId: TranscriptPresentationId): TranscriptRuntime | undefined => {
