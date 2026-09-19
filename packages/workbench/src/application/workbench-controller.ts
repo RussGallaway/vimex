@@ -18,6 +18,7 @@ import type { DisplayPreferences } from "./display-preferences"
 import { createRpcEventReplay } from "./rpc-event-replay"
 import { NavigationHistory, navigationLocation, restoreNavigationLocation, hasRecordedJump, type NavigationLocation } from "./navigation-history"
 import { invalidateRuntimeState } from "./runtime-recovery"
+import { ConversationIngress, type ConversationIngressScheduler } from "./conversation-ingress"
 
 export interface ControllerPorts {
   conversation: ConversationGateway
@@ -32,9 +33,12 @@ export interface ControllerPorts {
   localState?: LocalState
   preferences?: PreferenceStore
   busySubmit?: "queue" | "steer"
+  conversationIngressScheduler?: ConversationIngressScheduler
+  conversationIngressCadenceMs?: number
 }
 export class VimexController implements WorkbenchActions {
   private state = initialWorkbench()
+  private readonly ingress: ConversationIngress
   private readonly sides = new SideChatCoordinator({
     state: () => this.state,
     update: side => {
@@ -50,6 +54,7 @@ export class VimexController implements WorkbenchActions {
       this.setState({ ...this.state, sideChats })
     },
     remove: (parent, retired) => {
+      this.ingress.flush()
       const sideChats = { ...this.state.sideChats }; delete sideChats[parent]
       const summaries = { ...this.state.summaries }; delete summaries[retired]
       const workspaces = { ...this.state.workspaces }; delete workspaces[retired]
@@ -145,6 +150,11 @@ export class VimexController implements WorkbenchActions {
   private signalClosing!: () => void
   private readonly closingSignal = new Promise<void>(resolve => { this.signalClosing = resolve })
   constructor(private readonly ports: ControllerPorts) {
+    this.ingress = new ConversationIngress(events => this.commitConversationEvents(events), {
+      scheduler: ports.conversationIngressScheduler,
+      cadenceMs: ports.conversationIngressCadenceMs,
+      onError: error => this.notice(error instanceof Error ? error.message : String(error)),
+    })
     this.state = { ...this.state, favoriteThreadIds: [...new Set(ports.localState?.favoriteThreadIds ?? [])].map(threadId), sideChats: ports.localState?.sideChats ?? {}, retiredSideThreadIds: (ports.localState?.retiredSideThreadIds ?? []).map(threadId) }
     if (ports.preferences) {
       this.desiredPreferences = ports.preferences.initial
@@ -169,6 +179,39 @@ export class VimexController implements WorkbenchActions {
     const continuations = this.threadContinuations.get(id) ?? new Set<Promise<void>>()
     continuations.add(pending); this.threadContinuations.set(id, continuations)
     void pending.finally(() => { continuations.delete(pending); if (!continuations.size) this.threadContinuations.delete(id) })
+  }
+  /** Applies one ingress cadence as one canonical publication. */
+  private commitConversationEvents(events: readonly ConversationEvent[]): void {
+    let state = this.state
+    const navigationHistory = this.navigationHistory.clone()
+    const effects: WorkbenchEffect[] = []
+    for (const event of events) {
+      if (state.retiredSideThreadIds.includes(event.threadId)) continue
+      const before = state
+      const result = transitionWorkbench(before, { type: "conversation.event", event })
+      navigationHistory.reproject(before, result.state, event.threadId)
+      state = result.state
+      effects.push(...result.effects)
+    }
+    if (state === this.state) return
+    this.navigationHistory.adopt(navigationHistory)
+    if (this.closing) this.state = state
+    else {
+      // Canonical commit is authoritative even if a renderer observer is faulty.
+      this.state = state
+      for (const listener of this.listeners) {
+        try { listener() } catch { /* observers cannot roll back an ingress commit */ }
+      }
+      try { this.ports.onState?.(state) } catch { /* persistence observers are isolated too */ }
+    }
+    if (this.closing) {
+      try { this.ports.onState?.(state) } catch { /* persistence failure is handled by its owning store */ }
+      return
+    }
+    for (const effect of effects) {
+      const pending = this.launch(() => this.effect(effect))
+      if (effect.type === "conversation.turn.start" || effect.type === "conversation.turn.steer") this.trackContinuation(effect.threadId, pending)
+    }
   }
   dispatch(command: WorkbenchCommand): void {
     if (this.closing) return
@@ -211,7 +254,12 @@ export class VimexController implements WorkbenchActions {
     void promise.finally(() => this.pending.delete(promise))
     return promise
   }
-  async settle(): Promise<void> { while (this.pending.size) await Promise.all([...this.pending]) }
+  async settle(): Promise<void> {
+    do {
+      this.ingress.flush()
+      if (this.pending.size) await Promise.all([...this.pending])
+    } while (this.pending.size || this.ingress.hasPending)
+  }
   notice(message: string): void { this.setState({ ...this.state, error: message }) }
 
   private register(summary: SessionSnapshot["summary"]): void {
@@ -225,6 +273,7 @@ export class VimexController implements WorkbenchActions {
   }
   private currentRuntime(epoch: number): boolean { return !this.closing && epoch === this.runtimeEpoch }
   private hydrate(snapshot: SessionSnapshot, focus: boolean): void {
+    this.ingress.flush()
     if (this.state.retiredSideThreadIds.includes(snapshot.summary.id)) return
     this.register(snapshot.summary)
     const side = Object.values(this.state.sideChats).find(side => side.threadId === snapshot.summary.id)
@@ -236,7 +285,7 @@ export class VimexController implements WorkbenchActions {
     if (this.recoveryViews[snapshot.summary.id] && !this.loaded.has(snapshot.summary.id)) {
       this.setState({ ...this.state, workspaces: { ...this.state.workspaces, [snapshot.summary.id]: createWorkspace(snapshot.summary.id) } })
     }
-    for (const event of snapshot.events) this.dispatch({ type: "conversation.event", event })
+    this.ingress.replay(snapshot.events)
     const saved = this.recoveryViews[snapshot.summary.id] ?? this.ports.localState?.threads[snapshot.summary.id]
     const workspace = this.state.workspaces[snapshot.summary.id]
     if (saved && workspace && !this.loaded.has(snapshot.summary.id)) this.setState({ ...this.state, workspaces: { ...this.state.workspaces, [snapshot.summary.id]: restoreThreadView(workspace, saved) } })
@@ -244,7 +293,8 @@ export class VimexController implements WorkbenchActions {
     this.loaded.add(snapshot.summary.id)
     const buffered = this.buffered.get(snapshot.summary.id) ?? []
     this.buffered.delete(snapshot.summary.id)
-    for (const event of buffered) this.dispatch({ type: "conversation.event", event })
+    for (const event of buffered) this.ingress.push(event)
+    this.ingress.flush()
     if (focus) this.dispatch({ type: "thread.switch", threadId: snapshot.summary.id })
   }
   initialize(cwd: string, model?: string, resume?: string, resumeMode?: "picker" | "last"): Promise<void> {
@@ -285,6 +335,7 @@ export class VimexController implements WorkbenchActions {
     if (event.type === "subagent.link" && (this.state.retiredSideThreadIds.includes(event.link.childId) || this.state.retiredSideThreadIds.includes(event.link.parentId))) return
     if (event.type === "approval" && this.state.retiredSideThreadIds.includes(event.approval.threadId)) return
     if (event.type === "question.requested" && this.state.retiredSideThreadIds.includes(event.request.threadId)) return
+    if (event.type !== "conversation") this.ingress.flush()
     switch (event.type) {
       case "compaction": this.dispatch({ type: "compaction.observed", observation: event }); break
       case "question.requested": this.dispatch({ type: "question.received", request: event.request }); break
@@ -295,7 +346,7 @@ export class VimexController implements WorkbenchActions {
           const queue = this.buffered.get(event.event.threadId) ?? []
           queue.push(event.event)
           this.buffered.set(event.event.threadId, queue)
-        } else this.dispatch({ type: "conversation.event", event: event.event })
+        } else this.ingress.push(event.event)
         break
       case "summary": this.register(event.summary); break
       case "metadata": this.dispatch({ type: "thread.summary.patch", threadId: event.threadId, patch: event.patch }); break
@@ -429,6 +480,7 @@ export class VimexController implements WorkbenchActions {
   }
   restart = (): void => {
     if (this.restartPending || this.closing) return
+    this.ingress.flush()
     this.restartPending = true
     this.historyNavigation = undefined
     const epoch = ++this.runtimeEpoch
@@ -930,6 +982,7 @@ export class VimexController implements WorkbenchActions {
             if (!this.currentRuntime(epoch)) return
             submittedTurn = events.find(event => event.type === "turn.started")?.turnId
             // RPC snapshots may predate already-observed live deltas/completion.
+            this.ingress.flush()
             const initial = this.state.workspaces[effect.threadId]?.conversation
             if (!initial) return
             const replay = createRpcEventReplay(initial)
@@ -972,11 +1025,12 @@ export class VimexController implements WorkbenchActions {
   close(): Promise<void> { return this.closePromise ??= this.runClose() }
   private async runClose(): Promise<void> {
     this.closing = true
+    const errors: unknown[] = []
+    try { this.ingress.close() } catch (error) { errors.push(error) }
     this.signalClosing()
     this.navigationRevision++
     this.unsubscribe?.()
     this.unsubscribe = undefined
-    const errors: unknown[] = []
     try { await this.ports.connection.close() } catch (error) { errors.push(error) }
     if (this.initialization) {
       try { await this.initialization } catch (error) { errors.push(error) }

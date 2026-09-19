@@ -16,6 +16,36 @@ export class NavigationHistory {
   private initialized = false
   private back: NavigationLocation[] = []
   private forward: NavigationLocation[] = []
+  private sourceBack?: NavigationLocation[]
+  private sourceForward?: NavigationLocation[]
+  clone(): NavigationHistory {
+    const copy = new NavigationHistory()
+    copy.initialized = this.initialized
+    const location = (entry: NavigationLocation): NavigationLocation => ({
+      ...entry,
+      cursor: entry.cursor && { ...entry.cursor },
+      viewport: entry.viewport.kind === "tail" ? entry.viewport : { ...entry.viewport, point: { ...entry.viewport.point } },
+    })
+    copy.back = this.back.map(location)
+    copy.forward = this.forward.map(location)
+    copy.sourceBack = this.back
+    copy.sourceForward = this.forward
+    return copy
+  }
+  adopt(source: NavigationHistory): void {
+    this.initialized = source.initialized
+    const adoptLocations = (staged: NavigationLocation[], originals?: NavigationLocation[]): NavigationLocation[] => {
+      if (!originals || originals.length !== staged.length) return staged
+      for (let index = 0; index < staged.length; index++) {
+        const original = originals[index]!, next = staged[index]!
+        original.cursor = next.cursor
+        original.viewport = next.viewport
+      }
+      return originals
+    }
+    this.back = adoptLocations(source.back, source.sourceBack)
+    this.forward = adoptLocations(source.forward, source.sourceForward)
+  }
   seed(state: WorkbenchState): void {
     if (this.initialized) return
     const workspace = activeWorkspace(state), id = state.activeThreadId

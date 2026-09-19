@@ -47,7 +47,7 @@ async function visualHarness() {
     await act(async () => { await setup.flush(); await setup.renderOnce() })
   }
   const close = async () => { await act(async () => setup.renderer.destroy()); await controller.close() }
-  return { ...setup, controller, copied, interrupted, emit: (event: RuntimeEvent) => emit(event), workspace, keys, close }
+  return { ...setup, controller, copied, interrupted, emit: (event: RuntimeEvent) => { emit(event); void controller.settle() }, workspace, keys, close }
 }
 
 test("Visual transcript selection survives streaming and resize, then yanks semantic text", async () => {

@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test"
 import { VimexController } from "@vimex/workbench"
-import type { RuntimeEvent, RuntimeConnection, ModelCatalog, PreferenceStore } from "@vimex/workbench"
+import type { RuntimeEvent, RuntimeConnection, ModelCatalog, PreferenceStore, ConversationIngressScheduler, WorkbenchState } from "@vimex/workbench"
 import type { SessionSnapshot, ConversationGateway } from "@vimex/conversation"
 import type { ApprovalGateway } from "@vimex/approvals"
 import { resolve } from "node:path"
@@ -10,7 +10,7 @@ import type { LocalState } from "@vimex/workbench"
 
 const a = threadId("a"), b = threadId("b")
 const summary = (id = a): ThreadSummary => ({ id, title: id, cwd: "/tmp", model: "test", reasoningEffort: "high", status: "idle" })
-function harness(options: { localState?: LocalState; onState?: () => void; preferences?: PreferenceStore } = {}) {
+function harness(options: { localState?: LocalState; onState?: (state: WorkbenchState) => void; preferences?: PreferenceStore; conversationIngressScheduler?: ConversationIngressScheduler } = {}) {
   let listener: (event: RuntimeEvent) => void = () => {}
   const starts: string[] = []
   const copied: string[] = []
@@ -25,8 +25,18 @@ function harness(options: { localState?: LocalState; onState?: () => void; prefe
     listModels: async () => [{ id: "test", label: "Test", efforts: ["low", "high"] }], updateSettings: async () => {},
     steerTurn: async () => {}, interruptTurn: async () => {}, resolveApproval: async () => {}, renameThread: async () => {}, close: async () => {},
   }
-  const controller = new VimexController({ conversation: backend, approvals: backend, connection: backend, models: backend, resolveDirectory: resolve, localState: options.localState, onState: options.onState, preferences: options.preferences, clipboard: { writeText: async text => { copied.push(text) } }, openUrl: async url => { opened.push(url) }, quit() {} })
+  const controller = new VimexController({ conversation: backend, approvals: backend, connection: backend, models: backend, resolveDirectory: resolve, localState: options.localState, onState: options.onState, preferences: options.preferences, conversationIngressScheduler: options.conversationIngressScheduler, clipboard: { writeText: async text => { copied.push(text) } }, openUrl: async url => { opened.push(url) }, quit() {} })
   return { controller, backend, starts, copied, opened, emit: (event: RuntimeEvent) => listener(event) }
+}
+
+function manualIngressScheduler() {
+  const tasks: Array<{ task: () => void; cancelled: boolean }> = []
+  const scheduler: ConversationIngressScheduler = { schedule(task) {
+    const entry = { task, cancelled: false }
+    tasks.push(entry)
+    return () => { entry.cancelled = true }
+  } }
+  return { scheduler, tasks, runNext() { const entry = tasks.shift(); if (entry && !entry.cancelled) entry.task() } }
 }
 
 test("initializes session catalog without selecting background sessions; restores drafts on round-trip", async () => {
@@ -72,9 +82,97 @@ test("backend output leaves composer focus and semantic reading anchor intact", 
   h.controller.changeDraft("reply", 5)
   const anchor = h.controller.getSnapshot().workspaces[a]?.transcript.viewport
   h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: id, delta: " while output grows" } })
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().workspaces[a]?.conversation.items[id]).toMatchObject({ markdown: "Reading here while output grows" })
   expect(h.controller.getSnapshot().workspaces[a]?.transcript.viewport).toEqual(anchor)
   expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe("reply")
   expect(h.controller.getSnapshot().workspaces[a]?.interaction.mode).toBe("insert")
+})
+
+test("streaming ingress bounds canonical settlements by cadence", async () => {
+  const manual = manualIngressScheduler()
+  let updates = 0
+  const h = harness({ conversationIngressScheduler: manual.scheduler, onState: () => { updates++ } })
+  await h.controller.initialize("/tmp")
+  const turn = turnId("settled"), id = itemId("answer")
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id, turnId: turn, kind: "assistant", markdown: "", status: "running" } } })
+  updates = 0
+  for (let index = 0; index < 100; index++) h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: id, delta: String(index % 10) } })
+  expect(h.controller.getSnapshot().workspaces[a]?.conversation.items[id]).toMatchObject({ markdown: "" })
+  expect(manual.tasks).toHaveLength(1)
+  expect(updates).toBe(0)
+  manual.runNext()
+  expect(h.controller.getSnapshot().workspaces[a]?.conversation.items[id]).toMatchObject({ markdown: "0123456789".repeat(10) })
+  expect(updates).toBe(1)
+  await h.controller.close()
+})
+
+test("one cadence publishes interleaved item deltas as one canonical settlement", async () => {
+  const manual = manualIngressScheduler()
+  let updates = 0
+  const h = harness({ conversationIngressScheduler: manual.scheduler, onState: () => { updates++ } })
+  await h.controller.initialize("/tmp")
+  const turn = turnId("interleaved"), first = itemId("first"), second = itemId("second")
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id: first, turnId: turn, kind: "assistant", markdown: "", status: "running" } } })
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id: second, turnId: turn, kind: "reasoning", markdown: "", status: "running" } } })
+  updates = 0
+  for (let index = 0; index < 100; index++) {
+    const id = index % 2 ? second : first
+    h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: id, delta: String(index % 10) } })
+  }
+  expect(updates).toBe(0)
+  manual.runNext()
+  expect(updates).toBe(1)
+  expect(h.controller.getSnapshot().workspaces[a]?.conversation.items[first]).toMatchObject({ markdown: "02468".repeat(10) })
+  expect(h.controller.getSnapshot().workspaces[a]?.conversation.items[second]).toMatchObject({ markdown: "13579".repeat(10) })
+  await h.controller.close()
+})
+
+test("conversation boundaries, disconnect, restart, and close cannot strand pending deltas", async () => {
+  const setup = async (suffix: string) => {
+    const manual = manualIngressScheduler()
+    const h = harness({ conversationIngressScheduler: manual.scheduler })
+    await h.controller.initialize("/tmp")
+    const turn = turnId(`turn-${suffix}`), id = itemId(`item-${suffix}`)
+    h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
+    h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id, turnId: turn, kind: "assistant", markdown: "base", status: "running" } } })
+    h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: id, delta: `-${suffix}` } })
+    return { h, id, turn }
+  }
+
+  const boundary = await setup("boundary")
+  boundary.h.emit({ type: "conversation", event: { type: "turn.completed", threadId: a, turnId: boundary.turn, outcome: "complete" } })
+  expect(boundary.h.controller.getSnapshot().workspaces[a]?.conversation.items[boundary.id]).toMatchObject({ markdown: "base-boundary" })
+  await boundary.h.controller.close()
+
+  const disconnected = await setup("disconnect")
+  disconnected.h.emit({ type: "disconnected", message: "gone" })
+  expect(disconnected.h.controller.getSnapshot().workspaces[a]?.conversation.items[disconnected.id]).toMatchObject({ markdown: "base-disconnect" })
+  await disconnected.h.controller.close()
+
+  const restarted = await setup("restart")
+  restarted.h.controller.restart()
+  expect(restarted.h.controller.getSnapshot().workspaces[a]?.conversation.items[restarted.id]).toMatchObject({ markdown: "base-restart" })
+  await restarted.h.controller.settle()
+  await restarted.h.controller.close()
+
+  const closed = await setup("close")
+  await closed.h.controller.close()
+  expect(closed.h.controller.getSnapshot().workspaces[a]?.conversation.items[closed.id]).toMatchObject({ markdown: "base-close" })
+})
+
+test("shutdown publishes its final ingress drain to persistence observers", async () => {
+  let observed: WorkbenchState | undefined
+  const h = harness({ onState: state => { observed = state } })
+  await h.controller.initialize("/tmp")
+  const turn = turnId("close-observed"), id = itemId("close-observed")
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id, turnId: turn, kind: "assistant", markdown: "before", status: "running" } } })
+  h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: id, delta: " after" } })
+  await h.controller.close()
+  expect(observed?.workspaces[a]?.conversation.items[id]).toMatchObject({ markdown: "before after" })
 })
 
 test("stale resume response cannot steal focus after a newer navigation", async () => {
@@ -889,6 +987,24 @@ test("failed history resume after restart retains the entry for retry", async ()
   await h.controller.close()
 })
 
+test("stream settlement preserves an in-flight history navigation target identity", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  h.controller.openThread(b)
+  await h.controller.settle()
+  h.controller.restart()
+  await h.controller.settle()
+  let release!: (snapshot: SessionSnapshot) => void
+  const resume = h.backend.resumeThread
+  h.backend.resumeThread = id => id === a ? new Promise(resolve => { release = resolve }) : resume(id)
+  h.controller.transcript({ type: "jump.back" })
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: b, turnId: turnId("while-navigating") } })
+  release({ summary: summary(a), events: [] })
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().activeThreadId).toBe(a)
+  await h.controller.close()
+})
+
 test("background streamed Markdown reprojects cross-agent history to the same source text", async () => {
   const h = harness(), output = itemId("stream-history")
   await h.controller.initialize("/tmp")
@@ -899,6 +1015,7 @@ test("background streamed Markdown reprojects cross-agent history to the same so
   h.controller.openThread(b)
   await h.controller.settle()
   h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: output, delta: "**" } })
+  await h.controller.settle()
   h.controller.transcript({ type: "jump.back" })
   const transcript = h.controller.getSnapshot().workspaces[a]!.transcript
   expect(transcript.projectionById[output]!.plain[transcript.cursor!.graphemeOffset]).toBe("h")

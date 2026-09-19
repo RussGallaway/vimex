@@ -50,7 +50,7 @@ async function wheelHarness() {
     await act(async () => { await setup.flush(); await setup.renderOnce() })
   }
   const close = async () => { await act(async () => setup.renderer.destroy()); await controller.close() }
-  return { ...setup, reactCommits, controller, emit: (event: RuntimeEvent) => emit(event), workspace, keys, close }
+  return { ...setup, reactCommits, controller, emit: (event: RuntimeEvent) => { emit(event); void controller.settle() }, workspace, keys, close }
 }
 
 
