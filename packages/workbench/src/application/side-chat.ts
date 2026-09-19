@@ -12,8 +12,44 @@ export interface SideChat {
   inheritedTurnIds?: readonly TurnId[]
 }
 export type SideChatAction = "open" | "close" | "quit" | "refresh" | "maximize" | "reset" | "parent" | "side" | "cycle" | "quote"
+
+interface SideChatIndex {
+  readonly any: ReadonlyMap<ThreadId, SideChat>
+  readonly child: ReadonlyMap<ThreadId, SideChat>
+}
+
+const sideChatIndexes = new WeakMap<WorkbenchState["sideChats"], SideChatIndex>()
+
+function sideChatIndex(state: WorkbenchState): SideChatIndex {
+  const cached = sideChatIndexes.get(state.sideChats)
+  if (cached) return cached
+  const any = new Map<ThreadId, SideChat>(), child = new Map<ThreadId, SideChat>()
+  for (const side of Object.values(state.sideChats)) {
+    if (!any.has(side.parentId)) any.set(side.parentId, side)
+    if (side.threadId) {
+      if (!any.has(side.threadId)) any.set(side.threadId, side)
+      if (!child.has(side.threadId)) child.set(side.threadId, side)
+    }
+  }
+  const index = { any, child }
+  sideChatIndexes.set(state.sideChats, index)
+  return index
+}
+
+/** Immutable side-chat records receive one disposable relationship index. */
+export function sideChatForThread(state: WorkbenchState, threadId: ThreadId | undefined): SideChat | undefined {
+  if (!threadId) return undefined
+  return sideChatIndex(state).any.get(threadId)
+}
+
+/** Child-role lookup remains unambiguous when one thread also owns a side chat. */
+export function sideChatForChild(state: WorkbenchState, threadId: ThreadId | undefined): SideChat | undefined {
+  if (!threadId) return undefined
+  return sideChatIndex(state).child.get(threadId)
+}
+
 export function currentSideChat(state: WorkbenchState): SideChat | undefined {
-  return Object.values(state.sideChats).find(side => side.parentId === state.activeThreadId || side.threadId === state.activeThreadId)
+  return sideChatForThread(state, state.activeThreadId)
 }
 export function visibleSideChat(state: WorkbenchState): SideChat | undefined {
   const side = currentSideChat(state)

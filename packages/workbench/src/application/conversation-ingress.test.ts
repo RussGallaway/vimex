@@ -3,10 +3,9 @@ import { createConversation, itemId, reduceConversation, threadId, turnId, type 
 import { ConversationIngress, type ConversationIngressScheduler } from "./conversation-ingress"
 
 function manualScheduler() {
-  const tasks: Array<{ task: () => void; cancelled: boolean }> = []
+  const tasks: Array<{ task: () => void; delayMs: number; cancelled: boolean }> = []
   const scheduler: ConversationIngressScheduler = { schedule(task, delayMs) {
-    expect(delayMs).toBe(16)
-    const entry = { task, cancelled: false }
+    const entry = { task, delayMs, cancelled: false }
     tasks.push(entry)
     return () => { entry.cancelled = true }
   } }
@@ -27,7 +26,7 @@ test("coalesces adjacent matching deltas on one scheduled settlement", () => {
   expect(emitted).toEqual([{ type: "item.delta", threadId: thread, itemId: item, delta: "abc" }])
 })
 
-test("preserves first-seen order and never merges across an independent item", () => {
+test("coalesces every item delta in one cadence while preserving first-seen item order", () => {
   const emitted: ConversationEvent[] = []
   const manual = manualScheduler()
   const ingress = new ConversationIngress(events => emitted.push(...events), { scheduler: manual.scheduler })
@@ -36,9 +35,29 @@ test("preserves first-seen order and never merges across an independent item", (
   ingress.push({ type: "item.delta", threadId: thread, itemId: second, delta: "b" })
   ingress.push({ type: "item.delta", threadId: thread, itemId: first, delta: "c" })
   ingress.flush()
-  expect(emitted.map(event => event.type === "item.delta" ? `${event.itemId}:${event.delta}` : event.type)).toEqual(["first:a", "second:b", "first:c"])
+  expect(emitted.map(event => event.type === "item.delta" ? `${event.itemId}:${event.delta}` : event.type)).toEqual(["first:ac", "second:b"])
   manual.runNext()
-  expect(emitted).toHaveLength(3)
+  expect(emitted).toHaveLength(2)
+})
+
+test("bounds distinct scheduled delta streams and yields before continuing backlog", () => {
+  const emitted: string[][] = []
+  const manual = manualScheduler()
+  const ingress = new ConversationIngress(events => emitted.push(events.map(event => event.type === "item.delta" ? event.itemId : event.type)), {
+    scheduler: manual.scheduler, maxEventsPerTurn: 2,
+  })
+  const thread = threadId("thread")
+  for (let index = 0; index < 5; index++) ingress.push({ type: "item.delta", threadId: thread, itemId: itemId(`item-${index}`), delta: "x" })
+  expect(manual.tasks.map(task => task.delayMs)).toEqual([16])
+  manual.runNext()
+  expect(emitted).toEqual([["item-0", "item-1"]])
+  expect(ingress.hasPending).toBe(true)
+  expect(manual.tasks.at(-1)?.delayMs).toBe(0)
+  manual.runNext()
+  expect(emitted).toEqual([["item-0", "item-1"], ["item-2", "item-3"]])
+  manual.runNext()
+  expect(emitted).toEqual([["item-0", "item-1"], ["item-2", "item-3"], ["item-4"]])
+  expect(ingress.hasPending).toBe(false)
 })
 
 test("flushes pending text before every non-delta conversation boundary", () => {
@@ -99,6 +118,41 @@ test("retains a semantic boundary when its preceding batch fails", () => {
   expect(emitted.map(event => event.type)).toEqual(["item.delta", "turn.completed"])
 })
 
+test("retries a failed semantic-boundary prefix atomically even above the scheduled cap", () => {
+  const thread = threadId("thread"), turn = turnId("turn")
+  const manual = manualScheduler()
+  const batches: string[][] = []
+  let fail = true
+  const ingress = new ConversationIngress(events => {
+    if (fail) { fail = false; throw new Error("commit failed") }
+    batches.push(events.map(event => event.type === "item.delta" ? event.itemId : event.type))
+  }, { scheduler: manual.scheduler, maxEventsPerTurn: 2 })
+  for (let index = 0; index < 3; index++) ingress.push({ type: "item.delta", threadId: thread, itemId: itemId(`item-${index}`), delta: "x" })
+  expect(() => ingress.push({ type: "turn.completed", threadId: thread, turnId: turn, outcome: "complete" })).toThrow("commit failed")
+  manual.runNext() // cancelled cadence callback
+  manual.runNext() // atomic retry
+  expect(batches).toEqual([["item-0", "item-1", "item-2", "turn.completed"]])
+  expect(ingress.hasPending).toBe(false)
+})
+
+test("new deltas never coalesce backward across a retained failed boundary", () => {
+  const thread = threadId("thread"), turn = turnId("turn"), item = itemId("item")
+  const manual = manualScheduler()
+  const batches: string[][] = []
+  let fail = true
+  const ingress = new ConversationIngress(events => {
+    if (fail) { fail = false; throw new Error("commit failed") }
+    batches.push(events.map(event => event.type === "item.delta" ? event.delta : event.type))
+  }, { scheduler: manual.scheduler, maxEventsPerTurn: 2 })
+  ingress.push({ type: "item.delta", threadId: thread, itemId: item, delta: "before" })
+  expect(() => ingress.push({ type: "turn.completed", threadId: thread, turnId: turn, outcome: "complete" })).toThrow("commit failed")
+  ingress.push({ type: "item.delta", threadId: thread, itemId: item, delta: "after" })
+  manual.runNext() // cancelled cadence callback
+  manual.runNext() // failed prefix
+  manual.runNext() // suffix continuation
+  expect(batches).toEqual([["before", "turn.completed"], ["after"]])
+})
+
 test("scheduled failure reports once, retains the batch, and does not hot-loop", () => {
   const thread = threadId("thread"), item = itemId("item")
   const manual = manualScheduler()
@@ -121,13 +175,15 @@ test("scheduled failure reports once, retains the batch, and does not hot-loop",
 })
 
 test("coalesced and uncoalesced streams reduce to the same canonical state", () => {
-  const thread = threadId("thread"), turn = turnId("turn"), id = itemId("answer")
+  const thread = threadId("thread"), turn = turnId("turn"), id = itemId("answer"), reasoning = itemId("reasoning")
   const events: ConversationEvent[] = [
     { type: "turn.started", threadId: thread, turnId: turn },
     { type: "item.started", threadId: thread, item: { id, turnId: turn, kind: "assistant", markdown: "", status: "running" } },
+    { type: "item.started", threadId: thread, item: { id: reasoning, turnId: turn, kind: "reasoning", markdown: "", status: "running" } },
     { type: "item.delta", threadId: thread, itemId: id, delta: "one" },
-    { type: "item.delta", threadId: thread, itemId: id, delta: " two" },
+    { type: "item.delta", threadId: thread, itemId: reasoning, delta: "middle" },
     { type: "item.delta", threadId: thread, itemId: id, delta: " three" },
+    { type: "item.delta", threadId: thread, itemId: reasoning, delta: " layer" },
   ]
   const direct = events.reduce(reduceConversation, createConversation(thread))
   let settled = createConversation(thread)

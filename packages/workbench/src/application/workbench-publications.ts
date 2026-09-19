@@ -2,7 +2,7 @@ import type { ThreadId } from "@vimex/conversation"
 import type { InteractionState } from "@vimex/interaction"
 import type { DisplayPreferences } from "./display-preferences"
 import { liveActivity, type LiveActivity } from "./live-activity"
-import { currentSideChat, type SideChat } from "./side-chat"
+import { currentSideChat, sideChatForChild, type SideChat } from "./side-chat"
 import type { TranscriptPresentationId } from "./workbench-actions"
 import type { ThreadWorkspace, WorkbenchState } from "./workbench-state"
 
@@ -92,7 +92,7 @@ function parentLink(state: WorkbenchState, id: ThreadId | undefined) {
 }
 
 function sideForThread(state: WorkbenchState, id: ThreadId | undefined): SideChat | undefined {
-  return id ? Object.values(state.sideChats).find(side => side.parentId === id || side.threadId === id) : undefined
+  return sideChatForChild(state, id)
 }
 
 /**

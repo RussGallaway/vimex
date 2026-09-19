@@ -1,6 +1,6 @@
 import { compactionBlockReason } from "./compaction"
 import { executeGoalCommand } from "./goal-command"
-import { SideChatCoordinator, currentSideChat, type SideChatAction } from "./side-chat"
+import { SideChatCoordinator, currentSideChat, sideChatForChild, sideChatForThread, type SideChatAction } from "./side-chat"
 import { adjacentSearchMatch, findSearchMatches, firstContentPoint, moveByWord, moveBySemanticBlock, moveByUrl, referenceText, urlAt, urlCandidates, graphemeCount, TranscriptRuntime, type LogicalPoint, type TranscriptDamage, type TranscriptRevealRequest, type TranscriptRuntimeInput } from "@vimex/transcript"
 import { isThemeName, themeNames, type PreferenceStore } from "./display-preferences"
 import { parseCommand, validateCommand, resolveCommandName, commandDescriptors, type ExCommand } from "@vimex/interaction"
@@ -223,9 +223,7 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     const workspace = thread ? state.workspaces[thread] : undefined
     if (!thread || !workspace) return undefined
     const previous = before?.workspaces[thread]
-    const selectedSide = state === this.state ? this.publicationContext.candidate : undefined
-    const side = selectedSide?.threadId === thread ? selectedSide
-      : state === this.state ? undefined : Object.values(state.sideChats).find(candidate => candidate.threadId === thread)
+    const side = sideChatForChild(state, thread)
     const transcriptChanged = previous && previous.transcript !== workspace.transcript
     const presentationDamage: TranscriptDamage = hint.canonicalOnly || !transcriptChanged ? { kind: "none" }
       : previous.transcript.folded !== workspace.transcript.folded ? { kind: "layout" } : { kind: "view" }
@@ -326,7 +324,8 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     }
   }
   private retiringThread(id: ThreadId): boolean {
-    return this.state.retiredSideThreadIds.includes(id) || Object.values(this.state.sideChats).some(side => side.threadId === id && side.status === "quitting")
+    const side = sideChatForChild(this.state, id)
+    return this.state.retiredSideThreadIds.includes(id) || side?.status === "quitting"
   }
   private trackContinuation(id: ThreadId, pending: Promise<void> | undefined): void {
     if (!pending) return
@@ -458,7 +457,7 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
     this.ingress.flush()
     if (this.state.retiredSideThreadIds.includes(snapshot.summary.id)) return
     this.register(snapshot.summary)
-    const side = Object.values(this.state.sideChats).find(side => side.threadId === snapshot.summary.id)
+    const side = sideChatForChild(this.state, snapshot.summary.id)
     const parentTurns = side && this.state.workspaces[side.parentId]?.conversation.turns
     if (side && side.inheritedTurnIds === undefined && parentTurns && Object.keys(parentTurns).length) {
       const inheritedTurnIds = [...new Set(snapshot.events.flatMap(event => "turnId" in event ? [event.turnId] : "item" in event ? [event.item.turnId] : []))].filter(id => parentTurns[id])
@@ -641,7 +640,9 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
   }
   returnToParent = (): void => {
     const child = this.state.activeThreadId
-    const parent = child && (Object.values(this.state.sideChats).find(side => side.threadId === child)?.parentId ?? this.parentReturns.get(child) ?? this.state.agentRelationships.find(link => link.childId === child)?.parentId)
+    const side = sideChatForChild(this.state, child)
+    const sideParent = side?.parentId
+    const parent = child && (sideParent ?? this.parentReturns.get(child) ?? this.state.agentRelationships.find(link => link.childId === child)?.parentId)
     if (!parent) { this.notice("This session has no known parent"); return }
     this.dispatchInteraction({ type: "overlay.close" })
     this.openThread(parent)
@@ -758,7 +759,7 @@ export class VimexController implements WorkbenchActions, TranscriptPresentation
       if (this.currentRuntime(epoch) && revision === this.navigationRevision) {
         const origin = navigationLocation(this.state)
         if (restore && (!origin || !this.navigationHistory.commit(restore.direction, restore.target, origin))) return
-        const side = Object.values(this.state.sideChats).find(side => side.threadId === id)
+        const side = sideChatForChild(this.state, id)
         if (side && !side.visible && side.status !== "quitting") this.setState({ ...this.state, sideChats: { ...this.state.sideChats, [side.parentId]: { ...side, visible: true } } })
         this.restoringNavigation = Boolean(restore)
         try { this.dispatch({ type: "thread.switch", threadId: id }) }

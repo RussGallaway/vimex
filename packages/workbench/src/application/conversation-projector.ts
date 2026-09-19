@@ -4,6 +4,7 @@ import { initialComposer } from "@vimex/composer"
 import { initialInteraction } from "@vimex/interaction"
 import { done, updateWorkspace, type ThreadWorkspace, type WorkbenchEffect, type WorkbenchState, type WorkbenchTransition } from "./workbench-state"
 import { scheduleQueued } from "./submission-scheduler"
+import { sideChatForChild } from "./side-chat"
 export function applyConversationEvent(state: WorkbenchState, event: ConversationEvent): WorkbenchTransition {
   const workspace = state.workspaces[event.threadId]
   if (!workspace) return done(state)
@@ -14,7 +15,8 @@ export function applyConversationEvent(state: WorkbenchState, event: Conversatio
     : event.type === "item.delta" ? event.itemId : undefined
   if (changedItemId) {
     const item = conversation.items[changedItemId]
-    const inherited = item && Object.values(state.sideChats).some(side => side.threadId === event.threadId && side.inheritedTurnIds?.includes(item.turnId))
+    const side = sideChatForChild(state, event.threadId)
+    const inherited = item && side?.inheritedTurnIds?.includes(item.turnId)
     if (item && !inherited && item !== workspace.conversation.items[changedItemId]) transcript = syncTranscriptItem(transcript, item)
   }
   let composer = workspace.composer

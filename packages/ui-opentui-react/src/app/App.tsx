@@ -7,7 +7,7 @@ import { flushSync, useRenderer } from "@opentui/react"
 import { initialComposer, type SubmissionIntent } from "@vimex/composer"
 import { applyComposerVimAction, codeUnitOffsetToGraphemeOffset, commandCompletions, graphemeOffsetToCodeUnitOffset, initialCommandHistory, initialInteraction, recallCommand, recordCommand, resolveComposerKey, type ComposerVimAction, type InteractionState } from "@vimex/interaction"
 import { graphemeCount, initialTranscript, selectedText, type TranscriptRuntimeInput, type TranscriptState, type TranscriptWindow } from "@vimex/transcript"
-import { activeWorkspace, liveActivity } from "@vimex/workbench"
+import { activeWorkspace, liveActivity, sideChatForChild } from "@vimex/workbench"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { Composer } from "../composer/Composer"
 import { SlashCommandDrawer } from "../composer/SlashCommandDrawer"
@@ -68,7 +68,7 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   const composer = workspace?.composer ?? blankComposer
   const interaction = workspace?.interaction ?? blankInteraction
   const parentLink = state.agentRelationships.find(link => link.childId === state.activeThreadId)
-  const inheritedTurnIds = Object.values(state.sideChats).find(side => side.threadId === state.activeThreadId)?.inheritedTurnIds
+  const inheritedTurnIds = sideChatForChild(state, state.activeThreadId)?.inheritedTurnIds
   const parentTitle = parentLink ? state.summaries[parentLink.parentId]?.title || parentLink.parentId : undefined
   const summary = state.activeThreadId ? state.summaries[state.activeThreadId] : undefined
   const runtimeInput = useMemo<TranscriptRuntimeInput | undefined>(() => workspace && state.activeThreadId ? {

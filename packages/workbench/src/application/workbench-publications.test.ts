@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import { itemId, threadId, turnId, type ThreadSummary } from "@vimex/conversation"
 import { transitionWorkbench } from "./reduce-workbench"
+import { sideChatForChild, sideChatForThread } from "./side-chat"
 import { initialWorkbench, type WorkbenchCommand, type WorkbenchState } from "./workbench-state"
 import { captureWorkbenchLayout, captureWorkbenchPresentation, captureWorkbenchPublicationContext, threadForPresentation, workbenchLayoutChanged, workbenchPresentationChanged, type WorkbenchPublicationContext } from "./workbench-publications"
 
@@ -115,4 +116,46 @@ test("an unrelated retained side-chat mutation leaves active publications stable
   expect(workbenchLayoutChanged(before, after)).toBe(false)
   expect(workbenchPresentationChanged(before, after, "main")).toBe(false)
   expect(workbenchPresentationChanged(before, after, "side")).toBe(false)
+})
+
+test("side associations are indexed once per immutable side-chat record", () => {
+  const base = splitState()
+  let scans = 0
+  const sideChats = new Proxy(base.sideChats, { ownKeys(target) { scans++; return Reflect.ownKeys(target) } })
+  const state = { ...base, sideChats }
+  expect(sideChatForThread(state, parent)).toBe(base.sideChats[parent])
+  expect(sideChatForThread(state, side)).toBe(base.sideChats[parent])
+  expect(sideChatForChild(state, side)).toBe(base.sideChats[parent])
+  expect(scans).toBe(1)
+  const replacement = { ...state, sideChats: { ...base.sideChats, [parent]: { ...base.sideChats[parent]!, visible: false } } }
+  expect(sideChatForThread(replacement, side)).toBe(replacement.sideChats[parent])
+  expect(sideChatForThread(replacement, side)).not.toBe(base.sideChats[parent])
+})
+
+test("child-role indexing survives a thread that also owns a side chat", () => {
+  const nested = threadId("nested")
+  const child = threadId("child")
+  const state = { ...initialWorkbench(), sideChats: {
+    [child]: { parentId: child, threadId: nested, visible: true, maximized: false },
+    [parent]: { parentId: parent, threadId: child, visible: true, maximized: false },
+  } }
+  expect(sideChatForThread(state, child)).toBe(state.sideChats[child])
+  expect(sideChatForChild(state, child)).toBe(state.sideChats[parent])
+})
+
+test("an outer child-association change invalidates a pane even when the child owns another side chat", () => {
+  const child = threadId("child"), nested = threadId("nested")
+  let before = run(initialWorkbench(), { type: "thread.open", summary: summary(parent) })
+  before = run(before, { type: "thread.open", summary: summary(child) })
+  before = run(before, { type: "thread.open", summary: summary(nested) })
+  before = run(before, { type: "thread.switch", threadId: child })
+  before = { ...before, sideChats: {
+    [child]: { parentId: child, threadId: nested, visible: true, maximized: false },
+    [parent]: { parentId: parent, threadId: child, visible: true, maximized: false, inheritedTurnIds: [turnId("old")] },
+  } }
+  const after = { ...before, sideChats: { ...before.sideChats, [parent]: {
+    ...before.sideChats[parent]!, inheritedTurnIds: [turnId("new")],
+  } } }
+  expect(threadForPresentation(before, "main")).toBe(child)
+  expect(workbenchPresentationChanged(before, after, "main")).toBe(true)
 })

@@ -220,6 +220,34 @@ test("one cadence publishes interleaved item deltas as one canonical settlement"
   await h.controller.close()
 })
 
+test("scheduled ingress yields to transcript navigation between bounded batches", async () => {
+  const manual = manualIngressScheduler()
+  const h = harness({ conversationIngressScheduler: manual.scheduler })
+  await h.controller.initialize("/tmp")
+  const turn = turnId("bounded-backlog")
+  const ids = Array.from({ length: 70 }, (_, index) => itemId(`bounded-${index}`))
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
+  for (const id of ids) h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: {
+    id, turnId: turn, kind: "assistant", markdown: "", status: "running",
+  } } })
+  for (const id of ids) h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: id, delta: id } })
+  expect(manual.tasks).toHaveLength(1)
+
+  manual.runNext()
+  expect(h.controller.getSnapshot().workspaces[a]?.conversation.items[ids[63]!]).toMatchObject({ markdown: ids[63] })
+  expect(h.controller.getSnapshot().workspaces[a]?.conversation.items[ids[64]!]).toMatchObject({ markdown: "" })
+  expect(manual.tasks).toHaveLength(1)
+
+  h.controller.transcript({ type: "cursor.move", target: { itemId: ids[0]!, graphemeOffset: 0 }, preferredScreenRow: 2, extend: false })
+  expect(h.controller.getSnapshot().workspaces[a]?.transcript.cursor?.itemId).toBe(ids[0])
+  const viewport = h.controller.getSnapshot().workspaces[a]?.transcript.viewport
+  manual.runNext()
+  expect(h.controller.getSnapshot().workspaces[a]?.conversation.items[ids[69]!]).toMatchObject({ markdown: ids[69] })
+  expect(h.controller.getSnapshot().workspaces[a]?.transcript.cursor?.itemId).toBe(ids[0])
+  expect(h.controller.getSnapshot().workspaces[a]?.transcript.viewport).toEqual(viewport)
+  await h.controller.close()
+})
+
 test("controller-owned transcript runtime freezes detached content and follows latest once", async () => {
   const h = harness()
   await h.controller.initialize("/tmp")
