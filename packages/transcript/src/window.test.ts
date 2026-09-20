@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { createConversation, itemId, reduceConversation, threadId, turnId, type ConversationEvent } from "@vimex/conversation"
-import { initialTranscript } from "./domain/transcript-document"
+import { initialTranscript, setTranscriptFoldValue } from "./domain/transcript-document"
 import { syncTranscriptItem } from "./application/project-conversation"
 import { blockGraphemeRange, blockKey, buildTranscriptBlocks, passThroughWindow, pointIsMaterialized, type TranscriptItemBlock } from "./window"
 
@@ -185,4 +185,75 @@ test("extensible item block identities and source spans address sub-block materi
   expect(pointIsMaterialized([prefix], { itemId: firstItem, graphemeOffset: 1 })).toBe(false)
   expect(pointIsMaterialized([prefix, suffix], { itemId: firstItem, graphemeOffset: 1 })).toBe(true)
   expect(pointIsMaterialized([prefix], { itemId: firstItem, graphemeOffset: 2 })).toBe(false)
+})
+
+test("completed command output becomes stable contiguous production sub-blocks with exact root fallbacks", () => {
+  const thread = threadId("command-fragments"), turn = turnId("command-fragments-turn"), id = itemId("large-command")
+  const detail = Array.from({ length: 240 }, (_, index) => `${String(index).padStart(4, "0")}: ${"literal output ".repeat(6)}`).join("\n")
+  const item = { id, turnId: turn, kind: "command" as const, title: "Large command", executionCommand: "bun test",
+    detail, status: "complete" as const }
+  const events: ConversationEvent[] = [
+    { type: "turn.started", threadId: thread, turnId: turn },
+    { type: "item.started", threadId: thread, item },
+    { type: "turn.completed", threadId: thread, turnId: turn, outcome: "complete", durationMs: 1 },
+  ]
+  const conversation = events.reduce(reduceConversation, createConversation(thread))
+  const transcript = syncTranscriptItem(initialTranscript(), conversation.items[id]!)
+  const blocks = buildTranscriptBlocks({ conversation, transcript })
+  const itemBlocks = blocks.filter((block): block is TranscriptItemBlock => "projection" in block)
+  const rebuilt = buildTranscriptBlocks({ conversation, transcript })
+    .filter((block): block is TranscriptItemBlock => "projection" in block)
+
+  expect(itemBlocks.length).toBeGreaterThan(1)
+  expect(rebuilt.every((block, index) => block === itemBlocks[index])).toBe(true)
+  expect(new Set(itemBlocks.map(blockKey)).size).toBe(itemBlocks.length)
+  expect(itemBlocks[0]?.key.blockId).toBe("command:header")
+  expect(itemBlocks[0]?.sourceSpan.from).toBe(0)
+  expect(itemBlocks.at(-1)?.sourceSpan.to).toBe(transcript.projectionById[id]!.source.length)
+  expect(itemBlocks.every((block, index) => index === 0 || itemBlocks[index - 1]!.sourceSpan.to === block.sourceSpan.from)).toBe(true)
+  expect(itemBlocks.every(block => block.sourceSpan.to - block.sourceSpan.from <= 4_096)).toBe(true)
+  expect(itemBlocks.every(block => block.item === itemBlocks[0]!.item && block.projection === transcript.projectionById[id])).toBe(true)
+  expect(itemBlocks.map(block => block.followedByActivity)).toEqual(itemBlocks.map((_, index) => index === itemBlocks.length - 1))
+  expect(itemBlocks.map(block => {
+    if (block.renderItem.kind !== "command") throw new Error("Expected command render payload")
+    return [block.renderItem.title, block.renderItem.executionCommand, block.renderItem.detail].filter(Boolean).join("\n")
+  })).toEqual(itemBlocks.map(block => block.projection.source.slice(block.sourceSpan.from, block.sourceSpan.to)))
+
+  for (let offset = 0; offset <= itemBlocks[0]!.projection.sourceSpans.length; offset++) {
+    expect(itemBlocks.filter(block => pointIsMaterialized([block], { itemId: id, graphemeOffset: offset }))).toHaveLength(1)
+  }
+
+  const folded = { ...transcript, folded: setTranscriptFoldValue(transcript.folded, id, true) }
+  expect(buildTranscriptBlocks({ conversation, transcript: folded }).filter(block => "projection" in block).map(blockKey))
+    .toEqual([`item:${id}:root`])
+
+  const runningConversation = [events[0]!, { type: "item.started", threadId: thread,
+    item: { ...item, status: "running" as const } } satisfies ConversationEvent]
+    .reduce(reduceConversation, createConversation(thread))
+  const runningTranscript = syncTranscriptItem(initialTranscript(), runningConversation.items[id]!)
+  expect(buildTranscriptBlocks({ conversation: runningConversation, transcript: runningTranscript }).map(blockKey))
+    .toEqual([`item:${id}:root`])
+
+  const longLineItem = { ...item, id: itemId("unbreakable-command"), detail: "x".repeat(8_192) }
+  const longLineConversation = [events[0]!, { type: "item.started", threadId: thread, item: longLineItem } satisfies ConversationEvent]
+    .reduce(reduceConversation, createConversation(thread))
+  const longLineTranscript = syncTranscriptItem(initialTranscript(), longLineConversation.items[longLineItem.id]!)
+  expect(buildTranscriptBlocks({ conversation: longLineConversation, transcript: longLineTranscript }).map(blockKey))
+    .toEqual([`item:${longLineItem.id}:root`])
+
+  const crlfItem = { ...item, id: itemId("crlf-command"), detail: `${"line\r\n".repeat(1_000)}` }
+  const crlfConversation = [events[0]!, { type: "item.started", threadId: thread, item: crlfItem } satisfies ConversationEvent]
+    .reduce(reduceConversation, createConversation(thread))
+  const crlfTranscript = syncTranscriptItem(initialTranscript(), crlfConversation.items[crlfItem.id]!)
+  expect(buildTranscriptBlocks({ conversation: crlfConversation, transcript: crlfTranscript }).map(blockKey))
+    .toEqual([`item:${crlfItem.id}:root`])
+
+  const blankBoundaryItem = { ...item, id: itemId("blank-boundary-command"), title: "t".repeat(4_094),
+    executionCommand: undefined, detail: `\n${"visible output\n".repeat(400)}` }
+  const blankBoundaryConversation = [events[0]!, {
+    type: "item.started", threadId: thread, item: blankBoundaryItem,
+  } satisfies ConversationEvent].reduce(reduceConversation, createConversation(thread))
+  const blankBoundaryTranscript = syncTranscriptItem(initialTranscript(), blankBoundaryConversation.items[blankBoundaryItem.id]!)
+  expect(buildTranscriptBlocks({ conversation: blankBoundaryConversation, transcript: blankBoundaryTranscript }).map(blockKey))
+    .toEqual([`item:${blankBoundaryItem.id}:root`])
 })

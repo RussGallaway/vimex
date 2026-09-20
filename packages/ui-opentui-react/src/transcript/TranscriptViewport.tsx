@@ -1,7 +1,7 @@
 import { LinearScrollAccel, type ScrollBoxRenderable, type SyntaxStyle } from "@opentui/core"
 import type { ConversationItem } from "@vimex/conversation"
 import type { InteractionState } from "@vimex/interaction"
-import type { TranscriptState, TranscriptWindow } from "@vimex/transcript"
+import type { TranscriptItemBlock, TranscriptState, TranscriptWindow } from "@vimex/transcript"
 import { memo, useMemo, type RefObject } from "react"
 import { selectedRangeForItem } from "./layout"
 import { emberTide } from "../theme"
@@ -66,7 +66,7 @@ export const TranscriptViewport = memo(function TranscriptViewport(props: Transc
         const folded = Boolean(props.state.folded[block.key.itemId])
         const current = cursorId === block.key.itemId && props.surface === "transcript"
         const selected = Boolean(selectedRangeForItem(props.state, block.key.itemId))
-        return <TranscriptRow key={`item:${block.key.itemId}:${block.key.blockId}`} renderableId={transcriptBlockRenderableId(block)} item={block.renderItem} folded={folded} current={current} selected={selected} followedByActivity={block.followedByActivity} syntax={props.syntax} />
+        return <TranscriptRow key={`item:${block.key.itemId}:${block.key.blockId}`} renderableId={transcriptBlockRenderableId(block)} block={block} folded={folded} current={current} selected={selected} syntax={props.syntax} />
       })}
       <box id="transcript-bottom-spacer" visible={props.window.bottomSpacerRows > 0} height={Math.max(1, props.window.bottomSpacerRows)} flexShrink={0} />
     </scrollbox>
@@ -76,20 +76,22 @@ export const TranscriptViewport = memo(function TranscriptViewport(props: Transc
 // Stable historical rows skip Markdown reconciliation during typing and scrolling.
 const TranscriptRow = memo(function TranscriptRow(props: {
   renderableId: string
-  item: ConversationItem
+  block: TranscriptItemBlock
   folded: boolean
   current: boolean
   selected: boolean
-  followedByActivity: boolean
   syntax: SyntaxStyle
 }) {
+  const item = props.block.renderItem as ConversationItem
+  const continues = Boolean(props.block.fragment && props.block.fragment.index < props.block.fragment.count - 1)
   return (
     <box id={props.renderableId} flexShrink={0}>
       <box flexShrink={0} border={["left"]} borderColor={props.selected ? emberTide.amber : props.current ? emberTide.blueBright : emberTide.borderMuted}
-        paddingLeft={2} paddingRight={props.item.kind === "user" ? 2 : 0} paddingY={props.item.kind === "user" ? 1 : 0} backgroundColor={props.item.kind === "user" ? emberTide.backgroundPanel : emberTide.background}>
-        <TranscriptNode item={props.item} folded={props.folded} syntax={props.syntax} />
+        paddingLeft={2} paddingRight={item.kind === "user" ? 2 : 0} paddingY={item.kind === "user" ? 1 : 0} backgroundColor={item.kind === "user" ? emberTide.backgroundPanel : emberTide.background}>
+        <TranscriptNode item={item} folded={props.folded} syntax={props.syntax}
+          blockId={props.block.key.blockId} fragment={props.block.fragment} />
       </box>
-      {props.followedByActivity ? null : <box height={1} flexShrink={0} />}
+      {continues || props.block.followedByActivity ? null : <box height={1} flexShrink={0} />}
     </box>
   )
 })

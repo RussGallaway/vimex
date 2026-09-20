@@ -4,7 +4,7 @@ import { syncTranscriptItem } from "./application/project-conversation"
 import { attachTail } from "./application/transcript-operations"
 import { appendTranscriptOrder, appendTranscriptUnseenItemId, initialTranscript, persistentTranscriptUnseenItemIds, setTranscriptFoldValue, setTranscriptProjection, type TranscriptState } from "./domain/transcript-document"
 import { createTranscriptFrame, TranscriptRuntime, type TranscriptDamage, type TranscriptRuntimeDiagnostics, type TranscriptRuntimeInput } from "./runtime"
-import { blockKey } from "./window"
+import { blockKey, pointIsMaterialized } from "./window"
 import type { BlockGeometry, BlockMeasurementBatch } from "./geometry"
 
 interface Source {
@@ -584,6 +584,182 @@ test("tail completion requires unexcluded follow presentation and exact persiste
   expect(semanticFrame(forgedFrame).blocks)
     .toEqual(semanticFrame(createTranscriptFrame(input(forged, "follow", { kind: "full" }))).blocks)
   expect(forgedDiagnostics.completePlanBuilds - forgedBaseline.completePlanBuilds).toBe(1)
+})
+
+test("folding a completed command fragment plan takes the exact root rebuild fallback", () => {
+  let source = fixture()
+  source = apply(source, { type: "turn.completed", threadId: thread, turnId: turn, outcome: "complete" })
+  const commandTurn = turnId("fragment-command-turn"), commandId = itemId("fragment-command")
+  source = apply(source, { type: "turn.started", threadId: thread, turnId: commandTurn })
+  source = apply(source, { type: "item.started", threadId: thread, item: {
+    id: commandId, turnId: commandTurn, kind: "command", title: "Large command", executionCommand: "bun test",
+    detail: Array.from({ length: 180 }, (_, index) => `${String(index).padStart(4, "0")}: ${"output ".repeat(12)}`).join("\n"),
+    status: "complete",
+  } })
+  source = apply(source, { type: "turn.completed", threadId: thread, turnId: commandTurn, outcome: "complete" })
+  const diagnostics = runtimeDiagnostics()
+  const runtime = new TranscriptRuntime(input(source, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics,
+  })
+  const unfolded = runtime.getSnapshot()
+  const fragments = unfolded.blocks.filter(block => block.key.kind === "item" && block.key.itemId === commandId)
+  expect(fragments.length).toBeGreaterThan(1)
+  expect(unfolded.window.blocks.length).toBeLessThan(unfolded.blocks.length)
+  const baseline = { ...diagnostics }
+
+  const foldedSource = { ...source, transcript: { ...source.transcript,
+    folded: setTranscriptFoldValue(source.transcript.folded, commandId, true) } }
+  const folded = runtime.update({ ...input(foldedSource, "follow"),
+    presentationDamage: { kind: "folds", itemIds: [commandId] } })
+  const foldedReference = createTranscriptFrame(input(foldedSource, "follow", { kind: "full" }))
+  expect(semanticFrame(folded).blocks).toEqual(semanticFrame(foldedReference).blocks)
+  expect(folded.blocks.filter(block => block.key.kind === "item" && block.key.itemId === commandId).map(blockKey))
+    .toEqual([`item:${commandId}:root`])
+  expect(diagnostics.completePlanBuilds - baseline.completePlanBuilds).toBe(1)
+
+  const restored = runtime.update({ ...input(source, "follow"),
+    presentationDamage: { kind: "folds", itemIds: [commandId] } })
+  expect(semanticFrame(restored).blocks).toEqual(semanticFrame(createTranscriptFrame(input(source, "follow", { kind: "full" }))).blocks)
+  const restoredFragments = restored.blocks.filter(block => block.key.kind === "item" && block.key.itemId === commandId)
+  expect(restoredFragments.every((block, index) => block === fragments[index])).toBe(true)
+  expect(diagnostics.completePlanBuilds - baseline.completePlanBuilds).toBe(2)
+})
+
+test("detached fragment fold fallbacks rebuild only the pinned revision and preserve hidden damage", () => {
+  let displayed = fixture()
+  displayed = apply(displayed, { type: "turn.completed", threadId: thread, turnId: turn, outcome: "complete" })
+  const commandTurn = turnId("detached-fragment-turn"), commandId = itemId("detached-fragment-command")
+  displayed = apply(displayed, { type: "turn.started", threadId: thread, turnId: commandTurn })
+  displayed = apply(displayed, { type: "item.started", threadId: thread, item: {
+    id: commandId, turnId: commandTurn, kind: "command", title: "Pinned large command", executionCommand: "bun test",
+    detail: Array.from({ length: 180 }, (_, index) => `${String(index).padStart(4, "0")}: ${"pinned output ".repeat(8)}`).join("\n"),
+    status: "complete",
+  } })
+  displayed = apply(displayed, { type: "turn.completed", threadId: thread, turnId: commandTurn, outcome: "complete" })
+  const diagnostics = runtimeDiagnostics()
+  const runtime = new TranscriptRuntime(input(displayed, "detached"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics,
+  })
+  const initial = runtime.getSnapshot()
+  const initialFragments = initial.blocks.filter(block => block.key.kind === "item" && block.key.itemId === commandId)
+  expect(initialFragments.length).toBeGreaterThan(1)
+
+  const hiddenTurn = turnId("fragment-hidden-turn"), hiddenItem = itemId("fragment-hidden-item")
+  let latest = apply(displayed, { type: "turn.started", threadId: thread, turnId: hiddenTurn })
+  latest = apply(latest, { type: "item.started", threadId: thread, item: {
+    id: hiddenItem, turnId: hiddenTurn, kind: "assistant", markdown: "must remain hidden", status: "complete",
+  } })
+  expect(runtime.update(input(latest, "detached", { kind: "blocks", itemIds: [hiddenItem] }))).toBe(initial)
+
+  const foldedDisplayed = { ...displayed, transcript: { ...displayed.transcript,
+    folded: setTranscriptFoldValue(displayed.transcript.folded, commandId, true) } }
+  const foldedLatest = { ...latest, transcript: { ...latest.transcript,
+    folded: setTranscriptFoldValue(latest.transcript.folded, commandId, true) } }
+  const folded = runtime.update({ ...input(foldedLatest, "detached"),
+    presentationDamage: { kind: "folds", itemIds: [commandId] } })
+  expect(folded.displayedCanonicalRevision).toBe(displayed.revision)
+  expect(folded.blocks.some(block => block.key.kind === "item" && block.key.itemId === hiddenItem)).toBe(false)
+  const foldedReference = new TranscriptRuntime(input(foldedDisplayed, "detached", { kind: "full" }), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 },
+  })
+  expect(semanticFrame(folded)).toEqual(semanticFrame(foldedReference.getSnapshot()))
+  foldedReference.dispose()
+
+  const restored = runtime.update({ ...input(latest, "detached"),
+    presentationDamage: { kind: "folds", itemIds: [commandId] } })
+  expect(restored.displayedCanonicalRevision).toBe(displayed.revision)
+  expect(restored.blocks.some(block => block.key.kind === "item" && block.key.itemId === hiddenItem)).toBe(false)
+  const restoredFragments = restored.blocks.filter(block => block.key.kind === "item" && block.key.itemId === commandId)
+  expect(restoredFragments.every((block, index) => block === initialFragments[index])).toBe(true)
+
+  const snapshotsBeforeAttach = diagnostics.hiddenDamageSnapshots!
+  const attached = runtime.update(input(latest, "follow"))
+  expect(attached.displayedCanonicalRevision).toBe(latest.revision)
+  expect(attached.blocks.some(block => block.key.kind === "item" && block.key.itemId === hiddenItem)).toBe(true)
+  const attachedReference = new TranscriptRuntime(input(latest, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 },
+  })
+  expect(semanticFrame(attached)).toEqual(semanticFrame(attachedReference.getSnapshot()))
+  attachedReference.dispose()
+  expect(diagnostics.hiddenDamageSnapshots! - snapshotsBeforeAttach).toBe(1)
+  runtime.dispose()
+})
+
+test("damage to a known fragmented item takes the exact complete-plan fallback", () => {
+  let source = fixture()
+  source = apply(source, { type: "turn.completed", threadId: thread, turnId: turn, outcome: "complete" })
+  const commandTurn = turnId("fragment-rewrite-turn"), commandId = itemId("fragment-rewrite-command")
+  source = apply(source, { type: "turn.started", threadId: thread, turnId: commandTurn })
+  source = apply(source, { type: "item.started", threadId: thread, item: {
+    id: commandId, turnId: commandTurn, kind: "command", title: "Rewrite command", executionCommand: "bun test",
+    detail: Array.from({ length: 180 }, (_, index) => `${String(index).padStart(4, "0")}: ${"before ".repeat(12)}`).join("\n"),
+    status: "complete",
+  } })
+  const diagnostics = runtimeDiagnostics()
+  const runtime = new TranscriptRuntime(input(source, "follow"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 }, diagnostics,
+  })
+  expect(runtime.getSnapshot().blocks.filter(block => block.key.kind === "item" && block.key.itemId === commandId).length).toBeGreaterThan(1)
+  const prior = source.conversation.items[commandId]!
+  if (prior.kind !== "command") throw new Error("expected command fixture")
+  const rewritten = Object.freeze({ ...prior,
+    detail: Array.from({ length: 180 }, (_, index) => `${String(index).padStart(4, "0")}: ${"after ".repeat(12)}`).join("\n") })
+  const changed: Source = {
+    revision: source.revision + 1,
+    conversation: Object.freeze({ ...source.conversation,
+      items: Object.freeze({ ...source.conversation.items, [commandId]: rewritten }) }),
+    transcript: syncTranscriptItem(source.transcript, rewritten),
+  }
+  const baseline = { ...diagnostics }
+  const frame = runtime.update(input(changed, "follow", { kind: "blocks", itemIds: [commandId] }))
+  const reference = createTranscriptFrame(input(changed, "follow", { kind: "full" }))
+  expect(semanticFrame(frame).blocks).toEqual(semanticFrame(reference).blocks)
+  expect(frame.transcript.projectionById[commandId]?.source).toContain("after after")
+  expect(diagnostics.completePlanBuilds - baseline.completePlanBuilds).toBe(1)
+  runtime.dispose()
+})
+
+test("a consumed reveal cannot replay through a later fragmented fold rebuild", () => {
+  let source = fixture()
+  source = apply(source, { type: "turn.completed", threadId: thread, turnId: turn, outcome: "complete" })
+  for (let index = 0; index < 24; index++) {
+    const historyTurn = turnId(`reveal-history-turn-${index}`), historyItem = itemId(`reveal-history-item-${index}`)
+    source = apply(source, { type: "turn.started", threadId: thread, turnId: historyTurn })
+    source = apply(source, { type: "item.started", threadId: thread, item: {
+      id: historyItem, turnId: historyTurn, kind: "assistant", markdown: `history ${index}`, status: "complete",
+    } })
+  }
+  const commandTurn = turnId("reveal-fragment-turn"), commandId = itemId("reveal-fragment-command")
+  source = apply(source, { type: "turn.started", threadId: thread, turnId: commandTurn })
+  source = apply(source, { type: "item.started", threadId: thread, item: {
+    id: commandId, turnId: commandTurn, kind: "command", title: "Reveal command", executionCommand: "bun test",
+    detail: Array.from({ length: 180 }, (_, index) => `${String(index).padStart(4, "0")}: ${"output ".repeat(12)}`).join("\n"),
+    status: "complete",
+  } })
+  const runtime = new TranscriptRuntime(input(source, "detached"), {
+    windowPolicy: { viewportRows: 2, overscanRows: 2 },
+  })
+  const commandPoint = { itemId: commandId, graphemeOffset: 1 }
+  const revealed = runtime.update({ ...input(source, "detached", { kind: "none" }, commandPoint),
+    presentationDamage: { kind: "view" } })
+  expect(pointIsMaterialized(revealed.window.blocks, commandPoint)).toBe(true)
+
+  const answerPoint = { itemId: answer, graphemeOffset: 0 }
+  const anchoredTranscript = Object.freeze({ ...source.transcript, cursor: answerPoint,
+    viewport: Object.freeze({ kind: "point" as const, point: answerPoint, preferredScreenRow: 0 }) })
+  const anchoredSource = { ...source, transcript: anchoredTranscript }
+  const anchored = runtime.update({ ...input(anchoredSource, "detached"),
+    presentationDamage: { kind: "view" } })
+  expect(pointIsMaterialized(anchored.window.blocks, answerPoint)).toBe(true)
+  expect(pointIsMaterialized(anchored.window.blocks, commandPoint)).toBe(false)
+
+  const foldedSource = { ...anchoredSource, transcript: { ...anchoredTranscript,
+    folded: setTranscriptFoldValue(anchoredTranscript.folded, commandId, true) } }
+  const folded = runtime.update({ ...input(foldedSource, "detached"),
+    presentationDamage: { kind: "folds", itemIds: [commandId] } })
+  expect(pointIsMaterialized(folded.window.blocks, answerPoint)).toBe(true)
+  expect(pointIsMaterialized(folded.window.blocks, commandPoint)).toBe(false)
+  runtime.dispose()
 })
 
 test("one batched tail turn and item admission publishes once; unproven order lineage rebuilds", () => {

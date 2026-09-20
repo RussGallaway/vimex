@@ -3,7 +3,7 @@ import { appendTranscriptOrder, inheritTranscriptTextLengthIndex, inheritTranscr
 import { composeTranscriptGeometry, composeTranscriptWindowGeometry, emptyTranscriptGeometry, freezeBlockGeometry, geometryMatchesBlock, type BlockGeometry, type BlockMeasurementBase, type BlockMeasurementBatch, type LayoutResetReason, type TranscriptGeometry } from "./geometry"
 import { createHeightIndex, type TranscriptHeightIndex } from "./height-index"
 import { inheritTranscriptUrlIndex, inheritTranscriptUrlIndexChanges, primeTranscriptUrlIndex, type TranscriptUrlIndexDiagnostics } from "./application/transcript-url-index"
-import { appendTranscriptBlock, blockKey, buildTranscriptBlocks, buildTranscriptItemBlock, buildTranscriptTurnActivityBlock, passThroughWindow, persistentTranscriptBlockPlan, planTranscriptWindow, pointIsMaterialized, replaceTranscriptBlock, transcriptPointBlockIndex, type TranscriptBlock, type TranscriptBlockPlanDiagnostics, type TranscriptItemBlock, type TranscriptWindow } from "./window"
+import { appendTranscriptBlock, blockKey, buildTranscriptBlocks, buildTranscriptItemBlock, buildTranscriptItemBlocks, buildTranscriptTurnActivityBlock, passThroughWindow, persistentTranscriptBlockPlan, planTranscriptWindow, pointIsMaterialized, replaceTranscriptBlock, transcriptPointBlockIndex, type TranscriptBlock, type TranscriptBlockPlanDiagnostics, type TranscriptItemBlock, type TranscriptWindow } from "./window"
 
 export type TranscriptDamage =
   | Readonly<{ kind: "none" }>
@@ -207,6 +207,9 @@ function sameBlock(left: TranscriptBlock, right: TranscriptBlock): boolean {
     && left.projection === right.projection
     && left.sourceSpan.from === right.sourceSpan.from
     && left.sourceSpan.to === right.sourceSpan.to
+    && left.fragment?.kind === right.fragment?.kind
+    && left.fragment?.index === right.fragment?.index
+    && left.fragment?.count === right.fragment?.count
     && left.followedByActivity === right.followedByActivity
     && shallowRecordEqual(left.item, right.item)
     && shallowRecordEqual(left.renderItem, right.renderItem)
@@ -365,7 +368,8 @@ function frameFor(input: TranscriptRuntimeInput, blocks: readonly TranscriptBloc
 }
 
 function buildFrame(input: TranscriptRuntimeInput, previous: TranscriptFrame | undefined, revision: number, damage: TranscriptDamage, diagnostics?: TranscriptRuntimeDiagnostics, persistentPlan = false): TranscriptFrame {
-  const planned = buildTranscriptBlocks({ conversation: input.conversation, transcript: input.transcript, excludedTurnIds: input.excludedTurnIds })
+  const planned = buildTranscriptBlocks({ conversation: input.conversation, transcript: input.transcript,
+    excludedTurnIds: input.excludedTurnIds, canonicalGeneration: input.canonicalGeneration, threadId: input.threadId })
   const blocks = previous ? reconcileBlocks(previous.blocks, planned) : planned
   return frameFor(input, blocks, input.canonicalRevision, revision, damage, previous?.geometry, diagnostics, persistentPlan)
 }
@@ -491,6 +495,7 @@ export function createTranscriptFrame(input: TranscriptRuntimeInput): Transcript
 export class TranscriptRuntime {
   private frame: TranscriptFrame
   private latestInput: TranscriptRuntimeInput
+  private displayedInput: TranscriptRuntimeInput
   private windowPolicy: TranscriptWindowPolicy | undefined
   private heightIndex: TranscriptHeightIndex | undefined
   private readonly diagnostics: TranscriptRuntimeDiagnostics | undefined
@@ -505,6 +510,7 @@ export class TranscriptRuntime {
 
   constructor(input: TranscriptRuntimeInput, options: TranscriptRuntimeOptions = {}) {
     this.latestInput = input
+    this.displayedInput = input
     this.excludedTurnIds = new Set(input.excludedTurnIds ?? [])
     this.windowPolicy = options.windowPolicy && Object.freeze({ ...options.windowPolicy })
     this.diagnostics = options.diagnostics
@@ -693,6 +699,7 @@ export class TranscriptRuntime {
     let projections = persistentTranscriptProjections(this.frame.transcript.projectionById)
     for (const itemId of itemIds) {
       const position = this.itemBlockIndexes.get(itemId)
+      if (position === -1) return undefined
       const prior = position === undefined || position < 0 ? undefined : blocks[position]
       const next = buildTranscriptItemBlock(input, itemId)
       if (this.diagnostics) this.diagnostics.changedItemBuilds += 1
@@ -885,6 +892,18 @@ export class TranscriptRuntime {
 
   private publishPresentation(input: TranscriptRuntimeInput, damage: TranscriptDamage): TranscriptFrame {
     const raw = this.presentationFrame(input, damage)
+    const presentationInput: TranscriptRuntimeInput = Object.freeze({
+      ...this.displayedInput,
+      mode: input.mode,
+      transcript: raw.transcript,
+      canonicalDamage: noneDamage,
+      presentationDamage: frozenDamage(damage),
+      reveal: input.reveal,
+    })
+    if (damage.kind === "folds" && damage.itemIds.some(itemId => this.itemBlockIndexes.get(itemId) === -1
+      || buildTranscriptItemBlocks(presentationInput, itemId).length > 1)) {
+      return this.rebuild(presentationInput, damage, true, undefined, this.displayedInput, true)
+    }
     const foldsChanged = raw.transcript.folded !== this.frame.transcript.folded
     const targeted = foldsChanged && damage.kind === "folds" ? this.heightIndexForFoldChanges(raw, damage.itemIds) : undefined
     const index = foldsChanged
@@ -899,6 +918,7 @@ export class TranscriptRuntime {
       if (this.windowPolicy) this.diagnostics.windowGeometryBlockVisits += raw.window.blocks.length
     }
     const prepared = geometry === raw.geometry ? raw : Object.freeze({ ...raw, geometry })
+    this.displayedInput = presentationInput
     return this.publish(this.withPlannedWindow(prepared, index, displayedReveal(input, prepared, this.diagnostics)), index)
   }
 
@@ -1005,8 +1025,9 @@ export class TranscriptRuntime {
     reuse = true,
     incrementalItemIds?: readonly ItemId[],
     previousInput: TranscriptRuntimeInput = this.latestInput,
+    preserveHiddenDamage = false,
   ): TranscriptFrame {
-    this.hiddenDamage.reset()
+    if (!preserveHiddenDamage) this.hiddenDamage.reset()
     const structuralCandidate = Boolean(incrementalItemIds
       && (incrementalItemIds.length === 0
         || incrementalItemIds.some(itemId => !this.itemBlockIndexes.has(itemId))
@@ -1033,6 +1054,7 @@ export class TranscriptRuntime {
       const appendedItemId = (incremental as { readonly appendedItemId?: ItemId }).appendedItemId
       if (appendedItemId) this.itemBlockIndexes.set(appendedItemId, next.blocks.length - 1)
     }
+    this.displayedInput = Object.freeze({ ...input, transcript: next.transcript })
     return this.publish(next, index)
   }
 

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { createConversationReductionDiagnostics, forkBoundary, reduceConversationWithDiagnostics, type ConversationState } from "@vimex/conversation"
-import { appendTranscriptScalingTail, buildTranscriptScalingFixture, buildTranscriptStructuralScalingFixture, transcriptScalingBlockCounts, type TranscriptFixtureSnapshot } from "@vimex/testkit"
+import { appendTranscriptScalingTail, buildOversizedTranscriptFixtures, buildTranscriptScalingFixture, buildTranscriptStructuralScalingFixture, transcriptScalingBlockCounts, type TranscriptFixtureSnapshot } from "@vimex/testkit"
 import { syncTranscriptItem, type TranscriptItemSyncDiagnostics } from "./application/project-conversation"
 import { primeTranscriptUrlIndex } from "./application/transcript-url-index"
 import { findSearchMatches } from "./application/transcript-search"
@@ -9,7 +9,8 @@ import { referenceText, urlCandidates } from "./application/transcript-navigatio
 import { persistentTranscriptUnseenItemIds, setTranscriptFoldValue, transcriptTextLengthRange, type TranscriptState } from "./domain/transcript-document"
 import type { BlockGeometry } from "./geometry"
 import { createTranscriptFrame, TranscriptRuntime, type TranscriptFrame, type TranscriptRuntimeDiagnostics, type TranscriptRuntimeInput } from "./runtime"
-import { blockKey, buildTranscriptBlocks, passThroughWindow, pointIsMaterialized } from "./window"
+import { blockKey, buildTranscriptBlocks, passThroughWindow, pointIsMaterialized, transcriptPointBlockIndex } from "./window"
+import { createHeightIndex } from "./height-index"
 
 function runtimeInput(
   fixture: Readonly<{ threadId: TranscriptRuntimeInput["threadId"] }>,
@@ -454,6 +455,98 @@ test("tail turn completion and activity admission stay logarithmic with bounded 
     expect(runtimeCounters.urlIndexUpdates - runtimeBaseline.urlIndexUpdates).toBe(0)
     expect(runtimeCounters.windowGeometryBlockVisits - runtimeBaseline.windowGeometryBlockVisits).toBeLessThanOrEqual(48)
     expect(runtimeCounters.blockPlanWindowSliceItems - runtimeBaseline.blockPlanWindowSliceItems).toBeLessThanOrEqual(48)
+    runtime.dispose()
+  }
+}, 30_000)
+
+test("one completed oversized command mounts and reveals bounded production fragments at every exact render-block scale", () => {
+  const oversized = buildOversizedTranscriptFixtures().find(fixture => fixture.shape === "command-output")!
+  const appendOversized = (fixture: ReturnType<typeof buildTranscriptStructuralScalingFixture>) => {
+    const turnConversation = reduceConversationWithDiagnostics(fixture.before.conversation, {
+      type: "turn.started" as const, threadId: fixture.threadId, turnId: oversized.item.turnId,
+    }, createConversationReductionDiagnostics())
+    const itemConversation = reduceConversationWithDiagnostics(turnConversation, {
+      type: "item.started" as const, threadId: fixture.threadId, item: oversized.item,
+    }, createConversationReductionDiagnostics())
+    const completedConversation = reduceConversationWithDiagnostics(itemConversation, {
+      type: "turn.completed" as const, threadId: fixture.threadId, turnId: oversized.item.turnId,
+      outcome: "complete" as const, durationMs: 1,
+    }, createConversationReductionDiagnostics())
+    const transcript = syncTranscriptItem(fixture.before.transcript, oversized.item)
+    return Object.freeze({ fixture, completedConversation, transcript, snapshot: Object.freeze({
+      canonicalRevision: fixture.before.canonicalRevision + 3,
+      conversation: completedConversation,
+      transcript,
+    }) satisfies TranscriptFixtureSnapshot })
+  }
+  const seed = appendOversized(buildTranscriptStructuralScalingFixture(1))
+  const addedBlocks = createTranscriptFrame(runtimeInput(seed.fixture, seed.snapshot, "follow", {
+    canonicalDamage: { kind: "full" },
+  })).blocks.length - 1
+  let expectedFragmentCount: number | undefined
+  let expectedMountedCount: number | undefined
+  for (const blockCount of transcriptScalingBlockCounts) {
+    const { fixture, completedConversation, transcript, snapshot } = appendOversized(
+      buildTranscriptStructuralScalingFixture(blockCount - addedBlocks))
+    const diagnostics = scalingRuntimeDiagnostics()
+    const runtime = new TranscriptRuntime(runtimeInput(fixture, snapshot, "follow", {
+      canonicalDamage: { kind: "full" },
+    }), { windowPolicy: { viewportRows: 24, overscanRows: 24 }, diagnostics })
+    const followed = runtime.getSnapshot()
+    const fragments = followed.blocks.filter(block => block.key.kind === "item" && block.key.itemId === oversized.item.id)
+    expectedFragmentCount ??= fragments.length
+    expectedMountedCount ??= followed.window.blocks.length
+    expect(fragments.length).toBe(expectedFragmentCount)
+    expect(fragments.length).toBeGreaterThan(1)
+    expect(fragments.every(block => "projection" in block
+      && block.sourceSpan.to - block.sourceSpan.from <= 4_096)).toBe(true)
+    expect(followed.blocks).toHaveLength(blockCount)
+    expect(followed.window.blocks.length).toBe(expectedMountedCount)
+    expect(followed.window.blocks.length).toBeLessThanOrEqual(48)
+    const reference = createTranscriptFrame(runtimeInput(fixture, snapshot, "follow", {
+      canonicalDamage: { kind: "full" },
+    }))
+    expect(followed.blocks.map(blockKey)).toEqual(reference.blocks.map(blockKey))
+    const referenceFragments = reference.blocks.filter(block => block.key.kind === "item" && block.key.itemId === oversized.item.id)
+    expect(referenceFragments.every((block, index) => block === fragments[index])).toBe(true)
+    for (let index = 0; index < fixture.blockCount; index++) {
+      const itemId = fixture.before.transcript.order[index]!
+      const turnId = fixture.before.conversation.turnIds[index]!
+      expect(completedConversation.items[itemId]).toBe(fixture.before.conversation.items[itemId])
+      expect(completedConversation.turns[turnId]).toBe(fixture.before.conversation.turns[turnId])
+      expect(transcript.projectionById[itemId]).toBe(fixture.before.transcript.projectionById[itemId])
+    }
+
+    const projection = transcript.projectionById[oversized.item.id]!
+    const point = Object.freeze({ itemId: oversized.item.id,
+      graphemeOffset: Math.floor(projection.sourceSpans.length / 2) })
+    const heights = createHeightIndex(followed.blocks)!
+    const targetDiagnostics = { targetLookupVisits: 0 }
+    expect(transcriptPointBlockIndex(followed.blocks, heights, point, targetDiagnostics)).toBeDefined()
+    expect(targetDiagnostics.targetLookupVisits).toBeLessThanOrEqual(Math.ceil(Math.log2(fragments.length)) + 3)
+    const detachedTranscript = Object.freeze({ ...transcript, cursor: point,
+      viewport: Object.freeze({ kind: "point" as const, point, preferredScreenRow: 8 }) })
+    const detachedSnapshot = Object.freeze({ ...snapshot, transcript: detachedTranscript })
+    const beforeMove = { ...diagnostics }
+    let publications = 0
+    runtime.subscribe(() => { publications++ })
+    const revealed = runtime.update(runtimeInput(fixture, detachedSnapshot, "detached", {
+      presentationDamage: { kind: "view" },
+      reveal: { id: blockCount, point, reason: "jump" },
+    }))
+    expect(publications).toBe(1)
+    expect(revealed.blocks).toBe(followed.blocks)
+    expect(pointIsMaterialized(revealed.window.blocks, point)).toBe(true)
+    expect(revealed.window.blocks.length).toBeLessThanOrEqual(48)
+    expect(diagnostics.completePlanBuilds - beforeMove.completePlanBuilds).toBe(0)
+    expect(diagnostics.completePlanBlockVisits - beforeMove.completePlanBlockVisits).toBe(0)
+    expect(diagnostics.heightIndexBuilds - beforeMove.heightIndexBuilds).toBe(0)
+    expect(diagnostics.heightIndexBlockVisits - beforeMove.heightIndexBlockVisits).toBe(0)
+    expect(diagnostics.completeGeometryBlockVisits - beforeMove.completeGeometryBlockVisits).toBe(0)
+    expect(diagnostics.orderIndexBuilds - beforeMove.orderIndexBuilds).toBe(0)
+    expect(diagnostics.orderIndexItemVisits - beforeMove.orderIndexItemVisits).toBe(0)
+    expect(diagnostics.windowGeometryBlockVisits - beforeMove.windowGeometryBlockVisits).toBeLessThanOrEqual(96)
+    expect(diagnostics.blockPlanWindowSliceItems - beforeMove.blockPlanWindowSliceItems).toBeLessThanOrEqual(96)
     runtime.dispose()
   }
 }, 30_000)

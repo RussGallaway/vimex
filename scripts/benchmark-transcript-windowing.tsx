@@ -28,24 +28,31 @@ import {
   threadId,
   turnId,
   type ConversationItemRecordDiagnostics,
+  type ItemId,
 } from "@vimex/conversation"
 import {
   blockKey,
+  createHeightIndex,
   createTranscriptFrame,
   moveByUrl,
   moveByUrlReference,
   passThroughWindow,
   pointIsMaterialized,
+  planTranscriptWindow,
   persistentTranscriptUnseenItemIds,
   primeTranscriptUrlIndex,
   setTranscriptFoldValue,
   syncTranscriptItem,
   transcriptOrderIndex,
+  transcriptPointBlockIndex,
   transcriptTextLengthRange,
   TranscriptRuntime,
+  type BlockHeightOverride,
   type TranscriptItemSyncDiagnostics,
   type BlockGeometry,
   type TranscriptFrame,
+  type TranscriptHeightIndex,
+  type TranscriptBlock,
   type TranscriptRuntimeInput,
 } from "@vimex/transcript"
 import { act, createRef, Profiler, useRef, useState, useSyncExternalStore, type RefObject } from "react"
@@ -159,6 +166,28 @@ function timed<T>(operation: () => T): Readonly<{ value: T; milliseconds: number
   return Object.freeze({ value, milliseconds: performance.now() - started })
 }
 
+function benchmarkHash(value: string): string {
+  let hash = 2_166_136_261
+  for (let index = 0; index < value.length; index++) hash = Math.imul(hash ^ value.charCodeAt(index), 16_777_619)
+  return (hash >>> 0).toString(16).padStart(8, "0")
+}
+
+function observingHeightIndex(index: TranscriptHeightIndex, counters: { nodeVisits: number; nodesCopied: number }): TranscriptHeightIndex {
+  return Object.freeze({
+    blockCount: index.blockCount,
+    totalRows: index.totalRows,
+    prefixRows: (blockIndex: number, explicit?: typeof counters) => index.prefixRows(blockIndex, explicit ?? counters),
+    blockAtRow: (row: number, explicit?: typeof counters) => index.blockAtRow(row, explicit ?? counters),
+    rowRange: (from: number, to: number, explicit?: typeof counters) => index.rowRange(from, to, explicit ?? counters),
+    blockIndex: (key: string) => index.blockIndex(key),
+    itemBlockIndexes: (id: ItemId) => index.itemBlockIndexes(id),
+    replaceHeight: (override: BlockHeightOverride, explicit?: typeof counters) => index.replaceHeight(override, explicit ?? counters),
+    replaceBlock: (blocks: readonly TranscriptBlock[], previous: TranscriptBlock, next: TranscriptBlock, rows: number,
+      explicit?: typeof counters) => index.replaceBlock(blocks, previous, next, rows, explicit ?? counters),
+    supports: (blocks: readonly TranscriptBlock[]) => index.supports(blocks),
+  })
+}
+
 function createRuntimeDiagnostics() {
   return {
     completePlanBuilds: 0, completePlanBlockVisits: 0,
@@ -201,6 +230,168 @@ function createTranscriptItemSyncDiagnostics(): TranscriptItemSyncDiagnostics {
     unseenItemMembershipChecks: 0, unseenItemMembershipNodeVisits: 0,
     unseenItemAppends: 0, unseenItemAppendNodeVisits: 0,
     unseenItemIndexUpdateNodeVisits: 0, unseenItemIndexUpdateNodesCopied: 0,
+  }
+}
+
+const oversizedCommandFixture = buildOversizedTranscriptFixtures().find(fixture => fixture.shape === "command-output")!
+const oversizedCommandContentHash = benchmarkHash(oversizedCommandFixture.source)
+let oversizedCommandFragmentCount: number | undefined
+let oversizedCommandFollowMountedCount: number | undefined
+let oversizedCommandDetachedMountedCount: number | undefined
+
+function oversizedCommandSnapshot(fixture: ReturnType<typeof buildTranscriptStructuralScalingFixture>): TranscriptFixtureSnapshot {
+  const turnConversation = reduceConversationWithDiagnostics(fixture.before.conversation, {
+    type: "turn.started", threadId: fixture.threadId, turnId: oversizedCommandFixture.item.turnId,
+  }, createConversationReductionDiagnostics())
+  const itemConversation = reduceConversationWithDiagnostics(turnConversation, {
+    type: "item.started", threadId: fixture.threadId, item: oversizedCommandFixture.item,
+  }, createConversationReductionDiagnostics())
+  const completedConversation = reduceConversationWithDiagnostics(itemConversation, {
+    type: "turn.completed", threadId: fixture.threadId, turnId: oversizedCommandFixture.item.turnId,
+    outcome: "complete", durationMs: 1,
+  }, createConversationReductionDiagnostics())
+  const transcript = syncTranscriptItem(fixture.before.transcript, oversizedCommandFixture.item)
+  return Object.freeze({
+    canonicalRevision: fixture.before.canonicalRevision + 3,
+    conversation: completedConversation,
+    transcript,
+  })
+}
+
+const oversizedCommandAddedBlockCount = (() => {
+  const fixture = buildTranscriptStructuralScalingFixture(1)
+  const snapshot = oversizedCommandSnapshot(fixture)
+  return createTranscriptFrame(runtimeInput(fixture, snapshot, "follow", {
+    canonicalDamage: { kind: "full" },
+  })).blocks.length - fixture.blockCount
+})()
+
+function oversizedCommandProductionBaseline(targetBlockCount: number): void {
+  const fixture = buildTranscriptStructuralScalingFixture(targetBlockCount - oversizedCommandAddedBlockCount)
+  const snapshot = oversizedCommandSnapshot(fixture)
+  const transcript = snapshot.transcript
+  const runtimeDiagnostics = createRuntimeDiagnostics()
+  forceGc()
+  const constructed = timed(() => new TranscriptRuntime(runtimeInput(fixture, snapshot, "follow", {
+    canonicalDamage: { kind: "full" },
+  }), { windowPolicy: { viewportRows: 24, overscanRows: 24 }, diagnostics: runtimeDiagnostics }))
+  const runtime = constructed.value
+  try {
+    const followed = runtime.getSnapshot()
+    const fragments = followed.blocks.filter(block => block.key.kind === "item"
+      && block.key.itemId === oversizedCommandFixture.item.id)
+    oversizedCommandFragmentCount ??= fragments.length
+    oversizedCommandFollowMountedCount ??= followed.window.blocks.length
+    assert.equal(fragments.length, oversizedCommandFragmentCount)
+    assert(fragments.length > 1)
+    assert(fragments.every(block => "projection" in block && block.sourceSpan.to - block.sourceSpan.from <= 4_096))
+    assert.equal(followed.window.blocks.length, oversizedCommandFollowMountedCount)
+    assert(followed.window.blocks.length <= 48)
+    assert.equal(followed.blocks.length, targetBlockCount)
+    const reference = createTranscriptFrame(runtimeInput(fixture, snapshot, "follow", {
+      canonicalDamage: { kind: "full" },
+    }))
+    const referenceFragments = reference.blocks.filter(block => block.key.kind === "item"
+      && block.key.itemId === oversizedCommandFixture.item.id)
+    assert(referenceFragments.every((block, index) => block === fragments[index]))
+
+    const projection = transcript.projectionById[oversizedCommandFixture.item.id]!
+    const point = Object.freeze({ itemId: oversizedCommandFixture.item.id,
+      graphemeOffset: Math.floor(projection.sourceSpans.length / 2) })
+    const heightIndex = createHeightIndex(followed.blocks)
+    assert(heightIndex)
+    const heightWork = { nodeVisits: 0, nodesCopied: 0 }
+    const observedHeights = observingHeightIndex(heightIndex, heightWork)
+    const targetWork = { targetLookupVisits: 0 }
+    const directPlan = planTranscriptWindow({
+      blocks: followed.blocks,
+      heights: observedHeights,
+      viewportRows: 24,
+      overscanRows: 24,
+      attachment: { kind: "point", point, preferredScreenRow: 8 },
+      diagnostics: targetWork,
+    })
+    const targetVisitBound = Math.ceil(Math.log2(fragments.length)) + 3
+    const heightVisitBound = 12 * (Math.ceil(Math.log2(targetBlockCount)) + 1)
+    assert(targetWork.targetLookupVisits <= targetVisitBound)
+    assert(heightWork.nodeVisits <= heightVisitBound)
+    assert(pointIsMaterialized(directPlan.blocks, point))
+    assert(directPlan.blocks.length <= 48)
+    const detachedTranscript = Object.freeze({ ...transcript, cursor: point,
+      viewport: Object.freeze({ kind: "point" as const, point, preferredScreenRow: 8 }) })
+    const detachedSnapshot: TranscriptFixtureSnapshot = Object.freeze({ ...snapshot, transcript: detachedTranscript })
+    const beforeMove = { ...runtimeDiagnostics }
+    let publications = 0
+    const unsubscribe = runtime.subscribe(() => { publications++ })
+    const revealed = timed(() => runtime.update(runtimeInput(fixture, detachedSnapshot, "detached", {
+      presentationDamage: { kind: "view" },
+      reveal: { id: targetBlockCount, point, reason: "jump" },
+    })))
+    unsubscribe()
+    const moved = revealed.value
+    oversizedCommandDetachedMountedCount ??= moved.window.blocks.length
+    assert.equal(moved.blocks, followed.blocks)
+    assert.equal(moved.window.blocks.length, oversizedCommandDetachedMountedCount)
+    assert(moved.window.blocks.length <= 48)
+    assert(pointIsMaterialized(moved.window.blocks, point))
+    assert.equal(publications, 1)
+    const delta = Object.fromEntries(Object.entries(runtimeDiagnostics)
+      .map(([name, value]) => [name, value - beforeMove[name as keyof typeof beforeMove]])) as typeof runtimeDiagnostics
+    assert.equal(delta.completePlanBuilds, 0)
+    assert.equal(delta.completePlanBlockVisits, 0)
+    assert.equal(delta.heightIndexBuilds, 0)
+    assert.equal(delta.heightIndexBlockVisits, 0)
+    assert.equal(delta.completeGeometryBlockVisits, 0)
+    assert.equal(delta.orderIndexBuilds, 0)
+    assert.equal(delta.orderIndexItemVisits, 0)
+    assert(delta.windowGeometryBlockVisits <= 96)
+    assert(delta.blockPlanWindowSliceItems <= 96)
+
+    printResult({
+      fixtureVersion: fixture.fixtureVersion,
+      scenario: "oversized-command-production-fragments",
+      materialization: "windowed-production",
+      boundary: "runtime-plan-and-window",
+      blockCount: targetBlockCount,
+      historyBlockCount: fixture.blockCount,
+      viewport: { width: primaryViewport.width, height: 24 },
+      mode: "follow-to-detached-reveal",
+      fixture: { contentShape: oversizedCommandFixture.shape, contentHash: oversizedCommandContentHash,
+        fragmentPlanHash: benchmarkHash(fragments.map(block => `${blockKey(block)}:${"projection" in block ? `${block.sourceSpan.from}-${block.sourceSpan.to}` : ""}`).join("\n")),
+        chars: oversizedCommandFixture.source.length,
+        deterministicFixtureSegments: oversizedCommandFixture.segments.length, setupExcludedFromRevealTiming: true },
+      operationCounts: {
+        producedFragments: fragments.length,
+        retainedFragmentIdentities: referenceFragments.filter((block, index) => block === fragments[index]).length,
+        maxFragmentSourceUnits: Math.max(...fragments.map(block => "projection" in block ? block.sourceSpan.to - block.sourceSpan.from : 0)),
+        completePlanBlocks: followed.blocks.length,
+        followMountedBlocks: followed.window.blocks.length,
+        detachedMountedBlocks: moved.window.blocks.length,
+        publications,
+        revealCompletePlanBuilds: delta.completePlanBuilds,
+        revealCompletePlanBlockVisits: delta.completePlanBlockVisits,
+        revealHeightIndexBuilds: delta.heightIndexBuilds,
+        revealCompleteGeometryBlockVisits: delta.completeGeometryBlockVisits,
+        revealWindowGeometryBlockVisits: delta.windowGeometryBlockVisits,
+        revealWindowSliceItems: delta.blockPlanWindowSliceItems,
+        targetLookupVisits: targetWork.targetLookupVisits,
+        targetLookupVisitBound: targetVisitBound,
+        plannerHeightNodeVisits: heightWork.nodeVisits,
+        plannerHeightVisitBound: heightVisitBound,
+        revealOrderIndexBuilds: delta.orderIndexBuilds,
+        revealOrderIndexItemVisits: delta.orderIndexItemVisits,
+        coldCompletePlanBuilds: runtimeDiagnostics.completePlanBuilds,
+        coldCompletePlanBlockVisits: runtimeDiagnostics.completePlanBlockVisits,
+        coldHeightIndexBuilds: runtimeDiagnostics.heightIndexBuilds,
+        coldHeightIndexBlockVisits: runtimeDiagnostics.heightIndexBlockVisits,
+        targetMaterialized: pointIsMaterialized(moved.window.blocks, point),
+      },
+      timingsMs: { coldRuntimePlan: Number(constructed.milliseconds.toFixed(6)),
+        detachedMiddleReveal: Number(revealed.milliseconds.toFixed(6)) },
+      samples: { warmup: 0, measured: 1 },
+    })
+  } finally {
+    runtime.dispose()
   }
 }
 
@@ -1928,7 +2119,7 @@ async function detachedStatusNativePublicationBaseline(
         canonicalDamage: { kind: "blocks", itemIds: [fixture.nextItemId] },
       })
       assert.equal(result, pinned)
-      await setup.flush(); await setup.renderOnce()
+      await setup.flush()
     })
     const firstSettlementMs = performance.now() - firstStarted
     const firstCommits = commits.length
@@ -2308,6 +2499,226 @@ async function nativeStructuralAdmissionBaseline(
   }
 }
 
+const oversizedNativeFollowRoots = new Map<string, number>()
+const oversizedNativeDetachedRoots = new Map<string, number>()
+const oversizedNativeFollowMeasurements = new Map<string, number>()
+const oversizedNativeDetachedMeasurements = new Map<string, number>()
+
+async function oversizedCommandNativeBaseline(
+  targetBlockCount: number,
+  viewport: Readonly<{ width: number; height: number }>,
+): Promise<void> {
+  const fixture = buildTranscriptStructuralScalingFixture(targetBlockCount - oversizedCommandAddedBlockCount)
+  const snapshot = oversizedCommandSnapshot(fixture)
+  const transcript = snapshot.transcript
+  forceGc()
+  const runtime = new TranscriptRuntime(runtimeInput(fixture, snapshot, "follow", {
+    canonicalDamage: { kind: "full" },
+  }), { windowPolicy: { viewportRows: viewport.height, overscanRows: viewport.height } })
+  const commits: number[] = []
+  const scrollRef = createRef<ScrollBoxRenderable | null>()
+  const syntax = createEmberTideSyntax()
+  const setup = await testRender(<RuntimeNativeMountProbe runtime={runtime} commits={commits}
+    scrollRef={scrollRef} syntax={syntax} />, viewport)
+  try {
+    for (let frameIndex = 0; frameIndex < 4; frameIndex++) {
+      await act(async () => { await setup.flush(); await setup.renderOnce(); await Bun.sleep(2) })
+    }
+    const scroll = scrollRef.current
+    assert(scroll, "oversized command viewport did not mount its scrollbox")
+    const followFrame = runtime.getSnapshot()
+    assert.equal(followFrame.blocks.length, targetBlockCount)
+    const rootsBefore = mountedBlockRoots(scroll)
+    assertMountedRoots(followFrame, rootsBefore)
+    const viewportKey = `${viewport.width}x${viewport.height}`
+    const followDiagnostics = createDiagnostics()
+    let followMeasurementPublications = 0
+    const stopFollowMeasurement = runtime.subscribe(() => { followMeasurementPublications++ })
+    let followMeasured!: ReturnType<typeof timed<ReturnType<typeof measureRenderedTranscript>>>
+    await act(async () => {
+      followMeasured = timed(() => measureRenderedTranscript(setup.renderer, scroll, {
+        frame: followFrame, runtime, styleRevision, diagnostics: followDiagnostics,
+      }))
+      await setup.flush()
+    })
+    stopFollowMeasurement()
+    assert.equal(followMeasured.value, undefined)
+    assert.equal(followDiagnostics.attemptedMeasurements, rootsBefore.size)
+    assert.equal(followDiagnostics.trackedMountedRoots, rootsBefore.size)
+    assert.equal(followMeasurementPublications, 1)
+    const followAckDiagnostics = createDiagnostics()
+    let followAckPublications = 0
+    const stopFollowAck = runtime.subscribe(() => { followAckPublications++ })
+    let followAcknowledged!: ReturnType<typeof timed<ReturnType<typeof measureRenderedTranscript>>>
+    await act(async () => {
+      followAcknowledged = timed(() => measureRenderedTranscript(setup.renderer, scroll, {
+        frame: runtime.getSnapshot(), runtime, styleRevision, diagnostics: followAckDiagnostics,
+      }))
+      assert(followAcknowledged.value, "oversized command follow geometry did not settle")
+      await setup.flush(); await setup.renderOnce()
+    })
+    stopFollowAck()
+    assert.equal(followAckDiagnostics.changedMeasurements, 0)
+    assert.equal(followAckDiagnostics.pendingAfter, 0)
+    assert.equal(followAckPublications, 0)
+    const settledFollowFrame = runtime.getSnapshot()
+    const settledFollowRoots = mountedBlockRoots(scroll)
+    assertMountedRoots(settledFollowFrame, settledFollowRoots)
+    assertBoundedNativeShape(settledFollowFrame.window.blocks.length, mountedTreeCounts(scroll))
+    assert(settledFollowRoots.size <= viewport.height * 2)
+    oversizedNativeFollowRoots.set(viewportKey,
+      oversizedNativeFollowRoots.get(viewportKey) ?? settledFollowRoots.size)
+    assert.equal(settledFollowRoots.size, oversizedNativeFollowRoots.get(viewportKey))
+    const followMeasurementAttempts = followDiagnostics.attemptedMeasurements + followAckDiagnostics.attemptedMeasurements
+    oversizedNativeFollowMeasurements.set(viewportKey,
+      oversizedNativeFollowMeasurements.get(viewportKey) ?? followMeasurementAttempts)
+    assert.equal(followMeasurementAttempts, oversizedNativeFollowMeasurements.get(viewportKey))
+
+    const projection = transcript.projectionById[oversizedCommandFixture.item.id]!
+    const point = Object.freeze({ itemId: oversizedCommandFixture.item.id,
+      graphemeOffset: Math.floor(projection.sourceSpans.length / 2) })
+    const detachedTranscript = Object.freeze({ ...transcript, cursor: point,
+      viewport: Object.freeze({ kind: "point" as const, point, preferredScreenRow: 8 }) })
+    const detachedSnapshot: TranscriptFixtureSnapshot = Object.freeze({ ...snapshot, transcript: detachedTranscript })
+    commits.length = 0
+    let revealPublications = 0
+    const stopReveal = runtime.subscribe(() => { revealPublications++ })
+    const completeSettlementStarted = performance.now()
+    const revealStarted = performance.now()
+    await act(async () => {
+      runtime.update(runtimeInput(fixture, detachedSnapshot, "detached", {
+        presentationDamage: { kind: "view" },
+        reveal: { id: targetBlockCount, point, reason: "jump" },
+      }))
+      await setup.flush(); await setup.renderOnce()
+    })
+    const revealSettlementMs = performance.now() - revealStarted
+    stopReveal()
+    const detachedFrame = runtime.getSnapshot()
+    const rootsAfterReveal = mountedBlockRoots(scroll)
+    assertMountedRoots(detachedFrame, rootsAfterReveal)
+    assert(pointIsMaterialized(detachedFrame.window.blocks, point))
+    assert.equal(revealPublications, 1)
+    assert.equal(commits.length, 1)
+    const revealReactCommits = commits.length
+
+    const detachedDiagnostics = createDiagnostics()
+    let detachedMeasurementPublications = 0
+    const stopDetachedMeasurement = runtime.subscribe(() => { detachedMeasurementPublications++ })
+    let detachedMeasured!: ReturnType<typeof timed<ReturnType<typeof measureRenderedTranscript>>>
+    await act(async () => {
+      detachedMeasured = timed(() => measureRenderedTranscript(setup.renderer, scroll, {
+        frame: detachedFrame, runtime, styleRevision, diagnostics: detachedDiagnostics,
+      }))
+      await setup.flush()
+    })
+    stopDetachedMeasurement()
+    assert(detachedDiagnostics.attemptedMeasurements <= rootsAfterReveal.size)
+    assert(detachedDiagnostics.trackedMountedRoots <= rootsAfterReveal.size)
+    assert(detachedMeasurementPublications <= 1)
+    const detachedAckPasses: RenderedLayoutDiagnostics[] = []
+    let detachedAckPublications = 0, detachedAckMilliseconds = 0
+    let detachedAcknowledged: ReturnType<typeof measureRenderedTranscript>
+    for (let pass = 0; pass < 4; pass++) {
+      const passDiagnostics = createDiagnostics()
+      let passPublications = 0
+      const stopDetachedAck = runtime.subscribe(() => { passPublications++ })
+      let measured!: ReturnType<typeof timed<ReturnType<typeof measureRenderedTranscript>>>
+      await act(async () => {
+        measured = timed(() => measureRenderedTranscript(setup.renderer, scroll, {
+          frame: runtime.getSnapshot(), runtime, styleRevision, diagnostics: passDiagnostics,
+        }))
+        await setup.flush(); await setup.renderOnce()
+      })
+      stopDetachedAck()
+      detachedAckPasses.push(passDiagnostics)
+      detachedAckPublications += passPublications
+      detachedAckMilliseconds += measured.milliseconds
+      detachedAcknowledged = measured.value
+      if (detachedAcknowledged && passDiagnostics.changedMeasurements === 0 && passDiagnostics.pendingAfter === 0) break
+    }
+    const finalDetachedAck = detachedAckPasses.at(-1)!
+    assert(detachedAcknowledged, "oversized command detached geometry did not settle")
+    assert.equal(finalDetachedAck.changedMeasurements, 0)
+    assert.equal(finalDetachedAck.pendingAfter, 0)
+    const settledDetachedFrame = runtime.getSnapshot()
+    const settledDetachedRoots = mountedBlockRoots(scroll)
+    assertMountedRoots(settledDetachedFrame, settledDetachedRoots)
+    assert(pointIsMaterialized(settledDetachedFrame.window.blocks, point))
+    assertBoundedNativeShape(settledDetachedFrame.window.blocks.length, mountedTreeCounts(scroll))
+    assert(settledDetachedRoots.size <= viewport.height * 2)
+    oversizedNativeDetachedRoots.set(viewportKey,
+      oversizedNativeDetachedRoots.get(viewportKey) ?? settledDetachedRoots.size)
+    assert.equal(settledDetachedRoots.size, oversizedNativeDetachedRoots.get(viewportKey))
+    const detachedAckAttemptedMeasurements = detachedAckPasses.reduce((sum, pass) => sum + pass.attemptedMeasurements, 0)
+    const detachedAckChangedMeasurements = detachedAckPasses.reduce((sum, pass) => sum + pass.changedMeasurements, 0)
+    const detachedAckCandidateBlocks = detachedAckPasses.reduce((sum, pass) => sum + pass.candidateBlocks, 0)
+    const detachedMeasurementAttempts = detachedDiagnostics.attemptedMeasurements + detachedAckAttemptedMeasurements
+    oversizedNativeDetachedMeasurements.set(viewportKey,
+      oversizedNativeDetachedMeasurements.get(viewportKey) ?? detachedMeasurementAttempts)
+    assert.equal(detachedMeasurementAttempts, oversizedNativeDetachedMeasurements.get(viewportKey))
+    const completeRevealMeasurementSettlementMs = performance.now() - completeSettlementStarted
+    const measurementSettlementReactCommits = commits.length - revealReactCommits
+    assert.equal(measurementSettlementReactCommits,
+      detachedMeasurementPublications + detachedAckPublications)
+
+    printResult({
+      fixtureVersion: fixture.fixtureVersion,
+      scenario: "oversized-command-native-fragments",
+      materialization: "windowed-production",
+      boundary: "runtime-react-native-root-and-measurement",
+      blockCount: targetBlockCount,
+      historyBlockCount: fixture.blockCount,
+      viewport,
+      mode: "follow-to-detached-reveal",
+      fixture: { contentShape: oversizedCommandFixture.shape, contentHash: oversizedCommandContentHash,
+        chars: oversizedCommandFixture.source.length,
+        deterministicFixtureSegments: oversizedCommandFixture.segments.length, setupExcludedFromTiming: true },
+      operationCounts: {
+        followMountedBlocks: settledFollowRoots.size,
+        followCandidateBlocks: followDiagnostics.candidateBlocks,
+        followAttemptedMeasurements: followDiagnostics.attemptedMeasurements,
+        followChangedMeasurements: followDiagnostics.changedMeasurements,
+        followTrackedMountedRoots: followDiagnostics.trackedMountedRoots,
+        followAckCandidateBlocks: followAckDiagnostics.candidateBlocks,
+        followAckAttemptedMeasurements: followAckDiagnostics.attemptedMeasurements,
+        followAckChangedMeasurements: followAckDiagnostics.changedMeasurements,
+        followFinalPendingMeasurements: followAckDiagnostics.pendingAfter,
+        followMeasurementPublications,
+        followAckPublications,
+        detachedMountedBlocks: settledDetachedRoots.size,
+        detachedCandidateBlocks: detachedDiagnostics.candidateBlocks,
+        detachedAttemptedMeasurements: detachedDiagnostics.attemptedMeasurements,
+        detachedChangedMeasurements: detachedDiagnostics.changedMeasurements,
+        detachedTrackedMountedRoots: detachedDiagnostics.trackedMountedRoots,
+        detachedAcknowledgementPasses: detachedAckPasses.length,
+        detachedAckCandidateBlocks,
+        detachedAckAttemptedMeasurements,
+        detachedAckChangedMeasurements,
+        detachedFinalPendingMeasurements: finalDetachedAck.pendingAfter,
+        detachedMeasurementPublications,
+        detachedAckPublications,
+        revealPublications,
+        revealReactCommits,
+        measurementSettlementReactCommits,
+        totalReactCommits: commits.length,
+        targetMaterialized: pointIsMaterialized(settledDetachedFrame.window.blocks, point),
+      },
+      timingsMs: { followMeasurementPublication: Number(followMeasured.milliseconds.toFixed(6)),
+        followMeasurementAcknowledgement: Number(followAcknowledged.milliseconds.toFixed(6)),
+        revealRuntimeReactNativeSettlement: Number(revealSettlementMs.toFixed(6)),
+        detachedMeasurementPublication: Number(detachedMeasured.milliseconds.toFixed(6)),
+        detachedMeasurementAcknowledgement: Number(detachedAckMilliseconds.toFixed(6)),
+        completeRevealMeasurementSettlement: Number(completeRevealMeasurementSettlementMs.toFixed(6)) },
+      samples: { warmup: 0, measured: 1 },
+    })
+  } finally {
+    runtime.dispose()
+    syntax.destroy()
+    await act(async () => setup.renderer.destroy())
+  }
+}
+
 async function nativeMountBaseline(fixture: ReturnType<typeof buildTranscriptScalingFixture>, viewport: Readonly<{ width: number; height: number }>): Promise<void> {
   forceGc()
   const runtime = new TranscriptRuntime(runtimeInput(fixture, fixture.before, "follow", { canonicalDamage: { kind: "full" } }), {
@@ -2666,6 +3077,7 @@ for (const blockCount of requestedSizes) {
   structuralTailAdmissionBaseline(structuralFixture)
   tailTurnCompletionBaseline(structuralFixture)
   detachedUnseenAccumulationBaseline(structuralFixture)
+  oversizedCommandProductionBaseline(blockCount)
   sideInheritedMembershipBaseline(blockCount)
   runtimeBaseline(fixture)
   boundedFollowRuntimeBaseline(fixture)
@@ -2679,6 +3091,7 @@ for (const blockCount of requestedSizes) {
     for (const viewport of requestedNativeViewports) {
       await nativeStructuralAdmissionBaseline(structuralFixture, viewport)
       await detachedStatusNativePublicationBaseline(structuralFixture, viewport)
+      await oversizedCommandNativeBaseline(blockCount, viewport)
       await nativeMountBaseline(fixture, viewport)
     }
   }

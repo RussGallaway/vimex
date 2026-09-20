@@ -1,4 +1,4 @@
-import { effectiveItemStatus, type ConversationItem, type ConversationState, type ItemId, type ItemStatus, type Turn, type TurnId } from "@vimex/conversation"
+import { effectiveItemStatus, type ConversationItem, type ConversationState, type ItemId, type ItemStatus, type ThreadId, type Turn, type TurnId } from "@vimex/conversation"
 import type { LogicalPoint, SourceSpan, TextProjection, TranscriptState } from "./domain/transcript-document"
 import type { TranscriptHeightIndex } from "./height-index"
 
@@ -14,6 +14,12 @@ export type Immutable<T> = T extends string | number | boolean | bigint | symbol
 export type TranscriptBlockItem = Immutable<ConversationItem>
 export type TranscriptBlockProjection = Immutable<TextProjection>
 
+export interface TranscriptItemFragment {
+  readonly kind: "command-header" | "command-output"
+  readonly index: number
+  readonly count: number
+}
+
 export interface TranscriptItemBlock {
   readonly key: Readonly<{ kind: "item"; itemId: ItemId; blockId: string }>
   readonly turnId: TurnId
@@ -26,6 +32,8 @@ export interface TranscriptItemBlock {
   readonly sourceSpan: Readonly<SourceSpan>
   readonly contentRevision: number
   readonly estimatedRows: number
+  /** Disposable render-fragment role; semantic positions never contain it. */
+  readonly fragment?: TranscriptItemFragment
   /** Complete-plan adjacency; native height must not depend on a window boundary. */
   readonly followedByActivity: boolean
 }
@@ -317,6 +325,9 @@ export interface BuildTranscriptBlocksInput {
   readonly conversation: ConversationState
   readonly transcript: TranscriptState
   readonly excludedTurnIds?: readonly TurnId[] | ReadonlySet<TurnId>
+  /** Presentation lineage; cached render-block identity never crosses a reset. */
+  readonly canonicalGeneration?: number
+  readonly threadId?: ThreadId
 }
 
 /** Terminal turn metadata is presentation decoration, not transcript content. */
@@ -342,7 +353,10 @@ function immutableClone<T>(value: T): Immutable<T> {
 
 const itemSnapshots = new WeakMap<ConversationItem, Map<ItemStatus, TranscriptBlockItem>>()
 const itemRevisions = new WeakMap<ConversationItem, Map<string, WeakMap<TextProjection, number>>>()
+const itemBlockPlans = new WeakMap<ConversationItem, WeakMap<TextProjection, Map<string, readonly TranscriptItemBlock[]>>>()
 let nextItemRevision = 1
+
+const commandFragmentSourceLimit = 4_096
 
 function snapshotItem(conversation: ConversationState, item: ConversationItem): TranscriptBlockItem {
   const status = effectiveItemStatus(conversation, item)
@@ -401,7 +415,7 @@ export function buildTranscriptTurnActivityBlock(turn: Turn): TranscriptTurnActi
   })
 }
 
-function buildItemBlock(
+function rootItemBlock(
   input: Pick<BuildTranscriptBlocksInput, "conversation" | "transcript">,
   itemId: ItemId,
   followedByActivity: boolean,
@@ -425,14 +439,115 @@ function buildItemBlock(
   })
 }
 
-/** Builds the Stage 2 root block for one known semantic item. */
-export function buildTranscriptItemBlock(input: Pick<BuildTranscriptBlocksInput, "conversation" | "transcript">, itemId: ItemId): TranscriptItemBlock | undefined {
-  const item = input.conversation.items[itemId]
-  const turn = item && input.conversation.turns[item.turnId]
+function commandDetailChunks(detail: string, firstLimit: number): readonly Readonly<{ from: number; to: number }>[] | undefined {
+  if (!detail || detail.includes("\r") || firstLimit <= 0) return undefined
+  const lines: { from: number; to: number }[] = []
+  let from = 0
+  while (from < detail.length) {
+    const newline = detail.indexOf("\n", from)
+    const to = newline < 0 ? detail.length : newline + 1
+    if (to - from > commandFragmentSourceLimit) return undefined
+    lines.push({ from, to })
+    from = to
+  }
+  if (!lines.length) return undefined
+
+  const chunks: { from: number; to: number }[] = []
+  let chunkFrom = 0, chunkTo = 0, limit = firstLimit
+  for (const line of lines) {
+    if (chunkTo > chunkFrom && line.to - chunkFrom > limit) {
+      chunks.push(Object.freeze({ from: chunkFrom, to: chunkTo }))
+      chunkFrom = line.from
+      limit = commandFragmentSourceLimit
+    }
+    if (line.to - chunkFrom > limit) return undefined
+    chunkTo = line.to
+  }
+  chunks.push(Object.freeze({ from: chunkFrom, to: chunkTo }))
+  return chunks.length > 1 ? Object.freeze(chunks) : undefined
+}
+
+function commandItemBlocks(
+  input: Pick<BuildTranscriptBlocksInput, "conversation" | "transcript">,
+  itemId: ItemId,
+  followedByActivity: boolean,
+): readonly TranscriptItemBlock[] | undefined {
+  const sourceItem = input.conversation.items[itemId]
+  const projection = input.transcript.projectionById[itemId]
+  if (!sourceItem || sourceItem.kind !== "command" || !projection
+    || input.transcript.folded[itemId] || effectiveItemStatus(input.conversation, sourceItem) === "running"
+    || projection.plain !== projection.source || projection.source.includes("\r")) return undefined
+  const source = [sourceItem.title, sourceItem.executionCommand, sourceItem.detail].filter(Boolean).join("\n")
+  if (source !== projection.source || sourceItem.detail.length <= commandFragmentSourceLimit) return undefined
+  const detailFrom = source.length - sourceItem.detail.length
+  const chunks = commandDetailChunks(sourceItem.detail, commandFragmentSourceLimit - detailFrom)
+  if (!chunks) return undefined
+  if (chunks.some((chunk, index) => index < chunks.length - 1
+    && sourceItem.detail.slice(chunk.from, chunk.to - 1).length === 0)) return undefined
+
+  const status = effectiveItemStatus(input.conversation, sourceItem)
+  const item = snapshotItem(input.conversation, sourceItem)
+  if (item.kind !== "command") return undefined
+  const revision = itemContentRevision(sourceItem, status, projection, followedByActivity)
+  const count = chunks.length
+  const blocks = chunks.map((chunk, index): TranscriptItemBlock => {
+    const first = index === 0, last = index === count - 1
+    const detail = sourceItem.detail.slice(chunk.from, chunk.to)
+    const renderItem: TranscriptBlockItem = Object.freeze(first
+      ? { ...item, detail }
+      : { ...item, title: "", executionCommand: undefined, detail }) as TranscriptBlockItem
+    const from = first ? 0 : detailFrom + chunk.from
+    const to = detailFrom + chunk.to
+    return Object.freeze({
+      key: Object.freeze({ kind: "item" as const, itemId,
+        blockId: first ? "command:header" : `command:output:${chunk.from}` }),
+      turnId: sourceItem.turnId,
+      item,
+      renderItem,
+      projection,
+      sourceSpan: Object.freeze({ from, to }),
+      contentRevision: revision,
+      estimatedRows: Math.max(1, detail.split("\n").length + (first ? 4 : 0)),
+      fragment: Object.freeze({ kind: first ? "command-header" as const : "command-output" as const, index, count }),
+      followedByActivity: last && followedByActivity,
+    })
+  })
+  if (blocks[0]?.sourceSpan.from !== 0 || blocks.at(-1)?.sourceSpan.to !== projection.source.length
+    || blocks.some((block, index) => index > 0 && blocks[index - 1]!.sourceSpan.to !== block.sourceSpan.from)) return undefined
+  return Object.freeze(blocks)
+}
+
+/** Builds the complete render plan for one semantic item, with an exact root fallback. */
+export function buildTranscriptItemBlocks(
+  input: Pick<BuildTranscriptBlocksInput, "conversation" | "transcript" | "canonicalGeneration" | "threadId">,
+  itemId: ItemId,
+): readonly TranscriptItemBlock[] {
+  const sourceItem = input.conversation.items[itemId]
+  const projection = input.transcript.projectionById[itemId]
+  if (!sourceItem || !projection) return Object.freeze([])
+  const turn = input.conversation.turns[sourceItem.turnId]
   const lastSemanticItemId = turn?.itemIds.findLast(candidate => Boolean(
     input.conversation.items[candidate] && input.transcript.projectionById[candidate],
   ))
-  return buildItemBlock(input, itemId, Boolean(turn && lastSemanticItemId === itemId && hasTurnActivity(turn)))
+  const followedByActivity = Boolean(turn && lastSemanticItemId === itemId && hasTurnActivity(turn))
+  const cacheKey = `${input.threadId ?? ""}:${input.canonicalGeneration ?? 0}:${effectiveItemStatus(input.conversation, sourceItem)}:${input.transcript.folded[itemId] ? 1 : 0}:${followedByActivity ? 1 : 0}`
+  let byProjection = itemBlockPlans.get(sourceItem)
+  if (!byProjection) { byProjection = new WeakMap(); itemBlockPlans.set(sourceItem, byProjection) }
+  let byPresentation = byProjection.get(projection)
+  if (!byPresentation) { byPresentation = new Map(); byProjection.set(projection, byPresentation) }
+  const cached = byPresentation.get(cacheKey)
+  if (cached) return cached
+  const fragmented = commandItemBlocks(input, itemId, followedByActivity)
+  const root = fragmented ? undefined : rootItemBlock(input, itemId, followedByActivity)
+  const blocks = fragmented ?? Object.freeze(root ? [root] : [])
+  byPresentation.set(cacheKey, blocks)
+  return blocks
+}
+
+/** Builds the Stage 2 root block for one known semantic item. */
+export function buildTranscriptItemBlock(input: Pick<BuildTranscriptBlocksInput, "conversation" | "transcript" | "canonicalGeneration" | "threadId">, itemId: ItemId): TranscriptItemBlock | undefined {
+  const blocks = buildTranscriptItemBlocks(input, itemId)
+  return blocks.length === 1 ? blocks[0] : undefined
 }
 
 /**
@@ -452,15 +567,10 @@ export function buildTranscriptBlocks(input: BuildTranscriptBlocksInput): readon
     if (excluded.has(turnId)) continue
     const turn = conversation.turns[turnId]
     if (!turn) continue
-    const followedItemId = hasTurnActivity(turn)
-      ? turn.itemIds.findLast(itemId => semanticItems.has(itemId)
-        && Boolean(conversation.items[itemId] && transcript.projectionById[itemId]))
-      : undefined
-
     for (const itemId of turn.itemIds) {
       if (!semanticItems.has(itemId)) continue
-      const block = buildItemBlock(input, itemId, itemId === followedItemId)
-      if (block) blocks.push(block)
+      const itemBlocks = buildTranscriptItemBlocks(input, itemId)
+      if (itemBlocks.length) blocks.push(...itemBlocks)
     }
 
     const activity = buildTranscriptTurnActivityBlock(turn)
