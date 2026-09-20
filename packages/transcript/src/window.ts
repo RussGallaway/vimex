@@ -1,6 +1,7 @@
 import { effectiveItemStatus, type ConversationItem, type ConversationState, type ItemId, type ItemStatus, type ThreadId, type Turn, type TurnId } from "@vimex/conversation"
 import type { LogicalPoint, SourceSpan, TextProjection, TranscriptState } from "./domain/transcript-document"
 import type { TranscriptHeightIndex } from "./height-index"
+import { projectMarkdown } from "./domain/markdown-source-map"
 
 /** Published render plans never expose mutable canonical objects. */
 export type Immutable<T> = T extends string | number | boolean | bigint | symbol | null | undefined
@@ -15,7 +16,7 @@ export type TranscriptBlockItem = Immutable<ConversationItem>
 export type TranscriptBlockProjection = Immutable<TextProjection>
 
 export interface TranscriptItemFragment {
-  readonly kind: "command-header" | "command-output"
+  readonly kind: "command-header" | "command-output" | "markdown" | "edit-header" | "edit-file"
   readonly index: number
   readonly count: number
 }
@@ -357,6 +358,9 @@ const itemBlockPlans = new WeakMap<ConversationItem, WeakMap<TextProjection, Map
 let nextItemRevision = 1
 
 const commandFragmentSourceLimit = 4_096
+const markdownFragmentSourceLimit = 4_096
+const markdownFragmentUnitLimit = 12
+const editFragmentFileLimit = 1
 
 function snapshotItem(conversation: ConversationState, item: ConversationItem): TranscriptBlockItem {
   const status = effectiveItemStatus(conversation, item)
@@ -517,6 +521,171 @@ function commandItemBlocks(
   return Object.freeze(blocks)
 }
 
+function markdownAtoms(source: string): readonly Readonly<SourceSpan>[] | undefined {
+  if (source.includes("\r") || source.includes("\n\n\n") || /\n[ \t]+\n/u.test(source)) return undefined
+  const fenced: SourceSpan[] = []
+  let fence: { marker: "`" | "~"; width: number; from: number } | undefined
+  for (let lineFrom = 0; lineFrom <= source.length;) {
+    const newline = source.indexOf("\n", lineFrom)
+    const lineTo = newline < 0 ? source.length : newline
+    const newlineTo = newline < 0 ? source.length : newline + 1
+    const line = source.slice(lineFrom, lineTo)
+    if (fence) {
+      const close = /^( {0,3})(`{3,}|~{3,})[ \t]*$/u.exec(line)
+      if (close?.[2]?.[0] === fence.marker && close[2].length >= fence.width) {
+        fenced.push(Object.freeze({ from: fence.from, to: newlineTo }))
+        fence = undefined
+      }
+    } else {
+      const open = /^( {0,3})(`{3,}|~{3,})(.*)$/u.exec(line)
+      if (open?.[2] && !(open[2][0] === "`" && open[3]?.includes("`"))) {
+        fence = { marker: open[2][0] as "`" | "~", width: open[2].length, from: lineFrom }
+      } else if (/^(?: {4}|\t| {0,3}(?:>|(?:[-+*]|\d+[.)])\s|\[[^\]]+\]:|<(?:!--|\/?[A-Za-z])))/u.test(line)) {
+        return undefined
+      }
+    }
+    if (newline < 0) break
+    lineFrom = newlineTo
+  }
+  if (fence) return undefined
+
+  const cuts: number[] = []
+  for (const match of source.matchAll(/\n\n/gu)) {
+    if (!fenced.some(span => match.index >= span.from && match.index + 2 <= span.to)) cuts.push(match.index + 2)
+  }
+  if (!cuts.length) return undefined
+  const atoms: SourceSpan[] = []
+  let from = 0
+  for (const to of cuts) {
+    if (to <= from) return undefined
+    atoms.push(Object.freeze({ from, to }))
+    from = to
+  }
+  if (from < source.length) atoms.push(Object.freeze({ from, to: source.length }))
+  return atoms.length > 1 ? Object.freeze(atoms) : undefined
+}
+
+function markdownChunks(source: string): readonly Readonly<SourceSpan>[] | undefined {
+  const atoms = markdownAtoms(source)
+  if (!atoms) return undefined
+  const chunks: SourceSpan[] = []
+  let from = atoms[0]!.from, to = from, units = 0
+  for (const atom of atoms) {
+    if (atom.to - atom.from > markdownFragmentSourceLimit) return undefined
+    if (to > from && (atom.to - from > markdownFragmentSourceLimit || units >= markdownFragmentUnitLimit)) {
+      chunks.push(Object.freeze({ from, to }))
+      from = atom.from
+      units = 0
+    }
+    to = atom.to
+    units++
+  }
+  chunks.push(Object.freeze({ from, to }))
+  return chunks.length > 1 ? Object.freeze(chunks) : undefined
+}
+
+function markdownChunksCompose(projection: TextProjection, chunks: readonly Readonly<SourceSpan>[]): boolean {
+  let plain = "", graphemeOffset = 0
+  const spans: SourceSpan[] = []
+  const links: TextProjection["links"][number][] = []
+  const regions: NonNullable<TextProjection["sourceRegions"]>[number][] = []
+  for (const chunk of chunks) {
+    const local = projectMarkdown(projection.source.slice(chunk.from, chunk.to))
+    plain += local.plain
+    spans.push(...local.sourceSpans.map(span => ({ from: span.from + chunk.from, to: span.to + chunk.from })))
+    links.push(...local.links.map(link => ({ ...link, from: link.from + graphemeOffset, to: link.to + graphemeOffset })))
+    regions.push(...(local.sourceRegions ?? []).map(region => ({ ...region,
+      from: region.from + graphemeOffset, to: region.to + graphemeOffset,
+      sourceFrom: region.sourceFrom + chunk.from, sourceTo: region.sourceTo + chunk.from })))
+    graphemeOffset += local.sourceSpans.length
+  }
+  const expectedRegions = projection.sourceRegions ?? []
+  return plain === projection.plain
+    && spans.length === projection.sourceSpans.length
+    && spans.every((span, index) => span.from === projection.sourceSpans[index]?.from && span.to === projection.sourceSpans[index]?.to)
+    && links.length === projection.links.length
+    && links.every((link, index) => link.from === projection.links[index]?.from
+      && link.to === projection.links[index]?.to && link.url === projection.links[index]?.url)
+    && regions.length === expectedRegions.length
+    && regions.every((region, index) => region.from === expectedRegions[index]?.from && region.to === expectedRegions[index]?.to
+      && region.sourceFrom === expectedRegions[index]?.sourceFrom && region.sourceTo === expectedRegions[index]?.sourceTo)
+}
+
+function markdownItemBlocks(
+  input: Pick<BuildTranscriptBlocksInput, "conversation" | "transcript">,
+  itemId: ItemId,
+  followedByActivity: boolean,
+): readonly TranscriptItemBlock[] | undefined {
+  const sourceItem = input.conversation.items[itemId]
+  const projection = input.transcript.projectionById[itemId]
+  if (!sourceItem || (sourceItem.kind !== "assistant" && sourceItem.kind !== "user") || !projection
+    || input.transcript.folded[itemId] || effectiveItemStatus(input.conversation, sourceItem) === "running"
+    || projection.source !== sourceItem.markdown || projection.source.length <= markdownFragmentSourceLimit) return undefined
+  const chunks = markdownChunks(projection.source)
+  if (!chunks || !markdownChunksCompose(projection, chunks)) return undefined
+  const status = effectiveItemStatus(input.conversation, sourceItem)
+  const item = snapshotItem(input.conversation, sourceItem)
+  if (item.kind !== "assistant" && item.kind !== "user") return undefined
+  const revision = itemContentRevision(sourceItem, status, projection, followedByActivity)
+  const count = chunks.length
+  return Object.freeze(chunks.map((chunk, index): TranscriptItemBlock => Object.freeze({
+    key: Object.freeze({ kind: "item" as const, itemId, blockId: `markdown:${chunk.from}` }),
+    turnId: sourceItem.turnId,
+    item,
+    renderItem: Object.freeze({ ...item, markdown: projection.source.slice(chunk.from, chunk.to) }),
+    projection,
+    sourceSpan: chunk,
+    contentRevision: revision,
+    estimatedRows: Math.max(1, projection.source.slice(chunk.from, chunk.to).split("\n").length + (index > 0 ? 1 : 0)),
+    fragment: Object.freeze({ kind: "markdown" as const, index, count }),
+    followedByActivity: index === count - 1 && followedByActivity,
+  })))
+}
+
+function editItemBlocks(
+  input: Pick<BuildTranscriptBlocksInput, "conversation" | "transcript">,
+  itemId: ItemId,
+  followedByActivity: boolean,
+): readonly TranscriptItemBlock[] | undefined {
+  const sourceItem = input.conversation.items[itemId]
+  const projection = input.transcript.projectionById[itemId]
+  if (!sourceItem || sourceItem.kind !== "edit" || !projection || input.transcript.folded[itemId]
+    || effectiveItemStatus(input.conversation, sourceItem) === "running" || sourceItem.patch.includes("\r")
+    || projection.plain !== sourceItem.patch || projection.source !== sourceItem.patch
+    || !sourceItem.changes || sourceItem.changes.length < 2
+    || sourceItem.changes.some(change => !change.patch)
+    || sourceItem.changes.map(change => change.patch).join("\n") !== sourceItem.patch) return undefined
+  const status = effectiveItemStatus(input.conversation, sourceItem)
+  const item = snapshotItem(input.conversation, sourceItem)
+  if (item.kind !== "edit" || !item.changes) return undefined
+  const revision = itemContentRevision(sourceItem, status, projection, followedByActivity)
+  const groups = Array.from({ length: Math.ceil(item.changes.length / editFragmentFileLimit) }, (_, index) =>
+    Object.freeze(item.changes!.slice(index * editFragmentFileLimit, (index + 1) * editFragmentFileLimit)))
+  const count = groups.length
+  let from = 0
+  return Object.freeze(groups.map((changes, index): TranscriptItemBlock => {
+    const contentLength = changes.reduce((length, change, localIndex) => length + change.patch.length
+      + (localIndex < changes.length - 1 ? 1 : 0), 0)
+    const to = from + contentLength + (index < count - 1 ? 1 : 0)
+    const span = Object.freeze({ from, to })
+    const block = Object.freeze({
+      key: Object.freeze({ kind: "item" as const, itemId,
+        blockId: index === 0 ? "edit:header" : `edit:file:${from}` }),
+      turnId: sourceItem.turnId,
+      item,
+      renderItem: Object.freeze({ ...item, patch: projection.source.slice(from, to), changes }),
+      projection,
+      sourceSpan: span,
+      contentRevision: revision,
+      estimatedRows: Math.max(1, changes.reduce((rows, change) => rows + change.patch.split("\n").length + 1, index === 0 ? 3 : 1)),
+      fragment: Object.freeze({ kind: index === 0 ? "edit-header" as const : "edit-file" as const, index, count }),
+      followedByActivity: index === count - 1 && followedByActivity,
+    })
+    from = to
+    return block
+  }))
+}
+
 /** Builds the complete render plan for one semantic item, with an exact root fallback. */
 export function buildTranscriptItemBlocks(
   input: Pick<BuildTranscriptBlocksInput, "conversation" | "transcript" | "canonicalGeneration" | "threadId">,
@@ -538,6 +707,8 @@ export function buildTranscriptItemBlocks(
   const cached = byPresentation.get(cacheKey)
   if (cached) return cached
   const fragmented = commandItemBlocks(input, itemId, followedByActivity)
+    ?? markdownItemBlocks(input, itemId, followedByActivity)
+    ?? editItemBlocks(input, itemId, followedByActivity)
   const root = fragmented ? undefined : rootItemBlock(input, itemId, followedByActivity)
   const blocks = fragmented ?? Object.freeze(root ? [root] : [])
   byPresentation.set(cacheKey, blocks)

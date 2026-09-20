@@ -551,6 +551,86 @@ test("one completed oversized command mounts and reveals bounded production frag
   }
 }, 30_000)
 
+test("oversized completed Markdown and split diffs stay bounded at every historical render-block scale", () => {
+  for (const oversized of buildOversizedTranscriptFixtures().filter(fixture => fixture.shape !== "command-output")) {
+    const appendOversized = (fixture: ReturnType<typeof buildTranscriptStructuralScalingFixture>) => {
+      const turnConversation = reduceConversationWithDiagnostics(fixture.before.conversation, {
+        type: "turn.started" as const, threadId: fixture.threadId, turnId: oversized.item.turnId,
+      }, createConversationReductionDiagnostics())
+      const itemConversation = reduceConversationWithDiagnostics(turnConversation, {
+        type: "item.started" as const, threadId: fixture.threadId, item: oversized.item,
+      }, createConversationReductionDiagnostics())
+      const completedConversation = reduceConversationWithDiagnostics(itemConversation, {
+        type: "turn.completed" as const, threadId: fixture.threadId, turnId: oversized.item.turnId,
+        outcome: "complete" as const, durationMs: 1,
+      }, createConversationReductionDiagnostics())
+      const transcript = syncTranscriptItem(fixture.before.transcript, oversized.item)
+      return Object.freeze({ fixture, snapshot: Object.freeze({
+        canonicalRevision: fixture.before.canonicalRevision + 3,
+        conversation: completedConversation,
+        transcript,
+      }) satisfies TranscriptFixtureSnapshot })
+    }
+    const seed = appendOversized(buildTranscriptStructuralScalingFixture(1))
+    const addedBlocks = createTranscriptFrame(runtimeInput(seed.fixture, seed.snapshot, "follow", {
+      canonicalDamage: { kind: "full" },
+    })).blocks.length - 1
+    expect(addedBlocks).toBeLessThan(200)
+    let expectedFragmentCount: number | undefined
+    let expectedFollowMounted: number | undefined
+    let expectedDetachedMounted: number | undefined
+    for (const blockCount of transcriptScalingBlockCounts) {
+      const { fixture, snapshot } = appendOversized(buildTranscriptStructuralScalingFixture(blockCount))
+      const diagnostics = scalingRuntimeDiagnostics()
+      const runtime = new TranscriptRuntime(runtimeInput(fixture, snapshot, "follow", {
+        canonicalDamage: { kind: "full" },
+      }), { windowPolicy: { viewportRows: 24, overscanRows: 24 }, diagnostics })
+      const followed = runtime.getSnapshot()
+      const fragments = followed.blocks.filter(block => block.key.kind === "item" && block.key.itemId === oversized.item.id)
+      expectedFragmentCount ??= fragments.length
+      expectedFollowMounted ??= followed.window.blocks.length
+      expect(fragments).toHaveLength(expectedFragmentCount)
+      expect(fragments.length).toBeGreaterThan(1)
+      expect(fragments.every(block => "projection" in block
+        && block.sourceSpan.to - block.sourceSpan.from <= (oversized.shape === "markdown" ? 4_096 : 240))).toBe(true)
+      expect(followed.blocks).toHaveLength(blockCount + addedBlocks)
+      expect(followed.window.blocks.length).toBe(expectedFollowMounted)
+      expect(followed.window.blocks.length).toBeLessThanOrEqual(48)
+      const reference = createTranscriptFrame(runtimeInput(fixture, snapshot, "follow", { canonicalDamage: { kind: "full" } }))
+      const referenceFragments = reference.blocks.filter(block => block.key.kind === "item" && block.key.itemId === oversized.item.id)
+      expect(referenceFragments.every((block, index) => block === fragments[index])).toBe(true)
+      expect(reference.blocks.map(blockKey)).toEqual(followed.blocks.map(blockKey))
+
+      const projection = snapshot.transcript.projectionById[oversized.item.id]!
+      const point = Object.freeze({ itemId: oversized.item.id, graphemeOffset: Math.floor(projection.sourceSpans.length / 2) })
+      const detachedTranscript = Object.freeze({ ...snapshot.transcript, cursor: point,
+        viewport: Object.freeze({ kind: "point" as const, point, preferredScreenRow: 8 }) })
+      const beforeMove = { ...diagnostics }
+      let publications = 0
+      runtime.subscribe(() => { publications++ })
+      const revealed = runtime.update(runtimeInput(fixture, Object.freeze({ ...snapshot, transcript: detachedTranscript }), "detached", {
+        presentationDamage: { kind: "view" }, reveal: { id: blockCount, point, reason: "jump" },
+      }))
+      expectedDetachedMounted ??= revealed.window.blocks.length
+      expect(revealed.blocks).toBe(followed.blocks)
+      expect(revealed.window.blocks.length).toBe(expectedDetachedMounted)
+      expect(revealed.window.blocks.length).toBeLessThanOrEqual(48)
+      expect(pointIsMaterialized(revealed.window.blocks, point)).toBe(true)
+      expect(publications).toBe(1)
+      expect(diagnostics.completePlanBuilds - beforeMove.completePlanBuilds).toBe(0)
+      expect(diagnostics.completePlanBlockVisits - beforeMove.completePlanBlockVisits).toBe(0)
+      expect(diagnostics.heightIndexBuilds - beforeMove.heightIndexBuilds).toBe(0)
+      expect(diagnostics.heightIndexBlockVisits - beforeMove.heightIndexBlockVisits).toBe(0)
+      expect(diagnostics.completeGeometryBlockVisits - beforeMove.completeGeometryBlockVisits).toBe(0)
+      expect(diagnostics.orderIndexBuilds - beforeMove.orderIndexBuilds).toBe(0)
+      expect(diagnostics.orderIndexItemVisits - beforeMove.orderIndexItemVisits).toBe(0)
+      expect(diagnostics.windowGeometryBlockVisits - beforeMove.windowGeometryBlockVisits).toBeLessThanOrEqual(96)
+      expect(diagnostics.blockPlanWindowSliceItems - beforeMove.blockPlanWindowSliceItems).toBeLessThanOrEqual(96)
+      runtime.dispose()
+    }
+  }
+}, 60_000)
+
 test("detached unseen accumulation stays logarithmic and publishes no content frame at every scale", () => {
   for (const blockCount of transcriptScalingBlockCounts) {
     const fixture = buildTranscriptStructuralScalingFixture(blockCount)

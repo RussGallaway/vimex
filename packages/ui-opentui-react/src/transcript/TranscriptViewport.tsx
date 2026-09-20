@@ -84,11 +84,18 @@ const TranscriptRow = memo(function TranscriptRow(props: {
 }) {
   const item = props.block.renderItem as ConversationItem
   const continues = Boolean(props.block.fragment && props.block.fragment.index < props.block.fragment.count - 1)
+  const firstFragment = !props.block.fragment || props.block.fragment.index === 0
+  const finalFragment = !props.block.fragment || props.block.fragment.index === props.block.fragment.count - 1
+  const markdownContinuation = props.block.fragment?.kind === "markdown" && !firstFragment
   return (
     <box id={props.renderableId} flexShrink={0}>
       <box flexShrink={0} border={["left"]} borderColor={props.selected ? emberTide.amber : props.current ? emberTide.blueBright : emberTide.borderMuted}
-        paddingLeft={2} paddingRight={item.kind === "user" ? 2 : 0} paddingY={item.kind === "user" ? 1 : 0} backgroundColor={item.kind === "user" ? emberTide.backgroundPanel : emberTide.background}>
-        <TranscriptNode item={item} folded={props.folded} syntax={props.syntax}
+        paddingLeft={2} paddingRight={item.kind === "user" ? 2 : 0}
+        paddingTop={item.kind === "user" && firstFragment ? 1 : 0}
+        paddingBottom={item.kind === "user" && finalFragment ? 1 : 0}
+        backgroundColor={item.kind === "user" ? emberTide.backgroundPanel : emberTide.background}>
+        {markdownContinuation ? <box height={1} flexShrink={0} /> : null}
+        <TranscriptNode item={item} sourceItem={props.block.item as ConversationItem} folded={props.folded} syntax={props.syntax}
           blockId={props.block.key.blockId} fragment={props.block.fragment} />
       </box>
       {continues || props.block.followedByActivity ? null : <box height={1} flexShrink={0} />}

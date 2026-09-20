@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { createConversation, itemId, reduceConversation, threadId, turnId, type ConversationEvent } from "@vimex/conversation"
+import { buildOversizedTranscriptFixtures } from "@vimex/testkit"
 import { initialTranscript, setTranscriptFoldValue } from "./domain/transcript-document"
 import { syncTranscriptItem } from "./application/project-conversation"
 import { blockGraphemeRange, blockKey, buildTranscriptBlocks, passThroughWindow, pointIsMaterialized, type TranscriptItemBlock } from "./window"
@@ -256,4 +257,118 @@ test("completed command output becomes stable contiguous production sub-blocks w
   const blankBoundaryTranscript = syncTranscriptItem(initialTranscript(), blankBoundaryConversation.items[blankBoundaryItem.id]!)
   expect(buildTranscriptBlocks({ conversation: blankBoundaryConversation, transcript: blankBoundaryTranscript }).map(blockKey))
     .toEqual([`item:${blankBoundaryItem.id}:root`])
+})
+
+test("completed oversized Markdown composes exact stable projection fragments with conservative root fallbacks", () => {
+  const oversized = buildOversizedTranscriptFixtures().find(candidate => candidate.shape === "markdown")!
+  if (oversized.item.kind !== "assistant") throw new Error("Expected Markdown fixture")
+  const thread = threadId("markdown-fragments")
+  const events: ConversationEvent[] = [
+    { type: "turn.started", threadId: thread, turnId: oversized.item.turnId },
+    { type: "item.started", threadId: thread, item: oversized.item },
+    { type: "turn.completed", threadId: thread, turnId: oversized.item.turnId, outcome: "complete", durationMs: 1 },
+  ]
+  const conversation = events.reduce(reduceConversation, createConversation(thread))
+  const transcript = syncTranscriptItem(initialTranscript(), conversation.items[oversized.item.id]!)
+  const itemBlocks = buildTranscriptBlocks({ conversation, transcript })
+    .filter((block): block is TranscriptItemBlock => "projection" in block)
+  const rebuilt = buildTranscriptBlocks({ conversation, transcript })
+    .filter((block): block is TranscriptItemBlock => "projection" in block)
+
+  expect(itemBlocks.length).toBeGreaterThan(1)
+  expect(rebuilt.every((block, index) => block === itemBlocks[index])).toBe(true)
+  expect(new Set(itemBlocks.map(blockKey)).size).toBe(itemBlocks.length)
+  expect(itemBlocks.every(block => block.fragment?.kind === "markdown")).toBe(true)
+  expect(itemBlocks.every(block => block.sourceSpan.to - block.sourceSpan.from <= 4_096)).toBe(true)
+  expect(itemBlocks.every((block, index) => index === 0 || itemBlocks[index - 1]!.sourceSpan.to === block.sourceSpan.from)).toBe(true)
+  expect(itemBlocks[0]?.sourceSpan.from).toBe(0)
+  expect(itemBlocks.at(-1)?.sourceSpan.to).toBe(oversized.source.length)
+  expect(itemBlocks.every(block => block.item === itemBlocks[0]!.item && block.projection === transcript.projectionById[oversized.item.id])).toBe(true)
+  expect(itemBlocks.map(block => block.followedByActivity)).toEqual(itemBlocks.map((_, index) => index === itemBlocks.length - 1))
+  expect(itemBlocks.map(block => block.renderItem.kind === "assistant" ? block.renderItem.markdown : undefined))
+    .toEqual(itemBlocks.map(block => oversized.source.slice(block.sourceSpan.from, block.sourceSpan.to)))
+  for (let offset = 0; offset <= itemBlocks[0]!.projection.sourceSpans.length; offset++) {
+    expect(itemBlocks.filter(block => pointIsMaterialized([block], { itemId: oversized.item.id, graphemeOffset: offset }))).toHaveLength(1)
+  }
+
+  const folded = { ...transcript, folded: setTranscriptFoldValue(transcript.folded, oversized.item.id, true) }
+  expect(buildTranscriptBlocks({ conversation, transcript: folded }).filter(block => "projection" in block).map(blockKey))
+    .toEqual([`item:${oversized.item.id}:root`])
+
+  for (const [name, markdown] of [
+    ["running", oversized.item.markdown],
+    ["crlf", oversized.item.markdown.replaceAll("\n", "\r\n")],
+    ["list", `${"- list item\n\n".repeat(600)}`],
+    ["cross-reference", `${"[shared] reference paragraph.\n\n".repeat(200)}[shared]: https://vimex.test`],
+    ["single-paragraph", "one indivisible paragraph ".repeat(300)],
+  ] as const) {
+    const id = itemId(`markdown-fallback-${name}`)
+    const item = { ...oversized.item, id, markdown, status: name === "running" ? "running" as const : "complete" as const }
+    const fallbackEvents: ConversationEvent[] = [
+      { type: "turn.started", threadId: thread, turnId: item.turnId },
+      { type: "item.started", threadId: thread, item },
+    ]
+    if (name !== "running") fallbackEvents.push({ type: "turn.completed", threadId: thread, turnId: item.turnId, outcome: "complete" })
+    const fallbackConversation = fallbackEvents.reduce(reduceConversation, createConversation(thread))
+    const fallbackTranscript = syncTranscriptItem(initialTranscript(), fallbackConversation.items[id]!)
+    expect(buildTranscriptBlocks({ conversation: fallbackConversation, transcript: fallbackTranscript }).filter(block => "projection" in block).map(blockKey))
+      .toEqual([`item:${id}:root`])
+  }
+})
+
+test("completed multi-file edits become exact stable per-file fragments with metadata fallbacks", () => {
+  const oversized = buildOversizedTranscriptFixtures().find(candidate => candidate.shape === "split-diff")!
+  if (oversized.item.kind !== "edit" || !oversized.item.changes) throw new Error("Expected edit fixture")
+  const thread = threadId("edit-fragments")
+  const events: ConversationEvent[] = [
+    { type: "turn.started", threadId: thread, turnId: oversized.item.turnId },
+    { type: "item.started", threadId: thread, item: oversized.item },
+    { type: "turn.completed", threadId: thread, turnId: oversized.item.turnId, outcome: "complete", durationMs: 1 },
+  ]
+  const conversation = events.reduce(reduceConversation, createConversation(thread))
+  const transcript = syncTranscriptItem(initialTranscript(), conversation.items[oversized.item.id]!)
+  const itemBlocks = buildTranscriptBlocks({ conversation, transcript })
+    .filter((block): block is TranscriptItemBlock => "projection" in block)
+  const rebuilt = buildTranscriptBlocks({ conversation, transcript })
+    .filter((block): block is TranscriptItemBlock => "projection" in block)
+
+  expect(itemBlocks).toHaveLength(oversized.item.changes.length)
+  expect(rebuilt.every((block, index) => block === itemBlocks[index])).toBe(true)
+  expect(new Set(itemBlocks.map(blockKey)).size).toBe(itemBlocks.length)
+  expect(itemBlocks[0]?.fragment?.kind).toBe("edit-header")
+  expect(itemBlocks.slice(1).every(block => block.fragment?.kind === "edit-file")).toBe(true)
+  expect(itemBlocks.every((block, index) => index === 0 || itemBlocks[index - 1]!.sourceSpan.to === block.sourceSpan.from)).toBe(true)
+  expect(itemBlocks[0]?.sourceSpan.from).toBe(0)
+  expect(itemBlocks.at(-1)?.sourceSpan.to).toBe(oversized.source.length)
+  expect(itemBlocks.every(block => block.sourceSpan.to - block.sourceSpan.from <= 240)).toBe(true)
+  expect(itemBlocks.every(block => block.item === itemBlocks[0]!.item && block.projection === transcript.projectionById[oversized.item.id])).toBe(true)
+  expect(itemBlocks.map(block => block.followedByActivity)).toEqual(itemBlocks.map((_, index) => index === itemBlocks.length - 1))
+  for (let offset = 0; offset <= itemBlocks[0]!.projection.sourceSpans.length; offset++) {
+    expect(itemBlocks.filter(block => pointIsMaterialized([block], { itemId: oversized.item.id, graphemeOffset: offset }))).toHaveLength(1)
+  }
+
+  const duplicatePaths = { ...oversized.item, id: itemId("duplicate-edit-paths"),
+    changes: oversized.item.changes.map(change => ({ ...change, path: "same.ts" })) }
+  const duplicateConversation = [events[0]!, { type: "item.started", threadId: thread, item: duplicatePaths } satisfies ConversationEvent]
+    .reduce(reduceConversation, createConversation(thread))
+  const duplicateTranscript = syncTranscriptItem(initialTranscript(), duplicateConversation.items[duplicatePaths.id]!)
+  const duplicateKeys = buildTranscriptBlocks({ conversation: duplicateConversation, transcript: duplicateTranscript }).map(blockKey)
+  expect(new Set(duplicateKeys).size).toBe(duplicateKeys.length)
+
+  const folded = { ...transcript, folded: setTranscriptFoldValue(transcript.folded, oversized.item.id, true) }
+  expect(buildTranscriptBlocks({ conversation, transcript: folded }).filter(block => "projection" in block).map(blockKey))
+    .toEqual([`item:${oversized.item.id}:root`])
+
+  for (const item of [
+    { ...oversized.item, id: itemId("running-edit"), status: "running" as const },
+    { ...oversized.item, id: itemId("missing-edit-metadata"), changes: undefined },
+    { ...oversized.item, id: itemId("inconsistent-edit-metadata"), changes: oversized.item.changes.slice(1) },
+    { ...oversized.item, id: itemId("single-file-edit"), patch: oversized.item.changes[0]!.patch, changes: oversized.item.changes.slice(0, 1) },
+  ]) {
+    const fallbackConversation = [events[0]!, { type: "item.started", threadId: thread, item } satisfies ConversationEvent]
+      .reduce(reduceConversation, createConversation(thread))
+    const fallbackTranscript = syncTranscriptItem(initialTranscript(), fallbackConversation.items[item.id]!)
+    expect(buildTranscriptBlocks({ conversation: fallbackConversation, transcript: fallbackTranscript }).filter(block => "projection" in block).map(blockKey))
+      .toEqual([`item:${item.id}:root`])
+  }
 })

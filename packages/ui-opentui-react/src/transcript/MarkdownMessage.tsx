@@ -15,8 +15,9 @@ function styleGeneration(style: SyntaxStyle): number {
 
 export type MarkdownConversationItem = Extract<ConversationItem, { markdown: string }>
 
-export function MarkdownMessage(props: { item: MarkdownConversationItem; syntax: SyntaxStyle }) {
-  return <markdown key={`${styleGeneration(props.syntax)}:${emberTide.background}:${emberTide.backgroundPanel}`} id={`markdown:${props.item.id}`} content={props.item.markdown} syntaxStyle={props.syntax}
+export function MarkdownMessage(props: { item: MarkdownConversationItem; syntax: SyntaxStyle; blockId?: string }) {
+  const suffix = props.blockId && props.blockId !== "root" ? `:${props.blockId}` : ""
+  return <markdown key={`${styleGeneration(props.syntax)}:${emberTide.background}:${emberTide.backgroundPanel}:${suffix}`} id={`markdown:${props.item.id}${suffix}`} content={props.item.markdown} syntaxStyle={props.syntax}
     streaming={props.item.status === "running"} internalBlockMode="top-level" tableOptions={{ style: "grid" }} conceal
     fg={props.item.kind === "reasoning" ? emberTide.textMuted : props.item.kind === "user" ? emberTide.text : emberTide.textSoft}
     bg={props.item.kind === "user" ? emberTide.backgroundPanel : emberTide.background} />

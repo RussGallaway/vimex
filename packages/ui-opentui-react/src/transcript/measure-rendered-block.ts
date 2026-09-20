@@ -471,8 +471,9 @@ function diffRenderables(renderable: Renderable): readonly DiffRenderable[] {
   return result
 }
 
-function measureItem(renderer: CliRenderer, renderable: Renderable, itemId: string, text: string, fillGaps: boolean): Record<number, NativePoint> {
-  const markdown = renderable.findDescendantById(`markdown:${itemId}`)
+function measureItem(renderer: CliRenderer, renderable: Renderable, itemId: string, blockId: string, text: string, fillGaps: boolean): Record<number, NativePoint> {
+  const suffix = blockId === "root" ? "" : `:${blockId}`
+  const markdown = renderable.findDescendantById(`markdown:${itemId}${suffix}`)
   if (markdown instanceof MarkdownRenderable) return measureMarkdown(renderer, markdown, text, fillGaps)
   const diffs = diffRenderables(renderable)
   if (diffs.length) {
@@ -539,7 +540,7 @@ export function measureRenderedBlock(input: MeasureRenderedBlockInput): BlockGeo
   const text = "item" in input.block ? graphemes(input.block.projection.plain).slice(range.from, range.to).join("") : ""
   const textLength = range.to - range.from
   let nativePoints = "item" in input.block
-    ? measureItem(input.renderer, input.renderable, input.block.key.itemId, text, !input.folded)
+    ? measureItem(input.renderer, input.renderable, input.block.key.itemId, input.block.key.blockId, text, !input.folded)
     : {}
   // Empty semantic items still own logical offset zero. Native Markdown has no
   // child cell to discover, so anchor it to the mounted block root.
