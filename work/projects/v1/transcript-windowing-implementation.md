@@ -1,6 +1,6 @@
 # Transcript windowing implementation
 
-Status: Stages 5.0–5.4 are complete and verified. Stage 5.5 is in progress; bounded same-item follow, reattachment, canonical ingress, monotonic cross-presentation settlement, hidden-presentation resource suspension, exact structural tail admission, detached unseen accumulation, and active-final tail completion are complete.
+Status: Stages 5.0–5.4 are complete and verified. Stage 5.5 is in progress; bounded same-item follow, reattachment, canonical ingress, monotonic cross-presentation settlement, hidden-presentation resource suspension, exact structural tail admission, detached unseen accumulation, active-final tail completion, and completed command-output fragmentation are complete. Stage 5.6 acceptance is now the next gate; further optimization requires a reproduced acceptance failure.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
@@ -26,8 +26,8 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 | Stage 5b: windowed mounting | Complete | Commit `3e24002`; bounded production runtime, React/native mounting, observer lifetime, scaling evidence, and review sign-off below |
 | Stage 5c: anchor correction | Complete | Commit `97f163f`; atomic height correction, window-local geometry, logical-anchor restoration, scaling evidence, and review sign-off below |
 | Stage 5d: off-window semantics | Complete | Commits `a24f5af`, `df243a1`, `9266837`, `0e1ad6d`; indexed target materialization and URL motion, bounded selection clipping, canonical cross-window copy, atomic navigation/fold/picker settlement, and evidence below |
-| Stage 5e: follow and detachment | In progress | Stage 5.5a commit `9e8974e`, Stage 5.5b commit `e5dfc61`, Stage 5.5c commit `b3d26f9`, Stage 5.5d commit `4189d25`, Stage 5.5e commit `70733dc`, Stage 5.5f commit `43d9a9b`, and Stage 5.5g commit `f55ad57`; bounded same-item canonical ingress, follow/reattach reconciliation, monotonic independent-presentation settlement, hidden-presentation resource suspension, exact structural tail admission, detached unseen accumulation, active-final tail completion, and evidence below |
-| Stage 5f: stress, review, and evidence | Not started | — |
+| Stage 5e: follow and detachment | In progress | Stage 5.5a commit `9e8974e`, Stage 5.5b commit `e5dfc61`, Stage 5.5c commit `b3d26f9`, Stage 5.5d commit `4189d25`, Stage 5.5e commit `70733dc`, Stage 5.5f commit `43d9a9b`, Stage 5.5g commit `f55ad57`, and Stage 5.5h commit `c951371`; bounded same-item canonical ingress, follow/reattach reconciliation, monotonic independent-presentation settlement, hidden-presentation resource suspension, exact structural tail admission, detached unseen accumulation, active-final tail completion, completed command-output fragmentation, and evidence below |
+| Stage 5f: stress, review, and evidence | In progress | Acceptance-first matrix begins after Stage 5.5h; further slices require a demonstrated failing gate |
 
 “Complete” means the slice's exit criteria pass, evidence is recorded here, and the implementation is committed. Partial working-tree changes do not count as complete.
 
@@ -423,6 +423,8 @@ Exit criteria:
 
 ### Stage 5.6 — stress, review, and evidence
 
+Stage 5.6 is acceptance-first. The target is a shippable system whose steady-state cost is `O(changed semantic content) + O(viewport materialization) + O(log total history)`, not elimination of every content-proportional operation or conservative full fallback. A further implementation slice is allowed only when it removes demonstrated total-history work, fixes a reproduced correctness defect, prevents unbounded native allocation or measurement, or is required by a failing acceptance gate.
+
 - [ ] Run full semantic, renderer, integration, and PTY regression suites.
 - [ ] Benchmark identical operations at 100, 1k, 10k, and 100k render blocks.
 - [ ] Benchmark one oversized Markdown item, command output, and split diff.
@@ -430,6 +432,8 @@ Exit criteria:
 - [ ] Run parallel architecture, correctness, and performance review rounds.
 - [ ] Repair findings and rerun focused and full gates.
 - [ ] Record commit and benchmark evidence in this document.
+
+If the full matrix passes, stop adding speculative incremental paths. Output-sized copy, search, parsing, and catch-up may remain proportional to their semantic input/output, while rare or ambiguous chronology may retain the exact full-rebuild reference. Markdown/diff fragmentation, broader completion specialization, and bounded multi-item detached catch-up require a realistic deterministic fixture that fails an exit criterion below.
 
 Exit criteria:
 
@@ -1228,3 +1232,51 @@ Mounted-root churn, runtime publication, React commit, scheduler candidates, nat
 - Parallel architecture, correctness, and performance reviews ran after the initial slice and again after repairs. The repair rounds added completion-specific fallback coverage, promoted deterministic tree and native counts from printed evidence to hard assertions, labeled Workbench timing honestly, and closed detached mixed-replay holes that could otherwise omit source-less activity on reveal or reattachment. All three final reviewers signed off with no blocker.
 
 Stage 5.5g is complete only for active-final follow-mode completion with zero or one canonical item. Stage 5.5 and overall Stage 5 remain open for broader completion relationships, bounded detached structural catch-up, and stable windowable Markdown, command-output, and diff sub-blocks.
+
+### Stage 5.5h — stable completed command-output fragments
+
+Implementation commit: `c951371` (`perf: window completed command output`). This slice introduces the general render-fragment contract and applies it narrowly to completed command output, the existing oversized fixture that demonstrated content-sized native work. It does not add a second semantic model or a command-specific reconciliation state machine.
+
+#### Contract, scope, and fallback
+
+- One semantic command item may produce multiple immutable presentation blocks. Each block has a stable item/block key, an exact contiguous source span, a bounded render payload, and optional disposable fragment metadata. The blocks retain the complete immutable item and projection; logical positions remain only `itemId + graphemeOffset` and never contain fragment or terminal coordinates.
+- The production splitter accepts only a completed, unfolded command whose plain and source projections are identical, whose output is larger than 4,096 source units, and whose newline-bounded lines can be packed without exceeding the fragment limit. The first block owns the header and initial output; continuation blocks own output only. Exactly the final block owns activity adjacency and bottom padding.
+- CR/CRLF content, running or folded commands, nonliteral projections, newline-only boundary adversaries, and an unbreakable line above the limit retain the exact root-block/full-build reference. Tool, unknown, Markdown, and diff items are unchanged.
+- Fragment plans are cached only within source-item, projection, thread, canonical-generation, status, fold, and activity-adjacency lineage. Unchanged fragment identities survive replanning. Incremental damage to a known fragmented item and fragment fold transitions deliberately use the complete-plan fallback.
+- A detached presentation rebuilds fragment folds from its pinned displayed input, preserves private hidden damage, and adopts latest canonical input only through the existing reveal/reattach rules. Consumed reveals cannot replay. Canonical conversation and `TranscriptState` remain the only semantic authorities.
+- React renders one command header, block-qualified descendant IDs, no inter-fragment spacer, no internal padding seam, and one final bottom pad. Block-local native geometry composes the exact global logical range; the non-final boundary cursor belongs only to the next fragment. Copy and selection continue to read semantic projections rather than rendered fragments.
+
+#### Deterministic scaling evidence
+
+The exact-size workload adjusts historical roots so the complete production plan contains exactly 100, 1,000, 10,000, or 100,000 render blocks after inserting one 56-fragment command and its activity row. Cold construction is recorded separately and remains proportional to semantic input. The warm detached reveal is the gate.
+
+| Complete render blocks | Historical roots | Command fragments | Largest fragment source span | Follow / detached mounted blocks | Target lookup visits | Height visits | Warm full plan / height builds |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 43 | 56 | 4,095 | 3 / 2 | 8 | 57 | 0 / 0 |
+| 1k | 943 | 56 | 4,095 | 3 / 2 | 8 | 86 | 0 / 0 |
+| 10k | 9,943 | 56 | 4,095 | 3 / 2 | 8 | 108 | 0 / 0 |
+| 100k | 99,943 | 56 | 4,095 | 3 / 2 | 8 | 138 | 0 / 0 |
+
+Every cell preserves all 56 fragment identities across the warm operation, publishes once, performs two window-slice and two window-geometry visits, performs zero complete-geometry or order-index work, and equals the full semantic reference. Target lookup stays below the asserted logarithmic bound of nine visits; height work is logarithmically bounded. Machine timings are diagnostic only.
+
+The connected React/OpenTUI probe at 80×24 also has identical deterministic command-fragment counts at every scale:
+
+| Metric | 100 | 1k | 10k | 100k |
+|---|---:|---:|---:|---:|
+| Final follow / detached native roots | 2 / 2 | 2 / 2 | 2 / 2 | 2 / 2 |
+| Follow initial candidates / attempts / changes | 3 / 3 / 3 | 3 / 3 / 3 | 3 / 3 / 3 | 3 / 3 / 3 |
+| Follow acknowledgement candidates / attempts / changes | 2 / 2 / 0 | 2 / 2 / 0 | 2 / 2 / 0 | 2 / 2 / 0 |
+| Detached initial candidates / attempts / changes | 2 / 2 / 2 | 2 / 2 / 2 | 2 / 2 / 2 | 2 / 2 / 2 |
+| Detached acknowledgement passes / attempts / changes | 2 / 3 / 1 | 2 / 3 / 1 | 2 / 3 / 1 | 2 / 3 / 1 |
+| Reveal / measurement-settlement / total React commits | 1 / 2 / 3 | 1 / 2 / 3 | 1 / 2 / 3 | 1 / 2 / 3 |
+
+Both follow and detached acknowledgement sequences finish with zero pending measurements. Follow publishes geometry once and needs no acknowledgement publication; detached publishes its initial measurement and one correction. The complete settlement timer spans reveal through the final acknowledgement flush/render, while call-only timings remain separately labeled.
+
+#### Verification and review
+
+- Focused runtime, scaling, window, React, and geometry verification passed 94 tests with 725,336 assertions. It covers exact partitioning, unique ownership, identity retention, Unicode logical offsets, folds, reveal consumption, pinned detached rebuilds, reattachment, long-line/CRLF/newline adversaries, header/padding continuity, activity adjacency, and exact native logical geometry.
+- `bun run check` passed typecheck, dependency boundaries, generated-doc validation, and every non-sandbox-sensitive test: 782 passed with 5 intentional profiling skips and 750,331 assertions. Its only failure was the sandbox-denied isolated tmux socket; the exact host-level rerun passed in 708 ms.
+- The executable core and connected native 100/1k/10k/100k matrices passed their exact-size, semantic-equivalence, identity, logarithmic-work, bounded-root, publication, measurement, acknowledgement, and cleanup assertions. A benchmark-only race found during the final run was repaired by giving both status-only operations the same React/scheduler flush boundary instead of forcing an unrelated native frame; the complete all-scale rerun passed.
+- Parallel architecture, correctness, geometry, and performance review-and-repair rounds all signed off. Repairs closed known-fragment damage, stale reveal, pinned detached fold, padding seam, newline-only, evidence-boundary, and React commit-accounting defects. The final geometry review independently passed 40 tests with 24,353 assertions and found no shared native ownership or disposal issue.
+
+Stage 5.5h is complete for stable completed command-output fragments. Broader completion specialization, bounded multi-item detached catch-up, and Markdown/diff fragmentation remain correct reference paths, not automatic next slices. Stage 5.6 now decides whether any is required by a reproduced acceptance failure.
