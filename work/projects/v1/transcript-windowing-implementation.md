@@ -1,6 +1,6 @@
 # Transcript windowing implementation
 
-Status: Stages 5.0–5.4 are complete and verified. Stage 5.5 is in progress; bounded same-item follow, reattachment, canonical ingress, monotonic cross-presentation settlement, hidden-presentation resource suspension, exact structural tail admission, detached unseen accumulation, active-final tail completion, and completed command-output fragmentation are complete. Stage 5.6 acceptance is now the next gate; further optimization requires a reproduced acceptance failure.
+Status: Stage 5 is complete and verified through the acceptance-first Stage 5.6 matrix. Steady-state presentation work is bounded by changed semantic content, viewport materialization, and logarithmic history indexes. Conservative content-sized operations and rare exact full fallbacks remain intentional non-goals.
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
@@ -26,8 +26,8 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 | Stage 5b: windowed mounting | Complete | Commit `3e24002`; bounded production runtime, React/native mounting, observer lifetime, scaling evidence, and review sign-off below |
 | Stage 5c: anchor correction | Complete | Commit `97f163f`; atomic height correction, window-local geometry, logical-anchor restoration, scaling evidence, and review sign-off below |
 | Stage 5d: off-window semantics | Complete | Commits `a24f5af`, `df243a1`, `9266837`, `0e1ad6d`; indexed target materialization and URL motion, bounded selection clipping, canonical cross-window copy, atomic navigation/fold/picker settlement, and evidence below |
-| Stage 5e: follow and detachment | In progress | Stage 5.5a commit `9e8974e`, Stage 5.5b commit `e5dfc61`, Stage 5.5c commit `b3d26f9`, Stage 5.5d commit `4189d25`, Stage 5.5e commit `70733dc`, Stage 5.5f commit `43d9a9b`, Stage 5.5g commit `f55ad57`, and Stage 5.5h commit `c951371`; bounded same-item canonical ingress, follow/reattach reconciliation, monotonic independent-presentation settlement, hidden-presentation resource suspension, exact structural tail admission, detached unseen accumulation, active-final tail completion, completed command-output fragmentation, and evidence below |
-| Stage 5f: stress, review, and evidence | In progress | Acceptance-first matrix begins after Stage 5.5h; further slices require a demonstrated failing gate |
+| Stage 5e: follow and detachment | Complete | Stage 5.5a–h commits `9e8974e`, `e5dfc61`, `b3d26f9`, `4189d25`, `70733dc`, `43d9a9b`, `f55ad57`, and `c951371`; final Stage 5.6 acceptance below |
+| Stage 5f: stress, review, and evidence | Complete | Commit `7199774`; bounded Markdown/diff fragments, semantic/native parity, full 100/1k/10k/100k matrix, repository/PTY gates, and review sign-off below |
 
 “Complete” means the slice's exit criteria pass, evidence is recorded here, and the implementation is committed. Partial working-tree changes do not count as complete.
 
@@ -408,12 +408,12 @@ Exit criteria:
 
 ### Stage 5.5 — follow, detachment, and multiple presentations
 
-- [ ] Keep follow pinned to the trailing window during settled streaming.
-- [ ] Keep detached displayed content, anchor window, and geometry stable during hidden streaming.
-- [ ] Reattach by selecting the latest revision and trailing window atomically.
-- [ ] Preserve independent main and side presentation windows.
+- [x] Keep follow pinned to the trailing window during settled streaming.
+- [x] Keep detached displayed content, anchor window, and geometry stable during hidden streaming.
+- [x] Reattach by selecting the latest revision and trailing window atomically.
+- [x] Preserve independent main and side presentation windows.
 - [x] Keep hidden or maximized-away panes free of mounting and measurement work.
-- [ ] Bound ingress, planner, measurement, and render work so input cannot be starved.
+- [x] Bound ingress, planner, measurement, and render work so input cannot be starved.
 
 Exit criteria:
 
@@ -425,13 +425,13 @@ Exit criteria:
 
 Stage 5.6 is acceptance-first. The target is a shippable system whose steady-state cost is `O(changed semantic content) + O(viewport materialization) + O(log total history)`, not elimination of every content-proportional operation or conservative full fallback. A further implementation slice is allowed only when it removes demonstrated total-history work, fixes a reproduced correctness defect, prevents unbounded native allocation or measurement, or is required by a failing acceptance gate.
 
-- [ ] Run full semantic, renderer, integration, and PTY regression suites.
-- [ ] Benchmark identical operations at 100, 1k, 10k, and 100k render blocks.
-- [ ] Benchmark one oversized Markdown item, command output, and split diff.
-- [ ] Record warm navigation, window movement, follow settlement, anchor correction, mount churn, and memory separately.
-- [ ] Run parallel architecture, correctness, and performance review rounds.
-- [ ] Repair findings and rerun focused and full gates.
-- [ ] Record commit and benchmark evidence in this document.
+- [x] Run full semantic, renderer, integration, and PTY regression suites.
+- [x] Benchmark identical operations at 100, 1k, 10k, and 100k render blocks.
+- [x] Benchmark one oversized Markdown item, command output, and split diff.
+- [x] Record warm navigation, window movement, follow settlement, anchor correction, mount churn, and retained native resources separately.
+- [x] Run parallel architecture, correctness, geometry, and performance review rounds.
+- [x] Repair findings and rerun focused and full gates.
+- [x] Record commit and benchmark evidence in this document.
 
 If the full matrix passes, stop adding speculative incremental paths. Output-sized copy, search, parsing, and catch-up may remain proportional to their semantic input/output, while rare or ambiguous chronology may retain the exact full-rebuild reference. Markdown/diff fragmentation, broader completion specialization, and bounded multi-item detached catch-up require a realistic deterministic fixture that fails an exit criterion below.
 
@@ -1280,3 +1280,47 @@ Both follow and detached acknowledgement sequences finish with zero pending meas
 - Parallel architecture, correctness, geometry, and performance review-and-repair rounds all signed off. Repairs closed known-fragment damage, stale reveal, pinned detached fold, padding seam, newline-only, evidence-boundary, and React commit-accounting defects. The final geometry review independently passed 40 tests with 24,353 assertions and found no shared native ownership or disposal issue.
 
 Stage 5.5h is complete for stable completed command-output fragments. Broader completion specialization, bounded multi-item detached catch-up, and Markdown/diff fragmentation remain correct reference paths, not automatic next slices. Stage 5.6 now decides whether any is required by a reproduced acceptance failure.
+
+### Stage 5.6 — acceptance and bounded oversized semantic content
+
+Implementation commit: `7199774` (`perf: bound oversized transcript content`). The first acceptance probe reproduced the remaining failure required by the decision rule: one 143,375-character Markdown root retained 1,062 native descendants / 116,771 points, while one 128-file split-diff root retained 1,035 descendants / 29,750 points. Both grew with individual-item content despite bounded transcript windows. The repair extends the existing render-fragment contract without adding a runtime state machine or another semantic store.
+
+#### Narrow fragmentation contract and reference behavior
+
+- Completed, unfolded assistant/user Markdown may split only at conservative top-level blank-line boundaries outside matched fences. Every chunk is independently projected, shifted, and required to compose exactly to the canonical plain text, source spans, links, and source regions. Stable keys use `markdown:<sourceFrom>`; every block retains the complete immutable item and projection while rendering only its source slice.
+- Ambiguous Markdown containers, reference definitions, list/blockquote/indented/likely-HTML content, CR/CRLF, unmatched fences, indivisible blocks above 4,096 source units, reasoning, running items, and folded items retain the exact root reference. This is deliberate 80/20 behavior rather than an incomplete parser.
+- Completed, unfolded multi-file edits split one file per block only when nonempty metadata patches join exactly to the canonical patch. Each block owns its following separator newline, uses a source-offset key, and renders one local file diff. The first block alone owns the global header/top padding; the final block owns bottom padding and activity adjacency. Single-file, running, folded, missing, empty, CRLF, or metadata-inexact edits retain the root reference.
+- Logical positions remain only `itemId + graphemeOffset`. Fragment identities and block-qualified native IDs are disposable presentation details. Fold, damaged-fragment reconciliation, reveal, and reattachment retain the generic exact full-build fallback when incremental lineage is not proven.
+
+#### Deterministic runtime and native acceptance
+
+The core workload keeps 100, 1,000, 10,000, or 100,000 historical render blocks constant and adds the identical oversized semantic item. Command output retains its exact-size Stage 5.5h cell; Markdown and diff report their fixed additional fragment plans separately because the 128-file fixture itself exceeds the 100-block cell.
+
+| Shape | Stable fragments | Largest source span | Follow mounted blocks | Detached mounted blocks | Warm publications | Warm complete-plan / height builds |
+|---|---:|---:|---:|---:|---:|---:|
+| Markdown | 88 | 1,716 | 3 | 4 | 1 | 0 / 0 |
+| Split diff | 128 | 235 | 6 | 7 | 1 | 0 / 0 |
+
+These counts and all fragment identities are exact across 100/1k/10k/100k. Warm reveal performs zero complete-plan, height-index, complete-geometry, or order-index work and visits only the bounded materialized window. The full windowed frame equals the complete reference at every scale.
+
+The connected 80×24 React/OpenTUI measurement probe includes production detached prepositioning, exact mounted-root identity, per-root descendant bounds, measurement acknowledgement, geometry pruning, and cleanup:
+
+| Shape | Follow roots / descendants / max per root | Detached roots / descendants / max per root | Settlement pass ceiling | Final changed / pending | Reveal publications / React commits |
+|---|---:|---:|---:|---:|---:|
+| Markdown | 3 / 39 / 16 | 16 / 103 / 16 | 8 | 0 / 0 | 1 / 1 |
+| Split diff | 9 / 95 / 11 | 21 / 160 / 16 | 8 | 0 / 0 | 1 / 1 |
+
+Fragment, mounted-root, descendant, publication, pass-count, identity, pruning, and final-settlement gates are identical across the four history sizes. Every native pass is additionally bounded by its currently mounted roots. OpenTUI may coalesce dirty events differently between frames, so per-pass cached reinspection counts and retained Markdown/table point counts are emitted as diagnostics rather than required to be byte-identical. They retain hard history-independent bounds of eight passes and mounted roots times the fragment source cap. Timings remain diagnostic curves.
+
+#### Semantic, repository, PTY, and review gates
+
+- Focused window/runtime/scaling/React/native verification passed 35 tests with 841,688 assertions. Fragmented Markdown and multi-file edits produce the same native character frame and every logical coordinate as their synthetic unsplit root reference. Exact partitioning, unique logical ownership, identity reuse, duplicate edit paths, folds, reveal, selection/copy authority, geometry, activity ownership, and fallback adversaries pass.
+- The combined core and native benchmark passed all 100/1k/10k/100k cells. Mounted work, native descendants, accepted settlement, follow damage, detached publications, and cleanup are independent of historical size; the only history terms are the already-bounded persistent-index paths.
+- `bun run check` passed typecheck, dependency boundaries, generated-document validation, and every non-sandbox-sensitive test: 788 passed with 5 intentional profiling skips and 901,228 assertions. Its only failure was the sandbox-denied isolated tmux socket; the exact host rerun passed: `bun test tests/terminal/terminal.test.ts --test-name-pattern "isolated tmux"` — 1 passed.
+- Parallel architecture and correctness reviews found no blocker. Geometry/performance review caught and repaired the two-file native-settlement failure, restored one-file diff fragments, required production detached prepositioning in the benchmark, and separated bounded asynchronous native observations from exact deterministic runtime work. Final reviewers signed off on the architecture, semantics, geometry, and acceptance boundary.
+
+#### Acceptance decision and explicit non-goals
+
+Stage 5 acceptance passes. Across the recorded range, mounted block count, native allocation/measurement bounds, follow-tail damage, and detached-window publications do not grow with total history. Canonical conversation and `TranscriptState` remain the semantic authorities; each presentation retains independent disposable runtime, window, anchor, frame, and geometry state; unchanged identities survive; every incremental path retains an exact reference.
+
+Stop adding speculative incremental paths. Output-sized copy, search, projection, and catch-up work may remain proportional to the semantic input/output involved. Conservative Markdown roots, single-file oversized diffs, broad completion relationships, and ambiguous or multi-item detached chronology may retain exact root/full-rebuild behavior until a realistic deterministic fixture demonstrates a Stage 5 acceptance failure. No server paging or second transcript store is introduced.
