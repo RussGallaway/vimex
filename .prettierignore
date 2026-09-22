@@ -1,0 +1,15 @@
+# Generated sources and package-manager output
+packages/codex-app-server/src/generated/
+packages/ui-opentui-react/src/help/manual.generated.ts
+docs/man/
+bun.lock
+
+# Recorded terminal output and vendored assets
+**/__snapshots__/
+packages/ui-opentui-react/assets/
+dogfood-output/
+
+# Build output (also excluded by .gitignore)
+dist/
+build/
+coverage/

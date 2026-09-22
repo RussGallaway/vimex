@@ -4,10 +4,14 @@ Vimex is a Bun/TypeScript monorepo. Its v1 product and architecture documents ar
 
 ## Setup
 
+Use Bun 1.3.6, matching the root `packageManager` field and CI. Install dependencies from the repository root:
+
 ```sh
 bun install --frozen-lockfile
 bun run start --demo
 ```
+
+Installation runs `prepare` to configure Husky's Git hooks. If hooks need to be restored in an existing checkout, run `bun run prepare`.
 
 The demo is the quickest UI development loop because it needs neither Codex credentials nor network access. Live sessions require an authenticated Codex CLI; do not use real threads for routine tests.
 
@@ -35,7 +39,7 @@ bun run check
 git diff --check
 ```
 
-`check` runs TypeScript, dependency boundaries, and the complete default Bun test suite. Focused scripts are available:
+`check` checks formatting, generated documentation, TypeScript, dependency boundaries, and the complete default Bun test suite. Focused scripts are available:
 
 ```sh
 bun run test:unit
@@ -48,6 +52,25 @@ bun run test:e2e
 The terminal suite needs Python 3 and a Unix PTY. It runs the actual renderer against a deterministic app-server fixture and must remain credential-free and network-free. The opt-in live driver is intentionally excluded from defaults because it touches real Codex threads and the host clipboard; do not run it or claim its acceptance evidence without explicit authorization. See [live validation](work/projects/v1/live-validation.md).
 
 CI is configured for macOS and Ubuntu with Bun 1.3.6, Python 3.12, and `TERM=xterm-256color`. A configured target is not considered supported until its run has been observed and recorded in the [terminal matrix](docs/terminal-support.md).
+
+## Formatting and commits
+
+Prettier defines formatting, including two-space indentation, double quotes, and omitted JavaScript/TypeScript semicolons. Run `bun run format` to format the repository or `bun run format:check` to check it without changes. Generated protocol bindings, generated manual output, snapshots, lockfiles, and build artifacts are excluded in `.prettierignore`.
+
+The pre-commit hook uses lint-staged to format supported staged files. It preserves partially staged changes; review the resulting staged diff before committing. Full tests run through `bun run check`, not in the pre-commit hook.
+
+The commit-msg hook enforces Conventional Commits:
+
+```text
+feat(composer): add multiline input
+fix(transcript): preserve scroll position
+docs: clarify terminal setup
+chore(tooling): configure formatting
+```
+
+Use a type followed by an optional scope, a colon, and a concise description. Common types are `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `perf`, `style`, `revert`, and `chore`. Scopes are optional and are not restricted to a fixed package list. Mark breaking changes with `!` after the type or scope and explain the change in a `BREAKING CHANGE:` footer.
+
+CI disables local hooks with `HUSKY=0` and checks formatting independently.
 
 ## Protocol changes
 
@@ -68,5 +91,7 @@ Prefer pure domain tests for state transitions, adapter contract tests for wire 
 When documenting terminal behavior, record the operating system, terminal emulator, `$TERM`, multiplexer or SSH layer, dimensions, clipboard route, and exact scenarios exercised. Label partial or unobserved evidence plainly.
 
 ## Pull requests
+
+Use a Conventional Commit title for the pull request. Vimex uses squash merges, and the PR title becomes the commit title on `main`; CI validates the title, including when it is edited.
 
 Describe the concrete trigger and resulting behavior, list the checks run, and call out protocol or terminal compatibility implications. Keep generated changes, design-document changes, and acceptance claims reviewable. Do not edit the specification merely to make an incomplete implementation appear complete.
