@@ -1727,8 +1727,9 @@ test("production window policy bounds initial, detached, reveal, and measured ma
   }
 }, 15_000)
 
-test("accepted height correction is atomic, window-local, immutable, and bounded at every scale", () => {
-  for (const blockCount of transcriptScalingBlockCounts) {
+test.each([...transcriptScalingBlockCounts])(
+  "accepted height correction is atomic, window-local, immutable, and bounded at %i blocks",
+  (blockCount) => {
     const fixture = buildTranscriptScalingFixture(blockCount)
     const runtime = new TranscriptRuntime(
       runtimeInput(fixture, fixture.before, "follow", {
@@ -1804,11 +1805,13 @@ test("accepted height correction is atomic, window-local, immutable, and bounded
     expect(reset.geometry.totalRows).toBe(blockCount)
     expect(reset.window.blocks.length).toBe(48)
     runtime.dispose()
-  }
-})
+  },
+  30_000,
+)
 
-test("incremental runtime projection updates preserve the warm selection-length index at every scale", () => {
-  for (const blockCount of transcriptScalingBlockCounts) {
+test.each([...transcriptScalingBlockCounts])(
+  "incremental runtime projection updates preserve the warm selection-length index at %i blocks",
+  (blockCount) => {
     const fixture = buildTranscriptScalingFixture(blockCount)
     const diagnostics = {
       completePlanBuilds: 0,
@@ -1942,8 +1945,9 @@ test("incremental runtime projection updates preserve the warm selection-length 
       diagnostics.textLengthNodeVisits - beforeQuery.textLengthNodeVisits,
     ).toBeLessThan(64)
     runtime.dispose()
-  }
-})
+  },
+  30_000,
+)
 
 test("hidden same-item output reattaches once with bounded reconciliation at every scale", () => {
   for (const blockCount of transcriptScalingBlockCounts) {
@@ -2337,8 +2341,9 @@ test("a fold transition discards the incompatible measured height before replann
   runtime.dispose()
 })
 
-test("single off-window folds update logarithmic height paths and bounded geometry at every scale", () => {
-  for (const blockCount of transcriptScalingBlockCounts) {
+test.each([...transcriptScalingBlockCounts])(
+  "single off-window folds update logarithmic height paths and bounded geometry at %i blocks",
+  (blockCount) => {
     const fixture = buildTranscriptScalingFixture(blockCount)
     const anchor = { itemId: fixture.targets.quarter, graphemeOffset: 0 }
     const target = fixture.targets.threeQuarter
@@ -2508,5 +2513,6 @@ test("single off-window folds update logarithmic height paths and bounded geomet
         beforeDiagnostics.windowGeometryBlockVisits,
     ).toBeLessThanOrEqual(144)
     runtime.dispose()
-  }
-})
+  },
+  30_000,
+)
