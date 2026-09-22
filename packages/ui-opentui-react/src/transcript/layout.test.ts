@@ -2,9 +2,22 @@ import { describe, expect, test } from "bun:test"
 import { itemId } from "@vimex/conversation"
 import { composeTranscriptGeometry, graphemeCount, initialTranscript, projectMarkdown, transcriptOrderIndex, type BlockGeometry, type TranscriptState } from "@vimex/transcript"
 import { blockRefForPoint, buildTranscriptLayout, graphemeCellWidth, materializedSelectionEndpoints, movePoint, movePointInTranscript, pointInLayout, selectedRangeForItem } from "./layout"
+import { rebaseTranscriptLayout } from "./rendered-layout"
 
 const first = itemId("first")
 const second = itemId("second")
+
+test("layout-disabled activity children cannot disturb visible row ordering", () => {
+  const state = stateFor("first", "second")
+  const base = buildTranscriptLayout(state, 80)
+  const key = "item:second:root"
+  const zero: BlockGeometry = { key: { blockKey: key, contentRevision: 1, width: 80, styleRevision: "test", folded: true, presentation: "activity-hidden" },
+    nativeRevision: 1, rows: 0, points: {}, lines: [] }
+  const geometry = { generation: 0, revision: 1, byBlockKey: { [key]: zero }, rowByBlockKey: {}, blockRows: [], totalRows: 1, measuredBlockCount: 1, totalPoints: 0 }
+  const layout = { ...base, placementByBlockKey: { first: { screenX: 0, screenY: 10 }, [key]: { screenX: 0, screenY: 0 } },
+    screenBlockRows: [{ blockKey: "first", itemId: first, screenY: 10, rows: 1 }, { blockKey: key, itemId: second, screenY: 0, rows: 1 }] }
+  expect(rebaseTranscriptLayout(layout, geometry).screenBlockRows?.map(row => row.itemId)).toEqual([first])
+})
 
 function stateFor(firstText: string, secondText = ""): TranscriptState {
   return {

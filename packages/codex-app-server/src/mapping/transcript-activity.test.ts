@@ -29,6 +29,21 @@ test("maps subagent lifecycle as structured agent activity", () => {
   }
 })
 
+test("maps batchable activity from protocol semantics rather than display titles", () => {
+  expect(mapThreadItem({ type: "webSearch", id: "web", query: "vim", action: { type: "search", query: "vim", queries: ["vim"] }, results: [] }, "turn", true))
+    .toMatchObject({ kind: "tool", activity: { family: "web-research" } })
+  expect(mapThreadItem({
+    type: "mcpToolCall", id: "linear", server: "codex_apps", tool: "linear.get_issue", status: "completed", arguments: {},
+    appContext: { connectorId: "linear", linkId: null, resourceUri: null, appName: "Linear", actionName: "Get issue" },
+    pluginId: null, readOnlyHint: true, result: null, error: null, durationMs: 5,
+  }, "turn", true)).toMatchObject({ kind: "tool", activity: { family: "provider", label: "Linear" } })
+  expect(mapThreadItem({
+    type: "mcpToolCall", id: "write", server: "codex_apps", tool: "linear.create_issue", status: "completed", arguments: {},
+    appContext: { connectorId: "linear", linkId: null, resourceUri: null, appName: "Linear", actionName: "Create issue" },
+    pluginId: null, readOnlyHint: false, result: null, error: null, durationMs: 5,
+  }, "turn", true)).not.toHaveProperty("activity")
+})
+
 test("normalizes every target-agent status", () => {
   const expected = { pendingInit: "pending", running: "running", interrupted: "interrupted", completed: "complete", errored: "error", shutdown: "closed", notFound: "missing" } as const
   for (const [status, normalized] of Object.entries(expected)) {

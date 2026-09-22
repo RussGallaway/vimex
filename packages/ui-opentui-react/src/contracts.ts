@@ -21,7 +21,6 @@ export interface VimexUiSettings {
   insertEnter: "newline" | "submit"
   busySubmit: "queue" | "steer"
   foldTools: boolean
-  foldReasoning: boolean
   composerMaxHeight: number
   keybindings: Readonly<Record<string, string>>
 }
@@ -33,7 +32,6 @@ export const defaultVimexUiSettings: VimexUiSettings = {
   insertEnter: "submit",
   busySubmit: "queue",
   foldTools: true,
-  foldReasoning: false,
   composerMaxHeight: 0.32,
   keybindings: {},
 }

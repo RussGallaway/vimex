@@ -125,6 +125,44 @@ This feedback path is not an authority cycle: canonical and semantic state flow 
 9. Input and navigation take priority over hidden streaming presentation work.
 10. Persist semantic state only; never persist mounted windows or native geometry.
 
+## Homogeneous activity batches
+
+The protocol adapter may attach a small structured activity hint to command and tool items: `web-research`, `read`, or a read-only `provider` call with a normalized provider label. This is adapter normalization, not a new source of truth. `TranscriptRuntime` uses that metadata to derive immutable `TranscriptActivityBatch` relationships over adjacent complete item blocks. Provider calls without an affirmative read-only hint remain individual.
+
+A batch never replaces or renumbers its children. The complete block plan, semantic transcript order, projections, folds, cursor, selection, search results, marks, jumps, and copy source continue to address the original item IDs. The window publishes batch relationships beside its blocks so React only renders the selected presentation:
+
+```ts
+interface TranscriptActivityBatch {
+  key: string
+  family: "web-research" | "read" | "provider"
+  label: string
+  leadItemId: ItemId
+  itemIds: readonly ItemId[]
+  blockKeys: readonly string[]
+  blockItemIds: readonly ItemId[]
+  countLabel: string
+  durationMs?: number
+}
+
+interface TranscriptWindow {
+  blocks: readonly TranscriptBlock[]
+  activityBatches: readonly TranscriptActivityBatch[]
+  activityBatchByItem: Readonly<Record<ItemId, TranscriptActivityBatch>>
+  activityPresentation: Readonly<Record<string, {
+    kind: "activity-lead" | "activity-hidden"
+    batch: TranscriptActivityBatch
+    itemId: ItemId
+  }>>
+  topSpacerRows: number
+  bottomSpacerRows: number
+  overscanRows: number
+}
+```
+
+The compact presentation is active only when every child is folded and no non-lead child owns the cursor, logical viewport anchor, or selection endpoint. `TranscriptRuntime` publishes the block-keyed `activityPresentation` map as the sole presentation authority; React and native measurement consume it without independently scanning batches. Exactly one render block becomes the visible lead, including when a semantic item is split into multiple Stage 5 blocks; every other member block is hidden. The lead block renders the batch header with boundary-sentinel geometry only; compacted children retain their canonical block identities and publish zero-row disposable geometry. A precise target dissolves the compact presentation before navigation is settled and damages every member whose presentation changed. Native geometry keys include the presentation variant so ordinary folded rows, batch leads, and compacted children cannot reuse incompatible measurements. Zero-row children are excluded from visible-row indexes so their layout-disabled native origin cannot disturb navigation ordering.
+
+Batch derivation is deliberately conservative: at least two adjacent complete items, the same turn, and the same structured family/provider. Any message, turn decoration, different family, running item, error, or interruption ends the run. Aggregated duration is shown only when every child reports a positive finite duration.
+
 ## Damage vocabulary
 
 Start with the smallest useful invalidation vocabulary and expand only from measured need:
@@ -169,6 +207,7 @@ packages/transcript/src/
 
 packages/ui-opentui-react/src/transcript/
   TranscriptViewport.tsx
+  ActivityBatch.tsx             # compact homogeneous settled activity
   TurnActivity.tsx              # new: compact Working / Worked presentation
   AgentActivity.tsx             # new: structured collaborator presentation
   use-transcript-runtime.ts     # new: thin React bridge
@@ -192,7 +231,7 @@ Move responsibility in tested vertical slices. The legacy hook and the runtime m
 - Preserve server-observed turn timing.
 - Preserve agent activity as structured conversation data rather than title conventions.
 - Use one pane heartbeat (`Working · 12s`) instead of timers inside running transcript rows.
-- Render reasoning, agent coordination, and tools as compact foldable rows.
+- Keep reasoning canonical but outside the primary transcript projection; render agent coordination and tools as compact foldable rows.
 - Render completed observed duration as `Worked for …` without creating synthetic canonical content.
 
 ### Stage 2 — bounded ingress and coherent detachment
@@ -207,7 +246,7 @@ Move responsibility in tested vertical slices. The legacy hook and the runtime m
 ### Stage 3 — block-local geometry
 
 - Extract OpenTUI-native Markdown, table, diff, and text measurement from layout composition.
-- Cache by stable block identity, content revision, width, style revision, and fold state.
+- Cache by stable block identity, content revision, width, style revision, fold state, and presentation variant.
 - Measure changed blocks independently.
 - Treat pure scrolling as coordinate translation.
 - Stop cloning historical grapheme points or mutating previously published layouts.
@@ -243,6 +282,9 @@ type TranscriptBlock =
 
 interface TranscriptWindow {
   blocks: readonly TranscriptBlock[]
+  activityBatches: readonly TranscriptActivityBatch[]
+  activityBatchByItem: Readonly<Record<ItemId, TranscriptActivityBatch>>
+  activityPresentation: Readonly<Record<string, TranscriptActivityPresentation>> // keyed by blockKey
   topSpacerRows: number
   bottomSpacerRows: number
   overscanRows: number
@@ -250,6 +292,8 @@ interface TranscriptWindow {
 ```
 
 `TranscriptFrame.blocks` is the complete lightweight chronological block plan. `TranscriptFrame.window.blocks` is the subset selected for native mounting and measurement. Renderer-neutral height composition may retain measurements or estimates for the complete plan, but the OpenTUI adapter must inspect native renderables only for the materialized window. Stages 1–4 use a pass-through planner, so both arrays currently contain every block; Stage 5 changes the window policy and materialization strategy without changing transcript semantics or this ownership contract.
+
+Stage 5 treats an active compact activity batch as one presentation unit for range selection and height accounting. Its lead row owns the visible height; compacted child blocks contribute zero rows and need not be mounted. A reveal of a child first dissolves the compact variant, then replans a window containing that canonical item. Complete-plan batch segmentation is item-scoped and structurally shared; ordinary detached-window publications project only bounded materialized members and must not rescan or clone a transcript-sized child list. An overscan boundary therefore cannot split or relabel one adjacent run without making view publication depend on total transcript size.
 
 [Transcript windowing implementation](./transcript-windowing-implementation.md) owns the next Stage 5 execution order, verification, and performance evidence.
 

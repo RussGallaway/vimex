@@ -1,12 +1,13 @@
 import { LinearScrollAccel, type ScrollBoxRenderable, type SyntaxStyle } from "@opentui/core"
 import type { ConversationItem } from "@vimex/conversation"
 import type { InteractionState } from "@vimex/interaction"
-import type { TranscriptItemBlock, TranscriptState, TranscriptWindow } from "@vimex/transcript"
+import { blockKey, type TranscriptActivityBatch, type TranscriptItemBlock, type TranscriptState, type TranscriptWindow } from "@vimex/transcript"
 import { memo, useMemo, type RefObject } from "react"
 import { selectedRangeForItem } from "./layout"
 import { emberTide } from "../theme"
 import { TranscriptNode } from "./TranscriptNode"
 import { TurnActivity } from "./TurnActivity"
+import { ActivityBatch } from "./ActivityBatch"
 import { transcriptBlockRenderableId } from "./rendered-layout"
 
 export interface TranscriptViewportProps {
@@ -28,6 +29,7 @@ export const TranscriptViewport = memo(function TranscriptViewport(props: Transc
   // accelerating trackpad bursts into large, unexpected viewport jumps.
   const scrollAcceleration = useMemo(() => new LinearScrollAccel(), [])
   const cursorId = props.state.cursor?.itemId
+  const activityPresentation = props.window.activityPresentation
   return (
     <scrollbox
       id="transcript"
@@ -63,9 +65,12 @@ export const TranscriptViewport = memo(function TranscriptViewport(props: Transc
           <box height={1} flexShrink={0} />
         </box>
         if (!("item" in block)) return null
+        const activity = activityPresentation[blockKey(block)]
+        if (activity?.kind === "activity-hidden") return <box key={`item:${block.key.itemId}:${block.key.blockId}`} id={transcriptBlockRenderableId(block)} visible={false} enableLayout={false} />
         const folded = Boolean(props.state.folded[block.key.itemId])
         const current = cursorId === block.key.itemId && props.surface === "transcript"
         const selected = Boolean(selectedRangeForItem(props.state, block.key.itemId))
+        if (activity?.kind === "activity-lead") return <ActivityBatchRow key={`batch:${activity.batch.key}`} renderableId={transcriptBlockRenderableId(block)} batch={activity.batch} current={current} selected={selected} followedByActivity={Boolean(activity.batch.followedByActivity)} />
         return <TranscriptRow key={`item:${block.key.itemId}:${block.key.blockId}`} renderableId={transcriptBlockRenderableId(block)} block={block} folded={folded} current={current} selected={selected} syntax={props.syntax} />
       })}
       <box id="transcript-bottom-spacer" visible={props.window.bottomSpacerRows > 0} height={Math.max(1, props.window.bottomSpacerRows)} flexShrink={0} />
@@ -101,4 +106,19 @@ const TranscriptRow = memo(function TranscriptRow(props: {
       {continues || props.block.followedByActivity ? null : <box height={1} flexShrink={0} />}
     </box>
   )
+})
+
+const ActivityBatchRow = memo(function ActivityBatchRow(props: {
+  renderableId: string
+  batch: TranscriptActivityBatch
+  current: boolean
+  selected: boolean
+  followedByActivity: boolean
+}) {
+  return <box id={props.renderableId} flexShrink={0}>
+    <box flexShrink={0} border={["left"]} borderColor={props.selected ? emberTide.amber : props.current ? emberTide.blueBright : emberTide.borderMuted} paddingLeft={2}>
+      <ActivityBatch batch={props.batch} />
+    </box>
+    {props.followedByActivity ? null : <box height={1} flexShrink={0} />}
+  </box>
 })

@@ -87,6 +87,32 @@ test("folded geometry uses boundary sentinels instead of hidden per-grapheme poi
   }
 })
 
+test("activity-hidden blocks publish zero-row geometry without semantic points", async () => {
+  const block = blockFor("hidden child")
+  const setup = await testRender(<box id="block" height={0} flexShrink={0} />, { width: 60, height: 6 })
+  try {
+    await act(async () => { await setup.flush(); await setup.renderOnce() })
+    const renderable = setup.renderer.root.findDescendantById("block") as Renderable
+    const geometry = measureRenderedBlock({ renderer: setup.renderer, renderable, block, width: 60, styleRevision: 1, folded: true, presentation: "activity-hidden" })
+    expect(geometry.rows).toBe(0)
+    expect(geometry.points).toEqual({})
+    expect(geometry.key.presentation).toBe("activity-hidden")
+  } finally { await act(async () => setup.renderer.destroy()) }
+})
+
+test("activity batch leads expose only logical boundary sentinels", async () => {
+  const block = blockFor("canonical lead text that must not map onto the batch summary")
+  const setup = await testRender(<box id="block"><text>Web research · 3 searches</text></box>, { width: 60, height: 6 })
+  try {
+    await act(async () => { await setup.flush(); await setup.renderOnce() })
+    const renderable = setup.renderer.root.findDescendantById("block") as Renderable
+    const geometry = measureRenderedBlock({ renderer: setup.renderer, renderable, block, width: 60, styleRevision: 1, folded: true, presentation: "activity-lead" })
+    expect(Object.keys(geometry.points).map(Number)).toEqual([0, block.projection.sourceSpans.length])
+    expect(geometry.points[block.projection.sourceSpans.length]?.hidden).toBe(true)
+    expect(geometry.key.presentation).toBe("activity-lead")
+  } finally { await act(async () => setup.renderer.destroy()) }
+})
+
 test("source-less activity blocks report their complete outer footprint", async () => {
   const activity: TranscriptTurnActivityBlock = {
     key: { kind: "turn-activity", turnId: turnId("activity-turn") },

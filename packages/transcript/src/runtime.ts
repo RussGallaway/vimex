@@ -3,7 +3,7 @@ import { appendTranscriptOrder, inheritTranscriptTextLengthIndex, inheritTranscr
 import { composeTranscriptGeometry, composeTranscriptWindowGeometry, emptyTranscriptGeometry, freezeBlockGeometry, geometryMatchesBlock, type BlockGeometry, type BlockMeasurementBase, type BlockMeasurementBatch, type LayoutResetReason, type TranscriptGeometry } from "./geometry"
 import { createHeightIndex, type TranscriptHeightIndex } from "./height-index"
 import { inheritTranscriptUrlIndex, inheritTranscriptUrlIndexChanges, primeTranscriptUrlIndex, type TranscriptUrlIndexDiagnostics } from "./application/transcript-url-index"
-import { appendTranscriptBlock, blockKey, buildTranscriptBlocks, buildTranscriptItemBlock, buildTranscriptItemBlocks, buildTranscriptTurnActivityBlock, passThroughWindow, persistentTranscriptBlockPlan, planTranscriptWindow, pointIsMaterialized, replaceTranscriptBlock, transcriptPointBlockIndex, type TranscriptBlock, type TranscriptBlockPlanDiagnostics, type TranscriptItemBlock, type TranscriptWindow } from "./window"
+import { appendTranscriptBlock, blockKey, buildTranscriptBlocks, buildTranscriptItemBlock, buildTranscriptItemBlocks, buildTranscriptTurnActivityBlock, passThroughWindow, passThroughWindowWithActivityPlan, persistentTranscriptBlockPlan, planTranscriptWindow, pointIsMaterialized, replaceTranscriptBlock, transcriptPointBlockIndex, type TranscriptActivityPresentation, type TranscriptBlock, type TranscriptBlockPlanDiagnostics, type TranscriptItemBlock, type TranscriptWindow } from "./window"
 
 export type TranscriptDamage =
   | Readonly<{ kind: "none" }>
@@ -200,6 +200,51 @@ function shallowRecordEqual(left: object, right: object): boolean {
   return leftEntries.length === rightEntries.length && leftEntries.every(([key, value]) => Object.is(value, (right as Record<string, unknown>)[key]))
 }
 
+function sameActivityProtection(left: TranscriptState, right: TranscriptState, window: TranscriptWindow): boolean {
+  const protectedMember = (point: LogicalPoint | undefined) => {
+    const batch = point ? window.activityBatchByItem[point.itemId] : undefined
+    if (!point || !batch) return undefined
+    const outsideLead = point.itemId === batch.leadItemId && (point.graphemeOffset < batch.leadGraphemeFrom
+      || point.graphemeOffset > batch.leadGraphemeTo || (point.graphemeOffset === batch.leadGraphemeTo && !batch.leadIncludesEnd))
+    return point.itemId !== batch.leadItemId || outsideLead ? batch.key : undefined
+  }
+  return left.folded === right.folded
+    && protectedMember(left.cursor) === protectedMember(right.cursor)
+    && protectedMember(left.viewport.kind === "tail" ? undefined : left.viewport.point)
+      === protectedMember(right.viewport.kind === "tail" ? undefined : right.viewport.point)
+    && protectedMember(left.selection?.anchor) === protectedMember(right.selection?.anchor)
+    && protectedMember(left.selection?.head) === protectedMember(right.selection?.head)
+}
+
+function changedActivityPresentationIds(left: Readonly<Record<string, TranscriptActivityPresentation>>, right: Readonly<Record<string, TranscriptActivityPresentation>>): readonly ItemId[] {
+  if (left === right) return []
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)])
+  const ids = new Set<ItemId>()
+  for (const key of keys) {
+    if (left[key]?.kind === right[key]?.kind) continue
+    const itemId = right[key]?.itemId ?? left[key]?.itemId
+    if (itemId) ids.add(itemId)
+  }
+  return [...ids]
+}
+
+function damageWithActivityChanges(damage: TranscriptDamage, itemIds: readonly ItemId[]): TranscriptDamage {
+  if (!itemIds.length || damage.kind === "full" || damage.kind === "layout") return frozenDamage(damage)
+  const prior = damage.kind === "blocks" ? damage.itemIds : []
+  return frozenDamage({ kind: "blocks", itemIds: [...prior, ...itemIds] })
+}
+
+function activityTopologyChanged(left: TranscriptBlock | undefined, right: TranscriptItemBlock | undefined): boolean {
+  if (!left || !("item" in left) || !right) return true
+  const a = left.item, b = right.item
+  const relevant = (a.kind === "command" || a.kind === "tool") && a.activity
+    || (b.kind === "command" || b.kind === "tool") && b.activity
+  if (!relevant) return false
+  if ((a.kind !== "command" && a.kind !== "tool") || (b.kind !== "command" && b.kind !== "tool")) return true
+  return a.status !== b.status || a.durationMs !== b.durationMs
+    || a.activity?.family !== b.activity?.family || a.activity?.label !== b.activity?.label
+}
+
 function sameBlock(left: TranscriptBlock, right: TranscriptBlock): boolean {
   if (left.key.kind !== right.key.kind || blockKey(left) !== blockKey(right) || left.contentRevision !== right.contentRevision) return false
   if (left.estimatedRows !== right.estimatedRows) return false
@@ -224,6 +269,7 @@ function sameWindow(left: TranscriptWindow, right: TranscriptWindow): boolean {
   return left === right || (left.topSpacerRows === right.topSpacerRows
     && left.bottomSpacerRows === right.bottomSpacerRows
     && left.overscanRows === right.overscanRows
+    && left.activityPresentation === right.activityPresentation
     && left.blocks.length === right.blocks.length
     && left.blocks.every((block, index) => block === right.blocks[index]))
 }
@@ -329,11 +375,12 @@ function reconciledGeometry(
   previous: TranscriptGeometry | undefined,
   input: TranscriptRuntimeInput,
   blocks: readonly TranscriptBlock[],
+  window: TranscriptWindow,
   diagnostics?: TranscriptRuntimeDiagnostics,
 ): TranscriptGeometry {
   if (diagnostics) diagnostics.completeGeometryBlockVisits += blocks.length
-  if (!previous) return composeTranscriptGeometry(blocks, input.transcript.folded, {}, 0, 0)
-  return composeTranscriptGeometry(blocks, input.transcript.folded, previous.byBlockKey, previous.generation, previous.revision, previous.width, previous.styleRevision)
+  if (!previous) return composeTranscriptGeometry(blocks, input.transcript.folded, {}, 0, 0, undefined, undefined, window.activityPresentation)
+  return composeTranscriptGeometry(blocks, input.transcript.folded, previous.byBlockKey, previous.generation, previous.revision, previous.width, previous.styleRevision, window.activityPresentation)
 }
 
 function pointBlockLocalRow(
@@ -351,19 +398,22 @@ function pointBlockLocalRow(
   return undefined
 }
 
-function frameFor(input: TranscriptRuntimeInput, blocks: readonly TranscriptBlock[], displayedCanonicalRevision: number, revision: number, damage: TranscriptDamage, previousGeometry?: TranscriptGeometry, diagnostics?: TranscriptRuntimeDiagnostics, persistentPlan = false): TranscriptFrame {
+function frameFor(input: TranscriptRuntimeInput, blocks: readonly TranscriptBlock[], displayedCanonicalRevision: number, revision: number, damage: TranscriptDamage, previousGeometry?: TranscriptGeometry, diagnostics?: TranscriptRuntimeDiagnostics, persistentPlan = false, previousWindow?: TranscriptWindow): TranscriptFrame {
   const plan = persistentPlan ? persistentTranscriptBlockPlan(blocks) : blocks
+  const transcript = presentationTranscript(input.transcript, plan)
+  const window = passThroughWindow(plan, transcript, previousWindow)
+  const activityDamage = previousWindow ? changedActivityPresentationIds(previousWindow.activityPresentation, window.activityPresentation) : []
   return Object.freeze({
     threadId: input.threadId,
     canonicalGeneration: input.canonicalGeneration,
     displayedCanonicalRevision,
     presentationRevision: revision,
     mode: input.mode,
-    transcript: presentationTranscript(input.transcript, plan),
+    transcript,
     blocks: plan,
-    window: passThroughWindow(plan),
-    geometry: reconciledGeometry(previousGeometry, input, plan, diagnostics),
-    damage: frozenDamage(damage),
+    window,
+    geometry: reconciledGeometry(previousGeometry, input, plan, window, diagnostics),
+    damage: damageWithActivityChanges(damage, activityDamage),
   })
 }
 
@@ -371,7 +421,7 @@ function buildFrame(input: TranscriptRuntimeInput, previous: TranscriptFrame | u
   const planned = buildTranscriptBlocks({ conversation: input.conversation, transcript: input.transcript,
     excludedTurnIds: input.excludedTurnIds, canonicalGeneration: input.canonicalGeneration, threadId: input.threadId })
   const blocks = previous ? reconcileBlocks(previous.blocks, planned) : planned
-  return frameFor(input, blocks, input.canonicalRevision, revision, damage, previous?.geometry, diagnostics, persistentPlan)
+  return frameFor(input, blocks, input.canonicalRevision, revision, damage, previous?.geometry, diagnostics, persistentPlan, previous?.window)
 }
 
 function isEmptyTailTurnAdmission(previous: TranscriptRuntimeInput, next: TranscriptRuntimeInput): boolean {
@@ -496,6 +546,7 @@ export class TranscriptRuntime {
   private frame: TranscriptFrame
   private latestInput: TranscriptRuntimeInput
   private displayedInput: TranscriptRuntimeInput
+  private activityProtectionState: TranscriptState
   private windowPolicy: TranscriptWindowPolicy | undefined
   private heightIndex: TranscriptHeightIndex | undefined
   private readonly diagnostics: TranscriptRuntimeDiagnostics | undefined
@@ -511,6 +562,7 @@ export class TranscriptRuntime {
   constructor(input: TranscriptRuntimeInput, options: TranscriptRuntimeOptions = {}) {
     this.latestInput = input
     this.displayedInput = input
+    this.activityProtectionState = input.transcript
     this.excludedTurnIds = new Set(input.excludedTurnIds ?? [])
     this.windowPolicy = options.windowPolicy && Object.freeze({ ...options.windowPolicy })
     this.diagnostics = options.diagnostics
@@ -528,6 +580,7 @@ export class TranscriptRuntime {
     }
     const index = this.heightIndexForFrame(initial, true)
     this.frame = this.withPlannedWindow(initial, index, displayedReveal(input, initial, this.diagnostics))
+    this.activityProtectionState = this.frame.transcript
     this.heightIndex = index
     this.reindex(this.frame.blocks)
     this.lastRevealId = input.reveal?.id ?? -1
@@ -552,17 +605,37 @@ export class TranscriptRuntime {
   private heightIndexForFrame(frame: TranscriptFrame, estimatesOnly = false): TranscriptHeightIndex | undefined {
     if (!this.windowPolicy) return undefined
     const blockByKey = new Map(frame.blocks.map(block => [blockKey(block), block]))
-    const overrides = estimatesOnly ? [] : Object.values(frame.geometry.byBlockKey).flatMap(geometry => {
-      const block = blockByKey.get(geometry.key.blockKey)
-      if (!block || !geometryMatchesBlock(geometry, block,
-        block.key.kind === "item" && Boolean(frame.transcript.folded[block.key.itemId]))) return []
-      return [{ blockKey: geometry.key.blockKey, contentRevision: geometry.key.contentRevision, rows: geometry.rows }]
+    const activityOverrides = Object.entries(frame.window.activityPresentation).flatMap(([key, value]) => {
+      const block = blockByKey.get(key)
+      return block ? [{ blockKey: key, contentRevision: block.contentRevision, rows: value.kind === "activity-hidden" ? 0 : 2 }] : []
     })
+    const overrides = estimatesOnly ? activityOverrides : [...activityOverrides, ...Object.values(frame.geometry.byBlockKey).flatMap(geometry => {
+      const block = blockByKey.get(geometry.key.blockKey)
+      const presentation = block ? frame.window.activityPresentation[blockKey(block)]?.kind ?? "item" : "item"
+      if (!block || !geometryMatchesBlock(geometry, block,
+        block.key.kind === "item" && (presentation !== "item" || Boolean(frame.transcript.folded[block.key.itemId])), presentation)) return []
+      return [{ blockKey: geometry.key.blockKey, contentRevision: geometry.key.contentRevision, rows: geometry.rows }]
+    })]
     if (this.diagnostics) {
       this.diagnostics.heightIndexBuilds += 1
       this.diagnostics.heightIndexBlockVisits += frame.blocks.length
     }
     return createHeightIndex(frame.blocks, overrides)
+  }
+
+  private heightIndexForActivityChanges(frame: TranscriptFrame, index: TranscriptHeightIndex | undefined): TranscriptHeightIndex | undefined {
+    if (!index || this.frame.window.activityPresentation === frame.window.activityPresentation) return index
+    const previous = this.frame.window.activityPresentation, next = frame.window.activityPresentation
+    for (const key of new Set([...Object.keys(previous), ...Object.keys(next)])) {
+      if (previous[key]?.kind === next[key]?.kind) continue
+      const ordinal = index.blockIndex(key)
+      const block = ordinal === undefined ? undefined : frame.blocks[ordinal]
+      if (!block) continue
+      const rows = next[key]?.kind === "activity-hidden" ? 0 : next[key]?.kind === "activity-lead" ? 2
+        : block.key.kind === "item" && frame.transcript.folded[block.key.itemId] ? 1 : Math.max(1, block.estimatedRows)
+      index = index.replaceHeight({ blockKey: key, contentRevision: block.contentRevision, rows })
+    }
+    return index
   }
 
   private heightIndexForFoldChanges(frame: TranscriptFrame, itemIds: readonly ItemId[]): TranscriptHeightIndex | undefined {
@@ -622,12 +695,15 @@ export class TranscriptRuntime {
         ...(localRow === undefined ? {} : { blockLocalRow: localRow }) })
     const planned = index ? planTranscriptWindow({
       blocks: frame.blocks,
+      state: frame.transcript,
+      prior: frame.window,
+      activityPlan: frame.window,
       heights: index,
       viewportRows: this.windowPolicy.viewportRows,
       overscanRows: this.windowPolicy.overscanRows,
       attachment,
       ...(reveal ? { reveal } : {}),
-    }) : passThroughWindow(frame.blocks)
+    }) : passThroughWindow(frame.blocks, frame.transcript, frame.window)
     if (this.diagnostics) this.diagnostics.blockPlanWindowSliceItems += planned.blocks.length
     const window = sameWindow(frame.window, planned) ? frame.window : planned
     const alreadyWindowLocal = window === frame.window
@@ -644,6 +720,7 @@ export class TranscriptRuntime {
       index?.totalRows ?? frame.geometry.totalRows,
       frame.geometry.width,
       frame.geometry.styleRevision,
+      window.activityPresentation,
     )
     if (!alreadyWindowLocal && this.diagnostics) this.diagnostics.windowGeometryBlockVisits += window.blocks.length
     return window === frame.window && geometry === frame.geometry ? frame : Object.freeze({ ...frame, window, geometry })
@@ -697,6 +774,8 @@ export class TranscriptRuntime {
     let blocks = this.frame.blocks
     let index = this.heightIndex?.supports(blocks) ? this.heightIndex : undefined
     let projections = persistentTranscriptProjections(this.frame.transcript.projectionById)
+    let materialized = false
+    let activityChanged = false
     for (const itemId of itemIds) {
       const position = this.itemBlockIndexes.get(itemId)
       if (position === -1) return undefined
@@ -704,7 +783,9 @@ export class TranscriptRuntime {
       const next = buildTranscriptItemBlock(input, itemId)
       if (this.diagnostics) this.diagnostics.changedItemBuilds += 1
       if (!prior && !next) continue
+      materialized = true
       if (!prior || !("projection" in prior) || !next || prior.turnId !== next.turnId) return undefined
+      activityChanged ||= activityTopologyChanged(prior, next)
       projections = setTranscriptProjection(projections, itemId, next.projection, this.diagnostics)
       if (sameBlock(prior, next)) continue
       if (!this.windowPolicy) {
@@ -716,8 +797,10 @@ export class TranscriptRuntime {
       const replaced = replaceTranscriptBlock(blocks, position!, prior, next, this.diagnostics)
       if (!replaced) return undefined
       const counters = { nodeVisits: 0, nodesCopied: 0 }
+      const presentation = this.frame.window.activityPresentation[blockKey(prior)]?.kind
       const replacedIndex = index?.replaceBlock(replaced, prior, next,
-        this.frame.transcript.folded[itemId] ? 1 : Math.max(1, next.estimatedRows), counters)
+        presentation === "activity-hidden" ? 0 : presentation === "activity-lead" ? 2
+          : this.frame.transcript.folded[itemId] ? 1 : Math.max(1, next.estimatedRows), counters)
       if (!replacedIndex) return undefined
       blocks = replaced
       index = replacedIndex
@@ -727,10 +810,17 @@ export class TranscriptRuntime {
         this.diagnostics.heightIndexNodesCopied += counters.nodesCopied
       }
     }
+    // Canonical-only items, such as reasoning, never enter the semantic
+    // transcript and must not wake a following or detached presentation.
+    if (!materialized) return Object.freeze({ frame: this.frame, index: this.heightIndex })
     blocks = this.windowPolicy ? persistentTranscriptBlockPlan(blocks) : blocks
     const transcript = presentationTranscriptWithProjections(input.transcript, this.frame.transcript.order, projections)
     inheritTranscriptTextLengthIndexChanges(this.frame.transcript, transcript, itemIds, this.diagnostics)
     inheritTranscriptUrlIndexChanges(this.frame.transcript, transcript, itemIds, this.diagnostics)
+    const window = activityChanged
+      ? passThroughWindow(blocks, transcript, this.frame.window)
+      : this.retainedActivityWindow(blocks, transcript)
+    const activityDamage = changedActivityPresentationIds(this.frame.window.activityPresentation, window.activityPresentation)
     const frame = Object.freeze({
       threadId: input.threadId,
       canonicalGeneration: input.canonicalGeneration,
@@ -739,9 +829,9 @@ export class TranscriptRuntime {
       mode: input.mode,
       transcript,
       blocks,
-      window: passThroughWindow(blocks),
-      geometry: this.windowPolicy ? this.frame.geometry : reconciledGeometry(this.frame.geometry, input, blocks, this.diagnostics),
-      damage: frozenDamage(damage),
+      window,
+      geometry: this.windowPolicy ? this.frame.geometry : reconciledGeometry(this.frame.geometry, input, blocks, window, this.diagnostics),
+      damage: damageWithActivityChanges(damage, activityDamage),
     })
     return Object.freeze({ frame, index })
   }
@@ -812,7 +902,7 @@ export class TranscriptRuntime {
           displayedCanonicalRevision: input.canonicalRevision,
           presentationRevision: this.frame.presentationRevision + 1,
           blocks,
-          window: changed ? passThroughWindow(blocks) : this.frame.window,
+          window: changed ? this.retainedActivityWindow(blocks, this.frame.transcript) : this.frame.window,
           damage: frozenDamage(damage),
         }),
         index,
@@ -871,21 +961,37 @@ export class TranscriptRuntime {
       mode: input.mode,
       transcript,
       blocks,
-      window: passThroughWindow(blocks),
+      window: (appended.item.kind === "command" || appended.item.kind === "tool") && appended.item.activity
+        ? passThroughWindow(blocks, transcript, this.frame.window)
+        : this.retainedActivityWindow(blocks, transcript),
       geometry: this.frame.geometry,
       damage: frozenDamage(damage),
     })
     return Object.freeze({ frame, index, appendedItemId: itemId })
   }
 
+  private retainedActivityWindow(blocks: readonly TranscriptBlock[], transcript: TranscriptState): TranscriptWindow {
+    return sameActivityProtection(transcript, this.activityProtectionState, this.frame.window)
+      ? Object.freeze({ ...this.frame.window, blocks, topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
+      : passThroughWindowWithActivityPlan(blocks, this.frame.window, transcript)
+  }
+
   private presentationFrame(input: TranscriptRuntimeInput, damage: TranscriptDamage): TranscriptFrame {
+    const transcript = presentationTranscriptWithProjections(input.transcript, this.frame.transcript.order, this.frame.transcript.projectionById)
+    const currentWindow = this.frame.window
+    const window = sameActivityProtection(transcript, this.activityProtectionState, currentWindow)
+      ? currentWindow : Object.freeze({ ...passThroughWindowWithActivityPlan(currentWindow.blocks, currentWindow, transcript),
+        topSpacerRows: currentWindow.topSpacerRows, bottomSpacerRows: currentWindow.bottomSpacerRows, overscanRows: currentWindow.overscanRows })
+    const activityDamage = changedActivityPresentationIds(this.frame.window.activityPresentation, window.activityPresentation)
     const frame = Object.freeze({
       ...this.frame,
       presentationRevision: this.frame.presentationRevision + 1,
       mode: input.mode,
-      transcript: presentationTranscriptWithProjections(input.transcript, this.frame.transcript.order, this.frame.transcript.projectionById),
-      geometry: this.frame.geometry,
-      damage: frozenDamage(damage),
+      transcript,
+      window,
+      geometry: this.windowPolicy || (transcript.folded === this.activityProtectionState.folded && activityDamage.length === 0)
+        ? this.frame.geometry : reconciledGeometry(this.frame.geometry, input, this.frame.blocks, window, this.diagnostics),
+      damage: damageWithActivityChanges(damage, activityDamage),
     })
     return frame
   }
@@ -906,19 +1012,20 @@ export class TranscriptRuntime {
     }
     const foldsChanged = raw.transcript.folded !== this.frame.transcript.folded
     const targeted = foldsChanged && damage.kind === "folds" ? this.heightIndexForFoldChanges(raw, damage.itemIds) : undefined
-    const index = foldsChanged
+    const index = this.heightIndexForActivityChanges(raw, foldsChanged
       ? targeted ?? this.heightIndexForFrame(raw)
-      : this.heightIndex?.supports(raw.blocks) ? this.heightIndex : this.heightIndexForFrame(raw)
+      : this.heightIndex?.supports(raw.blocks) ? this.heightIndex : this.heightIndexForFrame(raw))
     const geometry = !foldsChanged ? raw.geometry : this.windowPolicy
       ? composeTranscriptWindowGeometry(raw.window.blocks, raw.transcript.folded, raw.geometry.byBlockKey,
         raw.geometry.generation, raw.geometry.revision, raw.window.topSpacerRows, index?.totalRows ?? raw.geometry.totalRows,
-        raw.geometry.width, raw.geometry.styleRevision)
-      : reconciledGeometry(raw.geometry, input, raw.blocks, this.diagnostics)
+        raw.geometry.width, raw.geometry.styleRevision, raw.window.activityPresentation)
+      : reconciledGeometry(raw.geometry, input, raw.blocks, raw.window, this.diagnostics)
     if (foldsChanged && this.diagnostics) {
       if (this.windowPolicy) this.diagnostics.windowGeometryBlockVisits += raw.window.blocks.length
     }
     const prepared = geometry === raw.geometry ? raw : Object.freeze({ ...raw, geometry })
     this.displayedInput = presentationInput
+    this.activityProtectionState = prepared.transcript
     return this.publish(this.withPlannedWindow(prepared, index, displayedReveal(input, prepared, this.diagnostics)), index)
   }
 
@@ -937,14 +1044,16 @@ export class TranscriptRuntime {
 
     const blocks = new Map(this.frame.window.blocks.map(block => [blockKey(block), block]))
     const measuredKeys = new Set<string>()
+    const presentation = this.frame.window.activityPresentation
     for (const measurement of batch.measurements) {
       if (measuredKeys.has(measurement.key.blockKey)) return this.frame
       measuredKeys.add(measurement.key.blockKey)
       const block = blocks.get(measurement.key.blockKey)
+      const blockPresentation = block ? presentation[blockKey(block)]?.kind ?? "item" : "item"
       if (!block || !geometryMatchesBlock(measurement, block,
-        block.key.kind === "item" && Boolean(this.frame.transcript.folded[block.key.itemId]))) return this.frame
+        block.key.kind === "item" && (blockPresentation !== "item" || Boolean(this.frame.transcript.folded[block.key.itemId])), blockPresentation)) return this.frame
       if (!Number.isSafeInteger(measurement.nativeRevision) || measurement.nativeRevision < 0
-        || !Number.isSafeInteger(measurement.rows) || measurement.rows < 1
+        || !Number.isSafeInteger(measurement.rows) || measurement.rows < 0 || (measurement.rows === 0 && blockPresentation !== "activity-hidden")
         || !Number.isSafeInteger(measurement.key.width) || measurement.key.width < 1) return this.frame
       const prior = this.frame.geometry.byBlockKey[measurement.key.blockKey]
       if (prior && measurement.nativeRevision <= prior.nativeRevision) return this.frame
@@ -977,7 +1086,7 @@ export class TranscriptRuntime {
     }
     if (!this.windowPolicy) {
       const geometry = composeTranscriptGeometry(this.frame.blocks, this.frame.transcript.folded, nextByKey,
-        this.frame.geometry.generation, this.frame.geometry.revision + 1, first.key.width, first.key.styleRevision)
+        this.frame.geometry.generation, this.frame.geometry.revision + 1, first.key.width, first.key.styleRevision, presentation)
       return this.publish(Object.freeze({
         ...this.frame,
         presentationRevision: this.frame.presentationRevision + 1,
@@ -995,6 +1104,7 @@ export class TranscriptRuntime {
       nextIndex?.totalRows ?? this.frame.geometry.totalRows,
       first.key.width,
       first.key.styleRevision,
+      presentation,
     )
     const corrected = this.withPlannedWindow(Object.freeze({
       ...this.frame,
@@ -1028,7 +1138,10 @@ export class TranscriptRuntime {
     preserveHiddenDamage = false,
   ): TranscriptFrame {
     if (!preserveHiddenDamage) this.hiddenDamage.reset()
-    const structuralCandidate = Boolean(incrementalItemIds
+    const canonicalOnly = Boolean(incrementalItemIds?.length
+      && incrementalItemIds.every(id => !this.frame.transcript.projectionById[id] && !input.transcript.projectionById[id])
+      && !activeTurnPresentationChanged(previousInput, input))
+    const structuralCandidate = !canonicalOnly && Boolean(incrementalItemIds
       && (incrementalItemIds.length === 0
         || incrementalItemIds.some(itemId => !this.itemBlockIndexes.has(itemId))
         || !presentationNeutralTurnUpdate(previousInput, input, incrementalItemIds)))
@@ -1037,6 +1150,13 @@ export class TranscriptRuntime {
         ? this.structuralTailFrame(previousInput, input, incrementalItemIds, damage)
         : this.incrementalFrame(input, incrementalItemIds, damage)
       : undefined
+    if (incremental?.frame === this.frame) {
+      if (input.mode === this.frame.mode) return this.frame
+      const next = this.presentationFrame(input, damage)
+      this.displayedInput = Object.freeze({ ...input, transcript: next.transcript })
+      this.activityProtectionState = next.transcript
+      return this.publish(next, incremental.index)
+    }
     const rebuilt = incremental ? undefined : buildFrame(input, reuse ? this.frame : undefined,
       this.frame.presentationRevision + 1, damage, this.diagnostics, Boolean(this.windowPolicy))
     if (rebuilt && this.diagnostics) {
@@ -1045,7 +1165,7 @@ export class TranscriptRuntime {
     }
     const raw = incremental?.frame ?? rebuilt!
     if (rebuilt) transcriptTextLengthRange(raw.transcript, 0, 0, this.diagnostics)
-    const index = incremental?.index ?? (this.heightIndex?.supports(raw.blocks) ? this.heightIndex : this.heightIndexForFrame(raw))
+    const index = this.heightIndexForActivityChanges(raw, incremental?.index ?? (this.heightIndex?.supports(raw.blocks) ? this.heightIndex : this.heightIndexForFrame(raw)))
     const windowStable = Boolean(incremental
       && (incremental as { readonly windowStable?: true }).windowStable)
     const next = windowStable ? raw : this.withPlannedWindow(raw, index, displayedReveal(input, raw, this.diagnostics))
@@ -1055,6 +1175,7 @@ export class TranscriptRuntime {
       if (appendedItemId) this.itemBlockIndexes.set(appendedItemId, next.blocks.length - 1)
     }
     this.displayedInput = Object.freeze({ ...input, transcript: next.transcript })
+    this.activityProtectionState = next.transcript
     return this.publish(next, index)
   }
 

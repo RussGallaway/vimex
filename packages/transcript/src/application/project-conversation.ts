@@ -24,13 +24,57 @@ export function projectItem(item: ConversationItem, previous?: TextProjection): 
   if (previous?.source === source && previous.nodeKind === nodeKind) return previous
   return { ...project(source), nodeKind, revision: (previous?.revision ?? 0) + 1 }
 }
+/**
+ * The primary transcript is a user-facing work record, not a lossless dump of
+ * every canonical event. Reasoning remains available in ConversationState for
+ * activity synthesis and a future inspector, but never acquires transcript
+ * semantics such as navigation, search, selection, unseen state, or geometry.
+ */
+export function projectsToTranscript(item: ConversationItem): boolean {
+  if (item.kind === "reasoning") return false
+  if (item.kind === "unknown" && item.transcript === "diagnostic") return false
+  if (item.kind === "agent" && (item.action === "activity" || item.action === "wait" || item.action === "list") && !item.detail) return false
+  return true
+}
+
+function removeTranscriptItem(state: TranscriptState, itemId: ConversationItem["id"]): TranscriptState {
+  if (!state.projectionById[itemId]) return state
+  const removedIndex = state.order.indexOf(itemId)
+  const order = state.order.filter(id => id !== itemId)
+  const projectionById = { ...state.projectionById }
+  const folded = { ...state.folded }
+  delete projectionById[itemId]
+  delete folded[itemId]
+  const fallbackId = order[Math.min(Math.max(removedIndex, 0), order.length - 1)]
+  const fallback = fallbackId ? { itemId: fallbackId, graphemeOffset: 0 } : undefined
+  const retained = (point: LogicalPoint): boolean => point.itemId !== itemId
+  const unseenItemIds = state.unseenItemIds.filter(id => id !== itemId)
+  return {
+    ...state,
+    order,
+    projectionById,
+    folded,
+    cursor: state.cursor && retained(state.cursor) ? state.cursor : fallback,
+    selection: state.selection && retained(state.selection.anchor) && retained(state.selection.head) ? state.selection : undefined,
+    viewport: state.viewport.kind === "point" && !retained(state.viewport.point)
+      ? fallback ? { ...state.viewport, point: fallback } : { kind: "tail" }
+      : state.viewport,
+    unseenEntries: Math.max(0, state.unseenEntries - (unseenItemIds.length === state.unseenItemIds.length ? 0 : 1)),
+    unseenItemIds,
+    jumps: {
+      back: state.jumps.back.filter(location => retained(location.point)),
+      forward: state.jumps.forward.filter(location => retained(location.point)),
+    },
+    marks: Object.fromEntries(Object.entries(state.marks).filter(([, location]) => retained(location.point))),
+  }
+}
+
 export function syncTranscriptItem(
   state: TranscriptState,
   item: ConversationItem,
   diagnostics?: TranscriptItemSyncDiagnostics,
 ): TranscriptState {
-  if (item.kind === "unknown" && item.transcript === "diagnostic") return state
-  if (item.kind === "agent" && (item.action === "activity" || item.action === "wait" || item.action === "list") && !item.detail) return state
+  if (!projectsToTranscript(item)) return removeTranscriptItem(state, item.id)
   const previous = state.projectionById[item.id]
   const projection = projectItem(item, previous)
   if (projection === previous) return state

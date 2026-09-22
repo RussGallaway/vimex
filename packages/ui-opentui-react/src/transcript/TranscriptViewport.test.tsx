@@ -60,8 +60,8 @@ test("window movement mounts only planned blocks while retaining both spacer roo
     transcript = syncTranscriptItem(transcript, item)
   }
   const frame = createTranscriptFrame({ threadId: thread, canonicalGeneration: 0, canonicalRevision: 1, conversation, transcript, mode: "follow" })
-  const first: TranscriptWindow = Object.freeze({ blocks: Object.freeze(frame.blocks.slice(0, 2)), topSpacerRows: 0, bottomSpacerRows: 1, overscanRows: 1 })
-  const second: TranscriptWindow = Object.freeze({ blocks: Object.freeze(frame.blocks.slice(1)), topSpacerRows: 1, bottomSpacerRows: 0, overscanRows: 1 })
+  const first: TranscriptWindow = Object.freeze({ activityBatches: [], activityBatchByItem: {}, activityPresentation: {}, blocks: Object.freeze(frame.blocks.slice(0, 2)), topSpacerRows: 0, bottomSpacerRows: 1, overscanRows: 1 })
+  const second: TranscriptWindow = Object.freeze({ activityBatches: [], activityBatchByItem: {}, activityPresentation: {}, blocks: Object.freeze(frame.blocks.slice(1)), topSpacerRows: 1, bottomSpacerRows: 0, overscanRows: 1 })
   const syntax = createEmberTideSyntax()
   const scrollRef = createRef<ScrollBoxRenderable>()
   let move!: () => void
@@ -243,8 +243,8 @@ test("fragmented Markdown preserves the unsplit native frame and every logical c
     fragment: undefined,
     followedByActivity: false,
   })
-  const fragmentedWindow: TranscriptWindow = Object.freeze({ blocks: Object.freeze(fragments), topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
-  const rootWindow: TranscriptWindow = Object.freeze({ blocks: Object.freeze([root]), topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
+  const fragmentedWindow: TranscriptWindow = Object.freeze({ activityBatches: [], activityBatchByItem: {}, activityPresentation: {}, blocks: Object.freeze(fragments), topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
+  const rootWindow: TranscriptWindow = Object.freeze({ activityBatches: [], activityBatchByItem: {}, activityPresentation: {}, blocks: Object.freeze([root]), topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
   const fragmentedFrame = Object.freeze({ ...frame, blocks: Object.freeze(fragments), window: fragmentedWindow })
   const rootFrame = Object.freeze({ ...frame, blocks: Object.freeze([root]), window: rootWindow })
   const render = async (window: TranscriptWindow, layoutFrame: typeof frame, styleRevision: string) => {
@@ -292,8 +292,8 @@ test("fragmented multi-file edits preserve the unsplit native frame and every lo
     fragment: undefined,
     followedByActivity: false,
   })
-  const fragmentedWindow: TranscriptWindow = Object.freeze({ blocks: Object.freeze(fragments), topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
-  const rootWindow: TranscriptWindow = Object.freeze({ blocks: Object.freeze([root]), topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
+  const fragmentedWindow: TranscriptWindow = Object.freeze({ activityBatches: [], activityBatchByItem: {}, activityPresentation: {}, blocks: Object.freeze(fragments), topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
+  const rootWindow: TranscriptWindow = Object.freeze({ activityBatches: [], activityBatchByItem: {}, activityPresentation: {}, blocks: Object.freeze([root]), topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
   const fragmentedFrame = Object.freeze({ ...frame, blocks: Object.freeze(fragments), window: fragmentedWindow })
   const rootFrame = Object.freeze({ ...frame, blocks: Object.freeze([root]), window: rootWindow })
   const render = async (window: TranscriptWindow, layoutFrame: typeof frame, styleRevision: string) => {

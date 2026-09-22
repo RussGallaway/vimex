@@ -8,6 +8,8 @@ import {
   type GeometryStyleRevision,
   type LogicalPoint,
   type TranscriptBlock,
+  type TranscriptBlockPresentation,
+  type TranscriptActivityPresentation,
   type TranscriptFrame,
   type TranscriptItemBlock,
   type TranscriptRuntime,
@@ -71,6 +73,10 @@ interface MeasurementSchedule {
 }
 const TRANSIENT_MEASUREMENT_RETRY_LIMIT = 8
 const measurementSchedules = new WeakMap<ScrollBoxRenderable, MeasurementSchedule>()
+
+function blockPresentation(block: TranscriptBlock, presentation: Readonly<Record<string, TranscriptActivityPresentation>>): TranscriptBlockPresentation {
+  return presentation[blockKey(block)]?.kind ?? "item"
+}
 
 function scheduleFor(scrollbox: ScrollBoxRenderable): MeasurementSchedule {
   let schedule = measurementSchedules.get(scrollbox)
@@ -296,7 +302,7 @@ function buildLayout(
       const placement = placementByBlockKey[key]
       if (!placement) return []
       const rows = geometry.byBlockKey[key]?.rows ?? Math.max(1, block.estimatedRows)
-      return [Object.freeze({ blockKey: key, itemId: block.key.itemId, screenY: placement.screenY, rows })]
+      return rows > 0 ? [Object.freeze({ blockKey: key, itemId: block.key.itemId, screenY: placement.screenY, rows })] : []
     })),
   } as TranscriptLayout
   let indexed: ReturnType<typeof linesFor> | undefined
@@ -369,9 +375,11 @@ function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, 
         for (const block of blocks) {
           const key = blockKey(block)
           const geometry = frame!.geometry.byBlockKey[key]
-          const folded = block.key.kind === "item" && Boolean(state.folded[block.key.itemId])
+          const presentation = frame!.window.activityPresentation[key]?.kind ?? "item"
+          const folded = block.key.kind === "item" && (presentation !== "item" || Boolean(state.folded[block.key.itemId]))
           if (priorByKey.get(key) !== block || !geometry || geometry.key.contentRevision !== block.contentRevision
-            || geometry.key.folded !== folded || geometry.key.width !== width || geometry.key.styleRevision !== styleRevision) candidates.add(key)
+            || geometry.key.folded !== folded || (geometry.key.presentation ?? "item") !== presentation
+            || geometry.key.width !== width || geometry.key.styleRevision !== styleRevision) candidates.add(key)
         }
       }
       for (const block of blocks) {
@@ -397,6 +405,7 @@ function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, 
     }
   }
   const measurementBase = runtimeSource?.runtime?.measurementBase(frame)
+  const presentation = frame?.window.activityPresentation ?? Object.freeze({})
   const measured: BlockGeometry[] = []
   const top = scrollbox.viewport.screenY
   const bottom = top + scrollbox.viewport.height
@@ -422,8 +431,9 @@ function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, 
   }
   let rejectedMeasurements = 0
   for (const { key, block, renderable } of orderedCandidates) {
-    const next = measureRenderedBlock({ renderer, renderable, block, width, styleRevision,
-      folded: block.key.kind === "item" && Boolean(state.folded[block.key.itemId]) })
+    const blockMode = blockPresentation(block, presentation)
+    const next = measureRenderedBlock({ renderer, renderable, block, width, styleRevision, presentation: blockMode,
+      folded: block.key.kind === "item" && (blockMode !== "item" || Boolean(state.folded[block.key.itemId])) })
     // React/OpenTUI can briefly expose a newly reconciled child at its final
     // coordinate while the owning block still reports its prior placement.
     // Such a sample is not block-local geometry; retry it on the next frame
@@ -442,7 +452,8 @@ function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, 
     schedule.rejectedRetries.delete(key)
     const prior = frame?.geometry.byBlockKey[blockKey(block)]
     if (!prior || prior.nativeRevision !== next.nativeRevision || prior.key.contentRevision !== next.key.contentRevision
-      || prior.key.width !== next.key.width || prior.key.styleRevision !== next.key.styleRevision || prior.key.folded !== next.key.folded) measured.push(next)
+      || prior.key.width !== next.key.width || prior.key.styleRevision !== next.key.styleRevision || prior.key.folded !== next.key.folded
+      || (prior.key.presentation ?? "item") !== (next.key.presentation ?? "item")) measured.push(next)
     else schedule.pending.delete(key)
   }
   if (runtimeSource?.runtime && measured.length) {
@@ -470,7 +481,7 @@ function currentGeometry(renderer: CliRenderer, scrollbox: ScrollBoxRenderable, 
     && legacy.width === width && legacy.measurements.length === measured.length
     && measured.every((geometry, index) => geometry === legacy.measurements[index])) return { blocks, geometry: legacy.geometry }
   const byBlockKey = Object.fromEntries(measured.map(geometry => [geometry.key.blockKey, geometry]))
-  const geometry = composeTranscriptGeometry(blocks, state.folded, byBlockKey, 0, 1, width, styleRevision)
+  const geometry = composeTranscriptGeometry(blocks, state.folded, byBlockKey, 0, 1, width, styleRevision, presentation)
   legacyGeometryCache.set(scrollbox, { order: state.order, projectionById: state.projectionById, folded: state.folded, width, measurements: measured, geometry })
   return { blocks, geometry }
 }
@@ -504,7 +515,8 @@ export function measuredPoint(layout: TranscriptLayout, point: LogicalPoint | un
 export function rebaseTranscriptLayout(layout: TranscriptLayout, geometry: TranscriptFrame["geometry"]): TranscriptLayout {
   const screenBlockRows = (layout.screenBlockRows ?? []).flatMap(row => {
     const placement = layout.placementByBlockKey?.[row.blockKey]
-    return placement ? [Object.freeze({ ...row, screenY: placement.screenY, rows: geometry.byBlockKey[row.blockKey]?.rows ?? row.rows })] : []
+    const rows = geometry.byBlockKey[row.blockKey]?.rows ?? row.rows
+    return placement && rows > 0 ? [Object.freeze({ ...row, screenY: placement.screenY, rows })] : []
   })
   return Object.freeze({
     width: layout.width,

@@ -58,6 +58,7 @@ The entries below are investigation starting points, not presumed causes.
 | Visual selection changes after scrolling or resize | logical selection endpoints and native clipping | dense copy result versus windowed copy result |
 | Rendered copy or Markdown-source copy is missing or duplicated | canonical projection/source map and fragment ownership | exact copied bytes; fragment boundary near each endpoint |
 | Fold opens at the wrong location or moves the reader | fold damage, height replacement, anchor restoration | measured height before/after; logical point retained |
+| Activity batch count changes while scrolling, or a child cannot be reached | complete activity membership, zero-height index entries, protected cursor/selection | compare the pass-through batch with the bounded window; reveal a middle child and return to follow |
 | Duplicate or stale content flashes during movement | stable block keys, content revisions, stale native callbacks | mounted root IDs and revision accepted by measurement |
 | Main and side transcript disturb each other | per-presentation runtime, geometry, and visibility ownership | which runtime published; identity of the unaffected frame |
 | Hidden or maximized-away pane still consumes work | visibility suspension and scheduler cleanup | mounted roots, listeners, measurement passes while hidden |
@@ -181,4 +182,3 @@ When a finding is repaired, link the regression test and commit. Keep the origin
 - `packages/transcript/src/runtime.ts` owns per-presentation revision, damage, window, and geometry reconciliation.
 - `packages/ui-opentui-react/src/transcript/use-transcript-layout.ts` owns the volatile bridge between semantic anchors and native placement.
 - `packages/ui-opentui-react/src/transcript/rendered-layout.ts` owns mounted-root measurement, pruning, and native coordinate projection.
-

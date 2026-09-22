@@ -1,5 +1,5 @@
 import type { ThreadId } from "@vimex/conversation"
-import type { TranscriptBlock } from "./window"
+import type { TranscriptBlock, TranscriptBlockPresentation } from "./window"
 import { blockKey } from "./window"
 
 export type GeometryStyleRevision = string | number
@@ -11,6 +11,7 @@ export interface BlockGeometryKey {
   readonly width: number
   readonly styleRevision: GeometryStyleRevision
   readonly folded: boolean
+  readonly presentation?: TranscriptBlockPresentation
 }
 
 /** A renderer-neutral logical point. Rows and columns are local to one block. */
@@ -119,10 +120,11 @@ export function emptyTranscriptGeometry(generation = 0, revision = 0): Transcrip
   })
 }
 
-export function geometryMatchesBlock(geometry: BlockGeometry, block: TranscriptBlock, folded: boolean): boolean {
+export function geometryMatchesBlock(geometry: BlockGeometry, block: TranscriptBlock, folded: boolean, presentation: TranscriptBlockPresentation = "item"): boolean {
   return geometry.key.blockKey === blockKey(block)
     && geometry.key.contentRevision === block.contentRevision
     && geometry.key.folded === folded
+    && (geometry.key.presentation ?? "item") === presentation
 }
 
 /** Compose global rows from immutable block-local geometry without cloning points or lines. */
@@ -134,8 +136,9 @@ export function composeTranscriptGeometry(
   revision: number,
   width?: number,
   styleRevision?: GeometryStyleRevision,
+  presentationByBlock: Readonly<Record<string, { readonly kind: Exclude<TranscriptBlockPresentation, "item"> }>> = {},
 ): TranscriptGeometry {
-  return composeGeometry(blocks, foldedByItem, byBlockKey, generation, revision, 0, undefined, width, styleRevision)
+  return composeGeometry(blocks, foldedByItem, byBlockKey, generation, revision, 0, undefined, width, styleRevision, presentationByBlock)
 }
 
 /**
@@ -154,8 +157,9 @@ export function composeTranscriptWindowGeometry(
   totalRows: number,
   width?: number,
   styleRevision?: GeometryStyleRevision,
+  presentationByBlock: Readonly<Record<string, { readonly kind: Exclude<TranscriptBlockPresentation, "item"> }>> = {},
 ): TranscriptGeometry {
-  return composeGeometry(blocks, foldedByItem, byBlockKey, generation, revision, firstRow, totalRows, width, styleRevision)
+  return composeGeometry(blocks, foldedByItem, byBlockKey, generation, revision, firstRow, totalRows, width, styleRevision, presentationByBlock)
 }
 
 function composeGeometry(
@@ -168,6 +172,7 @@ function composeGeometry(
   completeTotalRows: number | undefined,
   width?: number,
   styleRevision?: GeometryStyleRevision,
+  presentationByBlock: Readonly<Record<string, { readonly kind: Exclude<TranscriptBlockPresentation, "item"> }>> = {},
 ): TranscriptGeometry {
   const retained: Record<string, BlockGeometry> = {}
   const rowByBlockKey: Record<string, number> = {}
@@ -178,14 +183,15 @@ function composeGeometry(
   for (const block of blocks) {
     const key = blockKey(block)
     rowByBlockKey[key] = row
-    const folded = block.key.kind === "item" && Boolean(foldedByItem[block.key.itemId])
+    const presentation = presentationByBlock[key]?.kind ?? "item"
+    const folded = block.key.kind === "item" && (presentation !== "item" || Boolean(foldedByItem[block.key.itemId]))
     const geometry = byBlockKey[key]
-    const rows = geometry && geometryMatchesBlock(geometry, block, folded)
+    const rows = geometry && geometryMatchesBlock(geometry, block, folded, presentation)
       && (width === undefined || geometry.key.width === width)
       && (styleRevision === undefined || geometry.key.styleRevision === styleRevision)
-      ? Math.max(1, geometry.rows) : Math.max(1, block.estimatedRows)
+      ? Math.max(0, geometry.rows) : presentation === "activity-hidden" ? 0 : Math.max(1, block.estimatedRows)
     blockRows.push(Object.freeze({ blockKey: key, ...(block.key.kind === "item" ? { itemId: block.key.itemId } : {}), start: row, rows }))
-    if (geometry && geometryMatchesBlock(geometry, block, folded)
+    if (geometry && geometryMatchesBlock(geometry, block, folded, presentation)
       && (width === undefined || geometry.key.width === width)
       && (styleRevision === undefined || geometry.key.styleRevision === styleRevision)) {
       retained[key] = geometry

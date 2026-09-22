@@ -184,7 +184,7 @@ class PersistentLookup<Value> {
 }
 
 function validRows(rows: number): boolean {
-  return Number.isSafeInteger(rows) && rows >= 1
+  return Number.isSafeInteger(rows) && rows >= 0
 }
 
 function itemSpanRef(block: TranscriptItemBlock, index: number): ItemSpanRef {
@@ -456,7 +456,7 @@ export function createHeightIndex(
       seenItems[block.key.itemId] = true
       ;(spanRefsByItem[block.key.itemId] ??= []).push(itemSpanRef(block, index))
     }
-    const estimated = validRows(block.estimatedRows) ? block.estimatedRows : 1
+    const estimated = validRows(block.estimatedRows) && block.estimatedRows > 0 ? block.estimatedRows : 1
     const override = overridesByKey.get(key)
     let height = override?.contentRevision === block.contentRevision ? override.rows : estimated
     if (!Number.isSafeInteger(totalRows + height)) height = estimated

@@ -59,6 +59,7 @@ function measurement(runtime: TranscriptRuntime, key: string, options: Partial<B
       width: options.width ?? 80,
       styleRevision: options.styleRevision ?? "default",
       folded: options.folded ?? false,
+      ...(options.presentation && options.presentation !== "item" ? { presentation: options.presentation } : {}),
     },
     nativeRevision: options.nativeRevision ?? 1,
     rows: 1,
@@ -96,6 +97,44 @@ function runtimeDiagnostics(): TranscriptRuntimeDiagnostics {
     hiddenDamageSnapshots: 0, hiddenDamageSnapshotItemVisits: 0,
   }
 }
+
+test("windowed activity batches keep complete membership and bounded roots through reveal and follow", () => {
+  for (const count of [10, 1_000]) {
+    let source = fixture()
+    source = { ...source, transcript: { ...source.transcript, foldDefaults: { reasoning: false, tools: true } } }
+    const ids = Array.from({ length: count }, (_, index) => itemId(`batch-child-${index}`))
+    for (const id of ids) source = apply(source, { type: "item.started", threadId: thread, item: {
+      id, turnId: turn, kind: "tool", title: "Read", detail: "file contents", status: "complete", activity: { family: "read" },
+    } })
+    const runtime = new TranscriptRuntime(input(source, "follow"), { windowPolicy: { viewportRows: 4, overscanRows: 4 } })
+    const initial = runtime.getSnapshot()
+    expect(initial.window.activityBatches[0]?.itemIds).toEqual(ids)
+    expect(initial.window.blocks.map(blockKey)).toEqual([`item:${answer}:root`, `item:${ids[0]}:root`])
+    expect(initial.geometry.totalRows).toBe(3)
+    const lead = measurement(runtime, `item:${ids[0]}:root`, { folded: true, presentation: "activity-lead" })
+    const measured = runtime.reportMeasurements(batch(runtime, [{ ...lead, rows: 2 }]))
+    expect(measured).not.toBe(initial)
+    expect(measured.window.activityBatches[0]).toBe(initial.window.activityBatches[0])
+    expect(measured.window.blocks.length).toBeLessThanOrEqual(8)
+
+    const point = { itemId: ids[Math.floor(count / 2)]!, graphemeOffset: 3 }
+    source = { ...source, transcript: { ...source.transcript, cursor: point,
+      viewport: { kind: "point", point, preferredScreenRow: 1 } } }
+    const revealed = runtime.update({ ...input(source, "detached", { kind: "none" }, point), presentationDamage: { kind: "view" } })
+    expect(pointIsMaterialized(revealed.window.blocks, point)).toBe(true)
+    expect(revealed.window.activityPresentation[`item:${point.itemId}:root`]).toBeUndefined()
+    expect(revealed.window.blocks.length).toBeLessThanOrEqual(12)
+    expect(revealed.geometry.totalRows).toBe(count + 1)
+
+    source = { ...source, transcript: { ...source.transcript, cursor: { itemId: answer, graphemeOffset: 0 }, viewport: { kind: "tail" } } }
+    const followed = runtime.update({ ...input(source, "follow"), presentationDamage: { kind: "view" } })
+    expect(followed.window.blocks.map(blockKey)).toEqual(initial.window.blocks.map(blockKey))
+    expect(followed.geometry.totalRows).toBe(3)
+    expect(followed.window.activityBatches[0]?.itemIds).toEqual(ids)
+    expect(followed.transcript.order).toHaveLength(count + 1)
+    runtime.dispose()
+  }
+})
 
 test("commits a current geometry batch atomically and rejects a mixed stale batch", () => {
   let source = fixture()
@@ -183,6 +222,170 @@ test("presentation-only navigation retains the exact geometry snapshot", () => {
   expect(moved.geometry.byBlockKey[key]).toBe(measured.geometry.byBlockKey[key])
 })
 
+test("activity batching changes disposable rows without replacing semantic items", () => {
+  let source = fixture()
+  const first = itemId("web-first"), second = itemId("web-second")
+  for (const id of [first, second]) source = apply(source, { type: "item.started", threadId: thread, item: {
+    id, turnId: turn, kind: "tool", title: "Web search", detail: `result ${id}`, activity: { family: "web-research" }, status: "complete",
+  } })
+  source = { ...source, transcript: { ...source.transcript, folded: { [first]: true, [second]: true } } }
+  const runtime = new TranscriptRuntime(input(source, "follow"))
+  const compact = runtime.getSnapshot()
+  expect(compact.window.activityBatches).toHaveLength(1)
+  expect(compact.transcript.order).toContain(first)
+  expect(compact.transcript.order).toContain(second)
+  expect(compact.geometry.blockRows.find(row => row.itemId === second)?.rows).toBe(0)
+
+  source = { ...source, transcript: { ...source.transcript, folded: { ...source.transcript.folded, [first]: false } } }
+  const expanded = runtime.update({ ...input(source, "follow"), presentationDamage: { kind: "layout" } })
+  expect(expanded.transcript.order).toEqual(compact.transcript.order)
+  expect(expanded.geometry.blockRows.find(row => row.itemId === first)?.rows).toBe(1)
+  expect(expanded.geometry.blockRows.find(row => row.itemId === second)?.rows).toBe(1)
+})
+
+test("incremental completion forms an activity batch immediately and damages every changed presentation", () => {
+  let source = fixture()
+  const first = itemId("settling-web-first"), second = itemId("settling-web-second")
+  source = apply(source, { type: "item.started", threadId: thread, item: {
+    id: first, turnId: turn, kind: "tool", title: "Web search", detail: "first", activity: { family: "web-research" }, status: "complete", durationMs: 100,
+  } })
+  source = apply(source, { type: "item.started", threadId: thread, item: {
+    id: second, turnId: turn, kind: "tool", title: "Web search", detail: "second", activity: { family: "web-research" }, status: "running",
+  } })
+  source = { ...source, transcript: { ...source.transcript, folded: { [first]: true, [second]: true } } }
+  const runtime = new TranscriptRuntime(input(source, "follow"))
+  expect(runtime.getSnapshot().window.activityBatches).toHaveLength(0)
+
+  source = apply(source, { type: "item.completed", threadId: thread, item: {
+    id: second, turnId: turn, kind: "tool", title: "Web search", detail: "second", activity: { family: "web-research" }, status: "complete", durationMs: 200,
+  } })
+  const settled = runtime.update(input(source, "follow", { kind: "blocks", itemIds: [second] }))
+  expect(settled.window.activityBatches).toEqual([expect.objectContaining({ itemIds: [first, second], durationMs: 300 })])
+  expect(settled.window.activityPresentation[`item:${first}:root`]?.kind).toBe("activity-lead")
+  expect(settled.window.activityPresentation[`item:${second}:root`]?.kind).toBe("activity-hidden")
+  expect(settled.geometry.blockRows.find(row => row.itemId === second)?.rows).toBe(0)
+  expect(settled.damage).toEqual({ kind: "blocks", itemIds: [second, first] })
+})
+
+test("late authoritative provider completion refreshes aggregate duration", () => {
+  let source = fixture()
+  const first = itemId("late-linear-first"), second = itemId("late-linear-second")
+  for (const id of [first, second]) source = apply(source, { type: "item.started", threadId: thread, item: {
+    id, turnId: turn, kind: "tool", title: "codex_apps · linear.read", detail: String(id), activity: { family: "provider", label: "Linear" }, status: "running",
+  } })
+  source = apply(source, { type: "turn.completed", threadId: thread, turnId: turn, outcome: "complete" })
+  source = { ...source, transcript: { ...source.transcript, folded: { [first]: true, [second]: true } } }
+  const runtime = new TranscriptRuntime(input(source, "follow"))
+  expect(runtime.getSnapshot().window.activityBatches[0]?.durationMs).toBeUndefined()
+
+  source = apply(source, { type: "item.completed", threadId: thread, item: {
+    id: first, turnId: turn, kind: "tool", title: "codex_apps · linear.read", detail: "first", activity: { family: "provider", label: "Linear" }, status: "complete", durationMs: 125,
+  } })
+  runtime.update(input(source, "follow", { kind: "blocks", itemIds: [first] }))
+  source = apply(source, { type: "item.completed", threadId: thread, item: {
+    id: second, turnId: turn, kind: "tool", title: "codex_apps · linear.read", detail: "second", activity: { family: "provider", label: "Linear" }, status: "complete", durationMs: 375,
+  } })
+  const refreshed = runtime.update(input(source, "follow", { kind: "blocks", itemIds: [second] }))
+  expect(refreshed.window.activityBatches[0]?.durationMs).toBe(500)
+})
+
+test("batch-aware navigation preserves geometry unless a protected child changes presentation", () => {
+  let source = fixture()
+  const first = itemId("nav-web-first"), second = itemId("nav-web-second")
+  for (const id of [first, second]) source = apply(source, { type: "item.started", threadId: thread, item: {
+    id, turnId: turn, kind: "tool", title: "Web search", detail: String(id), activity: { family: "web-research" }, status: "complete",
+  } })
+  source = { ...source, transcript: { ...source.transcript, folded: { [first]: true, [second]: true } } }
+  const runtime = new TranscriptRuntime(input(source, "follow"))
+  const compact = runtime.getSnapshot()
+
+  let transcript = { ...source.transcript, cursor: { itemId: answer, graphemeOffset: 1 } }
+  const outside = runtime.update({ ...input({ ...source, transcript }, "follow"), presentationDamage: { kind: "view" } })
+  expect(outside.geometry).toBe(compact.geometry)
+  expect(outside.window).toBe(compact.window)
+
+  transcript = { ...transcript, cursor: { itemId: second, graphemeOffset: 0 } }
+  const revealed = runtime.update({ ...input({ ...source, transcript }, "follow"), presentationDamage: { kind: "view" } })
+  expect(revealed.window.activityPresentation).toEqual({})
+  expect(revealed.geometry).not.toBe(outside.geometry)
+  expect(revealed.damage).toEqual({ kind: "blocks", itemIds: [first, second] })
+  expect(revealed.geometry.blockRows.find(row => row.itemId === second)?.rows).toBe(1)
+})
+
+test("detached old-frame measurement cannot adopt hidden protection state", () => {
+  let source = fixture()
+  const first = itemId("detached-web-first"), second = itemId("detached-web-second")
+  for (const id of [first, second]) source = apply(source, { type: "item.started", threadId: thread, item: {
+    id, turnId: turn, kind: "tool", title: "Web search", detail: String(id), activity: { family: "web-research" }, status: "complete",
+  } })
+  source = { ...source, transcript: { ...source.transcript, folded: { [first]: true, [second]: true } } }
+  const runtime = new TranscriptRuntime(input(source, "follow"))
+  const detached = runtime.update(input(source, "detached"))
+
+  source = apply(source, { type: "item.delta", threadId: thread, itemId: answer, delta: " hidden" })
+  const hiddenTranscript = { ...source.transcript, cursor: { itemId: second, graphemeOffset: 0 } }
+  const hiddenInput = input({ ...source, transcript: hiddenTranscript }, "detached", { kind: "blocks", itemIds: [answer] })
+  expect(runtime.update(hiddenInput)).toBe(detached)
+  const measured = runtime.reportMeasurements(batch(runtime, [measurement(runtime, `item:${first}:root`, { folded: true, presentation: "activity-lead" })]))
+  expect(measured).not.toBe(detached)
+
+  const revealed = runtime.update({ ...hiddenInput, presentationDamage: { kind: "view" } })
+  expect(revealed.window.activityPresentation).toEqual({})
+  expect(revealed.damage).toEqual({ kind: "blocks", itemIds: [first, second] })
+})
+
+test("a newly appended batch retains historical batch identity and damages only the new run", () => {
+  let source = fixture()
+  const old = [itemId("old-web-first"), itemId("old-web-second")]
+  for (const id of old) source = apply(source, { type: "item.started", threadId: thread, item: {
+    id, turnId: turn, kind: "tool", title: "Web search", detail: String(id), activity: { family: "web-research" }, status: "complete",
+  } })
+  const separator = itemId("batch-separator")
+  source = apply(source, { type: "item.started", threadId: thread, item: { id: separator, turnId: turn, kind: "assistant", markdown: "progress", status: "complete" } })
+  const first = itemId("new-web-first"), second = itemId("new-web-second")
+  source = apply(source, { type: "item.started", threadId: thread, item: {
+    id: first, turnId: turn, kind: "tool", title: "Web search", detail: "first", activity: { family: "web-research" }, status: "complete",
+  } })
+  source = { ...source, transcript: { ...source.transcript, folded: { ...Object.fromEntries(old.map(id => [id, true])), [first]: true, [second]: true } } }
+  const runtime = new TranscriptRuntime(input(source, "follow"))
+  const historical = runtime.getSnapshot().window.activityBatches[0]!
+  const historicalPresentation = runtime.getSnapshot().window.activityPresentation[`item:${old[0]}:root`]
+  runtime.reportMeasurements(batch(runtime, [measurement(runtime, `item:${old[0]}:root`, { folded: true, presentation: "activity-lead" })]))
+  const historicalGeometry = runtime.getSnapshot().geometry.byBlockKey[`item:${old[0]}:root`]
+
+  source = apply(source, { type: "item.started", threadId: thread, item: {
+    id: second, turnId: turn, kind: "tool", title: "Web search", detail: "second", activity: { family: "web-research" }, status: "complete",
+  } })
+  const appended = runtime.update(input(source, "follow", { kind: "blocks", itemIds: [second] }))
+  expect(appended.window.activityBatches).toHaveLength(2)
+  expect(appended.window.activityBatches[0]).toBe(historical)
+  expect(appended.window.activityPresentation[`item:${old[0]}:root`]).toBe(historicalPresentation)
+  expect(appended.geometry.byBlockKey[`item:${old[0]}:root`]).toBe(historicalGeometry)
+  expect(appended.damage).toEqual({ kind: "blocks", itemIds: [second, first] })
+  expect(appended.window.activityPresentation[`item:${first}:root`]?.kind).toBe("activity-lead")
+  expect(appended.window.activityPresentation[`item:${second}:root`]?.kind).toBe("activity-hidden")
+})
+
+test("extending a compact run does not remeasure unchanged lead or hidden geometry", () => {
+  let source = fixture()
+  const ids = [itemId("extend-web-first"), itemId("extend-web-second"), itemId("extend-web-third")]
+  for (const id of ids.slice(0, 2)) source = apply(source, { type: "item.started", threadId: thread, item: {
+    id, turnId: turn, kind: "tool", title: "Web search", detail: String(id), activity: { family: "web-research" }, status: "complete",
+  } })
+  source = { ...source, transcript: { ...source.transcript, folded: Object.fromEntries(ids.map(id => [id, true])) } }
+  const runtime = new TranscriptRuntime(input(source, "follow"))
+  runtime.reportMeasurements(batch(runtime, [measurement(runtime, `item:${ids[0]}:root`, { folded: true, presentation: "activity-lead" })]))
+  const leadGeometry = runtime.getSnapshot().geometry.byBlockKey[`item:${ids[0]}:root`]
+
+  source = apply(source, { type: "item.started", threadId: thread, item: {
+    id: ids[2]!, turnId: turn, kind: "tool", title: "Web search", detail: String(ids[2]), activity: { family: "web-research" }, status: "complete",
+  } })
+  const extended = runtime.update(input(source, "follow", { kind: "blocks", itemIds: [ids[2]!] }))
+  expect(extended.window.activityBatches[0]?.countLabel).toBe("3 searches")
+  expect(extended.damage).toEqual({ kind: "blocks", itemIds: [ids[2]!] })
+  expect(extended.geometry.byBlockKey[`item:${ids[0]}:root`]).toBe(leadGeometry)
+})
+
 test("returns one cached immutable snapshot until selected frame data changes", () => {
   const source = fixture()
   const runtime = new TranscriptRuntime(input(source, "follow"))
@@ -219,7 +422,7 @@ test("the frozen dense pass-through reference stays distinct from the windowed p
 test("follow reconciliation replaces a changed item and retains historical block identity", () => {
   let source = fixture()
   const history = itemId("history")
-  source = apply(source, { type: "item.started", threadId: thread, item: { id: history, turnId: turn, kind: "reasoning", markdown: "settled", status: "complete" } })
+  source = apply(source, { type: "item.started", threadId: thread, item: { id: history, turnId: turn, kind: "assistant", markdown: "settled", status: "complete" } })
   const runtime = new TranscriptRuntime(input(source, "follow"))
   const before = runtime.getSnapshot()
   const answerBlock = before.blocks.find(block => block.key.kind === "item" && block.key.itemId === answer)
@@ -231,6 +434,59 @@ test("follow reconciliation replaces a changed item and retains historical block
   expect(after.blocks.find(block => block.key.kind === "item" && block.key.itemId === answer)).not.toBe(answerBlock)
   expect(after.blocks.find(block => block.key.kind === "item" && block.key.itemId === history)).toBe(historyBlock)
   expect(after.transcript.projectionById[history]).toBe(before.transcript.projectionById[history])
+})
+
+test("canonical reasoning streams never publish or damage the semantic transcript", () => {
+  let source = fixture()
+  const reasoning = itemId("reasoning")
+  const runtime = new TranscriptRuntime(input(source, "follow"))
+  const before = runtime.getSnapshot()
+  let notifications = 0
+  runtime.subscribe(() => { notifications++ })
+
+  source = apply(source, { type: "item.started", threadId: thread, item: { id: reasoning, turnId: turn, kind: "reasoning", markdown: "private", status: "running" } })
+  expect(runtime.update(input(source, "follow", { kind: "blocks", itemIds: [reasoning] }))).toBe(before)
+  source = apply(source, { type: "item.delta", threadId: thread, itemId: reasoning, delta: " thought" })
+  expect(runtime.update(input(source, "follow", { kind: "blocks", itemIds: [reasoning] }))).toBe(before)
+  source = apply(source, { type: "item.completed", threadId: thread, item: { id: reasoning, turnId: turn, kind: "reasoning", markdown: "private thought", status: "complete" } })
+  expect(runtime.update(input(source, "follow", { kind: "blocks", itemIds: [reasoning] }))).toBe(before)
+
+  expect(source.conversation.items[reasoning]).toBeDefined()
+  expect(source.transcript.order).not.toContain(reasoning)
+  expect(runtime.getSnapshot().blocks).toBe(before.blocks)
+  expect(runtime.getSnapshot().window).toBe(before.window)
+  expect(runtime.getSnapshot().geometry).toBe(before.geometry)
+  expect(notifications).toBe(0)
+
+  source = apply(source, { type: "item.delta", threadId: thread, itemId: answer, delta: " visible" })
+  const visible = runtime.update(input(source, "follow", { kind: "blocks", itemIds: [answer] }))
+  expect(visible).not.toBe(before)
+  expect(visible.displayedCanonicalRevision).toBe(source.revision)
+  expect(notifications).toBe(1)
+})
+
+test("detached canonical reasoning stays silent and hidden-only reattachment retains presentation data", () => {
+  let source = fixture()
+  const reasoning = itemId("detached-reasoning")
+  const runtime = new TranscriptRuntime(input(source, "follow"))
+  runtime.update(input(source, "detached"))
+  const pinned = runtime.getSnapshot()
+  let notifications = 0
+  runtime.subscribe(() => { notifications++ })
+
+  source = apply(source, { type: "item.started", threadId: thread, item: { id: reasoning, turnId: turn, kind: "reasoning", markdown: "private", status: "running" } })
+  expect(runtime.update(input(source, "detached", { kind: "blocks", itemIds: [reasoning] }))).toBe(pinned)
+  source = apply(source, { type: "item.delta", threadId: thread, itemId: reasoning, delta: " thought" })
+  expect(runtime.update(input(source, "detached", { kind: "blocks", itemIds: [reasoning] }))).toBe(pinned)
+  expect(notifications).toBe(0)
+
+  const followed = runtime.update(input(source, "follow", { kind: "blocks", itemIds: [reasoning] }))
+  expect(notifications).toBe(1)
+  expect(followed.mode).toBe("follow")
+  expect(followed.blocks).toBe(pinned.blocks)
+  expect(followed.window).toBe(pinned.window)
+  expect(followed.geometry).toBe(pinned.geometry)
+  expect(followed.transcript.projectionById[reasoning]).toBeUndefined()
 })
 
 test("block damage updates one growing item without rebuilding a large historical plan", () => {
@@ -851,11 +1107,11 @@ test("structural admission rejects historical semantic rewrites and duplicate pr
 test("structural admission retains exclusions, supports exact default folds, and rejects presentation transitions", () => {
   const initialBase = fixture()
   const initial = { ...initialBase, transcript: { ...initialBase.transcript,
-    foldDefaults: Object.freeze({ reasoning: true, tools: false }) } }
+    foldDefaults: Object.freeze({ reasoning: false, tools: true }) } }
   const nextTurn = turnId("presentation-guard-turn"), nextItem = itemId("presentation-guard-item")
   const withTurn = apply(initial, { type: "turn.started", threadId: thread, turnId: nextTurn })
   const latest = apply(withTurn, { type: "item.started", threadId: thread, item: {
-    id: nextItem, turnId: nextTurn, kind: "reasoning", markdown: "folded tail", status: "running",
+    id: nextItem, turnId: nextTurn, kind: "tool", title: "", detail: "folded tail", status: "running",
   } })
 
   const excludedDiagnostics = runtimeDiagnostics()

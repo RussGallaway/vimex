@@ -163,7 +163,7 @@ test("empty plans are inert and invalid planning facts take the exact pass-throu
   const empty: readonly TranscriptBlock[] = Object.freeze([])
   const emptyHeights = heightIndex(empty)
   const emptyWindow = planTranscriptWindow({ blocks: empty, heights: emptyHeights, viewportRows: 0, overscanRows: 0, attachment: { kind: "tail" } })
-  expect(emptyWindow).toEqual({ blocks: [], topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
+  expect(emptyWindow).toEqual(passThroughWindow(empty))
   expect(Object.isFrozen(emptyWindow)).toBe(true)
   expect(Object.isFrozen(emptyWindow.blocks)).toBe(true)
 

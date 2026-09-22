@@ -9,6 +9,7 @@ import { createEmberTideSyntax } from "../theme"
 import { inertController } from "../contracts"
 import { VimexRoot } from "../index"
 import { AgentActivity } from "./AgentActivity"
+import { ActivityBatch } from "./ActivityBatch"
 import { ReasoningBlock } from "./ReasoningBlock"
 import { ToolCall } from "./ToolCall"
 import { TurnActivity } from "./TurnActivity"
@@ -46,6 +47,45 @@ test("renders observed terminal turn duration as noncanonical decoration", async
   finally { await act(async () => interrupted.renderer.destroy()) }
 })
 
+test("narrow activity summaries preserve provider identity and truncate trailing metadata atomically", async () => {
+  const batch = {
+    key: "provider:linear-service:first", turnId: turnId("turn"), family: "provider" as const, label: "Linear Service",
+    countLabel: "12 actions", leadItemId: itemId("first"), itemIds: [itemId("first"), itemId("second")],
+    blockKeys: ["item:first:root", "item:second:root"], blockItemIds: [itemId("first"), itemId("second")],
+    leadGraphemeFrom: 0, leadGraphemeTo: 1, leadIncludesEnd: true, durationMs: 12_345,
+  }
+  const setup = await testRender(<ActivityBatch batch={batch} />, { width: 24, height: 3 })
+  try {
+    await act(async () => setup.flush())
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("Linear")
+    expect(frame).not.toContain("12.")
+  } finally { await act(async () => setup.renderer.destroy()) }
+})
+
+test("folds adjacent settled web activity into one navigable runtime batch", async () => {
+  const thread = threadId("web-batch"), turn = turnId("turn")
+  const ids = [itemId("web-a"), itemId("web-b"), itemId("web-c")]
+  let state = transitionWorkbench(initialWorkbench(), { type: "thread.open", summary: { id: thread, title: "Research", cwd: "/work", model: "test", reasoningEffort: "high", status: "idle" } }).state
+  state = transitionWorkbench(state, { type: "conversation.event", event: { type: "turn.started", threadId: thread, turnId: turn } }).state
+  for (const id of ids) {
+    state = transitionWorkbench(state, { type: "conversation.event", event: { type: "item.started", threadId: thread, item: { id, turnId: turn, kind: "tool", title: "Web search", detail: `result ${id}`, activity: { family: "web-research" }, status: "complete" } } }).state
+    state = transitionWorkbench(state, { type: "transcript.command", command: { type: "fold.set", itemId: id, folded: true } }).state
+  }
+  const setup = await testRender(<VimexRoot state={state} controller={inertController} />, { width: 80, height: 18 })
+  try {
+    await act(async () => { await setup.flush(); await setup.renderOnce(); await setup.flush(); await setup.renderOnce() })
+    const frame = setup.captureCharFrame()
+    expect(frame.match(/Web research/g)).toHaveLength(1)
+    expect(frame).toContain("3 searches")
+    expect(frame).not.toContain("result web-")
+    expect(setup.renderer.root.findDescendantById(`transcript-block:${ids[1]}:root`)?.visible).toBe(false)
+    const transcript = state.workspaces[thread]!.transcript
+    expect(transcript.order).toEqual(ids)
+    expect(findSearchMatches(transcript, "result")).toHaveLength(3)
+  } finally { await act(async () => setup.renderer.destroy()) }
+})
+
 test("running transcript rows remain static and create no animation timers", async () => {
   const intervals = spyOn(globalThis, "setInterval")
   const syntax = createEmberTideSyntax()
@@ -69,13 +109,29 @@ test("one visible pane owns one heartbeat while running rows own none", async ()
   let state = transitionWorkbench(initialWorkbench(), { type: "thread.open", summary: { id: thread, title: "Heartbeat", cwd: "/work", model: "test", reasoningEffort: "high", status: "working" } }).state
   state = transitionWorkbench(state, { type: "connection.changed", connection: "connected" }).state
   state = transitionWorkbench(state, { type: "conversation.event", event: { type: "turn.started", threadId: thread, turnId: turn, startedAt: Date.now() - 2_000 } }).state
-  state = transitionWorkbench(state, { type: "conversation.event", event: { type: "item.started", threadId: thread, item: { id: itemId("thought"), turnId: turn, kind: "reasoning", markdown: "Working", status: "running" } } }).state
+  state = transitionWorkbench(state, { type: "conversation.event", event: { type: "item.started", threadId: thread, item: { id: itemId("thought"), turnId: turn, kind: "reasoning", markdown: "UNIQUE PRIVATE THOUGHT", status: "running" } } }).state
   const setup = await testRender(<VimexRoot state={state} controller={inertController} />, { width: 80, height: 20 })
   try {
     await act(async () => setup.flush())
     expect(setup.captureCharFrame()).toContain("Working")
+    expect(setup.captureCharFrame()).not.toContain("UNIQUE PRIVATE THOUGHT")
     expect(intervals.mock.calls.filter(args => args[1] === 120)).toHaveLength(1)
   } finally { await act(async () => setup.renderer.destroy()); intervals.mockRestore() }
+})
+
+test("a reasoning-only completed turn renders one worked footer and no reasoning row", async () => {
+  const thread = threadId("reasoning-footer"), turn = turnId("turn")
+  let state = transitionWorkbench(initialWorkbench(), { type: "thread.open", summary: { id: thread, title: "Reasoning", cwd: "/work", model: "test", reasoningEffort: "high", status: "idle" } }).state
+  state = transitionWorkbench(state, { type: "conversation.event", event: { type: "item.started", threadId: thread, item: { id: itemId("thought"), turnId: turn, kind: "reasoning", markdown: "UNIQUE PRIVATE THOUGHT", status: "complete" } } }).state
+  state = transitionWorkbench(state, { type: "conversation.event", event: { type: "turn.completed", threadId: thread, turnId: turn, outcome: "complete", durationMs: 164_000 } }).state
+  const setup = await testRender(<VimexRoot state={state} controller={inertController} />, { width: 70, height: 12 })
+  try {
+    await act(async () => setup.flush())
+    const frame = setup.captureCharFrame()
+    expect(frame.match(/Worked for 2m 44s/g)).toHaveLength(1)
+    expect(frame).not.toContain("UNIQUE PRIVATE THOUGHT")
+    expect(state.workspaces[thread]!.transcript.order).toEqual([])
+  } finally { await act(async () => setup.renderer.destroy()) }
 })
 
 test("agent decoration is excluded from canonical projection and native geometry", async () => {

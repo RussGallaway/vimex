@@ -49,6 +49,33 @@ export interface TranscriptTurnActivityBlock {
 
 export type TranscriptBlock = TranscriptItemBlock | TranscriptTurnActivityBlock
 
+export type TranscriptActivityFamily = "web-research" | "read" | "provider"
+
+export interface TranscriptActivityBatch {
+  readonly key: string
+  readonly turnId: TurnId
+  readonly family: TranscriptActivityFamily
+  readonly label: string
+  readonly countLabel: string
+  readonly leadItemId: ItemId
+  readonly itemIds: readonly ItemId[]
+  readonly blockKeys: readonly string[]
+  readonly blockItemIds: readonly ItemId[]
+  readonly leadGraphemeFrom: number
+  readonly leadGraphemeTo: number
+  readonly leadIncludesEnd: boolean
+  readonly durationMs?: number
+  readonly followedByActivity?: boolean
+}
+
+export type TranscriptBlockPresentation = "item" | "activity-lead" | "activity-hidden"
+
+export interface TranscriptActivityPresentation {
+  readonly kind: Exclude<TranscriptBlockPresentation, "item">
+  readonly batch: TranscriptActivityBatch
+  readonly itemId: ItemId
+}
+
 interface BlockPlanLeaf {
   readonly kind: "leaf"
   readonly count: 1
@@ -291,6 +318,9 @@ export function isTranscriptBlockAppend(
 
 export interface TranscriptWindow {
   readonly blocks: readonly TranscriptBlock[]
+  readonly activityBatches: readonly TranscriptActivityBatch[]
+  readonly activityBatchByItem: Readonly<Record<string, TranscriptActivityBatch>>
+  readonly activityPresentation: Readonly<Record<string, TranscriptActivityPresentation>>
   readonly topSpacerRows: number
   readonly bottomSpacerRows: number
   readonly overscanRows: number
@@ -313,6 +343,10 @@ export interface TranscriptWindowDiagnostics {
 
 export interface PlanTranscriptWindowInput {
   readonly blocks: readonly TranscriptBlock[]
+  readonly state?: TranscriptState
+  readonly prior?: TranscriptWindow
+  /** Complete activity relationships prepared by the runtime before height planning. */
+  readonly activityPlan?: TranscriptWindow
   readonly heights: TranscriptHeightIndex
   readonly viewportRows: number
   readonly overscanRows: number
@@ -321,6 +355,131 @@ export interface PlanTranscriptWindowInput {
   readonly reveal?: LogicalPoint
   readonly diagnostics?: TranscriptWindowDiagnostics
 }
+
+interface ActivityCandidate {
+  readonly family: TranscriptActivityFamily
+  readonly key: string
+  readonly label: string
+  readonly noun: string
+  readonly plural: string
+}
+
+function activityCandidate(block: TranscriptBlock): ActivityCandidate | undefined {
+  if (!("item" in block) || (block.item.kind !== "command" && block.item.kind !== "tool") || block.item.status !== "complete") return undefined
+  const activity = block.item.activity
+  if (activity?.family === "web-research") return { family: "web-research", key: "web-research", label: "Web research", noun: "search", plural: "searches" }
+  if (activity?.family === "read") return { family: "read", key: "read", label: "Read files", noun: "read", plural: "reads" }
+  if (activity?.family !== "provider" || !activity.label) return undefined
+  return { family: "provider", key: `provider:${activity.label.toLowerCase()}`, label: activity.label, noun: "action", plural: "actions" }
+}
+
+function sameValues<T>(left: readonly T[], right: readonly T[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+function sameActivityBatch(left: TranscriptActivityBatch, right: TranscriptActivityBatch): boolean {
+  return left.key === right.key && left.turnId === right.turnId && left.family === right.family
+    && left.label === right.label && left.countLabel === right.countLabel && left.leadItemId === right.leadItemId
+    && left.durationMs === right.durationMs && sameValues(left.itemIds, right.itemIds)
+    && left.followedByActivity === right.followedByActivity
+    && sameValues(left.blockKeys, right.blockKeys) && sameValues(left.blockItemIds, right.blockItemIds)
+    && left.leadGraphemeFrom === right.leadGraphemeFrom && left.leadGraphemeTo === right.leadGraphemeTo
+    && left.leadIncludesEnd === right.leadIncludesEnd
+}
+
+function activityBatches(blocks: readonly TranscriptBlock[], prior: readonly TranscriptActivityBatch[] = []): readonly TranscriptActivityBatch[] {
+  const batches: TranscriptActivityBatch[] = []
+  const priorByKey = new Map(prior.map(batch => [batch.key, batch]))
+  let run: { candidate: ActivityCandidate; items: TranscriptItemBlock[]; blocks: TranscriptItemBlock[] } | undefined
+  const flush = () => {
+    if (!run || run.items.length < 2) { run = undefined; return }
+    const itemIds = Object.freeze(run.items.map(block => block.key.itemId))
+    const blockKeys = Object.freeze(run.blocks.map(blockKey))
+    const blockItemIds = Object.freeze(run.blocks.map(block => block.key.itemId))
+    const leadRange = blockGraphemeRange(run.blocks[0]!)
+    const count = itemIds.length
+    const durations = run.items.map(block => block.item.durationMs)
+    const durationMs = durations.every(value => value !== undefined && Number.isFinite(value) && value > 0)
+      ? durations.reduce<number>((sum, value) => sum + value!, 0) : undefined
+    const candidate = Object.freeze({
+      key: `${run.candidate.key}:${itemIds[0]}`,
+      turnId: run.items[0]!.turnId,
+      family: run.candidate.family,
+      label: run.candidate.label,
+      countLabel: `${count} ${count === 1 ? run.candidate.noun : run.candidate.plural}`,
+      leadItemId: itemIds[0]!, itemIds, blockKeys, blockItemIds,
+      leadGraphemeFrom: leadRange.from, leadGraphemeTo: leadRange.to,
+      leadIncludesEnd: leadRange.to === run.blocks[0]!.projection.sourceSpans.length,
+      followedByActivity: run.blocks.at(-1)!.followedByActivity,
+      ...(durationMs === undefined ? {} : { durationMs }),
+    })
+    const previous = priorByKey.get(candidate.key)
+    batches.push(previous && sameActivityBatch(previous, candidate) ? previous : candidate)
+    run = undefined
+  }
+  for (const block of blocks) {
+    const candidate = activityCandidate(block)
+    if (!candidate || !("item" in block)) { flush(); continue }
+    if (run?.blocks.at(-1)?.key.itemId === block.key.itemId) { run.blocks.push(block); continue }
+    if (!run || run.candidate.key !== candidate.key || run.items[0]!.turnId !== block.turnId) {
+      flush(); run = { candidate, items: [block], blocks: [block] }
+    } else { run.items.push(block); run.blocks.push(block) }
+  }
+  flush()
+  return Object.freeze(batches)
+}
+
+export function transcriptActivityPresentation(
+  window: Pick<TranscriptWindow, "activityBatches">,
+  state: Pick<TranscriptState, "folded" | "cursor" | "selection" | "viewport">,
+  prior: Readonly<Record<string, TranscriptActivityPresentation>> = {},
+): Readonly<Record<string, TranscriptActivityPresentation>> {
+  const result: Record<string, TranscriptActivityPresentation> = {}
+  const protectedPoints = [state.cursor, state.viewport.kind === "point" ? state.viewport.point : undefined,
+    state.selection?.anchor, state.selection?.head].filter((point): point is LogicalPoint => Boolean(point))
+  for (const batch of window.activityBatches) {
+    if (!batch.itemIds.every(id => state.folded[id] === true)) continue
+    if (protectedPoints.some(point => {
+      if (!batch.itemIds.includes(point.itemId)) return false
+      if (point.itemId !== batch.leadItemId) return true
+      return point.graphemeOffset < batch.leadGraphemeFrom || point.graphemeOffset > batch.leadGraphemeTo
+        || (point.graphemeOffset === batch.leadGraphemeTo && !batch.leadIncludesEnd)
+    })) continue
+    batch.blockKeys.forEach((key, index) => {
+      const kind = index === 0 ? "activity-lead" : "activity-hidden"
+      const itemId = batch.blockItemIds[index]!
+      const previous = prior[key]
+      result[key] = previous?.kind === kind && previous.batch === batch && previous.itemId === itemId
+        ? previous : Object.freeze({ kind, batch, itemId })
+    })
+  }
+  return Object.freeze(result)
+}
+
+function sameActivityPresentation(left: Readonly<Record<string, TranscriptActivityPresentation>>, right: Readonly<Record<string, TranscriptActivityPresentation>>): boolean {
+  const leftEntries = Object.entries(left), rightEntries = Object.entries(right)
+  return leftEntries.length === rightEntries.length
+    && leftEntries.every(([key, value]) => right[key]?.kind === value.kind && right[key]?.batch === value.batch)
+}
+
+function windowWithActivityPlan(
+  blocks: readonly TranscriptBlock[], batches: readonly TranscriptActivityBatch[], state: Pick<TranscriptState, "folded" | "cursor" | "selection" | "viewport">,
+  prior: TranscriptWindow | undefined, topSpacerRows: number, bottomSpacerRows: number, overscanRows: number,
+): TranscriptWindow {
+  const activityBatchByItem = prior?.activityBatches === batches ? prior.activityBatchByItem : Object.freeze(Object.fromEntries(
+    batches.flatMap(batch => batch.itemIds.map(itemId => [itemId, batch])),
+  ))
+  const selected = transcriptActivityPresentation({ activityBatches: batches }, state, prior?.activityPresentation)
+  const presentation = prior && sameActivityPresentation(prior.activityPresentation, selected) ? prior.activityPresentation : selected
+  if (prior && prior.blocks === blocks && prior.activityBatches === batches && prior.activityPresentation === presentation
+    && prior.topSpacerRows === topSpacerRows && prior.bottomSpacerRows === bottomSpacerRows && prior.overscanRows === overscanRows) return prior
+  return Object.freeze({ blocks, activityBatches: batches, activityBatchByItem, activityPresentation: presentation,
+    topSpacerRows, bottomSpacerRows, overscanRows })
+}
+
+const neutralActivityState: Pick<TranscriptState, "folded" | "cursor" | "selection" | "viewport"> = Object.freeze({
+  folded: Object.freeze({}), viewport: Object.freeze({ kind: "tail" as const }),
+})
 
 export interface BuildTranscriptBlocksInput {
   readonly conversation: ConversationState
@@ -752,8 +911,13 @@ export function buildTranscriptBlocks(input: BuildTranscriptBlocksInput): readon
 }
 
 /** Stage 2 materializes every planned block; Stage 5 replaces this policy. */
-export function passThroughWindow(blocks: readonly TranscriptBlock[]): TranscriptWindow {
-  return Object.freeze({ blocks, topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
+export function passThroughWindow(blocks: readonly TranscriptBlock[], state: Pick<TranscriptState, "folded" | "cursor" | "selection" | "viewport"> = neutralActivityState, prior?: TranscriptWindow): TranscriptWindow {
+  return windowWithActivityPlan(blocks, activityBatches(blocks, prior?.activityBatches), state, prior, 0, 0, 0)
+}
+
+/** Preserve a settled activity plan during O(changed-item) reconciliation. */
+export function passThroughWindowWithActivityPlan(blocks: readonly TranscriptBlock[], prior: TranscriptWindow, state: TranscriptState): TranscriptWindow {
+  return windowWithActivityPlan(blocks, prior.activityBatches, state, prior, 0, 0, 0)
 }
 
 function validPlannerCount(value: number, positive = false): boolean {
@@ -812,25 +976,27 @@ export function transcriptPointBlockIndex(
  */
 export function planTranscriptWindow(input: PlanTranscriptWindowInput): TranscriptWindow {
   const { blocks, heights } = input
-  if (blocks.length === 0) return Object.freeze({ blocks: Object.freeze([]), topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
+  const state = input.state ?? neutralActivityState
+  const activityPlan = input.activityPlan
+  if (blocks.length === 0) return passThroughWindow(Object.freeze([]), state, input.prior)
   if (!validPlannerCount(input.viewportRows, true) || !validPlannerCount(input.overscanRows)
     || !heights.supports(blocks) || heights.blockCount !== blocks.length
-    || !validPlannerCount(heights.totalRows, true)) return passThroughWindow(blocks)
+    || !validPlannerCount(heights.totalRows, true)) return passThroughWindow(blocks, state, input.prior)
 
   let focusIndex: number | undefined
   let preferredScreenRow = 0
   if (input.attachment.kind === "point") {
     if (!Number.isSafeInteger(input.attachment.preferredScreenRow)
       || (input.attachment.blockLocalRow !== undefined
-        && (!Number.isSafeInteger(input.attachment.blockLocalRow) || input.attachment.blockLocalRow < 0))) return passThroughWindow(blocks)
+        && (!Number.isSafeInteger(input.attachment.blockLocalRow) || input.attachment.blockLocalRow < 0))) return passThroughWindow(blocks, state, input.prior)
     focusIndex = transcriptPointBlockIndex(blocks, heights, input.attachment.point, input.diagnostics)
-    if (focusIndex === undefined) return passThroughWindow(blocks)
+    if (focusIndex === undefined) return passThroughWindow(blocks, state, input.prior)
     preferredScreenRow = clamp(input.attachment.preferredScreenRow, 0, input.viewportRows - 1)
   }
 
   const maximumVisibleStart = Math.max(0, heights.totalRows - input.viewportRows)
   const focusRange = input.attachment.kind === "point" ? heights.rowRange(focusIndex!, focusIndex! + 1) : undefined
-  if (input.attachment.kind === "point" && !focusRange) return passThroughWindow(blocks)
+  if (input.attachment.kind === "point" && !focusRange) return passThroughWindow(blocks, state, input.prior)
   const blockLocalRow = input.attachment.kind === "point"
     ? clamp(input.attachment.blockLocalRow ?? 0, 0, Math.max(0, focusRange!.rows - 1)) : 0
   let visibleStart = input.attachment.kind === "tail"
@@ -844,9 +1010,9 @@ export function planTranscriptWindow(input: PlanTranscriptWindowInput): Transcri
 
   if (input.reveal) {
     const revealIndex = transcriptPointBlockIndex(blocks, heights, input.reveal, input.diagnostics)
-    if (revealIndex === undefined) return passThroughWindow(blocks)
+    if (revealIndex === undefined) return passThroughWindow(blocks, state, input.prior)
     const revealRange = heights.rowRange(revealIndex, revealIndex + 1)
-    if (!revealRange) return passThroughWindow(blocks)
+    if (!revealRange) return passThroughWindow(blocks, state, input.prior)
     const alreadyPlanned = revealRange.end > plannedFrom && revealRange.start < plannedTo
     if (!alreadyPlanned) {
       preferredScreenRow = Math.floor((input.viewportRows - 1) / 2)
@@ -858,26 +1024,43 @@ export function planTranscriptWindow(input: PlanTranscriptWindowInput): Transcri
   }
 
   const first = heights.blockAtRow(plannedFrom)
-  if (first === undefined || first < 0 || first >= blocks.length) return passThroughWindow(blocks)
+  if (first === undefined || first < 0 || first >= blocks.length) return passThroughWindow(blocks, state, input.prior)
   let lastExclusive: number
   if (plannedTo >= heights.totalRows) lastExclusive = blocks.length
   else {
     const atEnd = heights.blockAtRow(plannedTo)
-    if (atEnd === undefined || atEnd < first || atEnd >= blocks.length) return passThroughWindow(blocks)
+    if (atEnd === undefined || atEnd < first || atEnd >= blocks.length) return passThroughWindow(blocks, state, input.prior)
     lastExclusive = heights.prefixRows(atEnd) === plannedTo ? atEnd : atEnd + 1
   }
-  if (lastExclusive <= first) return passThroughWindow(blocks)
+  if (lastExclusive <= first) return passThroughWindow(blocks, state, input.prior)
 
   const topSpacerRows = heights.prefixRows(first)
   const bottomSpacerRows = heights.totalRows - heights.prefixRows(lastExclusive)
   if (!validPlannerCount(topSpacerRows) || !validPlannerCount(bottomSpacerRows)
     || topSpacerRows + (heights.prefixRows(lastExclusive) - topSpacerRows) + bottomSpacerRows !== heights.totalRows) {
-    return passThroughWindow(blocks)
+    return passThroughWindow(blocks, state, input.prior)
   }
-  const windowBlocks = Object.freeze(blocks.slice(first, lastExclusive))
-  if (input.reveal && !pointIsMaterialized(windowBlocks, input.reveal)) return passThroughWindow(blocks)
-  if (!input.reveal && input.attachment.kind === "point" && !pointIsMaterialized(windowBlocks, input.attachment.point)) return passThroughWindow(blocks)
-  return Object.freeze({ blocks: windowBlocks, topSpacerRows, bottomSpacerRows, overscanRows: input.overscanRows })
+  // Zero-height batch children stay in the semantic plan but need no native
+  // roots. Jump by indexed row so a huge collapsed group stays bounded.
+  const selected: TranscriptBlock[] = []
+  if (activityPlan?.activityBatches.length) {
+    let ordinal = first
+    while (ordinal < lastExclusive) {
+      const block = blocks[ordinal]!
+      if (activityPlan.activityPresentation[blockKey(block)]?.kind !== "activity-hidden") selected.push(block)
+      const nextRow = heights.prefixRows(ordinal + 1)
+      if (nextRow >= heights.totalRows) break
+      const next = heights.blockAtRow(nextRow)
+      if (next === undefined || next <= ordinal) break
+      ordinal = next
+    }
+  } else selected.push(...blocks.slice(first, lastExclusive))
+  const windowBlocks = Object.freeze(selected)
+  if (input.reveal && !pointIsMaterialized(windowBlocks, input.reveal)) return passThroughWindow(blocks, state, input.prior)
+  if (!input.reveal && input.attachment.kind === "point" && !pointIsMaterialized(windowBlocks, input.attachment.point)) return passThroughWindow(blocks, state, input.prior)
+  if (activityPlan) return Object.freeze({ ...activityPlan, blocks: windowBlocks, topSpacerRows, bottomSpacerRows, overscanRows: input.overscanRows })
+  const batches = activityBatches(windowBlocks, input.prior?.activityBatches)
+  return windowWithActivityPlan(windowBlocks, batches, state, input.prior, topSpacerRows, bottomSpacerRows, input.overscanRows)
 }
 
 export function blockKey(block: TranscriptBlock): string {

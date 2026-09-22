@@ -33,7 +33,7 @@ import { agentNavigationRows } from "../agents/AgentsOverlay"
 import { useTranscriptRuntime } from "../transcript/use-transcript-runtime"
 
 const blankTranscript = initialTranscript()
-const blankTranscriptWindow: TranscriptWindow = Object.freeze({ blocks: Object.freeze([]), topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
+const blankTranscriptWindow: TranscriptWindow = Object.freeze({ blocks: Object.freeze([]), activityBatches: Object.freeze([]), activityBatchByItem: Object.freeze({}), activityPresentation: Object.freeze({}), topSpacerRows: 0, bottomSpacerRows: 0, overscanRows: 0 })
 const blankComposer = initialComposer()
 const blankInteraction = initialInteraction()
 
@@ -180,8 +180,8 @@ export function VimexApp({ state, controller, settings: settingsInput, paneLabel
   }, [interaction.mode, interaction.surface, state.activeThreadId])
   useEffect(() => {
     if (!interactive) return
-    controller.transcript({ type: "fold.defaults", reasoning: settings.foldReasoning, tools: settings.foldTools })
-  }, [interactive, controller, settings.foldReasoning, settings.foldTools, state.activeThreadId])
+    controller.transcript({ type: "fold.defaults", reasoning: false, tools: settings.foldTools })
+  }, [interactive, controller, settings.foldTools, state.activeThreadId])
   useLayoutEffect(() => {
     overlayIndexRef.current = 0
     setOverlayIndex(0)

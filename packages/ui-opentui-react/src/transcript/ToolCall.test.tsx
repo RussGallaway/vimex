@@ -48,6 +48,15 @@ test("only command items render execution command metadata", async () => {
   } finally { await act(async () => h.renderer.destroy()) }
 })
 
+test("unknown and zero durations stay out of compact tool headers", async () => {
+  const h = await testRender(<ToolCall item={{ ...command, durationMs: 0 }} folded />, { width: 70, height: 6 })
+  try {
+    await act(async () => h.flush())
+    expect(h.renderer.root.findDescendantById(`decoration:duration:${command.id}`)).toBeUndefined()
+    expect(h.captureCharFrame()).not.toContain("0ms")
+  } finally { await act(async () => h.renderer.destroy()) }
+})
+
 test("reasoning folds use the same compact disclosure indicator", async () => {
   const syntax = createEmberTideSyntax()
   const h = await testRender(<ReasoningBlock item={{ id: itemId("thought"), turnId: turnId("thought-turn"), kind: "reasoning", status: "complete", markdown: "**Reviewing files**\n\nDetailed reasoning" }} folded syntax={syntax} />, { width: 70, height: 10 })

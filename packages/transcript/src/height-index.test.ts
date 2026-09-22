@@ -103,7 +103,7 @@ test("height replacement path-copies logarithmically while old snapshots and no-
   expect(noOpDiagnostics.nodesCopied).toBe(0)
   expect(noOpDiagnostics.nodeVisits).toBeLessThanOrEqual(Math.ceil(Math.log2(plan.length)) + 1)
   expect(updated.replaceHeight({ blockKey: key, contentRevision: target.contentRevision + 1, rows: 20 })).toBe(updated)
-  expect(updated.replaceHeight({ blockKey: key, contentRevision: target.contentRevision, rows: 0 })).toBe(updated)
+  expect(updated.replaceHeight({ blockKey: key, contentRevision: target.contentRevision, rows: -1 })).toBe(updated)
   expect(updated.replaceHeight({ blockKey: "missing", contentRevision: target.contentRevision, rows: 20 })).toBe(updated)
 })
 
@@ -131,6 +131,19 @@ test("block replacement requires exact one-root persistent-plan lineage", () => 
   const splitNext = Object.freeze({ ...first, contentRevision: first.contentRevision + 1 })
   const splitAfter = replaceTranscriptBlock(splitBefore, 0, first, splitNext)!
   expect(createHeightIndex(splitBefore)?.replaceBlock(splitAfter, first, splitNext, 1)).toBeUndefined()
+})
+
+test("zero-height activity overrides retain ordinals and skip hidden rows", () => {
+  const plan = Object.freeze([block(0, 2), block(1, 1), block(2, 1), block(3, 3)])
+  const index = createHeightIndex(plan, plan.slice(1, 3).map(value => ({ blockKey: blockKey(value), contentRevision: value.contentRevision, rows: 0 })))!
+  expect(index.totalRows).toBe(5)
+  expect(index.blockAtRow(1)).toBe(0)
+  expect(index.blockAtRow(2)).toBe(3)
+  expect(index.rowRange(1, 3)).toEqual({ start: 2, end: 2, rows: 0 })
+  const restored = index.replaceHeight({ blockKey: blockKey(plan[1]!), contentRevision: plan[1]!.contentRevision, rows: 1 })
+  expect(restored.blockAtRow(2)).toBe(1)
+  expect(restored.blockAtRow(3)).toBe(3)
+  expect(index.totalRows).toBe(5)
 })
 
 test("duplicate block keys reject indexed planning and invalid estimates remain safe", () => {
@@ -290,7 +303,7 @@ test("height append enforces exact lineage and preserves lookup and replacement 
   const lookalike = persistentTranscriptBlockPlan(Object.freeze([...before, next]))
   expect(index.appendBlock?.(lookalike, next, 4)).toBeUndefined()
   expect(index.appendBlock?.(after, Object.freeze({ ...next }), 4)).toBeUndefined()
-  expect(index.appendBlock?.(after, next, 0)).toBeUndefined()
+  expect(index.appendBlock?.(after, next, -1)).toBeUndefined()
   const duplicate = before[0]!
   const duplicatePlan = appendTranscriptBlock(before, duplicate)
   expect(index.appendBlock?.(duplicatePlan, duplicate, 1)).toBeUndefined()

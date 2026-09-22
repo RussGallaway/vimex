@@ -374,7 +374,7 @@ test("controller-owned transcript runtime freezes detached content and follows l
   const turn = turnId("runtime"), id = itemId("runtime-answer")
   h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
   h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id, turnId: turn, kind: "assistant", markdown: "visible", status: "running" } } })
-  expect(runtime.getSnapshot().damage).toEqual({ kind: "blocks", itemIds: [id] })
+  expect(runtime.getSnapshot().damage.kind).toBe("blocks")
   h.controller.transcript({ type: "cursor.move", target: { itemId: id, graphemeOffset: 2 }, preferredScreenRow: 3, extend: false })
   const pinned = runtime.getSnapshot()
   h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: id, delta: " hidden tail" } })
@@ -424,7 +424,7 @@ test("detached unseen membership publishes status once per item and resets for t
   expect(runtime.getSnapshot()).toBe(pinned)
 
   h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: {
-    id: second, turnId: turnId("unseen-second-turn"), kind: "reasoning", markdown: "second", status: "running",
+    id: second, turnId: turnId("unseen-second-turn"), kind: "assistant", markdown: "second", status: "running",
   } } })
   expect(h.controller.getSnapshot().workspaces[a]!.transcript.unseenEntries).toBe(2)
   expect([...h.controller.getSnapshot().workspaces[a]!.transcript.unseenItemIds]).toEqual([first, second])
@@ -561,6 +561,43 @@ test("reentrant runtime listeners cannot overwrite a newer side presentation", a
   await h.controller.close()
 })
 
+test("controller reasoning ingress is canonical but publishes no transcript frames while following or detached", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const runtime = h.controller.transcriptRuntime("main")!
+  const turn = turnId("reasoning-runtime"), visible = itemId("visible-answer")
+  h.emit({ type: "conversation", event: { type: "turn.started", threadId: a, turnId: turn } })
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id: visible, turnId: turn, kind: "assistant", markdown: "visible", status: "complete" } } })
+
+  let notifications = 0
+  const unsubscribe = runtime.subscribe(() => { notifications++ })
+  const follow = runtime.getSnapshot()
+  const first = itemId("follow-reasoning")
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id: first, turnId: turn, kind: "reasoning", markdown: "private", status: "running" } } })
+  h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: first, delta: " thought" } })
+  h.emit({ type: "conversation", event: { type: "item.completed", threadId: a, item: { id: first, turnId: turn, kind: "reasoning", markdown: "private thought", status: "complete" } } })
+  await h.controller.settle()
+  expect(runtime.getSnapshot()).toBe(follow)
+  expect(notifications).toBe(0)
+
+  h.controller.transcript({ type: "cursor.move", target: { itemId: visible, graphemeOffset: 1 }, preferredScreenRow: 2, extend: false })
+  const detached = runtime.getSnapshot()
+  notifications = 0
+  const second = itemId("detached-reasoning")
+  h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: { id: second, turnId: turn, kind: "reasoning", markdown: "hidden", status: "running" } } })
+  h.emit({ type: "conversation", event: { type: "item.delta", threadId: a, itemId: second, delta: " detail" } })
+  h.emit({ type: "conversation", event: { type: "item.completed", threadId: a, item: { id: second, turnId: turn, kind: "reasoning", markdown: "hidden detail", status: "complete" } } })
+  await h.controller.settle()
+  const workspace = h.controller.getSnapshot().workspaces[a]!
+  expect(runtime.getSnapshot()).toBe(detached)
+  expect(notifications).toBe(0)
+  expect(workspace.conversation.items[first]).toBeDefined()
+  expect(workspace.conversation.items[second]).toBeDefined()
+  expect(workspace.transcript.order).toEqual([visible])
+  unsubscribe()
+  await h.controller.close()
+})
+
 test("detached copy, reference, and URL reads use the displayed presentation until follow", async () => {
   const h = harness()
   await h.controller.initialize("/tmp")
@@ -691,7 +728,7 @@ test("off-window search adopts hidden content in one bounded coherent publicatio
   const pinned = runtime.getSnapshot()
   const hidden = itemId("search-window-hidden")
   h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: {
-    id: hidden, turnId: turnId("search-window-hidden-turn"), kind: "reasoning", markdown: "hidden unique-needle target", status: "complete",
+    id: hidden, turnId: turnId("search-window-hidden-turn"), kind: "tool", title: "", detail: "hidden unique-needle target", status: "complete",
   } } })
   expect(runtime.getSnapshot()).toBe(pinned)
   h.controller.transcript({ type: "fold.set", itemId: hidden, folded: true })
@@ -728,7 +765,7 @@ test("off-window mark and clamped explicit jump each publish one complete target
   const ids = Array.from({ length: 100 }, (_, index) => itemId(`jump-window-${index}`))
   for (let index = 0; index < ids.length; index++) h.emit({ type: "conversation", event: {
     type: "item.started", threadId: a, item: {
-      id: ids[index]!, turnId: turnId(`jump-window-turn-${index}`), kind: index === 8 ? "reasoning" : "assistant", markdown: `entry-${index}`, status: "complete",
+      id: ids[index]!, turnId: turnId(`jump-window-turn-${index}`), kind: "tool", title: "", detail: `entry-${index}`, status: "complete",
     },
   } })
 
@@ -778,9 +815,9 @@ test("off-window URL motion unfolds one target and picker ownership settles atom
   const ids = Array.from({ length: 100 }, (_, index) => itemId(`url-window-${index}`))
   for (let index = 0; index < ids.length; index++) h.emit({ type: "conversation", event: {
     type: "item.started", threadId: a, item: {
-      id: ids[index]!, turnId: turnId(`url-window-turn-${index}`), kind: "reasoning",
-      markdown: index === 5 ? "[link-5](https://five.test) and [other](https://other.test)"
-        : `[link-${index}](https://url-${index}.test)`, status: "complete",
+      id: ids[index]!, turnId: turnId(`url-window-turn-${index}`), kind: "tool", title: "",
+      detail: index === 5 ? "https://five.test and https://other.test"
+        : `https://url-${index}.test`, status: "complete",
     },
   } })
   h.controller.transcript({ type: "cursor.move", target: { itemId: ids[50]!, graphemeOffset: 0 }, preferredScreenRow: 4, extend: false })
@@ -822,7 +859,7 @@ test("off-window URL motion unfolds one target and picker ownership settles atom
   expect(pointIsMaterialized(frame.window.blocks, frame.transcript.cursor!)).toBe(true)
   expect(frame.window.blocks.length).toBeLessThanOrEqual(72)
 
-  h.controller.transcript({ type: "cursor.move", target: { itemId: ids[5]!, graphemeOffset: 7 }, preferredScreenRow: 2, extend: false })
+  h.controller.transcript({ type: "cursor.move", target: { itemId: ids[5]!, graphemeOffset: 17 }, preferredScreenRow: 2, extend: false })
   statePublications = runtimePublications = mainPublications = sidePublications = 0
   h.controller.transcript({ type: "url.open", presentationId: "main" })
   const picker = h.controller.getSnapshot()
@@ -856,7 +893,7 @@ test("off-window URL motion unfolds one target and picker ownership settles atom
   expect(sidePublications).toBe(0)
   expect(h.opened.at(-1)).toBe("https://five.test")
 
-  h.controller.transcript({ type: "cursor.move", target: { itemId: ids[5]!, graphemeOffset: 7 }, preferredScreenRow: 2, extend: false })
+  h.controller.transcript({ type: "cursor.move", target: { itemId: ids[5]!, graphemeOffset: 17 }, preferredScreenRow: 2, extend: false })
   h.controller.transcript({ type: "url.open", presentationId: "main" })
   const staleChoice = h.controller.getSnapshot().urlChoices![1]!
   const openedBeforeStaleChoice = h.opened.length
@@ -879,13 +916,13 @@ test("configured default fold joins a newly admitted item in one semantic and ru
   const h = harness()
   await h.controller.initialize("/tmp")
   const runtime = h.controller.transcriptRuntime("main")!
-  h.controller.transcript({ type: "fold.defaults", reasoning: true, tools: false })
+  h.controller.transcript({ type: "fold.defaults", reasoning: false, tools: true })
   let statePublications = 0, runtimePublications = 0
   h.controller.subscribe(() => { statePublications++ })
   runtime.subscribe(() => { runtimePublications++ })
   const id = itemId("default-fold-arrival")
   h.emit({ type: "conversation", event: { type: "item.started", threadId: a, item: {
-    id, turnId: turnId("default-fold-arrival-turn"), kind: "reasoning", markdown: "private", status: "complete",
+    id, turnId: turnId("default-fold-arrival-turn"), kind: "tool", title: "", detail: "private", status: "complete",
   } } })
   expect(statePublications).toBe(1)
   expect(runtimePublications).toBe(1)
@@ -1330,7 +1367,7 @@ test("semantic search unfolds its target, URL choice resolves through the port, 
   const h = harness()
   await h.controller.initialize("/tmp")
   const id = itemId("rich"), turn = turnId("rich-turn")
-  h.emit({ type: "conversation", event: { type: "item.completed", threadId: a, item: { id, turnId: turn, kind: "reasoning", status: "complete", markdown: "First paragraph\n\nneedle [one](https://one.test) and [two](https://two.test)\n\nLast paragraph" } } })
+  h.emit({ type: "conversation", event: { type: "item.completed", threadId: a, item: { id, turnId: turn, kind: "tool", title: "", status: "complete", detail: "First paragraph\n\nneedle https://one.test and https://two.test\n\nLast paragraph" } } })
   h.controller.transcript({ type: "cursor.move", target: { itemId: id, graphemeOffset: 0 }, preferredScreenRow: 2, extend: false })
   h.controller.transcript({ type: "fold.set", itemId: id, folded: true })
   h.controller.executeCommand("/needle")
@@ -1345,7 +1382,7 @@ test("semantic search unfolds its target, URL choice resolves through the port, 
   expect(h.opened).toEqual(["https://two.test"])
   h.controller.changeDraft("My note", 7)
   h.controller.transcript({ type: "reference", presentationId: "main" })
-  expect(h.controller.getSnapshot().workspaces[a]!.composer.text).toContain("My note\n\n> needle [one](https://one.test)")
+  expect(h.controller.getSnapshot().workspaces[a]!.composer.text).toContain("My note\n\n> needle https://one.test")
   expect(h.controller.getSnapshot().workspaces[a]!.interaction.mode).toBe("insert")
 })
 

@@ -42,7 +42,7 @@ describe("workbench", () => {
   test("preserves drafts, anchors, folds, and modes per thread", () => {
     const threadA = threadId("a"), turnA = turnId("ta"), itemA = itemId("ia")
     let state = run(initialWorkbench(), { type: "thread.open", summary: summary("a") }).state
-    state = run(state, { type: "conversation.event", event: { type: "item.started", threadId: threadA, item: { id: itemA, turnId: turnA, kind: "reasoning", markdown: "alpha output", status: "complete" } } }).state
+    state = run(state, { type: "conversation.event", event: { type: "item.started", threadId: threadA, item: { id: itemA, turnId: turnA, kind: "tool", title: "", detail: "alpha output", status: "complete" } } }).state
     state = run(state, { type: "transcript.command", command: { type: "cursor.move", point: { itemId: itemA, graphemeOffset: 2 }, preferredScreenRow: 5 } }).state
     state = run(state, { type: "transcript.command", command: { type: "fold.set", itemId: itemA, folded: true } }).state
     state = run(state, { type: "composer.change", text: "alpha" }).state
@@ -92,6 +92,7 @@ describe("workbench", () => {
     const thread = threadId("telemetry"), turn = turnId("turn"), child = threadId("child")
     let state = run(initialWorkbench(), { type: "thread.open", summary: summary("telemetry") }).state
     const items = [
+      { id: itemId("reasoning"), kind: "reasoning" as const, markdown: "private chain of thought", status: "complete" as const },
       { id: itemId("activity"), kind: "agent" as const, action: "activity" as const, activity: "interacted" as const, agentPath: "/root/reviewer", detail: "", agentThreadIds: [child], status: "complete" as const },
       { id: itemId("wait"), kind: "agent" as const, action: "wait" as const, detail: "", agentThreadIds: [child], status: "complete" as const },
       { id: itemId("list"), kind: "agent" as const, action: "list" as const, detail: "", agentThreadIds: [child], status: "complete" as const },
@@ -99,8 +100,9 @@ describe("workbench", () => {
     ]
     for (const item of items) state = run(state, { type: "conversation.event", event: { type: "item.started", threadId: thread, item: { ...item, turnId: turn } } }).state
     const workspace = state.workspaces[thread]!
-    expect(Object.keys(workspace.conversation.items)).toEqual(["activity", "wait", "list", "spawn"])
+    expect(Object.keys(workspace.conversation.items)).toEqual(["reasoning", "activity", "wait", "list", "spawn"])
     expect(workspace.transcript.order).toEqual([itemId("spawn")])
+    expect(workspace.transcript.projectionById[itemId("reasoning")]).toBeUndefined()
     expect(workspace.transcript.projectionById[itemId("spawn")]?.source).toBe("Review the runtime")
   })
 
@@ -190,8 +192,8 @@ describe("workbench", () => {
     const source = threadId("a"), turn = turnId("t"), item = itemId("i")
     let state = run(initialWorkbench(), { type: "thread.open", summary: summary("a") }).state
     state = run(state, { type: "conversation.event", event: { type: "turn.started", threadId: source, turnId: turn } }).state
-    state = run(state, { type: "conversation.event", event: { type: "item.started", threadId: source, item: { id: item, turnId: turn, kind: "reasoning", markdown: "done", status: "complete" } } }).state
-    state = run(state, { type: "transcript.command", command: { type: "fold.defaults", reasoning: true, tools: false } }).state
+    state = run(state, { type: "conversation.event", event: { type: "item.started", threadId: source, item: { id: item, turnId: turn, kind: "tool", title: "", detail: "done", status: "complete" } } }).state
+    state = run(state, { type: "transcript.command", command: { type: "fold.defaults", reasoning: false, tools: true } }).state
     state = run(state, { type: "transcript.command", command: { type: "fold.set", itemId: item, folded: false } }).state
     state = run(state, { type: "conversation.event", event: { type: "turn.completed", threadId: source, turnId: turn, outcome: "complete" } }).state
     state = run(state, { type: "thread.fork.completed", sourceThreadId: source, throughTurnId: turn, summary: summary("child") }).state
@@ -199,12 +201,12 @@ describe("workbench", () => {
     expect(state.workspaces[source]?.composer.text).toBe("")
     expect(state.workspaces[threadId("child")]?.composer.text).toBe("child draft")
     expect(state.workspaces[threadId("child")]?.conversation).not.toBe(state.workspaces[source]?.conversation)
-    expect(state.workspaces[threadId("child")]?.transcript.foldDefaults).toEqual({ reasoning: true, tools: false })
+    expect(state.workspaces[threadId("child")]?.transcript.foldDefaults).toEqual({ reasoning: false, tools: true })
     expect(state.workspaces[threadId("child")]?.transcript.folded[item]).toBe(false)
-    const childTurn = turnId("child-turn"), childItem = itemId("child-reasoning")
+    const childTurn = turnId("child-turn"), childItem = itemId("child-tool")
     state = run(state, { type: "conversation.event", event: { type: "turn.started", threadId: threadId("child"), turnId: childTurn } }).state
     state = run(state, { type: "conversation.event", event: { type: "item.started", threadId: threadId("child"), item: {
-      id: childItem, turnId: childTurn, kind: "reasoning", markdown: "new", status: "complete",
+      id: childItem, turnId: childTurn, kind: "tool", title: "", detail: "new", status: "complete",
     } } }).state
     expect(state.workspaces[threadId("child")]?.transcript.folded[childItem]).toBe(true)
   })

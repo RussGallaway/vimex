@@ -21,7 +21,7 @@ export function ToolCall(props: { item: Extract<ConversationItem, { kind: "comma
       <text id={`decoration:status:${props.item.id}${suffix}`} flexShrink={0} fg={running ? emberTide.blueBright : props.item.status === "error" ? emberTide.red : emberTide.sage}>{running ? "⋯" : itemStatusGlyph[props.item.status]}</text>
       {running ? <text id={`decoration:phase:${props.item.id}${suffix}`} flexShrink={0} fg={emberTide.textSoft}>{props.item.kind === "command" ? "Running" : "Calling"}</text> : null}
       <text fg={emberTide.text} flexGrow={1} flexShrink={1} minWidth={0} wrapMode="none" truncate>{props.item.title}</text>
-      {props.item.durationMs !== undefined ? <text id={`decoration:duration:${props.item.id}`} flexShrink={0} fg={emberTide.textMuted}>{props.item.durationMs < 1000 ? `${props.item.durationMs}ms` : `${(props.item.durationMs / 1000).toFixed(1)}s`}</text> : null}
+      {props.item.durationMs !== undefined && props.item.durationMs > 0 ? <text id={`decoration:duration:${props.item.id}`} flexShrink={0} fg={emberTide.textMuted}>{props.item.durationMs < 1000 ? `${props.item.durationMs}ms` : `${(props.item.durationMs / 1000).toFixed(1)}s`}</text> : null}
     </box>
     {!props.folded ? <>
       {executionCommand ? <box marginTop={1}>
