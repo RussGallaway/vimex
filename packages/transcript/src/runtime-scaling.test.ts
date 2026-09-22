@@ -243,8 +243,13 @@ function expectPassThroughEquivalent(
   )
 }
 
-test("identical scaling workloads retain pass-through semantics and deterministic publication counts", () => {
-  for (const blockCount of transcriptScalingBlockCounts) {
+// This exhaustive reference deliberately materializes the full history. Its
+// timeout is a CI execution guard, not an interactive latency budget; the
+// production scaling tests below assert bounded operation counts separately.
+// Separate sizes also lets afterEach reclaim each discarded fixture graph.
+test.each([...transcriptScalingBlockCounts])(
+  "scaling workload at %i blocks retains pass-through semantics and deterministic publication counts",
+  (blockCount) => {
     const fixture = buildTranscriptScalingFixture(blockCount)
     const runtime = new TranscriptRuntime(
       runtimeInput(fixture, fixture.before, "follow", {
@@ -390,8 +395,9 @@ test("identical scaling workloads retain pass-through semantics and deterministi
     expect(reattached.displayedCanonicalRevision).toBe(latest.canonicalRevision)
     expectPassThroughEquivalent(reattached, latest)
     runtime.dispose()
-  }
-}, 15_000)
+  },
+  60_000,
+)
 
 test("canonical structural tail admission stays logarithmic with bounded runtime work at every scale", () => {
   for (const blockCount of transcriptScalingBlockCounts) {

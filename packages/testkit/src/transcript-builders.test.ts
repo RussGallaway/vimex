@@ -78,8 +78,11 @@ test("scaling fixtures deterministically produce the exact requested render-bloc
   }
 })
 
-test("structural scaling fixtures expose one canonical turn per render block", () => {
-  for (const blockCount of transcriptScalingBlockCounts) {
+// Constructing the 100k-turn fixture can exceed Bun's default five seconds on
+// hosted runners. Validate each size independently with an explicit setup budget.
+test.each([...transcriptScalingBlockCounts])(
+  "structural scaling fixture at %i blocks exposes one canonical turn per render block",
+  (blockCount) => {
     const fixture = buildTranscriptStructuralScalingFixture(blockCount)
     expect(fixture.before.conversation.turnIds).toHaveLength(blockCount)
     expect(Object.keys(fixture.before.conversation.turns)).toHaveLength(
@@ -90,8 +93,9 @@ test("structural scaling fixtures expose one canonical turn per render block", (
     for (const turn of fixture.before.conversation.turnIds.slice(0, 3)) {
       expect(fixture.before.conversation.turns[turn]?.itemIds).toHaveLength(1)
     }
-  }
-})
+  },
+  30_000,
+)
 
 test("scaling fixtures carry meaningful off-window semantic boundaries", () => {
   const fixture = buildTranscriptScalingFixture(100)
