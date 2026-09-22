@@ -77,6 +77,10 @@ While detached:
 | `gx`               | Open URL under cursor                           |
 | `r`                | Reference selected or current block in composer |
 
+With transcript focus, half-page and full-page scrolling move the cursor with the viewport, preserving its screen row where possible. One-line scrolling keeps the cursor on the same text while visible, then moves it to the nearest visible row. Composer-focused scrolling preserves the editing cursor and draft. Relative block navigation uses the resulting transcript cursor even when the scroll and navigation keys arrive in the same input batch.
+
+`{` / `}` move the cursor through visible content before scrolling only enough to reveal an off-screen destination at the nearest viewport edge. Tool folds remain unchanged. Scrolling away from the live tail and returning to it must feel like one continuous transcript, without a transition banner, pause, or visual reset.
+
 Counts apply where their Vim equivalent is meaningful.
 
 ### Composer

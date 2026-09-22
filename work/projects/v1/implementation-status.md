@@ -2,6 +2,12 @@
 
 This is an implementation checkpoint, not a declaration that v1 acceptance is complete. The specification remains authoritative.
 
+## Transcript navigation checkpoint — 2026-09-22
+
+Commit `912f601` stabilizes windowed transcript preparation before paint, ordered scroll bursts, bounded recent geometry reuse, and `gg`/`G`. Block navigation moves within the viewport before scrolling at its edges. Transcript-focused keyboard scrolling keeps the cursor visible, and immediate Ctrl-U → `{` navigation uses the updated cursor. Composer-focused scrolling preserves the editing cursor and draft.
+
+The full check passed **882 tests, with 5 skipped and 0 failures**, including four snapshots and the credential-free terminal suite. The user reports a substantial improvement in hands-on use after the navigation fixes. This is qualitative feedback, not a complete terminal support matrix or a claim of perfect latency. Cold folded-tool burst latency remains a profiling target. See [the investigation and evidence](transcript-scrollback-investigation.md) and [the dogfooding guide](transcript-windowing-dogfooding.md).
+
 ## Implemented and under validation
 
 - Full-screen OpenTUI React shell, fixed composer, Markdown rendering, four Vim modes, anchored navigation, semantic selection and copying, search, URL selection, folds, and responsive diffs.
@@ -15,7 +21,7 @@ This is an implementation checkpoint, not a declaration that v1 acceptance is co
 
 ## Checkpoint validation
 
-The latest completed full checkpoint passed TypeScript, dependency boundaries, and 374 tests with 2,192 assertions and four frame snapshots. Four diagnostic timing tests are opt-in; the two Shift-Tab cases pass when explicitly enabled, alongside the prior scrolling diagnostics. The eight-check offline real-PTY driver also passes. See [review rounds](review-rounds.md) for the separate commits, scrolling measurements, and remaining initial-history settlement cost. `git diff --check` passes; the prior frozen-lockfile installation check remains applicable because dependencies did not change.
+An earlier full checkpoint passed TypeScript, dependency boundaries, and 374 tests with 2,192 assertions and four frame snapshots. Four diagnostic timing tests are opt-in; the two Shift-Tab cases pass when explicitly enabled, alongside the prior scrolling diagnostics. The eight-check offline real-PTY driver also passes. See [review rounds](review-rounds.md) for the separate commits, scrolling measurements, and remaining initial-history settlement cost. `git diff --check` passes; the prior frozen-lockfile installation check remains applicable because dependencies did not change.
 
 A formatted Markdown projection that previously took about 5.6 seconds for 58 KB took about 7 ms after replacing repeated Unicode prefix segmentation with indexed boundary lookup. This measures projection only; it is not an end-to-end rendering benchmark.
 
@@ -58,7 +64,7 @@ Theme catalog checkpoint: added Gruvbox Material, Tokyo Night, and Catppuccin Mo
 
 Navigation checkpoint: Flash visible-text labels (`s` transcript / `Ctrl-g` either pane), persistent per-session jumplists and marks, composer Normal `/`/`?` transcript search, and Enter single-fold toggling. Integrated check passed 412 tests, 2,803 assertions, four snapshots, with four diagnostic skips; nine offline terminal checks passed including Flash and jump-back, with reconstructed label screenshot inspected. Follow-up: profile Ctrl-Y/E during active streaming.
 
-Agent navigation and streaming checkpoint: Normal `ga` opens agents from either pane, `[a`/`]a` cycle the immediate family, and `\` returns to the immediate parent. Child views show a SUBAGENT badge and parent breadcrumb. Ctrl-O/Ctrl-I combine local jumps and session visits in a bounded application-owned history; queued keys survive slow resumes, positions reproject during background Markdown changes, and drafts remain workspace-owned. Cross-session history is runtime-only; persisted local marks/jumps remain supported. `s` now also opens Flash from composer Normal mode.
+Agent navigation and streaming checkpoint: Normal `ga` opens agents from either pane, `[a`/`]a` cycle the immediate family, and `\` returns to the immediate parent. Thread role labels now use PARENT, CHILD, and SIDE; child views retain parent navigation context. Ctrl-O/Ctrl-I combine local jumps and session visits in a bounded application-owned history; queued keys survive slow resumes, positions reproject during background Markdown changes, and drafts remain workspace-owned. Cross-session history is runtime-only; persisted local marks/jumps remain supported. `s` now also opens Flash from composer Normal mode.
 
 Interruption presentation follows authoritative turn state: Thinking becomes Stopping while cancellation is pending, then settles without discarding late final content. Streaming geometry uses native change-event invalidation rather than a settling timeout. A 1,200-paragraph diagnostic measured roughly 20–25% faster delta settlement; full changed-answer remapping remains a bottleneck. Normal cursor movement no longer rebuilds native Visual selections. Diagnostic timings are not CI thresholds.
 

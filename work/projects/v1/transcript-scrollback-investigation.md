@@ -1,6 +1,6 @@
 # Transcript scrollback investigation
 
-Date: 2026-09-22. Status: reproduction, instrumentation, and research; no production architecture change authorized in this phase. Existing uncommitted scroll-anchor and fold-preserving navigation patches are part of the baseline.
+Date: 2026-09-22. Status: implementation committed as `912f601`; positive hands-on feedback, with further latency profiling still open. The initial investigation below records the pre-implementation baseline; follow-up sections record the changes and validation.
 
 ## Product gate
 
@@ -99,7 +99,7 @@ First establish an independent exact destination oracle: visually coherent movem
 
 Independently test retaining lightweight recent block row/point geometry, keyed by content, width, style, fold, and activity presentation. This may improve warm reversals but cannot substitute for coherent cold preparation. Grow the dense comparison to representative 1k/10k workloads before deciding whether to retain or replace windowing.
 
-No production scroll architecture was modified during this investigation.
+No production scroll architecture was modified during the initial research phase; the subsequent implementation is recorded below.
 
 ## Implementation follow-up: prepare before paint
 
@@ -125,3 +125,11 @@ These are diagnostic samples, not p95 latency claims. In particular, folded cold
 ### Stabilization checkpoint
 
 The full `bun run check` passed after aligning the initially-empty append fixture with production prepaint layout and replacing the native Markdown test's 250 ms polling race with its highlighting-completion signal: **876 passed, 5 skipped, 0 failed**, including four snapshots and the credential-free terminal suite. Formatting, TypeScript, dependency boundaries, generated documentation, and `git diff --check` passed. The activity-batch timeout did not recur in either the scaling→runtime rerun or the full check; its timeout was not increased. Real-terminal subjective navigation acceptance remains the next user checkpoint, not a conclusion of these tests.
+
+### Committed navigation and hands-on follow-up
+
+Commit `912f601` adds viewport-edge block navigation and cursor-aware keyboard scrolling to the prepaint foundation. `{` / `}` move within the visible transcript before scrolling. Half-page/full-page scrolling moves the transcript cursor with the viewport; line scrolling keeps the exact logical cursor while visible and clamps it when needed. Relative navigation resolves queued scrolling first, so Ctrl-U → `{` in one input batch starts from the new cursor. Composer-focused scrolling preserves the editing cursor and draft.
+
+Final code validation: `bun run check` passed **882 tests, 5 skipped, 0 failed**, with four snapshots. Added regressions cover 20 forward/reverse block moves and five cursor/scroll scenarios, in addition to the 35 continuity cases. The stress-suite activity timeout later recurred; reclaiming discarded scaling fixtures between tests removed the deferred-cleanup penalty without increasing timeouts. The subsequent full checks passed.
+
+The user reported the experience was substantially better in hands-on use, identified the block-placement and stale-cursor issues, then reported further improvement after both fixes. Terminal dimensions, emulator, and a complete scenario matrix were not recorded, so this remains qualitative acceptance evidence. The earlier timing samples are not measurements of the final commit. Continue profiling cold folded-tool bursts and testing realistic streaming histories before claiming flawless or universally instant navigation. Proactive history preparation and full mounting below a size threshold remain unimplemented ideas, pending evidence.

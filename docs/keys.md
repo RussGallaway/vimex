@@ -37,6 +37,8 @@ Press `:help` for the compact in-app reference, or `:manual` (`:man`, `/manual`,
 | `v`, `V`                     | Begin character or line Visual selection.                                         |
 | `f`                          | Request a fork through the selected completed turn. A confirmation overlay opens. |
 
+With transcript focus, `Ctrl-d/u` and `Ctrl-f/b` move the cursor with the scroll, preserving its screen row where possible. `Ctrl-e/y` keep the cursor on the same text while it remains visible, then move it to the nearest visible row. `{` / `}` continue from the resulting cursor, including when pressed immediately after scrolling. Block navigation moves through visible content before scrolling just enough at the viewport edge; it preserves tool folds.
+
 Typing a numeric prefix repeats supported motions, up to four digits.
 
 The transcript shows a precise text cursor in Normal and Visual modes. Move first in Normal, press `v` to anchor a selection, extend it with motions, then `y` to copy. Up/Down and Ctrl-K/J change focus without scrolling. Menus retain arrow navigation; Command mode uses arrows for completion choices and Ctrl-P/N for history. Global Ctrl-J/K → Down/Up remappings therefore work without application-specific exceptions.

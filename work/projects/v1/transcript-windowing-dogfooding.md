@@ -165,21 +165,21 @@ Use the smallest severity that describes demonstrated impact:
 
 Add concise entries here or link a dedicated issue when investigation becomes substantial.
 
-| Date       | Build                                          | Symptom                                                       | Severity | Reproduction/artifact                                     | Suspected boundary                                   | Status        |
-| ---------- | ---------------------------------------------- | ------------------------------------------------------------- | -------- | --------------------------------------------------------- | ---------------------------------------------------- | ------------- |
-| 2026-09-22 | Working tree with prior scroll and brace fixes | User still reports flickering and buggy transcript scrollback | UX       | [Investigation](./transcript-scrollback-investigation.md) | Native paint, measurement, window and anchor handoff | Investigating |
+| Date       | Build                                          | Symptom                                                       | Severity | Reproduction/artifact                                     | Suspected boundary                                   | Status                                       |
+| ---------- | ---------------------------------------------- | ------------------------------------------------------------- | -------- | --------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------- |
+| 2026-09-22 | Working tree with prior scroll and brace fixes | User still reports flickering and buggy transcript scrollback | UX       | [Investigation](./transcript-scrollback-investigation.md) | Native paint, measurement, window and anchor handoff | Fixed in `912f601`; user reports improvement |
 
 When a finding is repaired, link the regression test and commit. Keep the original symptom wording so later reports can be recognized even if the underlying implementation changes.
 
 ## Hands-on checkpoint after prepaint preparation
 
-Run the working tree with `bun run start` (or `bun run start --demo` for the offline fixture). An installed release does not automatically include these uncommitted changes.
+Run the working tree with `bun run start` (or `bun run start --demo` for the offline fixture). Use commit `912f601` or later; an older installed release does not include these changes.
 
-While output is arriving, scroll backward with Ctrl-U/Ctrl-Y and the mouse, type a draft, navigate earlier tool blocks with `{`/`}`, then work back down and use `G`. Also try `gg` immediately followed by `G`, rapid reversals near both ends, and folded versus expanded tools.
+While output is arriving, scroll backward with Ctrl-U/Ctrl-Y and the mouse, type a draft, navigate earlier tool blocks with `{`/`}`, then work back down and use `G`. Also try `gg` immediately followed by `G`, rapid reversals near both ends, and folded versus expanded tools. Verify that `}` moves the cursor down before scrolling and that Ctrl-U followed immediately by `{` navigates from the updated cursor.
 
 The experience should remain one continuous transcript: no entry pause, transition banner, blank frame, content correction, or forced return to the tail. New output should preserve the reading anchor; `G` should resume following without losing the draft or changing folds. Correct navigation is the acceptance gate before further feature work.
 
-Record the command/build, terminal dimensions, folded state, whether output was streaming, and the shortest failing key sequence. Distinguish wrong destination, visible correction, and delayed response. Headless frame tests are supporting evidence; this hands-on checkpoint remains unaccepted until actually exercised.
+Record the command/build, terminal dimensions, folded state, whether output was streaming, and the shortest failing key sequence. Distinguish wrong destination, visible correction, and delayed response. The user has reported substantial improvement after hands-on testing and the block-placement/cursor fixes. Terminal details and a complete scenario matrix remain unrecorded; do not treat that feedback as exhaustive acceptance.
 
 ## Architectural references
 
