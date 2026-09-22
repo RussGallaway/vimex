@@ -19,7 +19,9 @@ export async function waitForRender(
       await harness.renderOnce()
     })
     if (ready()) return
-    await act(async () => { await Bun.sleep(10) })
+    await act(async () => {
+      await Bun.sleep(10)
+    })
   } while (performance.now() < deadline)
   throw new Error(`Timed out after ${timeoutMs}ms waiting for ${description}`)
 }

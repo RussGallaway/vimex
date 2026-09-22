@@ -16,7 +16,17 @@ export class CodexApprovalGateway implements ApprovalGateway {
       case "userInput.requested": {
         const id = opaqueId(event.requestId)
         this.questionIds.set(id, event.requestId)
-        return [{ type: "question.requested", request: { id, threadId: event.threadId, turnId: event.turnId, questions: event.questions } }]
+        return [
+          {
+            type: "question.requested",
+            request: {
+              id,
+              threadId: event.threadId,
+              turnId: event.turnId,
+              questions: event.questions,
+            },
+          },
+        ]
       }
       case "approval.requested":
         this.approvalIds.set(event.approval.id, event.requestId)
@@ -24,25 +34,35 @@ export class CodexApprovalGateway implements ApprovalGateway {
       case "approval.cancelled": {
         const events: RuntimeEvent[] = []
         const approvalId = this.approvalId(event.requestId)
-        if (approvalId) { this.approvalIds.delete(approvalId); events.push({ type: "approval.resolved", id: approvalId }) }
+        if (approvalId) {
+          this.approvalIds.delete(approvalId)
+          events.push({ type: "approval.resolved", id: approvalId })
+        }
         const questionId = opaqueId(event.requestId)
-        if (this.questionIds.delete(questionId)) events.push({ type: "question.resolved", id: questionId })
+        if (this.questionIds.delete(questionId))
+          events.push({ type: "question.resolved", id: questionId })
         return events
       }
       case "approval.resolved": {
         const questionId = opaqueId(event.requestId)
-        if (this.questionIds.delete(questionId)) return [{ type: "question.resolved", id: questionId }]
+        if (this.questionIds.delete(questionId))
+          return [{ type: "question.resolved", id: questionId }]
         const id = this.approvalId(event.requestId) ?? opaqueId(event.requestId)
         this.approvalIds.delete(id)
         return [{ type: "approval.resolved", id }]
       }
-      default: return undefined
+      default:
+        return undefined
     }
   }
 
-  async respondToQuestions(id: string, answers: Readonly<Record<string, string | readonly string[]>>): Promise<void> {
+  async respondToQuestions(
+    id: string,
+    answers: Readonly<Record<string, string | readonly string[]>>,
+  ): Promise<void> {
     const original = this.questionIds.get(id)
-    if (original === undefined) throw new Error("This question is no longer pending")
+    if (original === undefined)
+      throw new Error("This question is no longer pending")
     const generation = this.generation
     await this.client().respondToUserInput(original, answers)
     if (generation === this.generation) this.questionIds.delete(id)
@@ -50,7 +70,8 @@ export class CodexApprovalGateway implements ApprovalGateway {
 
   async resolveApproval(id: string, choice: string): Promise<void> {
     const original = this.approvalIds.get(id)
-    if (original === undefined) throw new Error("This approval is no longer pending")
+    if (original === undefined)
+      throw new Error("This approval is no longer pending")
     await this.client().resolveApproval(original, choice)
   }
 
@@ -58,8 +79,12 @@ export class CodexApprovalGateway implements ApprovalGateway {
   invalidatePending(): RuntimeEvent[] {
     this.generation++
     const events: RuntimeEvent[] = [
-      ...this.approvalIds.keys().map(id => ({ type: "approval.resolved" as const, id })),
-      ...this.questionIds.keys().map(id => ({ type: "question.resolved" as const, id })),
+      ...this.approvalIds
+        .keys()
+        .map((id) => ({ type: "approval.resolved" as const, id })),
+      ...this.questionIds
+        .keys()
+        .map((id) => ({ type: "question.resolved" as const, id })),
     ]
     this.approvalIds.clear()
     this.questionIds.clear()
@@ -71,4 +96,6 @@ export class CodexApprovalGateway implements ApprovalGateway {
   }
 }
 
-function opaqueId(id: string | number): string { return `${typeof id}:${id}` }
+function opaqueId(id: string | number): string {
+  return `${typeof id}:${id}`
+}

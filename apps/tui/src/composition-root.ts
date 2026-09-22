@@ -1,13 +1,38 @@
 import { join, resolve } from "node:path"
 import { emptyLocalState, parseLocalState } from "@vimex/workbench"
-import { createCliRenderer, createClipboard, createHostClipboard, createRendererClipboardAdapter } from "@opentui/core"
+import {
+  createCliRenderer,
+  createClipboard,
+  createHostClipboard,
+  createRendererClipboardAdapter,
+} from "@opentui/core"
 import { createRoot } from "@opentui/react"
-import { ConnectedVimexRoot, FatalBoundary, registerSyntaxParsers } from "@vimex/ui-opentui-react"
-import { JsonStore, stateDirectory, configDirectory, loadConfig, parseConfig, openUrl } from "@vimex/platform-node"
-import { createHerdrExternalActions, detectHerdr, HerdrReporter } from "@vimex/herdr"
+import {
+  ConnectedVimexRoot,
+  FatalBoundary,
+  registerSyntaxParsers,
+} from "@vimex/ui-opentui-react"
+import {
+  JsonStore,
+  stateDirectory,
+  configDirectory,
+  loadConfig,
+  parseConfig,
+  openUrl,
+} from "@vimex/platform-node"
+import {
+  createHerdrExternalActions,
+  detectHerdr,
+  HerdrReporter,
+} from "@vimex/herdr"
 import { createElement } from "react"
 import type { CliOptions } from "./cli-options"
-import { FailureNotice, failureAfterCleanup, Lifecycle, shutdownApplication } from "./lifecycle"
+import {
+  FailureNotice,
+  failureAfterCleanup,
+  Lifecycle,
+  shutdownApplication,
+} from "./lifecycle"
 import { createCodexGateways } from "@vimex/codex-app-server"
 import { createDemoGateway } from "./demo-gateway"
 import { VimexController } from "@vimex/workbench"
@@ -15,9 +40,16 @@ import { VimexController } from "@vimex/workbench"
 export async function runApplication(options: CliOptions) {
   let controller!: VimexController
   let config = await loadConfig(options.config)
-  const configStore = new JsonStore(options.config ?? join(configDirectory(), "config.json"), parseConfig)
-  const localStore = options.demo ? undefined : new JsonStore(join(stateDirectory(), "views.json"), parseLocalState)
-  let localState = localStore ? await localStore.read(emptyLocalState()) : emptyLocalState()
+  const configStore = new JsonStore(
+    options.config ?? join(configDirectory(), "config.json"),
+    parseConfig,
+  )
+  const localStore = options.demo
+    ? undefined
+    : new JsonStore(join(stateDirectory(), "views.json"), parseLocalState)
+  let localState = localStore
+    ? await localStore.read(emptyLocalState())
+    : emptyLocalState()
   let savedJson = JSON.stringify(localState)
   let saveTimer: ReturnType<typeof setTimeout> | undefined
   let persistenceError: unknown
@@ -34,14 +66,22 @@ export async function runApplication(options: CliOptions) {
       persistenceNotice.clear()
     } catch (error) {
       persistenceError = error
-      persistenceNotice.fail(error, message => controller.notice(`Local view state is not being saved: ${message}`))
+      persistenceNotice.fail(error, (message) =>
+        controller.notice(`Local view state is not being saved: ${message}`),
+      )
     }
   }
   const lifecycle = new Lifecycle()
   let finish!: () => void
-  const finished = new Promise<void>(resolve => { finish = resolve })
+  const finished = new Promise<void>((resolve) => {
+    finish = resolve
+  })
   const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const
-  const onFailure = (error: unknown) => { process.exitCode = 1; failure ??= error ?? new Error("Unknown runtime failure"); finish() }
+  const onFailure = (error: unknown) => {
+    process.exitCode = 1
+    failure ??= error ?? new Error("Unknown runtime failure")
+    finish()
+  }
   let failure: unknown
   let cleanupFailure: unknown
   let lastHerdrError: string | undefined
@@ -50,12 +90,22 @@ export async function runApplication(options: CliOptions) {
   let detachHandlers = () => {}
   try {
     registerSyntaxParsers()
-    renderer = await createCliRenderer({ screenMode: "alternate-screen", exitOnCtrlC: false, exitSignals: [], targetFps: 60 })
-    const clipboard = createClipboard({ host: createHostClipboard(), terminal: createRendererClipboardAdapter(renderer) })
+    renderer = await createCliRenderer({
+      screenMode: "alternate-screen",
+      exitOnCtrlC: false,
+      exitSignals: [],
+      targetFps: 60,
+    })
+    const clipboard = createClipboard({
+      host: createHostClipboard(),
+      terminal: createRendererClipboardAdapter(renderer),
+    })
     lifecycle.add(() => clipboard.dispose())
     const herdr = new HerdrReporter(options.demo ? undefined : detectHerdr())
     lifecycle.add(() => herdr.dispose())
-    const externalActions = createHerdrExternalActions({ fallbackOpenUrl: openUrl })
+    const externalActions = createHerdrExternalActions({
+      fallbackOpenUrl: openUrl,
+    })
     const ports = {
       localState,
       busySubmit: config.busySubmit,
@@ -67,24 +117,47 @@ export async function runApplication(options: CliOptions) {
           config = next
         },
       },
-      clipboard: { writeText: async (text: string) => { await clipboard.writeText(text, { destination: "best-available" }) } },
+      clipboard: {
+        writeText: async (text: string) => {
+          await clipboard.writeText(text, { destination: "best-available" })
+        },
+      },
       openUrl: externalActions.openUrl,
       quit: finish,
       onLocalState(state: import("@vimex/workbench").LocalState) {
         localState = state
-        if (localStore && !saveTimer) saveTimer = setTimeout(() => { void save() }, 200)
+        if (localStore && !saveTimer)
+          saveTimer = setTimeout(() => {
+            void save()
+          }, 200)
       },
-      onLifecycle(state: import("@vimex/workbench").WorkbenchLifecycleSnapshot) {
-        void herdr.report(state).catch(error => {
+      onLifecycle(
+        state: import("@vimex/workbench").WorkbenchLifecycleSnapshot,
+      ) {
+        void herdr.report(state).catch((error) => {
           const message = `Herdr reporting failed: ${String(error)}`
-          if (message !== lastHerdrError) { lastHerdrError = message; controller.notice(message) }
+          if (message !== lastHerdrError) {
+            lastHerdrError = message
+            controller.notice(message)
+          }
         })
       },
     }
     const demo = options.demo ? createDemoGateway() : undefined
     controller = demo
-      ? new VimexController({ ...ports, conversation: demo, approvals: demo, connection: demo, models: demo, resolveDirectory: resolve })
-      : new VimexController({ ...createCodexGateways(options.cwd, config.codexExecutable), ...ports, resolveDirectory: resolve })
+      ? new VimexController({
+          ...ports,
+          conversation: demo,
+          approvals: demo,
+          connection: demo,
+          models: demo,
+          resolveDirectory: resolve,
+        })
+      : new VimexController({
+          ...createCodexGateways(options.cwd, config.codexExecutable),
+          ...ports,
+          resolveDirectory: resolve,
+        })
     lifecycle.add(async () => {
       if (saveTimer) clearTimeout(saveTimer)
       await save()
@@ -102,14 +175,30 @@ export async function runApplication(options: CliOptions) {
       process.off("uncaughtException", onFailure)
       process.off("unhandledRejection", onFailure)
     }
-    root.render(createElement(FatalBoundary, { onFatal: onFailure }, createElement(ConnectedVimexRoot, {
-      controller,
-      settings: { ...config, reducedColor: config.reducedColor || Boolean(process.env.NO_COLOR) },
-    })))
-    void controller.initialize(options.cwd, options.model, options.thread, options.resumeMode).catch(error => {
-      if (options.resumeMode) onFailure(error)
-      else controller.notice(String(error))
-    })
+    root.render(
+      createElement(
+        FatalBoundary,
+        { onFatal: onFailure },
+        createElement(ConnectedVimexRoot, {
+          controller,
+          settings: {
+            ...config,
+            reducedColor: config.reducedColor || Boolean(process.env.NO_COLOR),
+          },
+        }),
+      ),
+    )
+    void controller
+      .initialize(
+        options.cwd,
+        options.model,
+        options.thread,
+        options.resumeMode,
+      )
+      .catch((error) => {
+        if (options.resumeMode) onFailure(error)
+        else controller.notice(String(error))
+      })
     await finished
   } catch (error) {
     failure ??= error ?? new Error("Unknown runtime failure")
@@ -121,7 +210,9 @@ export async function runApplication(options: CliOptions) {
         releaseResources: () => lifecycle.close(),
         detachHandlers,
       })
-    } catch (error) { cleanupFailure = error }
+    } catch (error) {
+      cleanupFailure = error
+    }
   }
   const terminalFailure = failureAfterCleanup(failure, cleanupFailure)
   if (terminalFailure !== undefined) throw terminalFailure

@@ -4,13 +4,13 @@ Status: Formula/vimex.rb is published from this repository. Stable releases gene
 
 ## Vocabulary
 
-| Term | Meaning |
-| --- | --- |
-| Formula | Ruby recipe describing versioned sources, checksums, dependencies, installation, and a test; typically used for CLI tools and libraries |
-| Tap | A Git repository containing formulae or casks; anyone can maintain their own |
-| homebrew/core | Homebrew's official formula collection, maintained through its review process |
-| Bottle | A prebuilt installation of a formula, produced for a supported platform; users usually install a bottle rather than compile locally |
-| Cask | Recipe for supported prebuilt applications/artifacts, commonly GUI applications; not the proposed source-based core route for Vimex |
+| Term          | Meaning                                                                                                                                 |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Formula       | Ruby recipe describing versioned sources, checksums, dependencies, installation, and a test; typically used for CLI tools and libraries |
+| Tap           | A Git repository containing formulae or casks; anyone can maintain their own                                                            |
+| homebrew/core | Homebrew's official formula collection, maintained through its review process                                                           |
+| Bottle        | A prebuilt installation of a formula, produced for a supported platform; users usually install a bottle rather than compile locally     |
+| Cask          | Recipe for supported prebuilt applications/artifacts, commonly GUI applications; not the proposed source-based core route for Vimex     |
 
 An upstream release archive and a Homebrew bottle are different artifacts. Our tap may initially install our release binaries; that does not make the same recipe eligible for core. A core formula needs a supported source build for native software.
 

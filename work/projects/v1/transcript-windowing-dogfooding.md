@@ -46,28 +46,28 @@ Prefer the smallest event-and-input sequence that still reproduces the behavior.
 
 The entries below are investigation starting points, not presumed causes.
 
-| Observed UX symptom | First boundary to inspect | Useful comparison or evidence |
-|---|---|---|
-| Reading position jumps during streaming | detached anchor capture, displayed revision pinning, height correction | logical anchor before/after; whether the viewport was actually detached |
-| Reading position jumps after resize or Markdown settles | measured block-local geometry and anchor restoration | item ID, grapheme offset, preferred screen row, old/new width |
-| Blank gap, overlap, or impossible scroll extent | height index and top/window/bottom row conservation | spacer rows, mounted block rows, total indexed rows |
-| Tail stops following or follows unexpectedly | semantic viewport state and follow/detach transition | `tail` versus `point` viewport before the triggering action |
-| `G` or explicit follow does not reveal the newest output atomically | reattachment and latest displayed revision selection | canonical versus displayed revision and publication count |
-| Unseen count increments twice, misses output, or clears early | detached unseen accumulator and damage coalescing | distinct changed item IDs and repeated delta sequence |
-| Search, mark, jump, URL motion, or history restore lands incorrectly | off-window target index, reveal routing, fold-aware settlement | logical target before planning; target materialized afterward |
-| Visual selection changes after scrolling or resize | logical selection endpoints and native clipping | dense copy result versus windowed copy result |
-| Rendered copy or Markdown-source copy is missing or duplicated | canonical projection/source map and fragment ownership | exact copied bytes; fragment boundary near each endpoint |
-| Fold opens at the wrong location or moves the reader | fold damage, height replacement, anchor restoration | measured height before/after; logical point retained |
+| Observed UX symptom                                                        | First boundary to inspect                                                           | Useful comparison or evidence                                                                      |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Reading position jumps during streaming                                    | detached anchor capture, displayed revision pinning, height correction              | logical anchor before/after; whether the viewport was actually detached                            |
+| Reading position jumps after resize or Markdown settles                    | measured block-local geometry and anchor restoration                                | item ID, grapheme offset, preferred screen row, old/new width                                      |
+| Blank gap, overlap, or impossible scroll extent                            | height index and top/window/bottom row conservation                                 | spacer rows, mounted block rows, total indexed rows                                                |
+| Tail stops following or follows unexpectedly                               | semantic viewport state and follow/detach transition                                | `tail` versus `point` viewport before the triggering action                                        |
+| `G` or explicit follow does not reveal the newest output atomically        | reattachment and latest displayed revision selection                                | canonical versus displayed revision and publication count                                          |
+| Unseen count increments twice, misses output, or clears early              | detached unseen accumulator and damage coalescing                                   | distinct changed item IDs and repeated delta sequence                                              |
+| Search, mark, jump, URL motion, or history restore lands incorrectly       | off-window target index, reveal routing, fold-aware settlement                      | logical target before planning; target materialized afterward                                      |
+| Visual selection changes after scrolling or resize                         | logical selection endpoints and native clipping                                     | dense copy result versus windowed copy result                                                      |
+| Rendered copy or Markdown-source copy is missing or duplicated             | canonical projection/source map and fragment ownership                              | exact copied bytes; fragment boundary near each endpoint                                           |
+| Fold opens at the wrong location or moves the reader                       | fold damage, height replacement, anchor restoration                                 | measured height before/after; logical point retained                                               |
 | Activity batch count changes while scrolling, or a child cannot be reached | complete activity membership, zero-height index entries, protected cursor/selection | compare the pass-through batch with the bounded window; reveal a middle child and return to follow |
-| Duplicate or stale content flashes during movement | stable block keys, content revisions, stale native callbacks | mounted root IDs and revision accepted by measurement |
-| Main and side transcript disturb each other | per-presentation runtime, geometry, and visibility ownership | which runtime published; identity of the unaffected frame |
-| Hidden or maximized-away pane still consumes work | visibility suspension and scheduler cleanup | mounted roots, listeners, measurement passes while hidden |
-| Input becomes slow only with long history | dense fallback, complete-plan/index rebuild, or canonical ingress | operation counters at 100/1k/10k/100k with identical input |
-| Scrolling becomes slow while mounted count stays bounded | per-root render cost, native measurement, or oversized fragment | descendants and logical points per mounted root |
-| One large command, Markdown response, or diff freezes the UI | fragmentation eligibility and conservative root fallback | item kind/status/fold state, source size, fragment count |
-| Memory grows after repeated distant jumps | departed-root pruning, geometry cache, parsed native resources | mounted/tracked/pruned roots and settled RSS trend |
-| Short sessions feel worse than the dense implementation | estimate/measure/replan overhead and initial policy settlement | cold commits, measurement passes, and input latency on small fixtures |
-| Empty items or turn activity appear in the wrong order | complete block chronology and source-less activity ownership | dense block sequence versus windowed block sequence |
+| Duplicate or stale content flashes during movement                         | stable block keys, content revisions, stale native callbacks                        | mounted root IDs and revision accepted by measurement                                              |
+| Main and side transcript disturb each other                                | per-presentation runtime, geometry, and visibility ownership                        | which runtime published; identity of the unaffected frame                                          |
+| Hidden or maximized-away pane still consumes work                          | visibility suspension and scheduler cleanup                                         | mounted roots, listeners, measurement passes while hidden                                          |
+| Input becomes slow only with long history                                  | dense fallback, complete-plan/index rebuild, or canonical ingress                   | operation counters at 100/1k/10k/100k with identical input                                         |
+| Scrolling becomes slow while mounted count stays bounded                   | per-root render cost, native measurement, or oversized fragment                     | descendants and logical points per mounted root                                                    |
+| One large command, Markdown response, or diff freezes the UI               | fragmentation eligibility and conservative root fallback                            | item kind/status/fold state, source size, fragment count                                           |
+| Memory grows after repeated distant jumps                                  | departed-root pruning, geometry cache, parsed native resources                      | mounted/tracked/pruned roots and settled RSS trend                                                 |
+| Short sessions feel worse than the dense implementation                    | estimate/measure/replan overhead and initial policy settlement                      | cold commits, measurement passes, and input latency on small fixtures                              |
+| Empty items or turn activity appear in the wrong order                     | complete block chronology and source-less activity ownership                        | dense block sequence versus windowed block sequence                                                |
 
 ## Investigation order
 
@@ -153,21 +153,21 @@ Investigate one of these only after a realistic reproduction violates UX expecta
 
 Use the smallest severity that describes demonstrated impact:
 
-| Severity | Demonstrated impact | Default response |
-|---|---|---|
-| Semantic | wrong copied text, lost state, wrong target, reordered content, or canonical corruption | stop and repair before relying on the affected workflow |
-| Blocking | crash, unrecoverable blank transcript, or ordinary input starvation | reproduce and repair promptly |
-| UX | jump, flicker, stale frame, awkward settlement, or surprising follow behavior with a recovery | record and fix forward when reproducible |
-| Performance | measured work grows with history or one realistic item overwhelms the native tree | add a deterministic scaling fixture before optimizing |
-| Observation | suspicious behavior seen once without adequate evidence | retain the report; do not design from it yet |
+| Severity    | Demonstrated impact                                                                           | Default response                                        |
+| ----------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Semantic    | wrong copied text, lost state, wrong target, reordered content, or canonical corruption       | stop and repair before relying on the affected workflow |
+| Blocking    | crash, unrecoverable blank transcript, or ordinary input starvation                           | reproduce and repair promptly                           |
+| UX          | jump, flicker, stale frame, awkward settlement, or surprising follow behavior with a recovery | record and fix forward when reproducible                |
+| Performance | measured work grows with history or one realistic item overwhelms the native tree             | add a deterministic scaling fixture before optimizing   |
+| Observation | suspicious behavior seen once without adequate evidence                                       | retain the report; do not design from it yet            |
 
 ## Observation log
 
 Add concise entries here or link a dedicated issue when investigation becomes substantial.
 
-| Date | Build | Symptom | Severity | Reproduction/artifact | Suspected boundary | Status |
-|---|---|---|---|---|---|---|
-| — | — | No post-acceptance dogfooding findings recorded yet | — | — | — | Watching |
+| Date | Build | Symptom                                             | Severity | Reproduction/artifact | Suspected boundary | Status   |
+| ---- | ----- | --------------------------------------------------- | -------- | --------------------- | ------------------ | -------- |
+| —    | —     | No post-acceptance dogfooding findings recorded yet | —        | —                     | —                  | Watching |
 
 When a finding is repaired, link the regression test and commit. Keep the original symptom wording so later reports can be recognized even if the underlying implementation changes.
 

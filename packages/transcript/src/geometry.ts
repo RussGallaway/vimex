@@ -3,7 +3,8 @@ import type { TranscriptBlock, TranscriptBlockPresentation } from "./window"
 import { blockKey } from "./window"
 
 export type GeometryStyleRevision = string | number
-export type LayoutResetReason = "width" | "style" | "syntax" | "renderer" | "budget"
+export type LayoutResetReason =
+  "width" | "style" | "syntax" | "renderer" | "budget"
 
 export interface BlockGeometryKey {
   readonly blockKey: string
@@ -78,23 +79,47 @@ export interface TranscriptGeometry {
 }
 
 export function freezeBlockGeometry(value: BlockGeometry): BlockGeometry {
-  if (Object.isFrozen(value) && value.pointCount !== undefined && value.pointOffsetsByRow && value.lineByRow) return value
-  const points = Object.freeze(Object.fromEntries(Object.entries(value.points).map(([offset, point]) => [offset, Object.freeze({
-    graphemeOffset: point.graphemeOffset,
-    x: point.x,
-    y: point.y,
-    row: point.row,
-    column: point.column,
-    ...(point.hidden ? { hidden: true } : {}),
-  })])))
-  const lines = Object.freeze(value.lines.map(line => Object.freeze({ from: line.from, to: line.to, row: line.row })))
-  const lineByRow = Object.freeze(Object.fromEntries(lines.map(line => [line.row, line])))
+  if (
+    Object.isFrozen(value) &&
+    value.pointCount !== undefined &&
+    value.pointOffsetsByRow &&
+    value.lineByRow
+  )
+    return value
+  const points = Object.freeze(
+    Object.fromEntries(
+      Object.entries(value.points).map(([offset, point]) => [
+        offset,
+        Object.freeze({
+          graphemeOffset: point.graphemeOffset,
+          x: point.x,
+          y: point.y,
+          row: point.row,
+          column: point.column,
+          ...(point.hidden ? { hidden: true } : {}),
+        }),
+      ]),
+    ),
+  )
+  const lines = Object.freeze(
+    value.lines.map((line) =>
+      Object.freeze({ from: line.from, to: line.to, row: line.row }),
+    ),
+  )
+  const lineByRow = Object.freeze(
+    Object.fromEntries(lines.map((line) => [line.row, line])),
+  )
   const offsetsByRow: Record<number, number[]> = {}
-  for (const point of Object.values(points)) (offsetsByRow[point.row] ??= []).push(point.graphemeOffset)
-  const pointOffsetsByRow = Object.freeze(Object.fromEntries(Object.entries(offsetsByRow).map(([row, offsets]) => [
-    row,
-    Object.freeze(offsets.sort((left, right) => left - right)),
-  ])))
+  for (const point of Object.values(points))
+    (offsetsByRow[point.row] ??= []).push(point.graphemeOffset)
+  const pointOffsetsByRow = Object.freeze(
+    Object.fromEntries(
+      Object.entries(offsetsByRow).map(([row, offsets]) => [
+        row,
+        Object.freeze(offsets.sort((left, right) => left - right)),
+      ]),
+    ),
+  )
   return Object.freeze({
     key: Object.freeze({ ...value.key }),
     nativeRevision: value.nativeRevision,
@@ -107,7 +132,10 @@ export function freezeBlockGeometry(value: BlockGeometry): BlockGeometry {
   })
 }
 
-export function emptyTranscriptGeometry(generation = 0, revision = 0): TranscriptGeometry {
+export function emptyTranscriptGeometry(
+  generation = 0,
+  revision = 0,
+): TranscriptGeometry {
   return Object.freeze({
     generation,
     revision,
@@ -120,11 +148,18 @@ export function emptyTranscriptGeometry(generation = 0, revision = 0): Transcrip
   })
 }
 
-export function geometryMatchesBlock(geometry: BlockGeometry, block: TranscriptBlock, folded: boolean, presentation: TranscriptBlockPresentation = "item"): boolean {
-  return geometry.key.blockKey === blockKey(block)
-    && geometry.key.contentRevision === block.contentRevision
-    && geometry.key.folded === folded
-    && (geometry.key.presentation ?? "item") === presentation
+export function geometryMatchesBlock(
+  geometry: BlockGeometry,
+  block: TranscriptBlock,
+  folded: boolean,
+  presentation: TranscriptBlockPresentation = "item",
+): boolean {
+  return (
+    geometry.key.blockKey === blockKey(block) &&
+    geometry.key.contentRevision === block.contentRevision &&
+    geometry.key.folded === folded &&
+    (geometry.key.presentation ?? "item") === presentation
+  )
 }
 
 /** Compose global rows from immutable block-local geometry without cloning points or lines. */
@@ -136,9 +171,25 @@ export function composeTranscriptGeometry(
   revision: number,
   width?: number,
   styleRevision?: GeometryStyleRevision,
-  presentationByBlock: Readonly<Record<string, { readonly kind: Exclude<TranscriptBlockPresentation, "item"> }>> = {},
+  presentationByBlock: Readonly<
+    Record<
+      string,
+      { readonly kind: Exclude<TranscriptBlockPresentation, "item"> }
+    >
+  > = {},
 ): TranscriptGeometry {
-  return composeGeometry(blocks, foldedByItem, byBlockKey, generation, revision, 0, undefined, width, styleRevision, presentationByBlock)
+  return composeGeometry(
+    blocks,
+    foldedByItem,
+    byBlockKey,
+    generation,
+    revision,
+    0,
+    undefined,
+    width,
+    styleRevision,
+    presentationByBlock,
+  )
 }
 
 /**
@@ -157,9 +208,25 @@ export function composeTranscriptWindowGeometry(
   totalRows: number,
   width?: number,
   styleRevision?: GeometryStyleRevision,
-  presentationByBlock: Readonly<Record<string, { readonly kind: Exclude<TranscriptBlockPresentation, "item"> }>> = {},
+  presentationByBlock: Readonly<
+    Record<
+      string,
+      { readonly kind: Exclude<TranscriptBlockPresentation, "item"> }
+    >
+  > = {},
 ): TranscriptGeometry {
-  return composeGeometry(blocks, foldedByItem, byBlockKey, generation, revision, firstRow, totalRows, width, styleRevision, presentationByBlock)
+  return composeGeometry(
+    blocks,
+    foldedByItem,
+    byBlockKey,
+    generation,
+    revision,
+    firstRow,
+    totalRows,
+    width,
+    styleRevision,
+    presentationByBlock,
+  )
 }
 
 function composeGeometry(
@@ -172,7 +239,12 @@ function composeGeometry(
   completeTotalRows: number | undefined,
   width?: number,
   styleRevision?: GeometryStyleRevision,
-  presentationByBlock: Readonly<Record<string, { readonly kind: Exclude<TranscriptBlockPresentation, "item"> }>> = {},
+  presentationByBlock: Readonly<
+    Record<
+      string,
+      { readonly kind: Exclude<TranscriptBlockPresentation, "item"> }
+    >
+  > = {},
 ): TranscriptGeometry {
   const retained: Record<string, BlockGeometry> = {}
   const rowByBlockKey: Record<string, number> = {}
@@ -184,16 +256,35 @@ function composeGeometry(
     const key = blockKey(block)
     rowByBlockKey[key] = row
     const presentation = presentationByBlock[key]?.kind ?? "item"
-    const folded = block.key.kind === "item" && (presentation !== "item" || Boolean(foldedByItem[block.key.itemId]))
+    const folded =
+      block.key.kind === "item" &&
+      (presentation !== "item" || Boolean(foldedByItem[block.key.itemId]))
     const geometry = byBlockKey[key]
-    const rows = geometry && geometryMatchesBlock(geometry, block, folded, presentation)
-      && (width === undefined || geometry.key.width === width)
-      && (styleRevision === undefined || geometry.key.styleRevision === styleRevision)
-      ? Math.max(0, geometry.rows) : presentation === "activity-hidden" ? 0 : Math.max(1, block.estimatedRows)
-    blockRows.push(Object.freeze({ blockKey: key, ...(block.key.kind === "item" ? { itemId: block.key.itemId } : {}), start: row, rows }))
-    if (geometry && geometryMatchesBlock(geometry, block, folded, presentation)
-      && (width === undefined || geometry.key.width === width)
-      && (styleRevision === undefined || geometry.key.styleRevision === styleRevision)) {
+    const rows =
+      geometry &&
+      geometryMatchesBlock(geometry, block, folded, presentation) &&
+      (width === undefined || geometry.key.width === width) &&
+      (styleRevision === undefined ||
+        geometry.key.styleRevision === styleRevision)
+        ? Math.max(0, geometry.rows)
+        : presentation === "activity-hidden"
+          ? 0
+          : Math.max(1, block.estimatedRows)
+    blockRows.push(
+      Object.freeze({
+        blockKey: key,
+        ...(block.key.kind === "item" ? { itemId: block.key.itemId } : {}),
+        start: row,
+        rows,
+      }),
+    )
+    if (
+      geometry &&
+      geometryMatchesBlock(geometry, block, folded, presentation) &&
+      (width === undefined || geometry.key.width === width) &&
+      (styleRevision === undefined ||
+        geometry.key.styleRevision === styleRevision)
+    ) {
       retained[key] = geometry
       measuredBlockCount += 1
       totalPoints += geometry.pointCount ?? Object.keys(geometry.points).length

@@ -1,6 +1,12 @@
 import { spawn } from "node:child_process"
 
-import type { CodexTransport, CloseListener, ErrorListener, JsonObject, MessageListener } from "./transport"
+import type {
+  CodexTransport,
+  CloseListener,
+  ErrorListener,
+  JsonObject,
+  MessageListener,
+} from "./transport"
 
 export interface StdioProcess {
   write(value: string): Promise<void>
@@ -12,14 +18,25 @@ export interface StdioProcess {
   onExit(listener: (code: number | null, signal: string | null) => void): void
 }
 
-export type StdioProcessFactory = (command: string, args: readonly string[], cwd?: string) => StdioProcess
+export type StdioProcessFactory = (
+  command: string,
+  args: readonly string[],
+  cwd?: string,
+) => StdioProcess
 
-function nodeProcessFactory(command: string, args: readonly string[], cwd?: string): StdioProcess {
-  const child = spawn(command, [...args], { cwd, stdio: ["pipe", "pipe", "pipe"] })
+function nodeProcessFactory(
+  command: string,
+  args: readonly string[],
+  cwd?: string,
+): StdioProcess {
+  const child = spawn(command, [...args], {
+    cwd,
+    stdio: ["pipe", "pipe", "pipe"],
+  })
   return {
     write(value) {
       return new Promise<void>((resolve, reject) => {
-        child.stdin.write(value, (error) => error ? reject(error) : resolve())
+        child.stdin.write(value, (error) => (error ? reject(error) : resolve()))
       })
     },
     end: () => child.stdin.end(),
@@ -67,15 +84,19 @@ export class StdioTransport implements CodexTransport {
     process.onStderr((chunk) => this.options.onStderr?.(decode(chunk)))
     process.onError((error) => this.emitError(error))
     process.onExit((code, signal) => {
-      const error = this.closed || code === 0
-        ? undefined
-        : new Error(`codex app-server exited with code ${String(code)}${signal ? ` (${signal})` : ""}`)
+      const error =
+        this.closed || code === 0
+          ? undefined
+          : new Error(
+              `codex app-server exited with code ${String(code)}${signal ? ` (${signal})` : ""}`,
+            )
       this.finish(error)
     })
   }
 
   async send(message: JsonObject): Promise<void> {
-    if (!this.process || this.closed) throw new Error("Codex transport is not open")
+    if (!this.process || this.closed)
+      throw new Error("Codex transport is not open")
     await this.process.write(`${JSON.stringify(message)}\n`)
   }
 
@@ -103,7 +124,10 @@ export class StdioTransport implements CodexTransport {
   }
 
   private acceptChunk(chunk: string | Uint8Array): void {
-    this.buffer += typeof chunk === "string" ? `${this.decoder.decode()}${chunk}` : this.decoder.decode(chunk, { stream: true })
+    this.buffer +=
+      typeof chunk === "string"
+        ? `${this.decoder.decode()}${chunk}`
+        : this.decoder.decode(chunk, { stream: true })
     while (true) {
       const newline = this.buffer.indexOf("\n")
       if (newline < 0) return
@@ -114,7 +138,9 @@ export class StdioTransport implements CodexTransport {
         const message: unknown = JSON.parse(line)
         for (const listener of this.messageListeners) listener(message)
       } catch (cause) {
-        this.emitError(new Error(`Invalid JSONL from codex app-server: ${line}`, { cause }))
+        this.emitError(
+          new Error(`Invalid JSONL from codex app-server: ${line}`, { cause }),
+        )
       }
     }
   }
@@ -133,7 +159,12 @@ export class StdioTransport implements CodexTransport {
         const message: unknown = JSON.parse(finalLine)
         for (const listener of this.messageListeners) listener(message)
       } catch (cause) {
-        this.emitError(new Error(`Invalid trailing JSONL from codex app-server: ${finalLine}`, { cause }))
+        this.emitError(
+          new Error(
+            `Invalid trailing JSONL from codex app-server: ${finalLine}`,
+            { cause },
+          ),
+        )
       }
       this.buffer = ""
     }
@@ -143,4 +174,6 @@ export class StdioTransport implements CodexTransport {
   }
 }
 
-function decode(chunk: string | Uint8Array): string { return typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk) }
+function decode(chunk: string | Uint8Array): string {
+  return typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk)
+}

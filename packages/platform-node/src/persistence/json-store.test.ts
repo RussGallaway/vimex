@@ -11,11 +11,16 @@ test("atomic writes serialize snapshots and use private file permissions", async
     const path = join(directory, "state.json")
     const store = new JsonStore(path, (v) => v as { draft: string })
     expect(await store.read({ draft: "" })).toEqual({ draft: "" })
-    await Promise.all([store.write({ draft: "first" }), store.write({ draft: "last\n👨‍👩‍👧‍👦" })])
+    await Promise.all([
+      store.write({ draft: "first" }),
+      store.write({ draft: "last\n👨‍👩‍👧‍👦" }),
+    ])
     expect(await store.read({ draft: "" })).toEqual({ draft: "last\n👨‍👩‍👧‍👦" })
     expect((await stat(path)).mode & 0o777).toBe(0o600)
     expect(JSON.parse(await readFile(path, "utf8")).draft).toContain("last")
-  } finally { await rm(directory, { recursive: true, force: true }) }
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
 })
 
 test("corrupt state is surfaced rather than silently replacing the user's draft", async () => {
@@ -23,15 +28,28 @@ test("corrupt state is surfaced rather than silently replacing the user's draft"
   try {
     const path = join(directory, "state.json")
     await writeFile(path, "{broken")
-    await expect(new JsonStore(path, v => v).read({})).rejects.toThrow("Unable to load")
-  } finally { await rm(directory, { recursive: true, force: true }) }
+    await expect(new JsonStore(path, (v) => v).read({})).rejects.toThrow(
+      "Unable to load",
+    )
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
 })
 
 test("config defaults and invalid settings", () => {
   expect(parseConfig({})).toEqual(defaultConfig)
   expect(parseConfig({ theme: "nord" }).theme).toBe("nord")
   expect(parseConfig({ foldReasoning: false }).foldReasoning).toBe(false)
-  for (const bad of [{ version: 2 }, { insertEnter: "yes" }, { composerMaxHeight: 8 }, { foldTools: "true" }, { foldReasoning: "false" }, { reducedColor: "yes" }, { surprise: true }, { keybindings: [] }]) {
+  for (const bad of [
+    { version: 2 },
+    { insertEnter: "yes" },
+    { composerMaxHeight: 8 },
+    { foldTools: "true" },
+    { foldReasoning: "false" },
+    { reducedColor: "yes" },
+    { surprise: true },
+    { keybindings: [] },
+  ]) {
     expect(() => parseConfig(bad)).toThrow()
   }
 })

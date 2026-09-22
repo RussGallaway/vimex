@@ -5,12 +5,24 @@ import { parseRelease } from "@vimex/distribution"
 const file = process.argv[2]
 if (!file) throw new Error("Usage: update-homebrew.ts MANIFEST [OUTPUT]")
 const release = parseRelease(JSON.parse(await readFile(file, "utf8")))
-if (release.artifacts.length !== 4) throw new Error("Homebrew publication requires four platform artifacts")
-const stanza = (platform: "darwin" | "linux") => `  on_${platform === "darwin" ? "macos" : "linux"} do\n` + ["arm64", "x64"].map(arch => {
-  const asset = release.artifacts.find(value => value.platform === platform && value.arch === arch)
-  if (!asset || asset.name !== `vimex-v${release.version}-${platform}-${arch}.tar.gz`) throw new Error(`Missing/mismatched ${platform}/${arch} archive`)
-  return `    on_${arch === "arm64" ? "arm" : "intel"} do\n      url "https://github.com/RussGallaway/vimex/releases/download/v${release.version}/${asset.name}"\n      sha256 "${asset.sha256}"\n    end\n`
-}).join("") + "  end\n"
+if (release.artifacts.length !== 4)
+  throw new Error("Homebrew publication requires four platform artifacts")
+const stanza = (platform: "darwin" | "linux") =>
+  `  on_${platform === "darwin" ? "macos" : "linux"} do\n` +
+  ["arm64", "x64"]
+    .map((arch) => {
+      const asset = release.artifacts.find(
+        (value) => value.platform === platform && value.arch === arch,
+      )
+      if (
+        !asset ||
+        asset.name !== `vimex-v${release.version}-${platform}-${arch}.tar.gz`
+      )
+        throw new Error(`Missing/mismatched ${platform}/${arch} archive`)
+      return `    on_${arch === "arm64" ? "arm" : "intel"} do\n      url "https://github.com/RussGallaway/vimex/releases/download/v${release.version}/${asset.name}"\n      sha256 "${asset.sha256}"\n    end\n`
+    })
+    .join("") +
+  "  end\n"
 const formula = `# Generated from a published release manifest; do not invent checksums.
 class Vimex < Formula
   desc "Full-screen Vim-operated interface for the Codex app server"

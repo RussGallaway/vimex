@@ -40,5 +40,4 @@ Install `tests/terminal/requirements-live.txt` into an isolated Python environme
 
 The user-authorized live driver separately passed history, resize/copy, session/draft switching, tool folds, URL action, fork confirmation, streaming/drafting, and terminal restoration. Full acceptance remains governed by [the acceptance matrix](acceptance-matrix.md).
 
-
 Latest integrated checkpoint: 304 tests, 1,590 assertions, four frame snapshots, typecheck and boundaries pass. The offline PTY driver passes eight checks including chained `:model`/model-ID/thinking-level completion and same-batch next-draft preservation. Captures are reconstructed PTY frames in `/tmp/vimex-visual-e2e`; the model completion frame is `07-model-effort-completion.png`. This does not replace the remaining real-server and Herdr acceptance gates.

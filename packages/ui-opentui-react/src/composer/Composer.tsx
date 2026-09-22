@@ -3,8 +3,18 @@ import { useKeyboard, useRenderer } from "@opentui/react"
 import { CliRenderEvents, type TextareaRenderable } from "@opentui/core"
 import type { ComposerState, SubmissionIntent } from "@vimex/composer"
 import type { VimMode } from "@vimex/interaction"
-import { codeUnitOffsetToGraphemeOffset, graphemeOffsetToCodeUnitOffset } from "@vimex/interaction"
-import { useEffect, useRef, useState, type MutableRefObject, type RefObject, type ReactNode } from "react"
+import {
+  codeUnitOffsetToGraphemeOffset,
+  graphemeOffsetToCodeUnitOffset,
+} from "@vimex/interaction"
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type RefObject,
+  type ReactNode,
+} from "react"
 import { emberTide } from "../theme"
 
 export function Composer(props: {
@@ -39,11 +49,18 @@ export function Composer(props: {
   }, [props.mode])
 
   useKeyboard((event) => {
-    if (props.interactive === false || !props.textareaRef.current?.focused) return
-    if (event.ctrl && (event.name.toLowerCase() === "return" || event.name.toLowerCase() === "enter")) {
+    if (props.interactive === false || !props.textareaRef.current?.focused)
+      return
+    if (
+      event.ctrl &&
+      (event.name.toLowerCase() === "return" ||
+        event.name.toLowerCase() === "enter")
+    ) {
       nativeSubmitIntent.current = "steer"
     }
-    const escape = event.name.toLowerCase() === "escape" || (event.name === "" && event.raw.startsWith("\u001b"))
+    const escape =
+      event.name.toLowerCase() === "escape" ||
+      (event.name === "" && event.raw.startsWith("\u001b"))
     if (!escape || committedMode.current === "normal") return
     event.preventDefault()
     committedMode.current = "normal"
@@ -59,26 +76,44 @@ export function Composer(props: {
     }
     synchronizing.current = true
     try {
-      if (textarea.plainText !== props.state.text) textarea.setText(props.state.text)
-      const cursorOffset = graphemeOffsetToCodeUnitOffset(props.state.text, props.state.cursorOffset)
-      if (textarea.cursorOffset !== cursorOffset) textarea.cursorOffset = cursorOffset
+      if (textarea.plainText !== props.state.text)
+        textarea.setText(props.state.text)
+      const cursorOffset = graphemeOffsetToCodeUnitOffset(
+        props.state.text,
+        props.state.cursorOffset,
+      )
+      if (textarea.cursorOffset !== cursorOffset)
+        textarea.cursorOffset = cursorOffset
     } finally {
       synchronizing.current = false
     }
-  }, [props.state.revision, props.state.text, props.state.cursorOffset, props.textareaRef])
+  }, [
+    props.state.revision,
+    props.state.text,
+    props.state.cursorOffset,
+    props.textareaRef,
+  ])
 
   const publishNativeDraft = () => {
     if (props.interactive === false || synchronizing.current) return
     const textarea = props.textareaRef.current
     if (!textarea) return
-    const cursorOffset = codeUnitOffsetToGraphemeOffset(textarea.plainText, textarea.cursorOffset)
-    if (textarea.plainText !== props.state.text || cursorOffset !== props.state.cursorOffset) {
+    const cursorOffset = codeUnitOffsetToGraphemeOffset(
+      textarea.plainText,
+      textarea.cursorOffset,
+    )
+    if (
+      textarea.plainText !== props.state.text ||
+      cursorOffset !== props.state.cursorOffset
+    ) {
       props.onChange(textarea.plainText, cursorOffset)
     }
   }
 
   const submitNativeDraft = (explicitIntent?: SubmissionIntent) => {
-    const intent = explicitIntent ?? (props.activeTurn && props.busySubmit === "steer" ? "steer" : "next-turn")
+    const intent =
+      explicitIntent ??
+      (props.activeTurn && props.busySubmit === "steer" ? "steer" : "next-turn")
     const textarea = props.textareaRef.current
     if (!textarea || textarea.plainText.trim().length === 0) {
       props.onSubmit(intent)
@@ -113,16 +148,31 @@ export function Composer(props: {
     const measure = () => {
       const textarea = props.textareaRef.current
       // virtualLineCount covers only the native viewport; total includes offscreen wrapped rows.
-      if (textarea) setWrappedRows(Math.max(1, textarea.editorView.getTotalVirtualLineCount()))
+      if (textarea)
+        setWrappedRows(
+          Math.max(1, textarea.editorView.getTotalVirtualLineCount()),
+        )
     }
     measure()
     renderer.on(CliRenderEvents.FRAME, measure)
     renderer.requestRender()
-    return () => { renderer.off(CliRenderEvents.FRAME, measure) }
+    return () => {
+      renderer.off(CliRenderEvents.FRAME, measure)
+    }
   }, [props.expanded, props.textareaRef, props.visible, renderer])
-  const inputHeight = Math.max(1, Math.min(props.maxHeight, props.expanded ? Math.max(compact ? 2 : 3, wrappedRows) : compact ? 2 : 3))
-  const queued = props.state.outbox.filter((message) => message.status === "queued").length
-  const failed = props.state.outbox.filter((message) => message.status === "failed")
+  const inputHeight = Math.max(
+    1,
+    Math.min(
+      props.maxHeight,
+      props.expanded ? Math.max(compact ? 2 : 3, wrappedRows) : compact ? 2 : 3,
+    ),
+  )
+  const queued = props.state.outbox.filter(
+    (message) => message.status === "queued",
+  ).length
+  const failed = props.state.outbox.filter(
+    (message) => message.status === "failed",
+  )
   return (
     <box
       id="composer-shell"
@@ -148,19 +198,30 @@ export function Composer(props: {
         backgroundColor={emberTide.backgroundRaised}
         focusedBackgroundColor={emberTide.backgroundRaised}
         cursorColor={emberTide.sage}
-        cursorStyle={{ style: props.mode === "insert" ? "line" : "block", blinking: false }}
+        cursorStyle={{
+          style: props.mode === "insert" ? "line" : "block",
+          blinking: false,
+        }}
         keyBindings={[
-          ...(props.insertEnter === "submit" ? [{ name: "return", action: "submit" } as const] : []),
+          ...(props.insertEnter === "submit"
+            ? [{ name: "return", action: "submit" } as const]
+            : []),
           { name: "return", shift: true, action: "newline" },
         ]}
         onKeyDown={(event) => {
-          if (event.ctrl && (event.name.toLowerCase() === "return" || event.name.toLowerCase() === "enter")) {
+          if (
+            event.ctrl &&
+            (event.name.toLowerCase() === "return" ||
+              event.name.toLowerCase() === "enter")
+          ) {
             nativeSubmitIntent.current = "steer"
           }
-          if (props.interactive === false || committedMode.current !== "insert") event.preventDefault()
+          if (props.interactive === false || committedMode.current !== "insert")
+            event.preventDefault()
         }}
         onPaste={(event) => {
-          if (props.interactive === false || committedMode.current !== "insert") event.preventDefault()
+          if (props.interactive === false || committedMode.current !== "insert")
+            event.preventDefault()
         }}
         onContentChange={publishNativeDraft}
         onCursorChange={publishNativeDraft}
@@ -171,23 +232,59 @@ export function Composer(props: {
           submitNativeDraft(intent)
         }}
       />
-      <box height={1} flexDirection="row" gap={1} marginTop={compact ? 0 : 1} justifyContent="space-between">
-        <box id="composer-metadata" flexDirection="row" gap={1} flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+      <box
+        height={1}
+        flexDirection="row"
+        gap={1}
+        marginTop={compact ? 0 : 1}
+        justifyContent="space-between"
+      >
+        <box
+          id="composer-metadata"
+          flexDirection="row"
+          gap={1}
+          flexGrow={1}
+          flexShrink={1}
+          minWidth={0}
+          overflow="hidden"
+        >
           <text fg={emberTide.blueBright}>Codex</text>
           <text fg={emberTide.textMuted}>·</text>
-          <text fg={emberTide.textSoft} wrapMode="none" truncate>{props.model ?? "model —"}</text>
+          <text fg={emberTide.textSoft} wrapMode="none" truncate>
+            {props.model ?? "model —"}
+          </text>
           <text fg={emberTide.textMuted}>·</text>
-          <text fg={emberTide.textSoft} wrapMode="none" truncate>{props.reasoningEffort ?? "effort —"}</text>
+          <text fg={emberTide.textSoft} wrapMode="none" truncate>
+            {props.reasoningEffort ?? "effort —"}
+          </text>
         </box>
         <box flexDirection="row" gap={1} flexShrink={0}>
-          {queued > 0 ? <text fg={emberTide.blueBright}>{queued} queued</text> : null}
-          {props.activeTurn && showSendHint ? <text fg={emberTide.amber}>ctrl↵ steer</text> : null}
-          {showSendHint ? <text id="composer-send-hint" fg={emberTide.textMuted}>{props.insertEnter === "submit" ? "enter send · shift↵ newline" : "enter newline · ctrl↵ send"}</text> : null}
+          {queued > 0 ? (
+            <text fg={emberTide.blueBright}>{queued} queued</text>
+          ) : null}
+          {props.activeTurn && showSendHint ? (
+            <text fg={emberTide.amber}>ctrl↵ steer</text>
+          ) : null}
+          {showSendHint ? (
+            <text id="composer-send-hint" fg={emberTide.textMuted}>
+              {props.insertEnter === "submit"
+                ? "enter send · shift↵ newline"
+                : "enter newline · ctrl↵ send"}
+            </text>
+          ) : null}
         </box>
       </box>
       {failed.map((message) => (
-        <box key={message.id} flexDirection="row" justifyContent="space-between" backgroundColor={emberTide.backgroundPanel} paddingX={1}>
-          <text fg={emberTide.red} wrapMode="word">failed: {message.reason ?? "send failed"} · {message.text}</text>
+        <box
+          key={message.id}
+          flexDirection="row"
+          justifyContent="space-between"
+          backgroundColor={emberTide.backgroundPanel}
+          paddingX={1}
+        >
+          <text fg={emberTide.red} wrapMode="word">
+            failed: {message.reason ?? "send failed"} · {message.text}
+          </text>
           <text fg={emberTide.amber}>R retry</text>
         </box>
       ))}

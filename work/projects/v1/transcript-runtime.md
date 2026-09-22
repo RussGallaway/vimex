@@ -148,11 +148,16 @@ interface TranscriptWindow {
   blocks: readonly TranscriptBlock[]
   activityBatches: readonly TranscriptActivityBatch[]
   activityBatchByItem: Readonly<Record<ItemId, TranscriptActivityBatch>>
-  activityPresentation: Readonly<Record<string, {
-    kind: "activity-lead" | "activity-hidden"
-    batch: TranscriptActivityBatch
-    itemId: ItemId
-  }>>
+  activityPresentation: Readonly<
+    Record<
+      string,
+      {
+        kind: "activity-lead" | "activity-hidden"
+        batch: TranscriptActivityBatch
+        itemId: ItemId
+      }
+    >
+  >
   topSpacerRows: number
   bottomSpacerRows: number
   overscanRows: number

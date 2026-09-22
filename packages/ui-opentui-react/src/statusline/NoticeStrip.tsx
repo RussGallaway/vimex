@@ -11,9 +11,22 @@ export function NoticeStrip({ message }: { message?: string }) {
     const timer = setTimeout(() => setDismissed(message), 12000)
     return () => clearTimeout(timer)
   }, [message])
-  useKeyboard(event => { if (event.name.toLowerCase() === "escape") setDismissed(message) })
+  useKeyboard((event) => {
+    if (event.name.toLowerCase() === "escape") setDismissed(message)
+  })
   if (!message || dismissed === message) return null
-  return <box id="notice-strip" flexShrink={0} maxHeight={3} paddingX={2} overflow="hidden" backgroundColor={emberTide.backgroundPanel}>
-    <text wrapMode="word" fg={emberTide.amber}>{message}</text>
-  </box>
+  return (
+    <box
+      id="notice-strip"
+      flexShrink={0}
+      maxHeight={3}
+      paddingX={2}
+      overflow="hidden"
+      backgroundColor={emberTide.backgroundPanel}
+    >
+      <text wrapMode="word" fg={emberTide.amber}>
+        {message}
+      </text>
+    </box>
+  )
 }

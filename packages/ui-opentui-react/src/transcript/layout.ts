@@ -1,5 +1,15 @@
 import type { ItemId } from "@vimex/conversation"
-import { adjacentTranscriptItem, blockKey, graphemes, transcriptBoundaryItem, transcriptOrderIndex, type LogicalPoint, type TranscriptBlock, type TranscriptGeometry, type TranscriptState } from "@vimex/transcript"
+import {
+  adjacentTranscriptItem,
+  blockKey,
+  graphemes,
+  transcriptBoundaryItem,
+  transcriptOrderIndex,
+  type LogicalPoint,
+  type TranscriptBlock,
+  type TranscriptGeometry,
+  type TranscriptState,
+} from "@vimex/transcript"
 
 export interface VisualLine {
   itemId: ItemId
@@ -72,7 +82,13 @@ export function graphemeCellWidth(value: string): number {
   return value ? Bun.stringWidth(value) : 0
 }
 
-function wrapProjection(itemId: ItemId, text: string, width: number, startRow: number, folded: boolean): VisualLine[] {
+function wrapProjection(
+  itemId: ItemId,
+  text: string,
+  width: number,
+  startRow: number,
+  folded: boolean,
+): VisualLine[] {
   const cells = graphemes(text)
   if (folded) return [{ itemId, from: 0, to: cells.length, row: startRow }]
   const lines: VisualLine[] = []
@@ -107,14 +123,23 @@ function wrapProjection(itemId: ItemId, text: string, width: number, startRow: n
   return lines
 }
 
-export function buildTranscriptLayout(state: TranscriptState, width: number): TranscriptLayout {
+export function buildTranscriptLayout(
+  state: TranscriptState,
+  width: number,
+): TranscriptLayout {
   const safeWidth = Math.max(1, Math.floor(width))
   const lines: VisualLine[] = []
   const linesByItem: Record<string, readonly VisualLine[]> = {}
   for (const itemId of state.order) {
     const projection = state.projectionById[itemId]
     if (!projection) continue
-    const itemLines = wrapProjection(itemId, projection.plain, safeWidth, lines.length, Boolean(state.folded[itemId]))
+    const itemLines = wrapProjection(
+      itemId,
+      projection.plain,
+      safeWidth,
+      lines.length,
+      Boolean(state.folded[itemId]),
+    )
     lines.push(...itemLines)
     linesByItem[itemId] = itemLines
   }
@@ -126,7 +151,15 @@ export interface TargetedMotionDiagnostics {
   itemTransitions: number
 }
 
-export type TranscriptMotion = "left" | "right" | "up" | "down" | "line-start" | "line-end" | "first" | "last"
+export type TranscriptMotion =
+  | "left"
+  | "right"
+  | "up"
+  | "down"
+  | "line-start"
+  | "line-end"
+  | "first"
+  | "last"
 
 /**
  * Exact estimated-layout fallback for a logical target outside the mounted
@@ -147,7 +180,15 @@ export function movePointInTranscript(
     const cached = cache.get(itemId)
     if (cached) return cached
     const projection = state.projectionById[itemId]
-    const lines = projection ? wrapProjection(itemId, projection.plain, safeWidth, 0, Boolean(state.folded[itemId])) : []
+    const lines = projection
+      ? wrapProjection(
+          itemId,
+          projection.plain,
+          safeWidth,
+          0,
+          Boolean(state.folded[itemId]),
+        )
+      : []
     cache.set(itemId, lines)
     if (diagnostics) diagnostics.wrappedItems++
     return lines
@@ -173,15 +214,26 @@ export function movePointInTranscript(
   }
   const lineAt = (current: LogicalPoint) => {
     const lines = linesFor(current.itemId)
-    const line = lines.find((candidate, index) => current.graphemeOffset < candidate.to
-      || (index === lines.length - 1 && current.graphemeOffset <= candidate.to))
+    const line = lines.find(
+      (candidate, index) =>
+        current.graphemeOffset < candidate.to ||
+        (index === lines.length - 1 && current.graphemeOffset <= candidate.to),
+    )
     return line ? { lines, line, index: lines.indexOf(line) } : undefined
   }
-  const edge = motion === "first" ? boundary("forward") : motion === "last" ? boundary("backward") : undefined
+  const edge =
+    motion === "first"
+      ? boundary("forward")
+      : motion === "last"
+        ? boundary("backward")
+        : undefined
   if (motion === "first" || motion === "last") {
     if (!edge) return undefined
     return {
-      point: { itemId: edge.itemId, graphemeOffset: motion === "first" ? edge.line.from : edge.line.to },
+      point: {
+        itemId: edge.itemId,
+        graphemeOffset: motion === "first" ? edge.line.from : edge.line.to,
+      },
       preferredScreenRow: edge.line.row,
     }
   }
@@ -195,10 +247,15 @@ export function movePointInTranscript(
   const steps = Number.isFinite(repeat) ? Math.max(1, Math.trunc(repeat)) : 1
   let preferredScreenRow = 0
   let moved = false
-  const crossingMotion = motion === "left" || motion === "right" || motion === "up" || motion === "down"
+  const crossingMotion =
+    motion === "left" ||
+    motion === "right" ||
+    motion === "up" ||
+    motion === "down"
   for (let step = 0; step < steps; step++) {
     const located = lineAt(current)
-    if (!located) return step ? { point: current, preferredScreenRow } : undefined
+    if (!located)
+      return step ? { point: current, preferredScreenRow } : undefined
     const { lines, line, index } = located
     const column = Math.max(0, current.graphemeOffset - line.from)
     let targetItem: ItemId = current.itemId
@@ -206,33 +263,54 @@ export function movePointInTranscript(
     let offset = current.graphemeOffset
     if (motion === "left") {
       if (offset > line.from) offset--
-      else if (index > 0) { targetLine = lines[index - 1]!; offset = targetLine.to }
-      else {
+      else if (index > 0) {
+        targetLine = lines[index - 1]!
+        offset = targetLine.to
+      } else {
         const target = adjacent(current.itemId, "backward")
-        if (target) { targetItem = target.itemId; targetLine = target.line; offset = targetLine.to }
+        if (target) {
+          targetItem = target.itemId
+          targetLine = target.line
+          offset = targetLine.to
+        }
       }
     } else if (motion === "right") {
       if (offset < line.to) offset++
-      else if (index < lines.length - 1) { targetLine = lines[index + 1]!; offset = targetLine.from }
-      else {
+      else if (index < lines.length - 1) {
+        targetLine = lines[index + 1]!
+        offset = targetLine.from
+      } else {
         const target = adjacent(current.itemId, "forward")
-        if (target) { targetItem = target.itemId; targetLine = target.line; offset = targetLine.from }
+        if (target) {
+          targetItem = target.itemId
+          targetLine = target.line
+          offset = targetLine.from
+        }
       }
     } else if (motion === "up" || motion === "down") {
       const direction = motion === "down" ? "forward" : "backward"
       const localIndex = index + (motion === "down" ? 1 : -1)
-      if (localIndex >= 0 && localIndex < lines.length) targetLine = lines[localIndex]!
+      if (localIndex >= 0 && localIndex < lines.length)
+        targetLine = lines[localIndex]!
       else {
         const target = adjacent(current.itemId, direction)
-        if (target) { targetItem = target.itemId; targetLine = target.line }
+        if (target) {
+          targetItem = target.itemId
+          targetLine = target.line
+        }
       }
       offset = Math.min(targetLine.to, targetLine.from + column)
     } else if (motion === "line-start") offset = line.from
     else if (motion === "line-end") offset = line.to
     const next: LogicalPoint = { itemId: targetItem, graphemeOffset: offset }
     preferredScreenRow = targetLine.row
-    if (next.itemId === current.itemId && next.graphemeOffset === current.graphemeOffset) {
-      return crossingMotion && !moved ? undefined : { point: current, preferredScreenRow }
+    if (
+      next.itemId === current.itemId &&
+      next.graphemeOffset === current.graphemeOffset
+    ) {
+      return crossingMotion && !moved
+        ? undefined
+        : { point: current, preferredScreenRow }
     }
     moved = true
     current = next
@@ -240,25 +318,45 @@ export function movePointInTranscript(
   return { point: current, preferredScreenRow }
 }
 
-export function blockRefForPoint(layout: TranscriptLayout, point: LogicalPoint): ItemBlockGeometryRef | undefined {
+export function blockRefForPoint(
+  layout: TranscriptLayout,
+  point: LogicalPoint,
+): ItemBlockGeometryRef | undefined {
   const refs = layout.blockKeysByItem?.[point.itemId]
-  return refs?.find((ref, index) => point.graphemeOffset >= ref.from
-    && (point.graphemeOffset < ref.to || (index === refs.length - 1 && point.graphemeOffset === ref.to)))
+  return refs?.find(
+    (ref, index) =>
+      point.graphemeOffset >= ref.from &&
+      (point.graphemeOffset < ref.to ||
+        (index === refs.length - 1 && point.graphemeOffset === ref.to)),
+  )
 }
 
-function geometryKeyForPoint(layout: TranscriptLayout, point: LogicalPoint): string | undefined {
-  return blockRefForPoint(layout, point)?.blockKey ?? layout.blockKeyByItem?.[point.itemId]
+function geometryKeyForPoint(
+  layout: TranscriptLayout,
+  point: LogicalPoint,
+): string | undefined {
+  return (
+    blockRefForPoint(layout, point)?.blockKey ??
+    layout.blockKeyByItem?.[point.itemId]
+  )
 }
 
-function lineForPoint(layout: TranscriptLayout, point: LogicalPoint): VisualLine | undefined {
+function lineForPoint(
+  layout: TranscriptLayout,
+  point: LogicalPoint,
+): VisualLine | undefined {
   const geometryKey = geometryKeyForPoint(layout, point)
-  const geometry = geometryKey ? layout.geometry?.byBlockKey[geometryKey] : undefined
+  const geometry = geometryKey
+    ? layout.geometry?.byBlockKey[geometryKey]
+    : undefined
   if (geometry) {
     const local = geometry.points[point.graphemeOffset]
     let line = local ? geometry.lineByRow?.[local.row] : undefined
-    if (!line && local) line = geometry.lines.find(candidate => candidate.row === local.row)
+    if (!line && local)
+      line = geometry.lines.find((candidate) => candidate.row === local.row)
     if (!line && !local) {
-      let low = 0, high = geometry.lines.length
+      let low = 0,
+        high = geometry.lines.length
       while (low < high) {
         const middle = (low + high) >>> 1
         if (geometry.lines[middle]!.to < point.graphemeOffset) low = middle + 1
@@ -267,51 +365,88 @@ function lineForPoint(layout: TranscriptLayout, point: LogicalPoint): VisualLine
       line = geometry.lines[Math.min(low, geometry.lines.length - 1)]
     }
     if (!line) return undefined
-    return { itemId: point.itemId, from: line.from, to: line.to, row: (layout.geometry?.rowByBlockKey[geometryKey!] ?? 0) + line.row }
+    return {
+      itemId: point.itemId,
+      from: line.from,
+      to: line.to,
+      row: (layout.geometry?.rowByBlockKey[geometryKey!] ?? 0) + line.row,
+    }
   }
   const lines = layout.linesByItem[point.itemId]
   if (!lines?.length) return undefined
   const measured = layout.points?.[point.itemId]?.[point.graphemeOffset]
-  if (measured) return lines.find(line => line.row === measured.row)
-  return lines.find((line, index) => point.graphemeOffset < line.to || (index === lines.length - 1 && point.graphemeOffset <= line.to))
+  if (measured) return lines.find((line) => line.row === measured.row)
+  return lines.find(
+    (line, index) =>
+      point.graphemeOffset < line.to ||
+      (index === lines.length - 1 && point.graphemeOffset <= line.to),
+  )
 }
 
-export function pointInLayout(layout: TranscriptLayout, point: LogicalPoint | undefined): MeasuredPoint | undefined {
+export function pointInLayout(
+  layout: TranscriptLayout,
+  point: LogicalPoint | undefined,
+): MeasuredPoint | undefined {
   if (!point) return undefined
   const geometryKey = geometryKeyForPoint(layout, point)
-  const geometry = geometryKey ? layout.geometry?.byBlockKey[geometryKey] : undefined
+  const geometry = geometryKey
+    ? layout.geometry?.byBlockKey[geometryKey]
+    : undefined
   const direct = geometry?.points[point.graphemeOffset]
-  const local = direct ?? (geometry?.key.folded ? Object.values(geometry.points)[0] : undefined)
-  const placement = geometryKey ? layout.placementByBlockKey?.[geometryKey] : undefined
-  if (local && placement) return {
-    itemId: point.itemId,
-    graphemeOffset: point.graphemeOffset,
-    row: (layout.geometry?.rowByBlockKey[geometryKey!] ?? 0) + local.row,
-    column: local.column,
-    screenX: placement.screenX + local.x + (layout.screenOffset?.x ?? 0),
-    screenY: placement.screenY + local.y + (layout.screenOffset?.y ?? 0),
-    ...(!direct || local.hidden ? { hidden: true } : {}),
-  }
+  const local =
+    direct ??
+    (geometry?.key.folded ? Object.values(geometry.points)[0] : undefined)
+  const placement = geometryKey
+    ? layout.placementByBlockKey?.[geometryKey]
+    : undefined
+  if (local && placement)
+    return {
+      itemId: point.itemId,
+      graphemeOffset: point.graphemeOffset,
+      row: (layout.geometry?.rowByBlockKey[geometryKey!] ?? 0) + local.row,
+      column: local.column,
+      screenX: placement.screenX + local.x + (layout.screenOffset?.x ?? 0),
+      screenY: placement.screenY + local.y + (layout.screenOffset?.y ?? 0),
+      ...(!direct || local.hidden ? { hidden: true } : {}),
+    }
   if (layout.geometry) return undefined
   const measured = layout.points?.[point.itemId]?.[point.graphemeOffset]
-  if (!measured || !layout.screenOffset || (!layout.screenOffset.x && !layout.screenOffset.y)) return measured
-  return { ...measured, screenX: measured.screenX + layout.screenOffset.x, screenY: measured.screenY + layout.screenOffset.y }
+  if (
+    !measured ||
+    !layout.screenOffset ||
+    (!layout.screenOffset.x && !layout.screenOffset.y)
+  )
+    return measured
+  return {
+    ...measured,
+    screenX: measured.screenX + layout.screenOffset.x,
+    screenY: measured.screenY + layout.screenOffset.y,
+  }
 }
 
 // Published layouts are immutable; index measured rows once per reflow so a
 // cursor step does not flatten and sort an entire long transcript.
 const measuredRows = new WeakMap<object, Map<number, MeasuredPoint[]>>()
-function pointsOnRow(layout: TranscriptLayout, row: number): readonly MeasuredPoint[] {
+function pointsOnRow(
+  layout: TranscriptLayout,
+  row: number,
+): readonly MeasuredPoint[] {
   if (layout.geometry && layout.placementByBlockKey) {
     const result: MeasuredPoint[] = []
     const blockRow = blockAtRow(layout.geometry.blockRows, row)
     const geometry = blockRow && layout.geometry.byBlockKey[blockRow.blockKey]
     if (!blockRow?.itemId || !geometry) return result
     const localRow = row - blockRow.start
-    const offsets = geometry.pointOffsetsByRow?.[localRow]
-      ?? Object.values(geometry.points).filter(point => point.row === localRow).map(point => point.graphemeOffset)
+    const offsets =
+      geometry.pointOffsetsByRow?.[localRow] ??
+      Object.values(geometry.points)
+        .filter((point) => point.row === localRow)
+        .map((point) => point.graphemeOffset)
     for (const graphemeOffset of offsets) {
-      const point = pointInLayout(layout, { itemId: blockRow.itemId as ItemId, graphemeOffset })
+      const point = pointInLayout(layout, {
+        itemId: blockRow.itemId as ItemId,
+        graphemeOffset,
+      })
       if (point) result.push(point)
     }
     return result
@@ -320,18 +455,20 @@ function pointsOnRow(layout: TranscriptLayout, row: number): readonly MeasuredPo
   let rows = measuredRows.get(key)
   if (!rows) {
     rows = new Map()
-    for (const item of Object.values(layout.points ?? {})) for (const point of Object.values(item)) {
-      const existing = rows.get(point.row)
-      if (existing) existing.push(point)
-      else rows.set(point.row, [point])
-    }
+    for (const item of Object.values(layout.points ?? {}))
+      for (const point of Object.values(item)) {
+        const existing = rows.get(point.row)
+        if (existing) existing.push(point)
+        else rows.set(point.row, [point])
+      }
     measuredRows.set(key, rows)
   }
   return rows.get(row) ?? []
 }
 
 function blockAtRow(rows: TranscriptGeometry["blockRows"], row: number) {
-  let low = 0, high = rows.length
+  let low = 0,
+    high = rows.length
   while (low < high) {
     const middle = (low + high) >>> 1
     if (rows[middle]!.start + rows[middle]!.rows <= row) low = middle + 1
@@ -341,24 +478,45 @@ function blockAtRow(rows: TranscriptGeometry["blockRows"], row: number) {
   return candidate && row >= candidate.start ? candidate : undefined
 }
 
-function geometryLineAtRow(layout: TranscriptLayout, row: number): VisualLine | undefined {
+function geometryLineAtRow(
+  layout: TranscriptLayout,
+  row: number,
+): VisualLine | undefined {
   if (!layout.geometry) return undefined
   const blockRow = blockAtRow(layout.geometry.blockRows, row)
   if (!blockRow?.itemId) return undefined
   const geometry = layout.geometry.byBlockKey[blockRow.blockKey]
   const localRow = row - blockRow.start
-  const line = geometry?.lineByRow?.[localRow] ?? geometry?.lines.find(candidate => candidate.row === localRow)
-  return line && { itemId: blockRow.itemId as ItemId, from: line.from, to: line.to, row }
+  const line =
+    geometry?.lineByRow?.[localRow] ??
+    geometry?.lines.find((candidate) => candidate.row === localRow)
+  return (
+    line && {
+      itemId: blockRow.itemId as ItemId,
+      from: line.from,
+      to: line.to,
+      row,
+    }
+  )
 }
 
-function geometryLineFrom(layout: TranscriptLayout, row: number, direction: -1 | 1): VisualLine | undefined {
+function geometryLineFrom(
+  layout: TranscriptLayout,
+  row: number,
+  direction: -1 | 1,
+): VisualLine | undefined {
   const rows = layout.geometry?.blockRows
   if (!rows?.length) return undefined
   const minimum = rows[0]!.start
   const last = rows.at(-1)!
   const maximum = last.start + last.rows
-  const firstRow = direction > 0 ? Math.max(row, minimum) : Math.min(row, maximum - 1)
-  for (let current = firstRow; current >= minimum && current < maximum; current += direction) {
+  const firstRow =
+    direction > 0 ? Math.max(row, minimum) : Math.min(row, maximum - 1)
+  for (
+    let current = firstRow;
+    current >= minimum && current < maximum;
+    current += direction
+  ) {
     const line = geometryLineAtRow(layout, current)
     if (line) return line
   }
@@ -368,49 +526,104 @@ function geometryLineFrom(layout: TranscriptLayout, row: number, direction: -1 |
 function moveGeometryPoint(
   layout: TranscriptLayout,
   point: LogicalPoint | undefined,
-  motion: "left" | "right" | "up" | "down" | "line-start" | "line-end" | "first" | "last",
+  motion:
+    | "left"
+    | "right"
+    | "up"
+    | "down"
+    | "line-start"
+    | "line-end"
+    | "first"
+    | "last",
 ): { point: LogicalPoint; preferredScreenRow: number } | undefined {
   const geometry = layout.geometry
-  if (!geometry || (!layout.blockKeysByItem && !layout.blockKeyByItem) || geometry.measuredBlockCount === 0) return undefined
+  if (
+    !geometry ||
+    (!layout.blockKeysByItem && !layout.blockKeyByItem) ||
+    geometry.measuredBlockCount === 0
+  )
+    return undefined
   const current = point ? lineForPoint(layout, point) : undefined
   const first = geometryLineFrom(layout, 0, 1)
   const last = geometryLineFrom(layout, geometry.totalRows - 1, -1)
   let line = current ?? last
   if (!line || !first || !last) return undefined
   const measured = pointInLayout(layout, point)
-  const logicalColumn = Math.max(0, (point?.graphemeOffset ?? line.to) - line.from)
+  const logicalColumn = Math.max(
+    0,
+    (point?.graphemeOffset ?? line.to) - line.from,
+  )
   let offset = point?.graphemeOffset ?? line.to
 
   if (motion === "up" || motion === "down") {
     const direction = motion === "down" ? 1 : -1
     const targetLine = geometryLineFrom(layout, line.row + direction, direction)
-    if (!targetLine) return { point: point ?? { itemId: line.itemId, graphemeOffset: offset }, preferredScreenRow: line.row }
+    if (!targetLine)
+      return {
+        point: point ?? { itemId: line.itemId, graphemeOffset: offset },
+        preferredScreenRow: line.row,
+      }
     const candidates = pointsOnRow(layout, targetLine.row)
     let targetPoint: MeasuredPoint | undefined
     for (const candidate of candidates) {
       const desired = measured?.column ?? logicalColumn
-      if (!targetPoint || Math.abs(candidate.column - desired) < Math.abs(targetPoint.column - desired)) targetPoint = candidate
+      if (
+        !targetPoint ||
+        Math.abs(candidate.column - desired) <
+          Math.abs(targetPoint.column - desired)
+      )
+        targetPoint = candidate
     }
-    if (targetPoint) return { point: { itemId: targetPoint.itemId, graphemeOffset: targetPoint.graphemeOffset }, preferredScreenRow: targetPoint.row }
-    return { point: { itemId: targetLine.itemId, graphemeOffset: Math.min(targetLine.to, targetLine.from + logicalColumn) }, preferredScreenRow: targetLine.row }
+    if (targetPoint)
+      return {
+        point: {
+          itemId: targetPoint.itemId,
+          graphemeOffset: targetPoint.graphemeOffset,
+        },
+        preferredScreenRow: targetPoint.row,
+      }
+    return {
+      point: {
+        itemId: targetLine.itemId,
+        graphemeOffset: Math.min(
+          targetLine.to,
+          targetLine.from + logicalColumn,
+        ),
+      },
+      preferredScreenRow: targetLine.row,
+    }
   }
   if (motion === "left") {
     if (offset > line.from) offset--
     else {
       const previous = geometryLineFrom(layout, line.row - 1, -1)
-      if (previous) { line = previous; offset = previous.to }
+      if (previous) {
+        line = previous
+        offset = previous.to
+      }
     }
   } else if (motion === "right") {
     if (offset < line.to) offset++
     else {
       const next = geometryLineFrom(layout, line.row + 1, 1)
-      if (next) { line = next; offset = next.from }
+      if (next) {
+        line = next
+        offset = next.from
+      }
     }
   } else if (motion === "line-start") offset = line.from
   else if (motion === "line-end") offset = line.to
-  else if (motion === "first") { line = first; offset = first.from }
-  else if (motion === "last") { line = last; offset = last.to }
-  return { point: { itemId: line.itemId, graphemeOffset: offset }, preferredScreenRow: line.row }
+  else if (motion === "first") {
+    line = first
+    offset = first.from
+  } else if (motion === "last") {
+    line = last
+    offset = last.to
+  }
+  return {
+    point: { itemId: line.itemId, graphemeOffset: offset },
+    preferredScreenRow: line.row,
+  }
 }
 
 export function movePoint(
@@ -418,22 +631,41 @@ export function movePoint(
   point: LogicalPoint | undefined,
   motion: TranscriptMotion,
 ): { point: LogicalPoint; preferredScreenRow: number } | undefined {
-  if (layout.geometry && (layout.blockKeysByItem || layout.blockKeyByItem)) return moveGeometryPoint(layout, point, motion)
-  if (layout.geometry?.measuredBlockCount === 0 || (!layout.geometry && layout.lines.length === 0)) return undefined
+  if (layout.geometry && (layout.blockKeysByItem || layout.blockKeyByItem))
+    return moveGeometryPoint(layout, point, motion)
+  if (
+    layout.geometry?.measuredBlockCount === 0 ||
+    (!layout.geometry && layout.lines.length === 0)
+  )
+    return undefined
   const measured = pointInLayout(layout, point)
   if (measured && (motion === "up" || motion === "down")) {
     const targetRow = measured.row + (motion === "down" ? 1 : -1)
     let target: MeasuredPoint | undefined
     for (const candidate of pointsOnRow(layout, targetRow)) {
-      if (!target || Math.abs(candidate.column - measured.column) < Math.abs(target.column - measured.column)) target = candidate
+      if (
+        !target ||
+        Math.abs(candidate.column - measured.column) <
+          Math.abs(target.column - measured.column)
+      )
+        target = candidate
     }
-    if (target) return { point: { itemId: target.itemId, graphemeOffset: target.graphemeOffset }, preferredScreenRow: target.row }
+    if (target)
+      return {
+        point: { itemId: target.itemId, graphemeOffset: target.graphemeOffset },
+        preferredScreenRow: target.row,
+      }
   }
   const runtimeLines = layout.lines
   if (runtimeLines.length === 0) return undefined
   const current = point ? lineForPoint(layout, point) : undefined
   const line = current ?? runtimeLines.at(-1)!
-  const lineIndex = runtimeLines.findIndex(candidate => candidate.itemId === line.itemId && candidate.row === line.row && candidate.from === line.from)
+  const lineIndex = runtimeLines.findIndex(
+    (candidate) =>
+      candidate.itemId === line.itemId &&
+      candidate.row === line.row &&
+      candidate.from === line.from,
+  )
   const column = Math.max(0, (point?.graphemeOffset ?? line.to) - line.from)
   let target = line
   let offset = point?.graphemeOffset ?? line.to
@@ -479,22 +711,34 @@ export function movePoint(
       break
   }
 
-  return { point: { itemId: target.itemId, graphemeOffset: offset }, preferredScreenRow: target.row }
+  return {
+    point: { itemId: target.itemId, graphemeOffset: offset },
+    preferredScreenRow: target.row,
+  }
 }
 
-export function orderedSelectionBounds(state: TranscriptState): { start: LogicalPoint; end: LogicalPoint } | undefined {
+export function orderedSelectionBounds(
+  state: TranscriptState,
+): { start: LogicalPoint; end: LogicalPoint } | undefined {
   const selection = state.selection
   if (!selection) return undefined
   const order = transcriptOrderIndex(state.order)
   const ai = order.get(selection.anchor.itemId) ?? -1
   const hi = order.get(selection.head.itemId) ?? -1
-  if (ai < hi || (ai === hi && selection.anchor.graphemeOffset <= selection.head.graphemeOffset)) {
+  if (
+    ai < hi ||
+    (ai === hi &&
+      selection.anchor.graphemeOffset <= selection.head.graphemeOffset)
+  ) {
     return { start: selection.anchor, end: selection.head }
   }
   return { start: selection.head, end: selection.anchor }
 }
 
-export function selectedRangeForItem(state: TranscriptState, itemId: ItemId): { from: number; to: number } | undefined {
+export function selectedRangeForItem(
+  state: TranscriptState,
+  itemId: ItemId,
+): { from: number; to: number } | undefined {
   const bounds = orderedSelectionBounds(state)
   if (!bounds) return undefined
   const order = transcriptOrderIndex(state.order)
@@ -507,8 +751,12 @@ export function selectedRangeForItem(state: TranscriptState, itemId: ItemId): { 
   let to = itemIndex === endIndex ? bounds.end.graphemeOffset + 1 : parts.length
   if (state.selection?.shape === "line") {
     while (from > 0 && parts[from - 1] !== "\n") from -= 1
-    let inclusiveEnd = Math.min(Math.max(0, parts.length - 1), Math.max(from, to - 1))
-    while (inclusiveEnd < parts.length && parts[inclusiveEnd] !== "\n") inclusiveEnd += 1
+    let inclusiveEnd = Math.min(
+      Math.max(0, parts.length - 1),
+      Math.max(from, to - 1),
+    )
+    while (inclusiveEnd < parts.length && parts[inclusiveEnd] !== "\n")
+      inclusiveEnd += 1
     to = Math.min(parts.length, inclusiveEnd + 1)
   }
   return { from, to }
@@ -535,63 +783,121 @@ export function materializedSelectionEndpoints(
     return range
   }
   const compare = (left: MeasuredPoint, right: MeasuredPoint) => {
-    const item = (order.get(left.itemId) ?? -1) - (order.get(right.itemId) ?? -1)
+    const item =
+      (order.get(left.itemId) ?? -1) - (order.get(right.itemId) ?? -1)
     return item || left.graphemeOffset - right.graphemeOffset
   }
   let first: MeasuredPoint | undefined
   let last: MeasuredPoint | undefined
   const visitPoint = (point: MeasuredPoint) => {
     if (diagnostics) diagnostics.pointVisits += 1
-    if (viewport && (point.screenY < viewport.screenY || point.screenY >= viewport.screenY + viewport.height)) return
+    if (
+      viewport &&
+      (point.screenY < viewport.screenY ||
+        point.screenY >= viewport.screenY + viewport.height)
+    )
+      return
     const range = rangeFor(point.itemId)
-    if (!range || point.graphemeOffset < range.from || point.graphemeOffset >= range.to) return
+    if (
+      !range ||
+      point.graphemeOffset < range.from ||
+      point.graphemeOffset >= range.to
+    )
+      return
     if (!first || compare(point, first) < 0) first = point
     if (!last || compare(point, last) > 0) last = point
   }
 
-  if (layout.geometry && (layout.screenBlockRows || layout.materializedBlocks)) {
-    const mounted = layout.screenBlockRows ?? layout.materializedBlocks!.flatMap(block => block.key.kind === "item"
-      ? [{ blockKey: blockKey(block), itemId: block.key.itemId, screenY: 0, rows: block.estimatedRows }]
-      : [])
+  if (
+    layout.geometry &&
+    (layout.screenBlockRows || layout.materializedBlocks)
+  ) {
+    const mounted =
+      layout.screenBlockRows ??
+      layout.materializedBlocks!.flatMap((block) =>
+        block.key.kind === "item"
+          ? [
+              {
+                blockKey: blockKey(block),
+                itemId: block.key.itemId,
+                screenY: 0,
+                rows: block.estimatedRows,
+              },
+            ]
+          : [],
+      )
     for (const block of mounted) {
       if (diagnostics) diagnostics.blockVisits += 1
-      if (viewport && (block.screenY + block.rows <= viewport.screenY || block.screenY >= viewport.screenY + viewport.height)) continue
+      if (
+        viewport &&
+        (block.screenY + block.rows <= viewport.screenY ||
+          block.screenY >= viewport.screenY + viewport.height)
+      )
+        continue
       const selected = rangeFor(block.itemId)
       if (!selected) continue
       const geometry = layout.geometry.byBlockKey[block.blockKey]
       if (!geometry) continue
       if (geometry.key.folded) {
-        const ref = layout.blockKeysByItem?.[block.itemId]?.find(candidate => candidate.blockKey === block.blockKey)
+        const ref = layout.blockKeysByItem?.[block.itemId]?.find(
+          (candidate) => candidate.blockKey === block.blockKey,
+        )
         if (!ref) continue
         const from = Math.max(selected.from, ref.from)
         const to = Math.min(selected.to, ref.to)
         const offsets = from < to ? [from, to - 1] : []
-        const projectionLength = state.projectionById[block.itemId]?.sourceSpans.length
-        if (projectionLength === ref.to && selected.from <= ref.to && selected.to > ref.to) offsets.push(ref.to)
+        const projectionLength =
+          state.projectionById[block.itemId]?.sourceSpans.length
+        if (
+          projectionLength === ref.to &&
+          selected.from <= ref.to &&
+          selected.to > ref.to
+        )
+          offsets.push(ref.to)
         for (const offset of new Set(offsets)) {
-          const point = pointInLayout(layout, { itemId: block.itemId, graphemeOffset: offset })
+          const point = pointInLayout(layout, {
+            itemId: block.itemId,
+            graphemeOffset: offset,
+          })
           if (point) visitPoint(point)
         }
         continue
       }
-      const firstRow = viewport ? Math.max(0, Math.floor(viewport.screenY - block.screenY)) : 0
-      const lastRow = viewport ? Math.min(block.rows, Math.ceil(viewport.screenY + viewport.height - block.screenY)) : block.rows
-      const offsets = viewport && geometry.pointOffsetsByRow
-        ? Array.from({ length: Math.max(0, lastRow - firstRow) }, (_, index) => firstRow + index)
-          .flatMap(row => geometry.pointOffsetsByRow?.[row] ?? [])
-        : Object.keys(geometry.points).map(Number)
+      const firstRow = viewport
+        ? Math.max(0, Math.floor(viewport.screenY - block.screenY))
+        : 0
+      const lastRow = viewport
+        ? Math.min(
+            block.rows,
+            Math.ceil(viewport.screenY + viewport.height - block.screenY),
+          )
+        : block.rows
+      const offsets =
+        viewport && geometry.pointOffsetsByRow
+          ? Array.from(
+              { length: Math.max(0, lastRow - firstRow) },
+              (_, index) => firstRow + index,
+            ).flatMap((row) => geometry.pointOffsetsByRow?.[row] ?? [])
+          : Object.keys(geometry.points).map(Number)
       for (const graphemeOffset of offsets) {
-        const point = pointInLayout(layout, { itemId: block.itemId, graphemeOffset })
+        const point = pointInLayout(layout, {
+          itemId: block.itemId,
+          graphemeOffset,
+        })
         if (point) visitPoint(point)
       }
     }
   } else {
-    for (const points of Object.values(layout.points ?? {})) for (const point of Object.values(points)) visitPoint(point)
+    for (const points of Object.values(layout.points ?? {}))
+      for (const point of Object.values(points)) visitPoint(point)
   }
   if (!first || !last) return undefined
   const anchorIndex = order.get(state.selection.anchor.itemId) ?? -1
   const headIndex = order.get(state.selection.head.itemId) ?? -1
-  const forward = anchorIndex < headIndex || (anchorIndex === headIndex
-    && state.selection.anchor.graphemeOffset <= state.selection.head.graphemeOffset)
+  const forward =
+    anchorIndex < headIndex ||
+    (anchorIndex === headIndex &&
+      state.selection.anchor.graphemeOffset <=
+        state.selection.head.graphemeOffset)
   return forward ? { anchor: first, head: last } : { anchor: last, head: first }
 }

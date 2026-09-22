@@ -1,8 +1,15 @@
-import { createCodexAppServerClient, type CodexAppServerClient } from "./capabilities/codex-app-server-client"
+import {
+  createCodexAppServerClient,
+  type CodexAppServerClient,
+} from "./capabilities/codex-app-server-client"
 import { CodexApprovalGateway } from "./codex-approval-gateway"
 import { hydrateTurns } from "./mapping/map-item"
 import { itemId, type ConversationGateway } from "@vimex/conversation"
-import type { RuntimeEvent, RuntimeConnection, ModelCatalog } from "@vimex/workbench"
+import type {
+  RuntimeEvent,
+  RuntimeConnection,
+  ModelCatalog,
+} from "@vimex/workbench"
 
 /** Adapts one Codex connection to the application-owned capability ports.
  * Side forks require experimental deferGoalContinuation to avoid running the parent goal.
@@ -10,64 +17,150 @@ import type { RuntimeEvent, RuntimeConnection, ModelCatalog } from "@vimex/workb
 export function createCodexGateways(
   cwd: string,
   executable = "codex",
-  createClient: () => CodexAppServerClient = () => createCodexAppServerClient({ cwd, command: executable }, { experimentalApi: true }),
+  createClient: () => CodexAppServerClient = () =>
+    createCodexAppServerClient(
+      { cwd, command: executable },
+      { experimentalApi: true },
+    ),
 ) {
   let client = createClient()
   let detachClient = () => {}
   let closed = false
   let restartPromise: Promise<void> | undefined
   const listeners = new Set<(event: RuntimeEvent) => void>()
-  const publish = (event: RuntimeEvent) => { for (const listener of listeners) listener(event) }
+  const publish = (event: RuntimeEvent) => {
+    for (const listener of listeners) listener(event)
+  }
   const approvals = new CodexApprovalGateway(() => client)
 
-  const receive = (event: Parameters<Parameters<CodexAppServerClient["onEvent"]>[0]>[0]) => {
+  const receive = (
+    event: Parameters<Parameters<CodexAppServerClient["onEvent"]>[0]>[0],
+  ) => {
     const approvalEvents = approvals.handle(event)
-    if (approvalEvents) { for (const normalized of approvalEvents) publish(normalized); return }
+    if (approvalEvents) {
+      for (const normalized of approvalEvents) publish(normalized)
+      return
+    }
     let normalized: RuntimeEvent | undefined
     switch (event.type) {
-      case "subagent.link": normalized = { type: "subagent.link", link: { parentId: event.link.ownerThreadId, childId: event.link.agentThreadId, itemId: event.link.itemId, relation: event.link.relation, agentPath: event.link.agentPath } }; break
-      case "conversation": normalized = event; break
-      case "compaction": normalized = event; break
-      case "thread.summary": normalized = { type: "summary", summary: event.summary }; break
-      case "thread.goal": normalized = { type: "metadata", threadId: event.threadId, patch: { goal: event.goal } }; break
-      case "thread.status": normalized = { type: "metadata", threadId: event.threadId, patch: { status: event.status } }; break
-      case "thread.tokenUsage": normalized = { type: "metadata", threadId: event.threadId, patch: { contextUsed: event.used, contextLimit: event.contextLimit } }; break
+      case "subagent.link":
+        normalized = {
+          type: "subagent.link",
+          link: {
+            parentId: event.link.ownerThreadId,
+            childId: event.link.agentThreadId,
+            itemId: event.link.itemId,
+            relation: event.link.relation,
+            agentPath: event.link.agentPath,
+          },
+        }
+        break
+      case "conversation":
+        normalized = event
+        break
+      case "compaction":
+        normalized = event
+        break
+      case "thread.summary":
+        normalized = { type: "summary", summary: event.summary }
+        break
+      case "thread.goal":
+        normalized = {
+          type: "metadata",
+          threadId: event.threadId,
+          patch: { goal: event.goal },
+        }
+        break
+      case "thread.status":
+        normalized = {
+          type: "metadata",
+          threadId: event.threadId,
+          patch: { status: event.status },
+        }
+        break
+      case "thread.tokenUsage":
+        normalized = {
+          type: "metadata",
+          threadId: event.threadId,
+          patch: { contextUsed: event.used, contextLimit: event.contextLimit },
+        }
+        break
       case "error":
-        if (event.threadId && !event.willRetry) publish({ type: "compaction", phase: "failed", threadId: event.threadId, turnId: event.turnId, error: event.message })
-        normalized = { type: "notice", message: event.message }; break
-      case "warning": normalized = { type: "notice", message: event.message }; break
-      case "connection": if (event.status !== "connected") normalized = { type: "disconnected", message: event.error ?? "Codex app server disconnected" }; break
-      case "unknown": break
-      case "approval.requested": case "approval.resolved": case "approval.cancelled": case "userInput.requested": break
+        if (event.threadId && !event.willRetry)
+          publish({
+            type: "compaction",
+            phase: "failed",
+            threadId: event.threadId,
+            turnId: event.turnId,
+            error: event.message,
+          })
+        normalized = { type: "notice", message: event.message }
+        break
+      case "warning":
+        normalized = { type: "notice", message: event.message }
+        break
+      case "connection":
+        if (event.status !== "connected")
+          normalized = {
+            type: "disconnected",
+            message: event.error ?? "Codex app server disconnected",
+          }
+        break
+      case "unknown":
+        break
+      case "approval.requested":
+      case "approval.resolved":
+      case "approval.cancelled":
+      case "userInput.requested":
+        break
     }
     if (normalized) publish(normalized)
   }
-  const attach = () => { detachClient(); detachClient = client.onEvent(receive) }
+  const attach = () => {
+    detachClient()
+    detachClient = client.onEvent(receive)
+  }
   attach()
 
   const restart = async () => {
     if (closed) throw new Error("Codex runtime connection is closed")
     if (restartPromise) return restartPromise
     const operation = (async () => {
-      publish({ type: "disconnected", message: "Restarting Codex app server", reason: "restart" })
+      publish({
+        type: "disconnected",
+        message: "Restarting Codex app server",
+        reason: "restart",
+      })
       for (const event of approvals.invalidatePending()) publish(event)
       const previous = client
       // Its intentional shutdown must not invalidate the replacement connection.
       detachClient()
-      try { await previous.close() }
-      catch (error) { publish({ type: "notice", message: `Failed to close previous Codex app server: ${String(error)}` }) }
-      finally { detachClient() }
+      try {
+        await previous.close()
+      } catch (error) {
+        publish({
+          type: "notice",
+          message: `Failed to close previous Codex app server: ${String(error)}`,
+        })
+      } finally {
+        detachClient()
+      }
       client = createClient()
       attach()
       await client.connect()
     })()
-    const tracked = operation.finally(() => { if (restartPromise === tracked) restartPromise = undefined })
+    const tracked = operation.finally(() => {
+      if (restartPromise === tracked) restartPromise = undefined
+    })
     restartPromise = tracked
     return tracked
   }
 
   const connection: RuntimeConnection = {
-    connect: async () => { if (closed) throw new Error("Codex runtime connection is closed"); await client.connect() },
+    connect: async () => {
+      if (closed) throw new Error("Codex runtime connection is closed")
+      await client.connect()
+    },
     restart,
     subscribe(listener) {
       listeners.add(listener)
@@ -77,29 +170,64 @@ export function createCodexGateways(
       if (closed) return
       closed = true
       await restartPromise?.catch(() => {})
-      try { await client.close() } finally { detachClient(); listeners.clear() }
+      try {
+        await client.close()
+      } finally {
+        detachClient()
+        listeners.clear()
+      }
     },
   }
-  const observeSession = <T extends Awaited<ReturnType<CodexAppServerClient["resumeThread"]>>>(session: T): T => {
-    if (session.relation.parentThreadId) publish({
-      type: "subagent.link",
-      link: { parentId: session.relation.parentThreadId, childId: session.relation.threadId, itemId: itemId(`thread:${session.relation.threadId}`), relation: "spawned" },
-    })
+  const observeSession = <
+    T extends Awaited<ReturnType<CodexAppServerClient["resumeThread"]>>,
+  >(
+    session: T,
+  ): T => {
+    if (session.relation.parentThreadId)
+      publish({
+        type: "subagent.link",
+        link: {
+          parentId: session.relation.parentThreadId,
+          childId: session.relation.threadId,
+          itemId: itemId(`thread:${session.relation.threadId}`),
+          relation: "spawned",
+        },
+      })
     return session
   }
   const conversation: ConversationGateway = {
-    compactThread: id => client.compactThread(id),
-    async getGoal(id) { const goal = await client.getGoal(id); publish({ type: "metadata", threadId: id, patch: { goal } }); return goal },
-    async setGoal(id, update) { const goal = await client.setGoal(id, update); publish({ type: "metadata", threadId: id, patch: { goal } }); return goal },
-    async clearGoal(id) { const cleared = await client.clearGoal(id); publish({ type: "metadata", threadId: id, patch: { goal: null } }); return cleared },
+    compactThread: (id) => client.compactThread(id),
+    async getGoal(id) {
+      const goal = await client.getGoal(id)
+      publish({ type: "metadata", threadId: id, patch: { goal } })
+      return goal
+    },
+    async setGoal(id, update) {
+      const goal = await client.setGoal(id, update)
+      publish({ type: "metadata", threadId: id, patch: { goal } })
+      return goal
+    },
+    async clearGoal(id) {
+      const cleared = await client.clearGoal(id)
+      publish({ type: "metadata", threadId: id, patch: { goal: null } })
+      return cleared
+    },
     async forkSideThread(id) {
-      const fork = await client.forkThread(id, undefined, { deferGoalContinuation: true })
+      const fork = await client.forkThread(id, undefined, {
+        deferGoalContinuation: true,
+      })
       // Side questions must not inherit the parent's autonomous objective.
-      try { await client.clearGoal(fork.summary.id) }
-      catch (error) { await client.archiveThread(fork.summary.id); throw error }
+      try {
+        await client.clearGoal(fork.summary.id)
+      } catch (error) {
+        await client.archiveThread(fork.summary.id)
+        throw error
+      }
       return observeSession(fork)
     },
-    async retireThread(id) { await client.archiveThread(id) },
+    async retireThread(id) {
+      await client.archiveThread(id)
+    },
     async listThreads() {
       const all = []
       let cursor: string | undefined
@@ -110,17 +238,37 @@ export function createCodexGateways(
       } while (cursor)
       return all
     },
-    async startThread(cwd, model) { return observeSession(await client.startThread({ cwd, ...(model ? { model } : {}) })) },
-    async resumeThread(id) { return observeSession(await client.resumeThread(id)) },
-    async forkThread(id, through) { return observeSession(await client.forkThread(id, through)) },
+    async startThread(cwd, model) {
+      return observeSession(
+        await client.startThread({ cwd, ...(model ? { model } : {}) }),
+      )
+    },
+    async resumeThread(id) {
+      return observeSession(await client.resumeThread(id))
+    },
+    async forkThread(id, through) {
+      return observeSession(await client.forkThread(id, through))
+    },
     async startTurn(id, text, clientMessageId) {
-      const response = await client.startTurn(id, text, { clientUserMessageId: clientMessageId })
+      const response = await client.startTurn(id, text, {
+        clientUserMessageId: clientMessageId,
+      })
       return hydrateTurns([response.turn], id)
     },
-    async steerTurn(id, turn, text, clientMessageId) { await client.steerTurn(id, turn, text, { clientUserMessageId: clientMessageId }) },
-    async interruptTurn(id, turn) { await client.interruptTurn(id, turn) },
-    async renameThread(id, name) { await client.renameThread(id, name) },
-    async updateSettings(id, settings) { await client.updateThreadSettings(id, settings) },
+    async steerTurn(id, turn, text, clientMessageId) {
+      await client.steerTurn(id, turn, text, {
+        clientUserMessageId: clientMessageId,
+      })
+    },
+    async interruptTurn(id, turn) {
+      await client.interruptTurn(id, turn)
+    },
+    async renameThread(id, name) {
+      await client.renameThread(id, name)
+    },
+    async updateSettings(id, settings) {
+      await client.updateThreadSettings(id, settings)
+    },
   }
   const models: ModelCatalog = {
     async listModels() {
@@ -131,9 +279,18 @@ export function createCodexGateways(
       let cursor: string | undefined
       do {
         const page = await source.listModels({ cursor, limit: 100 })
-        all.push(...page.models.map(model => ({ id: model.model, label: model.label, efforts: model.supportedReasoningEfforts.map(e => e.effort) })))
+        all.push(
+          ...page.models.map((model) => ({
+            id: model.model,
+            label: model.label,
+            efforts: model.supportedReasoningEfforts.map((e) => e.effort),
+          })),
+        )
         cursor = page.nextCursor ?? undefined
-        if (cursor && seen.has(cursor)) throw new Error("Codex model catalog returned a repeated pagination cursor")
+        if (cursor && seen.has(cursor))
+          throw new Error(
+            "Codex model catalog returned a repeated pagination cursor",
+          )
         if (cursor) seen.add(cursor)
       } while (cursor)
       return all

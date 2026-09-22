@@ -81,19 +81,19 @@ React components do not interpret Codex notifications and do not call JSON-RPC d
 
 ## State ownership
 
-| State | Owner | Persistence |
-|---|---|---|
-| Threads, turns, items, active turn | Conversation | Codex canonical; normalized local mirror |
-| Cursor, anchor, selection, folds | Transcript | Per-thread local state |
-| Displayed revision, damage, render window, block estimates | Per-presentation TranscriptRuntime, retained by Workbench | Process-local, recoverable cache |
-| Native cells and renderable measurements | OpenTUI adapter | Process-local, disposable |
-| Draft and pending submission | Composer | Per-thread local persistence |
-| Vim mode and focus | Interaction | Process-local |
-| Pending approval requests | Approvals | Process-local, correlated by request ID |
-| Model, effort, cwd, token usage | Workbench projection | Derived from Codex state |
-| Git branch | Workbench projection | Codex thread Git info, with adapter refresh if required |
-| Theme and key overrides | UI settings | Local persistence |
-| Herdr pane metadata | Herdr adapter | Reported outward, never canonical |
+| State                                                      | Owner                                                     | Persistence                                             |
+| ---------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------- |
+| Threads, turns, items, active turn                         | Conversation                                              | Codex canonical; normalized local mirror                |
+| Cursor, anchor, selection, folds                           | Transcript                                                | Per-thread local state                                  |
+| Displayed revision, damage, render window, block estimates | Per-presentation TranscriptRuntime, retained by Workbench | Process-local, recoverable cache                        |
+| Native cells and renderable measurements                   | OpenTUI adapter                                           | Process-local, disposable                               |
+| Draft and pending submission                               | Composer                                                  | Per-thread local persistence                            |
+| Vim mode and focus                                         | Interaction                                               | Process-local                                           |
+| Pending approval requests                                  | Approvals                                                 | Process-local, correlated by request ID                 |
+| Model, effort, cwd, token usage                            | Workbench projection                                      | Derived from Codex state                                |
+| Git branch                                                 | Workbench projection                                      | Codex thread Git info, with adapter refresh if required |
+| Theme and key overrides                                    | UI settings                                               | Local persistence                                       |
+| Herdr pane metadata                                        | Herdr adapter                                             | Reported outward, never canonical                       |
 
 There is no undifferentiated global state object. A store implementation may host several domain slices, but ownership and mutation remain explicit.
 
@@ -184,7 +184,6 @@ Vimex remains runnable outside Herdr, which keeps terminal testing and developme
 
 V1 uses internal extension points for lifecycle observers, named commands, status segments, transcript renderers, external actions, and themes. A public plugin ABI is deferred until transcript and Vim semantics stabilize.
 
-
 ## Transcript runtime, geometry, and scrolling
 
 [Transcript runtime](./transcript-runtime.md) is the specialized normative design for this subsystem. [The implementation ledger](./transcript-runtime-implementation.md) records its staged migration and evidence.
@@ -201,8 +200,6 @@ Mouse-wheel deltas remain linear and detach native following immediately. Keyboa
 
 These are in-process feature modules, not new services or package boundaries. Native rendering remains renderer-owned; logical navigation and renderer-neutral presentation policy remain in the transcript package. Large cold reflows and complete end-to-end latency require separate profiling from warm scroll benchmarks.
 
-
 Diff geometry is an OpenTUI adapter concern. Canonical server patches remain in conversation records; native split columns and line-number gutters do not redefine transcript source order. Native layout integration depends on pinned OpenTUI internals and has renderer regression coverage; upgrades must revalidate those assumptions. Large-history initial Markdown settlement remains a known cold-path performance cost even though warm scroll translations reuse geometry.
-
 
 The geometry cache is render-block-local and keyed by stable block identity, content revision, width, style revision, and fold state. It retains one complete current variant per materialized block; replacing a large block drops its previous variant atomically rather than partially evicting points and corrupting navigation. A fold or changed live block reuses unaffected geometry without mutating prior frames. Whole-viewport scroll translation remains the fastest path. Estimated layout is a recoverable fallback until native measurement is available, while Stage 5 windowing will bound the total materialized block set.

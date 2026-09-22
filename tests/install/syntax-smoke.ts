@@ -6,7 +6,8 @@ import { join } from "node:path"
 
 configurePackagedAssets()
 const { TreeSitterClient } = await import("@opentui/core")
-const { vimexSyntaxParsers } = await import("../../packages/ui-opentui-react/src/syntax/register-parsers")
+const { vimexSyntaxParsers } =
+  await import("../../packages/ui-opentui-react/src/syntax/register-parsers")
 const directory = await mkdtemp(join(tmpdir(), "vimex-bundled-syntax-"))
 const client = new TreeSitterClient({ dataPath: directory })
 try {
@@ -19,9 +20,18 @@ try {
     ["typescript", "const answer: number = 42", "keyword"],
   ] as const) {
     const result = await client.highlightOnce(source, filetype)
-    if (result.error || result.warning || !result.highlights?.some(([, , capture]) => capture.startsWith(group))) {
-      throw new Error(`Packaged ${filetype} highlighting failed: ${JSON.stringify(result)}`)
+    if (
+      result.error ||
+      result.warning ||
+      !result.highlights?.some(([, , capture]) => capture.startsWith(group))
+    ) {
+      throw new Error(
+        `Packaged ${filetype} highlighting failed: ${JSON.stringify(result)}`,
+      )
     }
   }
   console.log("Packaged syntax: Python, Bash, JSON, TypeScript passed")
-} finally { await client.destroy(); await rm(directory, { recursive: true, force: true }) }
+} finally {
+  await client.destroy()
+  await rm(directory, { recursive: true, force: true })
+}

@@ -18,17 +18,17 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 
 ## Status
 
-| Work | State | Evidence |
-|---|---|---|
-| Stage 5 topology and contracts | Complete | Established by Stages 2–4 |
-| Stages 1–4 performance baseline | Complete | Reproducible benchmark commit `ae73913`; inherited measurements below |
-| Stage 5 scaling fixtures | Complete | Commit `edc28c0`; deterministic runtime/React curves, real native cells, connected-input ceiling, and evidence below |
-| Stage 5a: pure window planner | Complete | Commit `4021939`; indexed height queries, bounded follow/detached/reveal windows, pass-through fallback, and evidence below |
-| Stage 5b: windowed mounting | Complete | Commit `3e24002`; bounded production runtime, React/native mounting, observer lifetime, scaling evidence, and review sign-off below |
-| Stage 5c: anchor correction | Complete | Commit `97f163f`; atomic height correction, window-local geometry, logical-anchor restoration, scaling evidence, and review sign-off below |
-| Stage 5d: off-window semantics | Complete | Commits `a24f5af`, `df243a1`, `9266837`, `0e1ad6d`; indexed target materialization and URL motion, bounded selection clipping, canonical cross-window copy, atomic navigation/fold/picker settlement, and evidence below |
-| Stage 5e: follow and detachment | Complete | Stage 5.5a–h commits `9e8974e`, `e5dfc61`, `b3d26f9`, `4189d25`, `70733dc`, `43d9a9b`, `f55ad57`, and `c951371`; final Stage 5.6 acceptance below |
-| Stage 5f: stress, review, and evidence | Complete | Commit `7199774`; bounded Markdown/diff fragments, semantic/native parity, full 100/1k/10k/100k matrix, repository/PTY gates, and review sign-off below |
+| Work                                   | State    | Evidence                                                                                                                                                                                                                 |
+| -------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Stage 5 topology and contracts         | Complete | Established by Stages 2–4                                                                                                                                                                                                |
+| Stages 1–4 performance baseline        | Complete | Reproducible benchmark commit `ae73913`; inherited measurements below                                                                                                                                                    |
+| Stage 5 scaling fixtures               | Complete | Commit `edc28c0`; deterministic runtime/React curves, real native cells, connected-input ceiling, and evidence below                                                                                                     |
+| Stage 5a: pure window planner          | Complete | Commit `4021939`; indexed height queries, bounded follow/detached/reveal windows, pass-through fallback, and evidence below                                                                                              |
+| Stage 5b: windowed mounting            | Complete | Commit `3e24002`; bounded production runtime, React/native mounting, observer lifetime, scaling evidence, and review sign-off below                                                                                      |
+| Stage 5c: anchor correction            | Complete | Commit `97f163f`; atomic height correction, window-local geometry, logical-anchor restoration, scaling evidence, and review sign-off below                                                                               |
+| Stage 5d: off-window semantics         | Complete | Commits `a24f5af`, `df243a1`, `9266837`, `0e1ad6d`; indexed target materialization and URL motion, bounded selection clipping, canonical cross-window copy, atomic navigation/fold/picker settlement, and evidence below |
+| Stage 5e: follow and detachment        | Complete | Stage 5.5a–h commits `9e8974e`, `e5dfc61`, `b3d26f9`, `4189d25`, `70733dc`, `43d9a9b`, `f55ad57`, and `c951371`; final Stage 5.6 acceptance below                                                                        |
+| Stage 5f: stress, review, and evidence | Complete | Commit `7199774`; bounded Markdown/diff fragments, semantic/native parity, full 100/1k/10k/100k matrix, repository/PTY gates, and review sign-off below                                                                  |
 
 “Complete” means the slice's exit criteria pass, evidence is recorded here, and the implementation is committed. Partial working-tree changes do not count as complete.
 
@@ -36,14 +36,14 @@ Windowing changes materialization, not meaning. Conversation state remains canon
 
 Stages 1–4 established the starting point for Stage 5. Preserve the timing boundary of each measurement when comparing windowed results:
 
-| Path | Inherited evidence | Boundary |
-|---|---:|---|
-| Warm native frame / cached layout / visible anchor | 0.108 / 0.006 / 0.425 ms medians | One already-mounted, already-measured 1,500-line command at 100×30 |
-| Steady streaming settlement | 18.14–20.30 ms | Connected application at 80×24 with a mounted 1,200-paragraph Markdown answer |
-| Navigation around the large streaming fixture | 51.92–57.41 ms | Connected application settlement, not runtime-only reconciliation |
-| Cold renderer setup / geometry publication | 22.690 / 183.529 ms medians | Fresh renderer and runtime around one 135,389-character expanded command |
-| Follow reconciliation | 0.217 ms median, 0.264 ms p95 | Isolated `TranscriptRuntime.update` with 300 settled blocks and one changed tail; projection and rendering excluded |
-| Large-history runtime update | 2.417 ms | Runtime reconciliation with 10,000 historical items |
+| Path                                               |               Inherited evidence | Boundary                                                                                                            |
+| -------------------------------------------------- | -------------------------------: | ------------------------------------------------------------------------------------------------------------------- |
+| Warm native frame / cached layout / visible anchor | 0.108 / 0.006 / 0.425 ms medians | One already-mounted, already-measured 1,500-line command at 100×30                                                  |
+| Steady streaming settlement                        |                   18.14–20.30 ms | Connected application at 80×24 with a mounted 1,200-paragraph Markdown answer                                       |
+| Navigation around the large streaming fixture      |                   51.92–57.41 ms | Connected application settlement, not runtime-only reconciliation                                                   |
+| Cold renderer setup / geometry publication         |      22.690 / 183.529 ms medians | Fresh renderer and runtime around one 135,389-character expanded command                                            |
+| Follow reconciliation                              |    0.217 ms median, 0.264 ms p95 | Isolated `TranscriptRuntime.update` with 300 settled blocks and one changed tail; projection and rendering excluded |
+| Large-history runtime update                       |                         2.417 ms | Runtime reconciliation with 10,000 historical items                                                                 |
 
 These are diagnostic baselines, not universal thresholds. Stage 5 must measure the same operation and content shape across session sizes so results describe a scaling curve rather than unrelated fast fixtures. Runtime-only reconciliation, React publication, native mounting, geometry measurement, and end-to-end settlement remain separately reported.
 
@@ -138,14 +138,14 @@ Measurement feedback may refine height estimates and window placement. It cannot
 
 ## Responsibility map
 
-| Responsibility | Owner |
-|---|---|
-| Canonical turns and items | `@vimex/conversation` |
-| Cursor, selection, folds, search, marks, jumps, logical anchor | semantic transcript domain |
-| Block plan, height index, window policy, anchor correction | `@vimex/transcript` runtime |
-| Presentation lifetime and canonical revision input | Workbench |
-| Native mounting, spacer renderables, measurement extraction | OpenTUI adapter |
-| Input interpretation and semantic commands | interaction/workbench boundaries |
+| Responsibility                                                 | Owner                            |
+| -------------------------------------------------------------- | -------------------------------- |
+| Canonical turns and items                                      | `@vimex/conversation`            |
+| Cursor, selection, folds, search, marks, jumps, logical anchor | semantic transcript domain       |
+| Block plan, height index, window policy, anchor correction     | `@vimex/transcript` runtime      |
+| Presentation lifetime and canonical revision input             | Workbench                        |
+| Native mounting, spacer renderables, measurement extraction    | OpenTUI adapter                  |
+| Input interpretation and semantic commands                     | interaction/workbench boundaries |
 
 Do not introduce a second transcript store, a React-owned runtime, or a generic virtualization service. The window planner is transcript-specific because it coordinates logical targets, source spans, source-less activity, follow/detached behavior, and block geometry.
 
@@ -297,16 +297,16 @@ Rules:
 
 Semantic operations always use the complete canonical projections, not mounted nodes.
 
-| Operation | Required window behavior |
-|---|---|
-| Cursor motion within mounted content | No forced window change until target approaches the boundary |
-| Cursor/search/mark/jump target outside window | Materialize target, then restore it to the requested screen row |
-| Message/thread navigation | Select canonical target first, then plan its window |
-| Selection spanning unmounted blocks | Retain complete logical endpoints; render only the visible segment |
-| Copy/yank | Read canonical projections across the complete logical selection |
-| Fold change | Reindex affected blocks and preserve the logical anchor |
-| Follow | Select the latest canonical revision and trailing window atomically |
-| Detached hidden output | Keep the displayed revision, window, and mounted content stable |
+| Operation                                     | Required window behavior                                            |
+| --------------------------------------------- | ------------------------------------------------------------------- |
+| Cursor motion within mounted content          | No forced window change until target approaches the boundary        |
+| Cursor/search/mark/jump target outside window | Materialize target, then restore it to the requested screen row     |
+| Message/thread navigation                     | Select canonical target first, then plan its window                 |
+| Selection spanning unmounted blocks           | Retain complete logical endpoints; render only the visible segment  |
+| Copy/yank                                     | Read canonical projections across the complete logical selection    |
+| Fold change                                   | Reindex affected blocks and preserve the logical anchor             |
+| Follow                                        | Select the latest canonical revision and trailing window atomically |
+| Detached hidden output                        | Keep the displayed revision, window, and mounted content stable     |
 
 Window movement must never be required to discover the semantic target. Discovery happens against canonical transcript state; materialization follows.
 
@@ -514,15 +514,15 @@ Hard gates:
 
 Record the same workload for each 100, 1k, 10k, and 100k fixture and report both absolute values and the scaling curve:
 
-| Path | Measurements |
-|---|---|
-| Warm cursor/navigation | p50, p95, maximum, publications, measurements |
-| Window movement | planner time, mount churn, native frame time |
-| Follow streaming | ingress settlements, planner work, changed measurements |
-| Detached streaming | frame/window publications, hidden damage, input latency |
-| Anchor correction | accepted measurements, correction time, visible displacement |
-| Explicit reveal | semantic lookup, planning, mount, measurement, final settlement |
-| Memory | canonical state, runtime blocks, geometry, mounted native nodes |
+| Path                   | Measurements                                                    |
+| ---------------------- | --------------------------------------------------------------- |
+| Warm cursor/navigation | p50, p95, maximum, publications, measurements                   |
+| Window movement        | planner time, mount churn, native frame time                    |
+| Follow streaming       | ingress settlements, planner work, changed measurements         |
+| Detached streaming     | frame/window publications, hidden damage, input latency         |
+| Anchor correction      | accepted measurements, correction time, visible displacement    |
+| Explicit reveal        | semantic lookup, planning, mount, measurement, final settlement |
+| Memory                 | canonical state, runtime blocks, geometry, mounted native nodes |
 
 For follow reconciliation at every size, one changed tail block must replace only that block, preserve every unrelated block and geometry identity, and produce viewport-bounded mounted work. Timings remain diagnostic; changed-block, publication, measurement, mount, and identity counts are deterministic gates.
 
@@ -612,12 +612,12 @@ bun test packages/testkit/src/transcript-builders.test.ts packages/transcript/sr
 
 All timing values below are single local observations and diagnostic only. Operation counts and identity results are the hard gates.
 
-| Blocks | Cold runtime | Synthetic geometry publication | Follow reconciliation | Warm view navigation | Explicit reveal | Reattach | Materialized / seeded | Changed / retained identities |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 100 | 1.040 ms | 0.448 ms | 0.337 ms | 0.080 ms | 0.203 ms | 0.158 ms | 100 / 100 | 1 / 99 |
-| 1k | 2.593 ms | 1.544 ms | 0.872 ms | 0.021 ms | 0.908 ms | 0.812 ms | 1k / 1k | 1 / 999 |
-| 10k | 26.163 ms | 12.694 ms | 9.820 ms | 0.023 ms | 13.303 ms | 9.401 ms | 10k / 10k | 1 / 9,999 |
-| 100k | 296.076 ms | 153.803 ms | 116.868 ms | 0.064 ms | 120.368 ms | 116.357 ms | 100k / 100k | 1 / 99,999 |
+| Blocks | Cold runtime | Synthetic geometry publication | Follow reconciliation | Warm view navigation | Explicit reveal |   Reattach | Materialized / seeded | Changed / retained identities |
+| -----: | -----------: | -----------------------------: | --------------------: | -------------------: | --------------: | ---------: | --------------------: | ----------------------------: |
+|    100 |     1.040 ms |                       0.448 ms |              0.337 ms |             0.080 ms |        0.203 ms |   0.158 ms |             100 / 100 |                        1 / 99 |
+|     1k |     2.593 ms |                       1.544 ms |              0.872 ms |             0.021 ms |        0.908 ms |   0.812 ms |               1k / 1k |                       1 / 999 |
+|    10k |    26.163 ms |                      12.694 ms |              9.820 ms |             0.023 ms |       13.303 ms |   9.401 ms |             10k / 10k |                     1 / 9,999 |
+|   100k |   296.076 ms |                     153.803 ms |            116.868 ms |             0.064 ms |      120.368 ms | 116.357 ms |           100k / 100k |                    1 / 99,999 |
 
 The planner is still the pass-through reference, so materialized and synthetic seeded measurement counts equal total transcript size. React-only publication produced exactly one runtime publication and one React commit at every size; its subscribed view contains one constant text node, deliberately excluding transcript mounting.
 
@@ -629,12 +629,12 @@ Follow and detached presentation cells also passed at 48×18, 80×24, and 140×4
 
 Connected-input cells run one size per isolated worker. Fixture construction and hydration are excluded: a benchmark-only setup step installs an already-valid canonical `ConversationState` and semantic `TranscriptState` into an initialized, not-yet-observed Workbench workspace. `TranscriptRuntime` creation happens afterward. The measured interval begins at OpenTUI key dispatch and includes public Workbench command handling, runtime and presentation publication, Connected React reconciliation, native frame callbacks, and final settlement.
 
-| Blocks | Result at 80×24 | Dispatch | Final settlement | Mounted / retained | Accepted measurement damage | Runtime / Workbench publications | Settled RSS |
-|---:|---|---:|---:|---:|---:|---:|---:|
-| 100 | Passed | 7.130 ms | 77.454 ms | 100 / 100 | 4 (bound ≤ 4) | 3 / 1 | 307 MB |
-| 1k | Passed | 9.939 ms | 88.310 ms | 1k / 1k | 4 (bound ≤ 4) | 3 / 1 | 495 MB |
-| 10k | Passed | 33.772 ms | 1,262.823 ms | 10k / 10k | 4 (bound ≤ 4) | 3 / 1 | 2.07 GB |
-| 100k | Failed before settlement | — | — | unavailable | unavailable | unavailable | 1.75 GB at failure |
+| Blocks | Result at 80×24          |  Dispatch | Final settlement | Mounted / retained | Accepted measurement damage | Runtime / Workbench publications |        Settled RSS |
+| -----: | ------------------------ | --------: | ---------------: | -----------------: | --------------------------: | -------------------------------: | -----------------: |
+|    100 | Passed                   |  7.130 ms |        77.454 ms |          100 / 100 |               4 (bound ≤ 4) |                            3 / 1 |             307 MB |
+|     1k | Passed                   |  9.939 ms |        88.310 ms |            1k / 1k |               4 (bound ≤ 4) |                            3 / 1 |             495 MB |
+|    10k | Passed                   | 33.772 ms |     1,262.823 ms |          10k / 10k |               4 (bound ≤ 4) |                            3 / 1 |            2.07 GB |
+|   100k | Failed before settlement |         — |                — |        unavailable |                 unavailable |                      unavailable | 1.75 GB at failure |
 
 The isolated 100k worker failed during the inherited pass-through native allocation with `Failed to create TextBuffer`. Its fixture snapshot used about 255 MB RSS and the attempted mount reached about 1.75 GB RSS before failure; mounted, measured, changed, and publication counts are recorded as unavailable rather than inferred. This is the pre-windowing ceiling Stage 5.1/5.2 must remove, not a passing sample. Memory is process-level diagnostic evidence: process→fixture, fixture→settled mount, and mount→input deltas include allocator and native effects and are not component-exclusive.
 
@@ -684,11 +684,11 @@ all passed
 `bun run benchmark:transcript-window-planner` runs identical 24-row viewport / 24-row overscan workloads. Timings are one local diagnostic observation; mounted counts, retained identities, row conservation, target comparisons, and tree visits/copies are asserted gates.
 
 | Blocks | Index build | Follow plan / mounted | Detached plan / mounted | Far reveal / mounted | Replacement copies | Same-item target comparisons / mounted |
-|---:|---:|---:|---:|---:|---:|---:|
-| 100 | 0.510 ms | 0.212 ms / 48 | 0.117 ms / 72 | 0.044 ms / 48 | 7 | 9 / 57 |
-| 1k | 2.531 ms | 0.035 ms / 48 | 0.031 ms / 72 | 0.024 ms / 48 | 10 | 12 / 72 |
-| 10k | 12.246 ms | 0.083 ms / 48 | 0.048 ms / 72 | 0.026 ms / 48 | 14 | 16 / 72 |
-| 100k | 141.964 ms | 0.055 ms / 48 | 0.060 ms / 72 | 0.027 ms / 48 | 17 | 19 / 72 |
+| -----: | ----------: | --------------------: | ----------------------: | -------------------: | -----------------: | -------------------------------------: |
+|    100 |    0.510 ms |         0.212 ms / 48 |           0.117 ms / 72 |        0.044 ms / 48 |                  7 |                                 9 / 57 |
+|     1k |    2.531 ms |         0.035 ms / 48 |           0.031 ms / 72 |        0.024 ms / 48 |                 10 |                                12 / 72 |
+|    10k |   12.246 ms |         0.083 ms / 48 |           0.048 ms / 72 |        0.026 ms / 48 |                 14 |                                16 / 72 |
+|   100k |  141.964 ms |         0.055 ms / 48 |           0.060 ms / 72 |        0.027 ms / 48 |                 17 |                                19 / 72 |
 
 Every planned block retains the exact source-plan object identity. Follow, detached, and reveal work obey logarithmic deterministic visit bounds at every size. One middle-block height change adds three rows, copies 7/10/14/17 nodes, leaves the prior index immutable, and replans 69 blocks. An equal-height update copies zero nodes and retains the index identity. The unsupported-relationship probe returns the exact input block array with zero spacers and zero overscan.
 
@@ -719,11 +719,11 @@ Implementation commit: `3e24002` (`feat: mount bounded transcript windows`). Pro
 The 80×24 production cell ran identical workloads at every fixture size. Counts are hard gates; timings remain machine-specific diagnostics.
 
 | Complete blocks | Cold mounted / measured | Visible / overscan candidates | Native descendants + spacer roots | Follow retained / changed / attempted | Detached mounted / attempted / publications | Hidden delta publications / churn |
-|---:|---:|---:|---:|---:|---:|---:|
-| 100 | 48 / 48 | 12 / 36 | 246 + 2 | 48 / 1 / 4 | 72 / 50 / 2 | 0 / 0 |
-| 1k | 48 / 48 | 12 / 36 | 242 + 2 | 48 / 1 / 4 | 72 / 72 / 2 | 0 / 0 |
-| 10k | 48 / 48 | 12 / 36 | 242 + 2 | 48 / 1 / 4 | 72 / 72 / 2 | 0 / 0 |
-| 100k | 48 / 48 | 12 / 36 | 242 + 2 | 48 / 1 / 4 | 72 / 72 / 2 | 0 / 0 |
+| --------------: | ----------------------: | ----------------------------: | --------------------------------: | ------------------------------------: | ------------------------------------------: | --------------------------------: |
+|             100 |                 48 / 48 |                       12 / 36 |                           246 + 2 |                            48 / 1 / 4 |                                 72 / 50 / 2 |                             0 / 0 |
+|              1k |                 48 / 48 |                       12 / 36 |                           242 + 2 |                            48 / 1 / 4 |                                 72 / 72 / 2 |                             0 / 0 |
+|             10k |                 48 / 48 |                       12 / 36 |                           242 + 2 |                            48 / 1 / 4 |                                 72 / 72 / 2 |                             0 / 0 |
+|            100k |                 48 / 48 |                       12 / 36 |                           242 + 2 |                            48 / 1 / 4 |                                 72 / 72 / 2 |                             0 / 0 |
 
 The 100-block detached movement overlaps its prior window and therefore attempts only 50 of 72 mounted roots; the larger fixtures intentionally move to a disjoint window and prune exactly 48 departed roots. Every detached movement publishes twice: once for the logical window move and once for accepted geometry. After acknowledgement, pending measurement count is zero. Hidden canonical tail changes publish and commit zero frames for the detached presentation.
 
@@ -734,11 +734,11 @@ The viewport matrix also passed at 48×18, 80×24, and 140×40. Follow windows m
 The connected cell includes public Workbench command handling, production runtime publication, Connected React reconciliation, OpenTUI roots, native frame callbacks, measurement, and settlement. Fixture construction and hydration remain outside the measured interval.
 
 | Complete blocks | Materialized / mounted / measured | Runtime / presentation publications | Native descendants after + spacer roots | Dispatch / final settlement | Result |
-|---:|---:|---:|---:|---:|---|
-| 100 | 42 / 42 / 42 | 4 / 1 | 230 + 2 | 58.800 / 136.688 ms | Passed |
-| 1k | 42 / 42 / 42 | 2 / 1 | 224 + 2 | 64.153 / 103.003 ms | Passed |
-| 10k | 42 / 42 / 42 | 2 / 1 | 224 + 2 | 93.033 / 132.495 ms | Passed |
-| 100k | 42 / 42 / 42 | 2 / 1 | 224 + 2 | 491.793 / 561.720 ms | Passed |
+| --------------: | --------------------------------: | ----------------------------------: | --------------------------------------: | --------------------------: | ------ |
+|             100 |                      42 / 42 / 42 |                               4 / 1 |                                 230 + 2 |         58.800 / 136.688 ms | Passed |
+|              1k |                      42 / 42 / 42 |                               2 / 1 |                                 224 + 2 |         64.153 / 103.003 ms | Passed |
+|             10k |                      42 / 42 / 42 |                               2 / 1 |                                 224 + 2 |         93.033 / 132.495 ms | Passed |
+|            100k |                      42 / 42 / 42 |                               2 / 1 |                                 224 + 2 |        491.793 / 561.720 ms | Passed |
 
 The inherited 100k cell failed while attempting pass-through native allocation. The windowed cell now settles with 42 mounted and measured roots. Its remaining total-size timing and memory curve is diagnostic evidence of complete semantic construction, height-index construction, and geometry composition still in the path; it is not attributed to bounded native mounting.
 
@@ -770,11 +770,11 @@ Implementation commit: `97f163f` (`feat: correct transcript window estimates ato
 The runtime correction cell changes one one-row tail block to four rows. Operation counts are identical at every requested size; timings are machine-specific diagnostic samples from the reviewed run.
 
 | Complete blocks | Mounted before / after | Geometry blocks composed / retained detail | Accepted / changed heights | Publications / stale replay | Total-row delta | Correction time |
-|---:|---:|---:|---:|---:|---:|---:|
-| 100 | 48 / 45 | 45 / 1 | 1 / 1 | 1 / 0 | +3 | 0.181 ms |
-| 1k | 48 / 45 | 45 / 1 | 1 / 1 | 1 / 0 | +3 | 0.110 ms |
-| 10k | 48 / 45 | 45 / 1 | 1 / 1 | 1 / 0 | +3 | 0.107 ms |
-| 100k | 48 / 45 | 45 / 1 | 1 / 1 | 1 / 0 | +3 | 0.172 ms |
+| --------------: | ---------------------: | -----------------------------------------: | -------------------------: | --------------------------: | --------------: | --------------: |
+|             100 |                48 / 45 |                                     45 / 1 |                      1 / 1 |                       1 / 0 |              +3 |        0.181 ms |
+|              1k |                48 / 45 |                                     45 / 1 |                      1 / 1 |                       1 / 0 |              +3 |        0.110 ms |
+|             10k |                48 / 45 |                                     45 / 1 |                      1 / 1 |                       1 / 0 |              +3 |        0.107 ms |
+|            100k |                48 / 45 |                                     45 / 1 |                      1 / 1 |                       1 / 0 |              +3 |        0.172 ms |
 
 At 80×24, cold native measurement starts with 48 mounted roots, accepts 48 height corrections, then replans to 24 materialized blocks and retains 24 detailed geometry records. Follow-tail damage remains bounded to the current window, and detached hidden tail changes publish, commit, mount, and unmount zero work. The 100-block viewport matrix passed at 48×18, 80×24, and 140×40. The wide detached case required two bounded acknowledgement passes after correction; it settled with zero pending measurements, 66 attempts across 89 mounted roots, and zero hidden publications.
 
@@ -783,11 +783,11 @@ At 80×24, cold native measurement starts with 48 mounted roots, accepts 48 heig
 The connected input cell includes Workbench dispatch, runtime and presentation publication, React, native roots, measurement, and final frame settlement. Counts remain identical across the complete scaling range.
 
 | Complete blocks | Materialized / mounted / measured | Runtime / presentation publications | Native descendants before / after + spacers | Dispatch / final settlement | Result |
-|---:|---:|---:|---:|---:|---|
-| 100 | 25 / 25 / 25 | 2 / 1 | 72 / 139 + 2 | 69.884 / 108.604 ms | Passed |
-| 1k | 25 / 25 / 25 | 2 / 1 | 72 / 139 + 2 | 71.178 / 112.186 ms | Passed |
-| 10k | 25 / 25 / 25 | 2 / 1 | 72 / 139 + 2 | 101.209 / 140.014 ms | Passed |
-| 100k | 25 / 25 / 25 | 2 / 1 | 72 / 139 + 2 | 414.586 / 481.704 ms | Passed |
+| --------------: | --------------------------------: | ----------------------------------: | ------------------------------------------: | --------------------------: | ------ |
+|             100 |                      25 / 25 / 25 |                               2 / 1 |                                72 / 139 + 2 |         69.884 / 108.604 ms | Passed |
+|              1k |                      25 / 25 / 25 |                               2 / 1 |                                72 / 139 + 2 |         71.178 / 112.186 ms | Passed |
+|             10k |                      25 / 25 / 25 |                               2 / 1 |                                72 / 139 + 2 |        101.209 / 140.014 ms | Passed |
+|            100k |                      25 / 25 / 25 |                               2 / 1 |                                72 / 139 + 2 |        414.586 / 481.704 ms | Passed |
 
 The increasing dispatch curve and 100k memory remain diagnostic evidence of complete semantic construction and total-plan reconciliation, not mounted or measured growth. Those total-size paths remain explicit later-slice debt.
 
@@ -819,11 +819,11 @@ Implementation commit: `a24f5af` (`feat: materialize off-window transcript targe
 The benchmark starts detached at the middle item, appends hidden canonical tail damage, resolves `gg` item-locally, and feeds that exact logical result into runtime reveal. Setup and hidden-damage adoption are excluded from the measured reveal. Counts are identical across the recorded range.
 
 | Complete blocks | Mounted before / after | Wrapped items / transitions | Complete-plan builds / visits | Order-index builds / visits | Publications | Target motion / window publication |
-|---:|---:|---:|---:|---:|---:|---:|
-| 100 | 72 / 48 | 1 / 0 | 0 / 0 | 0 / 0 | 1 | 0.246 / 0.119 ms |
-| 1k | 72 / 48 | 1 / 0 | 0 / 0 | 0 / 0 | 1 | 0.033 / 0.077 ms |
-| 10k | 72 / 48 | 1 / 0 | 0 / 0 | 0 / 0 | 1 | 0.031 / 0.133 ms |
-| 100k | 72 / 48 | 1 / 0 | 0 / 0 | 0 / 0 | 1 | 0.034 / 0.147 ms |
+| --------------: | ---------------------: | --------------------------: | ----------------------------: | --------------------------: | -----------: | ---------------------------------: |
+|             100 |                72 / 48 |                       1 / 0 |                         0 / 0 |                       0 / 0 |            1 |                   0.246 / 0.119 ms |
+|              1k |                72 / 48 |                       1 / 0 |                         0 / 0 |                       0 / 0 |            1 |                   0.033 / 0.077 ms |
+|             10k |                72 / 48 |                       1 / 0 |                         0 / 0 |                       0 / 0 |            1 |                   0.031 / 0.133 ms |
+|            100k |                72 / 48 |                       1 / 0 |                         0 / 0 |                       0 / 0 |            1 |                   0.034 / 0.147 ms |
 
 Every cell retains the complete block-plan identity and materializes the motion's exact target. Machine-specific timing is diagnostic; the hard gates are the zero full-plan/order-build counts, one publication, one wrapped item, and bounded mounted work. The existing Stage 5.1 planner proof separately bounds same-item sub-block lookup logarithmically.
 
@@ -855,11 +855,11 @@ Implementation commit: `df243a1` (`feat: clip off-window transcript selections`)
 The warm selection-index probe updates one selected endpoint and counts a fixed semantic range at every fixture size. Native clipping uses a 48-block materialized window; the 100k reverse-selection proof visits only the three mounted blocks and three mapped points needed by its viewport. Timings are diagnostic; operation counts are the hard gate.
 
 | Complete blocks | Mounted blocks | Index builds / item visits / updates | Query cache hits / node visits | Semantic count | Diagnostic query |
-|---:|---:|---:|---:|---:|---:|
-| 100 | 48 | 0 / 0 / 1 | 1 / 7 | 62 | 0.0066 ms |
-| 1k | 48 | 0 / 0 / 1 | 1 / 9 | 62 | 0.0052 ms |
-| 10k | 48 | 0 / 0 / 1 | 1 / 12 | 62 | 0.0086 ms |
-| 100k | 48 | 0 / 0 / 1 | 1 / 14 | 62 | 0.0197 ms |
+| --------------: | -------------: | -----------------------------------: | -----------------------------: | -------------: | ---------------: |
+|             100 |             48 |                            0 / 0 / 1 |                          1 / 7 |             62 |        0.0066 ms |
+|              1k |             48 |                            0 / 0 / 1 |                          1 / 9 |             62 |        0.0052 ms |
+|             10k |             48 |                            0 / 0 / 1 |                         1 / 12 |             62 |        0.0086 ms |
+|            100k |             48 |                            0 / 0 / 1 |                         1 / 14 |             62 |        0.0197 ms |
 
 The recorded production benchmark also keeps target materialization at 48 mounted blocks and height correction at 45 composed blocks from 100 through 100k, with one publication and zero complete-plan/order-index scans for the detached reveal workload. Five stable native frames add zero `startSelection` or `updateSelection` calls.
 
@@ -891,11 +891,11 @@ Implementation commit: `9266837` (`feat: atomically reveal transcript navigation
 The generic indexed reveal workload from Stage 5.4a remains the physical settlement proof for search, mark, jump, history, and thread targets after semantic discovery. The latest run retained the complete plan identity, wrapped one target item, and published one bounded window at every scale.
 
 | Complete blocks | Mounted before / after | Wrapped items / transitions | Complete-plan builds / visits | Order-index builds / visits | Publications | Target motion / window publication |
-|---:|---:|---:|---:|---:|---:|---:|
-| 100 | 72 / 48 | 1 / 0 | 0 / 0 | 0 / 0 | 1 | 0.260 / 0.128 ms |
-| 1k | 72 / 48 | 1 / 0 | 0 / 0 | 0 / 0 | 1 | 0.030 / 0.075 ms |
-| 10k | 72 / 48 | 1 / 0 | 0 / 0 | 0 / 0 | 1 | 0.031 / 0.141 ms |
-| 100k | 72 / 48 | 1 / 0 | 0 / 0 | 0 / 0 | 1 | 0.030 / 0.134 ms |
+| --------------: | ---------------------: | --------------------------: | ----------------------------: | --------------------------: | -----------: | ---------------------------------: |
+|             100 |                72 / 48 |                       1 / 0 |                         0 / 0 |                       0 / 0 |            1 |                   0.260 / 0.128 ms |
+|              1k |                72 / 48 |                       1 / 0 |                         0 / 0 |                       0 / 0 |            1 |                   0.030 / 0.075 ms |
+|             10k |                72 / 48 |                       1 / 0 |                         0 / 0 |                       0 / 0 |            1 |                   0.031 / 0.141 ms |
+|            100k |                72 / 48 |                       1 / 0 |                         0 / 0 |                       0 / 0 |            1 |                   0.030 / 0.134 ms |
 
 The Workbench composition fixture is deliberately separate from that scaling proof. With 100 semantic items, an off-window search and a loaded cross-thread history restore each produce exactly one authoritative-state, one affected runtime, and one affected-pane publication; mark and explicit jump each produce one state and one runtime publication. Side-target reveals publish only the side runtime, preserve the main frame identity, and the inverse holds for main-target reveals.
 
@@ -934,11 +934,11 @@ Implementation commit: `0e1ad6d` (`feat: preserve off-window folds and URLs`). T
 The production-window workload primes URL and height indexes outside the timed operation, seeds a real eight-row unfolded native measurement, moves the fold target outside the mounted window, then combines a one-row fold with an explicit URL reveal. Tests hard-gate that the target is absent before and materialized afterward. Timings are diagnostic; operation counts and identity are the acceptance gates.
 
 | Complete blocks | Mounted before / after | URL builds / item visits / node visits | Height builds / block visits / visits=copies | Complete / window geometry visits | Publications | URL motion / fold publication |
-|---:|---:|---:|---:|---:|---:|---:|
-| 100 | 67 / 55 | 0 / 0 / 24 | 0 / 0 / 8=8 | 0 / 122 | 1 | 0.122 / 0.198 ms |
-| 1k | 72 / 72 | 0 / 0 / 43 | 0 / 0 / 11=11 | 0 / 144 | 1 | 0.014 / 0.141 ms |
-| 10k | 72 / 72 | 0 / 0 / 54 | 0 / 0 / 15=15 | 0 / 144 | 1 | 0.017 / 0.277 ms |
-| 100k | 72 / 72 | 0 / 0 / 67 | 0 / 0 / 18=18 | 0 / 144 | 1 | 0.042 / 0.284 ms |
+| --------------: | ---------------------: | -------------------------------------: | -------------------------------------------: | --------------------------------: | -----------: | ----------------------------: |
+|             100 |                67 / 55 |                             0 / 0 / 24 |                                  0 / 0 / 8=8 |                           0 / 122 |            1 |              0.122 / 0.198 ms |
+|              1k |                72 / 72 |                             0 / 0 / 43 |                                0 / 0 / 11=11 |                           0 / 144 |            1 |              0.014 / 0.141 ms |
+|             10k |                72 / 72 |                             0 / 0 / 54 |                                0 / 0 / 15=15 |                           0 / 144 |            1 |              0.017 / 0.277 ms |
+|            100k |                72 / 72 |                             0 / 0 / 67 |                                0 / 0 / 18=18 |                           0 / 144 |            1 |              0.042 / 0.284 ms |
 
 Every scale retained complete-plan identity, performed one height-index update, built no complete plan or height index, visited no complete-plan blocks, composed no complete geometry, and published once. Mounted work stayed at or below 72 blocks; geometry work stayed at or below two bounded 72-block compositions. URL and height-tree work grew logarithmically rather than with total transcript size.
 
@@ -969,11 +969,11 @@ Implementation commit: `9e8974e` (`perf: bound transcript tail reconciliation`).
 The executable production-runtime cell starts from an already constructed canonical fixture and windowed runtime. It measures one existing tail-item delta, then detaches, accepts one hidden tail delta with zero publication, and reattaches to the latest tail. Canonical snapshot construction, cold persistent-plan normalization, and the deliberate full-rebuild fallback are outside this timing boundary and are named in the benchmark output.
 
 | Complete blocks | Mounted after follow / reattach | Projection visits=copies | Block validation+update visits / copies | Height visits / copies | Window slice / geometry visits | Follow / hidden / reattach publications | Follow / reattach |
-|---:|---:|---:|---:|---:|---:|---:|---:|
-| 100 | 48 / 48 | 6=6 | 16 / 8 | 8 / 0 | 48 / 48 | 1 / 0 / 1 | 0.264 / 0.145 ms |
-| 1k | 48 / 48 | 9=9 | 22 / 11 | 11 / 0 | 48 / 48 | 1 / 0 / 1 | 0.116 / 0.090 ms |
-| 10k | 48 / 48 | 13=13 | 30 / 15 | 15 / 0 | 48 / 48 | 1 / 0 / 1 | 0.147 / 0.106 ms |
-| 100k | 48 / 48 | 16=16 | 36 / 18 | 18 / 0 | 48 / 48 | 1 / 0 / 1 | 0.243 / 0.170 ms |
+| --------------: | ------------------------------: | -----------------------: | --------------------------------------: | ---------------------: | -----------------------------: | --------------------------------------: | ----------------: |
+|             100 |                         48 / 48 |                      6=6 |                                  16 / 8 |                  8 / 0 |                        48 / 48 |                               1 / 0 / 1 |  0.264 / 0.145 ms |
+|              1k |                         48 / 48 |                      9=9 |                                 22 / 11 |                 11 / 0 |                        48 / 48 |                               1 / 0 / 1 |  0.116 / 0.090 ms |
+|             10k |                         48 / 48 |                    13=13 |                                 30 / 15 |                 15 / 0 |                        48 / 48 |                               1 / 0 / 1 |  0.147 / 0.106 ms |
+|            100k |                         48 / 48 |                    16=16 |                                 36 / 18 |                 18 / 0 |                        48 / 48 |                               1 / 0 / 1 |  0.243 / 0.170 ms |
 
 Every cell builds exactly one changed item, performs one projection update, one block-plan update, and one height-index update for follow and again for reattachment. Complete-plan builds and visits, height-index builds and complete block visits, and complete-geometry visits are all zero. The latest displayed canonical revision and trailing window publish together once; a measurement batch captured before reattachment is a strict no-op afterward. Timings are diagnostic; logarithmic update paths, fixed 48-block slices, identity preservation, zero hidden publication, and one coherent reattachment publication are the hard gates.
 
@@ -1005,11 +1005,11 @@ Implementation commit: `e5dfc61` (`perf: bound canonical transcript ingress`). T
 The production cell applies one identical running-tail `item.delta` at 100, 1k, 10k, and 100k render blocks. It times canonical reduction, the Workbench-style changed-item lookup, semantic projection, and runtime reconciliation separately. Bulk fixture construction, cold persistent normalization, disposable-index priming, the dense oracle, JSON equivalence, and exhaustive `N - 1` identity checks are explicitly outside timing.
 
 | Complete blocks | Mounted / publications | Canonical lookup visits (2 lookups) | Canonical update visits=copies | Semantic projection visits=copies | Text / URL builds, item visits, updates, path visits | Runtime complete-plan / height-build / complete-geometry visits | Window slice / geometry visits | Complete ingress settlement |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 100 | 48 / 1 | 12 | 6=6 | 6=6 | 0,0,1,8 / 0,0,1,8 | 0 / 0 / 0 | 48 / 48 | 1.336 ms |
-| 1k | 48 / 1 | 18 | 9=9 | 9=9 | 0,0,1,11 / 0,0,1,11 | 0 / 0 / 0 | 48 / 48 | 0.234 ms |
-| 10k | 48 / 1 | 26 | 13=13 | 13=13 | 0,0,1,15 / 0,0,1,15 | 0 / 0 / 0 | 48 / 48 | 0.381 ms |
-| 100k | 48 / 1 | 32 | 16=16 | 16=16 | 0,0,1,18 / 0,0,1,18 | 0 / 0 / 0 | 48 / 48 | 0.520 ms |
+| --------------: | ---------------------: | ----------------------------------: | -----------------------------: | --------------------------------: | ---------------------------------------------------: | --------------------------------------------------------------: | -----------------------------: | --------------------------: |
+|             100 |                 48 / 1 |                                  12 |                            6=6 |                               6=6 |                                    0,0,1,8 / 0,0,1,8 |                                                       0 / 0 / 0 |                        48 / 48 |                    1.336 ms |
+|              1k |                 48 / 1 |                                  18 |                            9=9 |                               9=9 |                                  0,0,1,11 / 0,0,1,11 |                                                       0 / 0 / 0 |                        48 / 48 |                    0.234 ms |
+|             10k |                 48 / 1 |                                  26 |                          13=13 |                             13=13 |                                  0,0,1,15 / 0,0,1,15 |                                                       0 / 0 / 0 |                        48 / 48 |                    0.381 ms |
+|            100k |                 48 / 1 |                                  32 |                          16=16 |                             16=16 |                                  0,0,1,18 / 0,0,1,18 |                                                       0 / 0 / 0 |                        48 / 48 |                    0.520 ms |
 
 Every cell preserves `N - 1` canonical item identities and `N - 1` semantic projection identities. Canonical and semantic record work follows logarithmic paths; text-length and URL indexes perform one logarithmic update each with zero builds and zero complete item visits. The runtime then performs the already verified one projection, block-plan, and height-index update, composes exactly 48 window blocks, and publishes once. Timings are diagnostic curves; identity, semantic equivalence, zero complete work, logarithmic paths, and fixed mounted/window work are the gates.
 
@@ -1074,11 +1074,11 @@ Implementation commit: `4189d25` (`perf: suspend hidden transcript presentations
 The production probe mounts the real presentation snapshot hook, runtime hook, layout hook, and `TranscriptViewport`. Its visible setup proves the bridge is live with one presentation subscription, one UI runtime subscription, one renderer `FRAME` listener, and accepted measurement reports. It then hides the pane, publishes both a retained-runtime tail update and a presentation update, forces renderer settlement, and reveals the pane at the latest revision.
 
 | Complete blocks | Mounted before / hidden / after | Hidden transcript / spacer roots | Hidden `FRAME` listeners / measurement reports | Hidden presentation / UI runtime subscriptions | Hidden presentation notifications / React commits / renders | Retained runtime publications | Latest revision on reveal | Publication + forced-flush settlement |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 100 | 24 / 0 / 24 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 / 0 | 1 | 1 | 33.019 ms |
-| 1k | 24 / 0 / 24 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 / 0 | 1 | 1 | 33.839 ms |
-| 10k | 24 / 0 / 24 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 / 0 | 1 | 1 | 37.008 ms |
-| 100k | 24 / 0 / 24 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 / 0 | 1 | 1 | 29.602 ms |
+| --------------: | ------------------------------: | -------------------------------: | ---------------------------------------------: | ---------------------------------------------: | ----------------------------------------------------------: | ----------------------------: | ------------------------: | ------------------------------------: |
+|             100 |                     24 / 0 / 24 |                            0 / 0 |                                          0 / 0 |                                          0 / 0 |                                                   0 / 0 / 0 |                             1 |                         1 |                             33.019 ms |
+|              1k |                     24 / 0 / 24 |                            0 / 0 |                                          0 / 0 |                                          0 / 0 |                                                   0 / 0 / 0 |                             1 |                         1 |                             33.839 ms |
+|             10k |                     24 / 0 / 24 |                            0 / 0 |                                          0 / 0 |                                          0 / 0 |                                                   0 / 0 / 0 |                             1 |                         1 |                             37.008 ms |
+|            100k |                     24 / 0 / 24 |                            0 / 0 |                                          0 / 0 |                                          0 / 0 |                                                   0 / 0 / 0 |                             1 |                         1 |                             29.602 ms |
 
 The one retained-runtime publication is intentional cache reconciliation and is observed by a diagnostic listener, not by the hidden UI. Every UI resource and publication count is identically zero across the recorded range, and reveal remounts exactly 24 blocks at the newest canonical revision. The timings include runtime and presentation publication plus forced renderer flushing and are one-sample machine diagnostics; mounted/native/measurement/publication operation counts are the hard gates. The connected controller regression separately proves the Workbench-owned runtime object retains identity across maximize, close, and reveal.
 
@@ -1110,11 +1110,11 @@ Implementation commit: `70733dc` (`perf: bound structural transcript admission`)
 The structural fixture uses the same one-semantic-item-per-turn workload at 100/1k/10k/100k complete render blocks. Setup bulk construction, cold persistent normalization, disposable-index priming, complete references, and exhaustive identity checks are excluded from timing but remain asserted. The measured boundary contains both canonical reductions, semantic projection, runtime reconciliation, window planning, and two synchronous runtime publications.
 
 | Complete blocks before | Mounted after | Publications | Historical item / turn / projection / block identities preserved | Complete plan / order / height / geometry builds or visits | Plan + height appends | Maximum persistent path work | Text / URL complete builds or visits | Complete two-event settlement |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 100 | 48 | 2 | 100 / 100 / 100 / 100 | 0 | 1 / 1 | 8 | 0 / 0 | 1.007 ms |
-| 1k | 48 | 2 | 1k / 1k / 1k / 1k | 0 | 1 / 1 | 11 | 0 / 0 | 0.379 ms |
-| 10k | 48 | 2 | 10k / 10k / 10k / 10k | 0 | 1 / 1 | 15 | 0 / 0 | 0.572 ms |
-| 100k | 48 | 2 | 100k / 100k / 100k / 100k | 0 | 1 / 1 | 18 | 0 / 0 | 1.236 ms |
+| ---------------------: | ------------: | -----------: | ---------------------------------------------------------------: | ---------------------------------------------------------: | --------------------: | ---------------------------: | -----------------------------------: | ----------------------------: |
+|                    100 |            48 |            2 |                                            100 / 100 / 100 / 100 |                                                          0 |                 1 / 1 |                            8 |                                0 / 0 |                      1.007 ms |
+|                     1k |            48 |            2 |                                                1k / 1k / 1k / 1k |                                                          0 |                 1 / 1 |                           11 |                                0 / 0 |                      0.379 ms |
+|                    10k |            48 |            2 |                                            10k / 10k / 10k / 10k |                                                          0 |                 1 / 1 |                           15 |                                0 / 0 |                      0.572 ms |
+|                   100k |            48 |            2 |                                        100k / 100k / 100k / 100k |                                                          0 |                 1 / 1 |                           18 |                                0 / 0 |                      1.236 ms |
 
 Every cell also performs one text-length and one URL index append, visits at most 48 window blocks, and equals the complete canonical reducer and pass-through transcript frame. The logarithmic path depth is the only total-size term; mounted work, publications, complete-history work, and historical identity replacement are invariant. Timings are one-sample machine diagnostics, not acceptance thresholds.
 
@@ -1123,11 +1123,11 @@ Every cell also performs one text-length and one URL index append, visits at mos
 The production probe starts only after the initial runtime, React/OpenTUI tree, and native geometry have fully settled. It then admits the same empty-turn/item sequence through `TranscriptRuntime`, the real runtime hook, `TranscriptViewport`, native roots, and rendered-block measurement. This deliberately measures the presentation boundary rather than claiming controller-driven end-to-end timing.
 
 | Complete blocks before | Mounted roots before → after | Retained / mounted / unmounted roots | Runtime publications | Empty / item React commits | Candidate / attempted / measured blocks | Measurement publications | Item runtime update | Item React Profiler duration | Post-runtime React/native settlement |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 100 | 24 → 25 | 24 / 1 / 0 | 2 | 1 / 1 | 1 / 1 / 1 | 1 | 0.186 ms | 0.455 ms | 36.5 ms |
-| 1k | 24 → 25 | 24 / 1 / 0 | 2 | 1 / 1 | 1 / 1 / 1 | 1 | 0.268 ms | 0.410 ms | 38.8 ms |
-| 10k | 24 → 25 | 24 / 1 / 0 | 2 | 1 / 1 | 1 / 1 / 1 | 1 | 0.225 ms | 0.470 ms | 43.4 ms |
-| 100k | 24 → 25 | 24 / 1 / 0 | 2 | 1 / 1 | 1 / 1 / 1 | 1 | 0.719 ms | 0.461 ms | 334.7 ms |
+| ---------------------: | ---------------------------: | -----------------------------------: | -------------------: | -------------------------: | --------------------------------------: | -----------------------: | ------------------: | ---------------------------: | -----------------------------------: |
+|                    100 |                      24 → 25 |                           24 / 1 / 0 |                    2 |                      1 / 1 |                               1 / 1 / 1 |                        1 |            0.186 ms |                     0.455 ms |                              36.5 ms |
+|                     1k |                      24 → 25 |                           24 / 1 / 0 |                    2 |                      1 / 1 |                               1 / 1 / 1 |                        1 |            0.268 ms |                     0.410 ms |                              38.8 ms |
+|                    10k |                      24 → 25 |                           24 / 1 / 0 |                    2 |                      1 / 1 |                               1 / 1 / 1 |                        1 |            0.225 ms |                     0.470 ms |                              43.4 ms |
+|                   100k |                      24 → 25 |                           24 / 1 / 0 |                    2 |                      1 / 1 |                               1 / 1 / 1 |                        1 |            0.719 ms |                     0.461 ms |                             334.7 ms |
 
 Mounted, retained, publication, commit, candidate, attempted-measurement, accepted-measurement, and measurement-publication counts are identical across the recorded range. Runtime update and React Profiler curves remain bounded. The combined 100k post-runtime settlement rises inside OpenTUI's test-renderer `setup.flush()` despite unchanged native work counts; that machine-specific curve is retained as a diagnostic rather than presented as a flat timing result.
 
@@ -1158,11 +1158,11 @@ Implementation commit: `43d9a9b` (`perf: bound detached unseen accumulation`). T
 The measured workload starts with the same complete semantic backlog and a separately seeded private hidden-damage backlog at 100/1k/10k/100k. Text-length and URL indexes are explicitly primed before the boundary. The seed is proved rather than inferred: every scale records one merge, exactly `N` input visits, exactly `N` unique additions, and zero snapshot work. The measured sequence is one empty turn, one first unseen item, one repeat delta for that item, and one presentation-only publication.
 
 | Complete blocks / unseen backlog | Mounted | Hidden content / presentation publications | Unseen membership visits | Sequence append / membership-index update visits / copied nodes | Measured hidden merges / input visits / additions / snapshots | Complete plan, height, or geometry work | Hidden settlement |
-|---:|---:|---:|---:|---:|---:|---:|---:|
-| 100 | 48 | 0 / 1 | 14 | 3 / 8 / 10 | 3 / 2 / 1 / 0 | 0 | 0.346 ms |
-| 1k | 48 | 0 / 1 | 20 | 6 / 11 / 13 | 3 / 2 / 1 / 0 | 0 | 0.220 ms |
-| 10k | 48 | 0 / 1 | 28 | 5 / 15 / 17 | 3 / 2 / 1 / 0 | 0 | 0.425 ms |
-| 100k | 48 | 0 / 1 | 34 | 6 / 18 / 20 | 3 / 2 / 1 / 0 | 0 | 0.973 ms |
+| -------------------------------: | ------: | -----------------------------------------: | -----------------------: | --------------------------------------------------------------: | ------------------------------------------------------------: | --------------------------------------: | ----------------: |
+|                              100 |      48 |                                      0 / 1 |                       14 |                                                      3 / 8 / 10 |                                                 3 / 2 / 1 / 0 |                                       0 |          0.346 ms |
+|                               1k |      48 |                                      0 / 1 |                       20 |                                                     6 / 11 / 13 |                                                 3 / 2 / 1 / 0 |                                       0 |          0.220 ms |
+|                              10k |      48 |                                      0 / 1 |                       28 |                                                     5 / 15 / 17 |                                                 3 / 2 / 1 / 0 |                                       0 |          0.425 ms |
+|                             100k |      48 |                                      0 / 1 |                       34 |                                                     6 / 18 / 20 |                                                 3 / 2 / 1 / 0 |                                       0 |          0.973 ms |
 
 Every scale performs two indexed membership checks, one append, zero unseen normalization visits, zero cold text/URL builds or visits, two text/URL index updates, and zero hidden-damage snapshot visits inside the measured interval. The only total-size terms are logarithmic persistent paths. The separately measured side-child inherited-turn miss performs one lookup, zero normalization visits, and 6/9/13/16 membership-node visits across 100/1k/10k/100k.
 
@@ -1171,11 +1171,11 @@ Every scale performs two indexed membership checks, one append, zero unseen norm
 The production probe starts with a fully settled detached frame and complete semantic unseen backlog. It routes a distinct `item.started` through the real Workbench projection and publication selector, `useVisiblePresentationSnapshot`, the owned runtime subscription, `TranscriptViewport`, native roots, and `useTranscriptLayout`. It drains two quiescent zero-attempt setup passes before beginning the measured interval and cumulatively observes every later scheduler pass.
 
 | Complete blocks | Mounted roots | Distinct item: Workbench / runtime / React publications | Measurement passes / attempts / reports | Retained / mounted / unmounted roots | Repeat delta: publications / passes / attempts / reports | Distinct / repeat settlement |
-|---:|---:|---:|---:|---:|---:|---:|
-| 100 | 24 | 1 / 0 / 1 | 2 / 0 / 0 | 24 / 0 / 0 | 0 / 0 / 0 / 0 | 18.989 / 0.226 ms |
-| 1k | 24 | 1 / 0 / 1 | 2 / 0 / 0 | 24 / 0 / 0 | 0 / 0 / 0 / 0 | 16.448 / 0.097 ms |
-| 10k | 24 | 1 / 0 / 1 | 2 / 0 / 0 | 24 / 0 / 0 | 0 / 0 / 0 / 0 | 17.823 / 0.124 ms |
-| 100k | 24 | 1 / 0 / 1 | 2 / 0 / 0 | 24 / 0 / 0 | 0 / 0 / 0 / 0 | 1.496 / 0.345 ms |
+| --------------: | ------------: | ------------------------------------------------------: | --------------------------------------: | -----------------------------------: | -------------------------------------------------------: | ---------------------------: |
+|             100 |            24 |                                               1 / 0 / 1 |                               2 / 0 / 0 |                           24 / 0 / 0 |                                            0 / 0 / 0 / 0 |            18.989 / 0.226 ms |
+|              1k |            24 |                                               1 / 0 / 1 |                               2 / 0 / 0 |                           24 / 0 / 0 |                                            0 / 0 / 0 / 0 |            16.448 / 0.097 ms |
+|             10k |            24 |                                               1 / 0 / 1 |                               2 / 0 / 0 |                           24 / 0 / 0 |                                            0 / 0 / 0 / 0 |            17.823 / 0.124 ms |
+|            100k |            24 |                                               1 / 0 / 1 |                               2 / 0 / 0 |                           24 / 0 / 0 |                                            0 / 0 / 0 / 0 |             1.496 / 0.345 ms |
 
 The direct runtime/native hidden-delta cell independently retains 34 mounted roots with zero runtime publications, React commits, mounts, or unmounts at every scale. The native cleanup regression remains exact: the scheduler records every pruned logical key and the benchmark compares the sorted key set against the same captured pre-publication frame. Native-only runs passed at 48×18, 80×24, and 140×40; the widest overlapping movement pruned exactly the 14 departed measured keys rather than comparing against a later geometry-shifted window.
 
@@ -1208,11 +1208,11 @@ Implementation commit: `f55ad57` (`perf: bound active tail completion`). This sl
 The production runtime workload begins only after the identical `N`-block history plus one running final item has been admitted and all cold setup has completed. It then applies one duration-bearing `turn.completed`, checks Workbench's exact damage result, reduces the canonical turn, and reconciles the follow presentation. Bulk fixture construction, initial tail admission, cold indexes, complete reference construction, and exhaustive identity audits are outside the measured boundary but remain asserted. Workbench damage-selection timing is diagnostic only; its deterministic gate is the exact damage result.
 
 | Historical blocks | Complete blocks before → after | Mounted / publications | Canonical turn lookup / update visits=copies | Plan visits / copies | Height visits / copies | Window slice / geometry visits | Runtime reconciliation |
-|---:|---:|---:|---:|---:|---:|---:|---:|
-| 100 | 101 → 102 | 47 / 1 | 7 / 7=7 | 27 / 20 | 18 / 11 | 47 / 47 | 0.227 ms |
-| 1k | 1,001 → 1,002 | 47 / 1 | 10 / 10=10 | 36 / 26 | 24 / 14 | 47 / 47 | 0.134 ms |
-| 10k | 10,001 → 10,002 | 47 / 1 | 14 / 14=14 | 45 / 32 | 30 / 17 | 47 / 47 | 0.123 ms |
-| 100k | 100,001 → 100,002 | 47 / 1 | 17 / 17=17 | 57 / 40 | 38 / 21 | 47 / 47 | 0.383 ms |
+| ----------------: | -----------------------------: | ---------------------: | -------------------------------------------: | -------------------: | ---------------------: | -----------------------------: | ---------------------: |
+|               100 |                      101 → 102 |                 47 / 1 |                                      7 / 7=7 |              27 / 20 |                18 / 11 |                        47 / 47 |               0.227 ms |
+|                1k |                  1,001 → 1,002 |                 47 / 1 |                                   10 / 10=10 |              36 / 26 |                24 / 14 |                        47 / 47 |               0.134 ms |
+|               10k |                10,001 → 10,002 |                 47 / 1 |                                   14 / 14=14 |              45 / 32 |                30 / 17 |                        47 / 47 |               0.123 ms |
+|              100k |              100,001 → 100,002 |                 47 / 1 |                                   17 / 17=17 |              57 / 40 |                38 / 21 |                        47 / 47 |               0.383 ms |
 
 Every cell performs one canonical turn-record update, one item-block rebuild, two block-plan updates, and two height-index updates. Complete-plan builds and block visits, height-index builds and block visits, complete-geometry visits, order/text/URL builds and item visits, and semantic index updates are all zero. The two changed tail payloads equal the complete reference, all `N` historical block/item/turn/projection identities are preserved, and scale-derived assertions bound canonical, plan, and height work logarithmically. Timings are one-sample machine diagnostics; identity, equivalence, operation counts, and fixed mounted/window work are the gates.
 
@@ -1221,11 +1221,11 @@ Every cell performs one canonical turn-record update, one item-block rebuild, tw
 The isolated native probe starts after the initial runtime, React/OpenTUI tree, running-tail admission, and native geometry have settled. Each size runs in its own process at 80×24. It drives the same completion through `TranscriptRuntime`, the real runtime hook, `TranscriptViewport`, native block roots, and rendered-layout measurement; it does not claim a connected Workbench-controller boundary.
 
 | Historical blocks | Mounted roots before → after | Retained / mounted / unmounted | Runtime publications / React commits | Measurement candidates / attempts / accepted | Measurement publications / tracked roots |
-|---:|---:|---:|---:|---:|---:|
-| 100 | 24 → 25 | 24 / 1 / 0 | 1 / 1 | 2 / 2 / 2 | 1 / 25 |
-| 1k | 24 → 25 | 24 / 1 / 0 | 1 / 1 | 2 / 2 / 2 | 1 / 25 |
-| 10k | 24 → 25 | 24 / 1 / 0 | 1 / 1 | 2 / 2 / 2 | 1 / 25 |
-| 100k | 24 → 25 | 24 / 1 / 0 | 1 / 1 | 2 / 2 / 2 | 1 / 25 |
+| ----------------: | ---------------------------: | -----------------------------: | -----------------------------------: | -------------------------------------------: | ---------------------------------------: |
+|               100 |                      24 → 25 |                     24 / 1 / 0 |                                1 / 1 |                                    2 / 2 / 2 |                                   1 / 25 |
+|                1k |                      24 → 25 |                     24 / 1 / 0 |                                1 / 1 |                                    2 / 2 / 2 |                                   1 / 25 |
+|               10k |                      24 → 25 |                     24 / 1 / 0 |                                1 / 1 |                                    2 / 2 / 2 |                                   1 / 25 |
+|              100k |                      24 → 25 |                     24 / 1 / 0 |                                1 / 1 |                                    2 / 2 / 2 |                                   1 / 25 |
 
 Mounted-root churn, runtime publication, React commit, scheduler candidates, native measurement, accepted height corrections, measurement publication, and tracked-root counts are exact and identical across the required range. The benchmark also requires the acknowledgement pass to settle with no further correction. Native settlement timings remain diagnostic curves and are not acceptance thresholds.
 
@@ -1257,24 +1257,24 @@ Implementation commit: `c951371` (`perf: window completed command output`). This
 The exact-size workload adjusts historical roots so the complete production plan contains exactly 100, 1,000, 10,000, or 100,000 render blocks after inserting one 56-fragment command and its activity row. Cold construction is recorded separately and remains proportional to semantic input. The warm detached reveal is the gate.
 
 | Complete render blocks | Historical roots | Command fragments | Largest fragment source span | Follow / detached mounted blocks | Target lookup visits | Height visits | Warm full plan / height builds |
-|---:|---:|---:|---:|---:|---:|---:|---:|
-| 100 | 43 | 56 | 4,095 | 3 / 2 | 8 | 57 | 0 / 0 |
-| 1k | 943 | 56 | 4,095 | 3 / 2 | 8 | 86 | 0 / 0 |
-| 10k | 9,943 | 56 | 4,095 | 3 / 2 | 8 | 108 | 0 / 0 |
-| 100k | 99,943 | 56 | 4,095 | 3 / 2 | 8 | 138 | 0 / 0 |
+| ---------------------: | ---------------: | ----------------: | ---------------------------: | -------------------------------: | -------------------: | ------------: | -----------------------------: |
+|                    100 |               43 |                56 |                        4,095 |                            3 / 2 |                    8 |            57 |                          0 / 0 |
+|                     1k |              943 |                56 |                        4,095 |                            3 / 2 |                    8 |            86 |                          0 / 0 |
+|                    10k |            9,943 |                56 |                        4,095 |                            3 / 2 |                    8 |           108 |                          0 / 0 |
+|                   100k |           99,943 |                56 |                        4,095 |                            3 / 2 |                    8 |           138 |                          0 / 0 |
 
 Every cell preserves all 56 fragment identities across the warm operation, publishes once, performs two window-slice and two window-geometry visits, performs zero complete-geometry or order-index work, and equals the full semantic reference. Target lookup stays below the asserted logarithmic bound of nine visits; height work is logarithmically bounded. Machine timings are diagnostic only.
 
 The connected React/OpenTUI probe at 80×24 also has identical deterministic command-fragment counts at every scale:
 
-| Metric | 100 | 1k | 10k | 100k |
-|---|---:|---:|---:|---:|
-| Final follow / detached native roots | 2 / 2 | 2 / 2 | 2 / 2 | 2 / 2 |
-| Follow initial candidates / attempts / changes | 3 / 3 / 3 | 3 / 3 / 3 | 3 / 3 / 3 | 3 / 3 / 3 |
+| Metric                                                 |       100 |        1k |       10k |      100k |
+| ------------------------------------------------------ | --------: | --------: | --------: | --------: |
+| Final follow / detached native roots                   |     2 / 2 |     2 / 2 |     2 / 2 |     2 / 2 |
+| Follow initial candidates / attempts / changes         | 3 / 3 / 3 | 3 / 3 / 3 | 3 / 3 / 3 | 3 / 3 / 3 |
 | Follow acknowledgement candidates / attempts / changes | 2 / 2 / 0 | 2 / 2 / 0 | 2 / 2 / 0 | 2 / 2 / 0 |
-| Detached initial candidates / attempts / changes | 2 / 2 / 2 | 2 / 2 / 2 | 2 / 2 / 2 | 2 / 2 / 2 |
-| Detached acknowledgement passes / attempts / changes | 2 / 3 / 1 | 2 / 3 / 1 | 2 / 3 / 1 | 2 / 3 / 1 |
-| Reveal / measurement-settlement / total React commits | 1 / 2 / 3 | 1 / 2 / 3 | 1 / 2 / 3 | 1 / 2 / 3 |
+| Detached initial candidates / attempts / changes       | 2 / 2 / 2 | 2 / 2 / 2 | 2 / 2 / 2 | 2 / 2 / 2 |
+| Detached acknowledgement passes / attempts / changes   | 2 / 3 / 1 | 2 / 3 / 1 | 2 / 3 / 1 | 2 / 3 / 1 |
+| Reveal / measurement-settlement / total React commits  | 1 / 2 / 3 | 1 / 2 / 3 | 1 / 2 / 3 | 1 / 2 / 3 |
 
 Both follow and detached acknowledgement sequences finish with zero pending measurements. Follow publishes geometry once and needs no acknowledgement publication; detached publishes its initial measurement and one correction. The complete settlement timer spans reveal through the final acknowledgement flush/render, while call-only timings remain separately labeled.
 
@@ -1302,19 +1302,19 @@ Implementation commit: `7199774` (`perf: bound oversized transcript content`). T
 
 The core workload keeps 100, 1,000, 10,000, or 100,000 historical render blocks constant and adds the identical oversized semantic item. Command output retains its exact-size Stage 5.5h cell; Markdown and diff report their fixed additional fragment plans separately because the 128-file fixture itself exceeds the 100-block cell.
 
-| Shape | Stable fragments | Largest source span | Follow mounted blocks | Detached mounted blocks | Warm publications | Warm complete-plan / height builds |
-|---|---:|---:|---:|---:|---:|---:|
-| Markdown | 88 | 1,716 | 3 | 4 | 1 | 0 / 0 |
-| Split diff | 128 | 235 | 6 | 7 | 1 | 0 / 0 |
+| Shape      | Stable fragments | Largest source span | Follow mounted blocks | Detached mounted blocks | Warm publications | Warm complete-plan / height builds |
+| ---------- | ---------------: | ------------------: | --------------------: | ----------------------: | ----------------: | ---------------------------------: |
+| Markdown   |               88 |               1,716 |                     3 |                       4 |                 1 |                              0 / 0 |
+| Split diff |              128 |                 235 |                     6 |                       7 |                 1 |                              0 / 0 |
 
 These counts and all fragment identities are exact across 100/1k/10k/100k. Warm reveal performs zero complete-plan, height-index, complete-geometry, or order-index work and visits only the bounded materialized window. The full windowed frame equals the complete reference at every scale.
 
 The connected 80×24 React/OpenTUI measurement probe includes production detached prepositioning, exact mounted-root identity, per-root descendant bounds, measurement acknowledgement, geometry pruning, and cleanup:
 
-| Shape | Follow roots / descendants / max per root | Detached roots / descendants / max per root | Settlement pass ceiling | Final changed / pending | Reveal publications / React commits |
-|---|---:|---:|---:|---:|---:|
-| Markdown | 3 / 39 / 16 | 16 / 103 / 16 | 8 | 0 / 0 | 1 / 1 |
-| Split diff | 9 / 95 / 11 | 21 / 160 / 16 | 8 | 0 / 0 | 1 / 1 |
+| Shape      | Follow roots / descendants / max per root | Detached roots / descendants / max per root | Settlement pass ceiling | Final changed / pending | Reveal publications / React commits |
+| ---------- | ----------------------------------------: | ------------------------------------------: | ----------------------: | ----------------------: | ----------------------------------: |
+| Markdown   |                               3 / 39 / 16 |                               16 / 103 / 16 |                       8 |                   0 / 0 |                               1 / 1 |
+| Split diff |                               9 / 95 / 11 |                               21 / 160 / 16 |                       8 |                   0 / 0 |                               1 / 1 |
 
 Fragment, mounted-root, descendant, publication, pass-count, identity, pruning, and final-settlement gates are identical across the four history sizes. Every native pass is additionally bounded by its currently mounted roots. OpenTUI may coalesce dirty events differently between frames, so per-pass cached reinspection counts and retained Markdown/table point counts are emitted as diagnostics rather than required to be byte-identical. They retain hard history-independent bounds of eight passes and mounted roots times the fragment source cap. Timings remain diagnostic curves.
 

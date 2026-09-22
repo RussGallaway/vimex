@@ -5,9 +5,24 @@ export * from "./vim/composer-grammar"
 export * from "./focus/focus-controller"
 export { parseCommand, validateCommand } from "./commands/parser"
 export type { ExCommand } from "./commands/parser"
-export { commandNames, commandDescriptions, commandDescriptors, commandArgumentChoices, resolveCommandName } from "./commands/registry"
-export type { CommandName, CommandDescriptor, CommandCompletionOptions } from "./commands/registry"
-export { initialCommandHistory, recordCommand, recallCommand, commandCompletions } from "./commands/command-line"
+export {
+  commandNames,
+  commandDescriptions,
+  commandDescriptors,
+  commandArgumentChoices,
+  resolveCommandName,
+} from "./commands/registry"
+export type {
+  CommandName,
+  CommandDescriptor,
+  CommandCompletionOptions,
+} from "./commands/registry"
+export {
+  initialCommandHistory,
+  recordCommand,
+  recallCommand,
+  commandCompletions,
+} from "./commands/command-line"
 export type { CommandHistory } from "./commands/command-line"
 export * from "./vim/composer-buffer"
 

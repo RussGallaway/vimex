@@ -10,7 +10,10 @@ export interface CliOptions {
   help: boolean
   version: boolean
 }
-export function parseCliOptions(args: readonly string[], cwd = process.cwd()): CliOptions {
+export function parseCliOptions(
+  args: readonly string[],
+  cwd = process.cwd(),
+): CliOptions {
   const options: CliOptions = { cwd, demo: false, help: false, version: false }
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]
@@ -19,7 +22,8 @@ export function parseCliOptions(args: readonly string[], cwd = process.cwd()): C
     else if (arg === "--demo") options.demo = true
     else if (["--cwd", "--thread", "--model", "--config"].includes(arg ?? "")) {
       const value = args[++i]
-      if (!value || value.startsWith("--")) throw new Error(`${arg} requires a value`)
+      if (!value || value.startsWith("--"))
+        throw new Error(`${arg} requires a value`)
       if (arg === "--cwd") options.cwd = resolve(cwd, value)
       else if (arg === "--thread") options.thread = value
       else if (arg === "--model") options.model = value

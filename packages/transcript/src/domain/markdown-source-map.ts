@@ -2,8 +2,10 @@ import type { SourceSpan, TextProjection } from "./transcript-document"
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 
-export const graphemes = (value: string): string[] => [...segmenter.segment(value)].map(({ segment }) => segment)
-export const graphemeCount = (value: string): number => [...segmenter.segment(value)].length
+export const graphemes = (value: string): string[] =>
+  [...segmenter.segment(value)].map(({ segment }) => segment)
+export const graphemeCount = (value: string): number =>
+  [...segmenter.segment(value)].length
 
 interface ProjectionBuilder {
   plain: string
@@ -25,7 +27,12 @@ interface ReferenceDefinition {
 
 type ReferenceMap = ReadonlyMap<string, ReferenceDefinition>
 
-function emit(builder: ProjectionBuilder, source: string, from: number, to: number): void {
+function emit(
+  builder: ProjectionBuilder,
+  source: string,
+  from: number,
+  to: number,
+): void {
   const value = source.slice(from, to)
   builder.plain += value
   for (let offset = 0; offset < value.length; offset++) {
@@ -33,18 +40,30 @@ function emit(builder: ProjectionBuilder, source: string, from: number, to: numb
   }
 }
 
-function emitMapped(builder: ProjectionBuilder, value: string, from: number, to: number): void {
+function emitMapped(
+  builder: ProjectionBuilder,
+  value: string,
+  from: number,
+  to: number,
+): void {
   builder.plain += value
-  for (let offset = 0; offset < value.length; offset++) builder.charSpans.push({ from, to })
+  for (let offset = 0; offset < value.length; offset++)
+    builder.charSpans.push({ from, to })
 }
 
 function isEscaped(source: string, index: number): boolean {
   let slashes = 0
-  for (let cursor = index - 1; cursor >= 0 && source[cursor] === "\\"; cursor--) slashes++
+  for (let cursor = index - 1; cursor >= 0 && source[cursor] === "\\"; cursor--)
+    slashes++
   return slashes % 2 === 1
 }
 
-function findClosing(source: string, open: number, token: string, limit: number): number {
+function findClosing(
+  source: string,
+  open: number,
+  token: string,
+  limit: number,
+): number {
   let cursor = open + token.length
   while (cursor < limit) {
     const found = source.indexOf(token, cursor)
@@ -55,7 +74,12 @@ function findClosing(source: string, open: number, token: string, limit: number)
   return -1
 }
 
-function findClosingCodeRun(source: string, open: number, width: number, limit: number): number {
+function findClosingCodeRun(
+  source: string,
+  open: number,
+  width: number,
+  limit: number,
+): number {
   let cursor = open + width
   while (cursor < limit) {
     const found = source.indexOf("`", cursor)
@@ -68,7 +92,13 @@ function findClosingCodeRun(source: string, open: number, width: number, limit: 
   return -1
 }
 
-function findBalanced(source: string, open: number, opening: string, closing: string, limit: number): number {
+function findBalanced(
+  source: string,
+  open: number,
+  opening: string,
+  closing: string,
+  limit: number,
+): number {
   let depth = 0
   for (let cursor = open; cursor < limit; cursor++) {
     if (isEscaped(source, cursor)) continue
@@ -90,7 +120,9 @@ function definitionTitle(value: string): boolean {
   return /^(?:"[^"]*"|'[^']*'|\([^)]*\))[ \t]*$/.test(value.trim())
 }
 
-function definitionDestination(value: string): { url: string; rest: string } | undefined {
+function definitionDestination(
+  value: string,
+): { url: string; rest: string } | undefined {
   const trimmed = value.trimStart()
   if (trimmed.startsWith("<")) {
     const end = trimmed.indexOf(">", 1)
@@ -110,10 +142,15 @@ function definitionDestination(value: string): { url: string; rest: string } | u
     if (character === ")" && --depth < 0) return undefined
     cursor++
   }
-  return cursor > 0 && depth === 0 ? { url: trimmed.slice(0, cursor), rest: trimmed.slice(cursor) } : undefined
+  return cursor > 0 && depth === 0
+    ? { url: trimmed.slice(0, cursor), rest: trimmed.slice(cursor) }
+    : undefined
 }
 
-function referenceDefinitions(lines: readonly SourceLine[]): { definitions: Map<string, ReferenceDefinition>; lines: Set<number> } {
+function referenceDefinitions(lines: readonly SourceLine[]): {
+  definitions: Map<string, ReferenceDefinition>
+  lines: Set<number>
+} {
   const definitions = new Map<string, ReferenceDefinition>()
   const definitionLines = new Set<number>()
   let fence: { marker: "`" | "~"; width: number } | undefined
@@ -122,7 +159,8 @@ function referenceDefinitions(lines: readonly SourceLine[]): { definitions: Map<
     const definitionStart = index
     if (fence) {
       const close = /^( {0,3})(`{3,}|~{3,})[ \t]*$/.exec(line.value)
-      if (close?.[2]?.[0] === fence.marker && close[2].length >= fence.width) fence = undefined
+      if (close?.[2]?.[0] === fence.marker && close[2].length >= fence.width)
+        fence = undefined
       continue
     }
     const open = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(line.value)
@@ -142,20 +180,36 @@ function referenceDefinitions(lines: readonly SourceLine[]): { definitions: Map<
       destinationText = continuation.value
     }
     const destination = definitionDestination(destinationText)
-    if (!destination || (destination.rest.trim() && !definitionTitle(destination.rest))) continue
+    if (
+      !destination ||
+      (destination.rest.trim() && !definitionTitle(destination.rest))
+    )
+      continue
     let finalLine = destinationLine
-    if (!destination.rest.trim() && lines[destinationLine + 1] && /^ {0,3}(?:"[^"]*"|'[^']*'|\([^)]*\))[ \t]*$/.test(lines[destinationLine + 1]!.value)) {
+    if (
+      !destination.rest.trim() &&
+      lines[destinationLine + 1] &&
+      /^ {0,3}(?:"[^"]*"|'[^']*'|\([^)]*\))[ \t]*$/.test(
+        lines[destinationLine + 1]!.value,
+      )
+    ) {
       finalLine = destinationLine + 1
     }
     const normalized = normalizeReferenceLabel(label)
-    if (!definitions.has(normalized)) definitions.set(normalized, { url: unescapeMarkdown(destination.url) })
-    for (let consumed = definitionStart; consumed <= finalLine; consumed++) definitionLines.add(lines[consumed]!.from)
+    if (!definitions.has(normalized))
+      definitions.set(normalized, { url: unescapeMarkdown(destination.url) })
+    for (let consumed = definitionStart; consumed <= finalLine; consumed++)
+      definitionLines.add(lines[consumed]!.from)
     index = finalLine
   }
   return { definitions, lines: definitionLines }
 }
 
-function linkDestination(source: string, open: number, close: number): string | undefined {
+function linkDestination(
+  source: string,
+  open: number,
+  close: number,
+): string | undefined {
   let cursor = open + 1
   while (cursor < close && /\s/.test(source[cursor]!)) cursor++
   if (source[cursor] === "<") {
@@ -179,15 +233,23 @@ function linkDestination(source: string, open: number, close: number): string | 
     }
     cursor++
   }
-  return cursor > start ? unescapeMarkdown(source.slice(start, cursor)) : undefined
+  return cursor > start
+    ? unescapeMarkdown(source.slice(start, cursor))
+    : undefined
 }
 
 function bareUrl(source: string, from: number, to: number): string | undefined {
-  const candidate = /^(?:https?|file):\/\/[^\s<>]+/.exec(source.slice(from, to))?.[0]
+  const candidate = /^(?:https?|file):\/\/[^\s<>]+/.exec(
+    source.slice(from, to),
+  )?.[0]
   if (!candidate) return undefined
   let end = candidate.length
   while (end > 0 && /[.,;:!?"']/.test(candidate[end - 1]!)) end--
-  const pairs: readonly [string, string][] = [["(", ")"], ["[", "]"], ["{", "}"]]
+  const pairs: readonly [string, string][] = [
+    ["(", ")"],
+    ["[", "]"],
+    ["{", "}"],
+  ]
   let changed = true
   while (changed && end > 0) {
     changed = false
@@ -203,29 +265,53 @@ function bareUrl(source: string, from: number, to: number): string | undefined {
   return candidate.slice(0, end)
 }
 
-function emitCodeSpan(builder: ProjectionBuilder, source: string, from: number, to: number): void {
+function emitCodeSpan(
+  builder: ProjectionBuilder,
+  source: string,
+  from: number,
+  to: number,
+): void {
   const pieces: { value: string; from: number; to: number }[] = []
   let cursor = from
   while (cursor < to) {
     if (source[cursor] === "\r" || source[cursor] === "\n") {
-      const width = source[cursor] === "\r" && source[cursor + 1] === "\n" ? 2 : 1
+      const width =
+        source[cursor] === "\r" && source[cursor + 1] === "\n" ? 2 : 1
       pieces.push({ value: " ", from: cursor, to: cursor + width })
       cursor += width
       continue
     }
     const width = (source.codePointAt(cursor) ?? 0) > 0xffff ? 2 : 1
-    pieces.push({ value: source.slice(cursor, cursor + width), from: cursor, to: cursor + width })
+    pieces.push({
+      value: source.slice(cursor, cursor + width),
+      from: cursor,
+      to: cursor + width,
+    })
     cursor += width
   }
   const hasNonSpace = pieces.some((piece) => piece.value !== " ")
-  const normalized = hasNonSpace && pieces[0]?.value === " " && pieces.at(-1)?.value === " " ? pieces.slice(1, -1) : pieces
-  for (const piece of normalized) emitMapped(builder, piece.value, piece.from, piece.to)
+  const normalized =
+    hasNonSpace && pieces[0]?.value === " " && pieces.at(-1)?.value === " "
+      ? pieces.slice(1, -1)
+      : pieces
+  for (const piece of normalized)
+    emitMapped(builder, piece.value, piece.from, piece.to)
 }
 
-function projectInline(source: string, from: number, to: number, builder: ProjectionBuilder, references: ReferenceMap): void {
+function projectInline(
+  source: string,
+  from: number,
+  to: number,
+  builder: ProjectionBuilder,
+  references: ReferenceMap,
+): void {
   let index = from
   while (index < to) {
-    if (source[index] === "\\" && index + 1 < to && /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/.test(source[index + 1]!)) {
+    if (
+      source[index] === "\\" &&
+      index + 1 < to &&
+      /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/.test(source[index + 1]!)
+    ) {
       emit(builder, source, index + 1, index + 2)
       index += 2
       continue
@@ -236,17 +322,30 @@ function projectInline(source: string, from: number, to: number, builder: Projec
       const labelOpen = index + (image ? 1 : 0)
       const labelEnd = findBalanced(source, labelOpen, "[", "]", to)
       let destinationOpen = labelEnd + 1
-      while (destinationOpen < to && /[ \t]/.test(source[destinationOpen]!)) destinationOpen++
+      while (destinationOpen < to && /[ \t]/.test(source[destinationOpen]!))
+        destinationOpen++
       if (labelEnd >= 0 && source[destinationOpen] === "(") {
         const targetEnd = findBalanced(source, destinationOpen, "(", ")", to)
-        const url = targetEnd >= 0 ? linkDestination(source, destinationOpen, targetEnd) : undefined
+        const url =
+          targetEnd >= 0
+            ? linkDestination(source, destinationOpen, targetEnd)
+            : undefined
         if (targetEnd >= 0 && url !== undefined) {
           const plainFrom = builder.plain.length
           projectInline(source, labelOpen + 1, labelEnd, builder, references)
           if (!image && /^(https?|file):\/\//.test(url)) {
-            builder.links.push({ fromCodeUnit: plainFrom, toCodeUnit: builder.plain.length, url })
+            builder.links.push({
+              fromCodeUnit: plainFrom,
+              toCodeUnit: builder.plain.length,
+              url,
+            })
           }
-          builder.regions.push({ from: plainFrom, to: builder.plain.length, sourceFrom: index, sourceTo: targetEnd + 1 })
+          builder.regions.push({
+            from: plainFrom,
+            to: builder.plain.length,
+            sourceFrom: index,
+            sourceTo: targetEnd + 1,
+          })
           index = targetEnd + 1
           continue
         }
@@ -257,18 +356,30 @@ function projectInline(source: string, from: number, to: number, builder: Projec
         if (source[syntaxEnd] === "[") {
           const referenceEnd = findBalanced(source, syntaxEnd, "[", "]", to)
           if (referenceEnd >= 0) {
-            referenceLabel = source.slice(syntaxEnd + 1, referenceEnd) || referenceLabel
+            referenceLabel =
+              source.slice(syntaxEnd + 1, referenceEnd) || referenceLabel
             syntaxEnd = referenceEnd + 1
           }
         }
-        const reference = references.get(normalizeReferenceLabel(referenceLabel))
+        const reference = references.get(
+          normalizeReferenceLabel(referenceLabel),
+        )
         if (reference) {
           const plainFrom = builder.plain.length
           projectInline(source, labelOpen + 1, labelEnd, builder, references)
           if (!image && /^(https?|file):\/\//.test(reference.url)) {
-            builder.links.push({ fromCodeUnit: plainFrom, toCodeUnit: builder.plain.length, url: reference.url })
+            builder.links.push({
+              fromCodeUnit: plainFrom,
+              toCodeUnit: builder.plain.length,
+              url: reference.url,
+            })
           }
-          builder.regions.push({ from: plainFrom, to: builder.plain.length, sourceFrom: index, sourceTo: syntaxEnd })
+          builder.regions.push({
+            from: plainFrom,
+            to: builder.plain.length,
+            sourceFrom: index,
+            sourceTo: syntaxEnd,
+          })
           index = syntaxEnd
           continue
         }
@@ -281,8 +392,17 @@ function projectInline(source: string, from: number, to: number, builder: Projec
       if (end < to && /^(https?|file):\/\//.test(url)) {
         const plainFrom = builder.plain.length
         emit(builder, source, index + 1, end)
-        builder.links.push({ fromCodeUnit: plainFrom, toCodeUnit: builder.plain.length, url })
-        builder.regions.push({ from: plainFrom, to: builder.plain.length, sourceFrom: index, sourceTo: end + 1 })
+        builder.links.push({
+          fromCodeUnit: plainFrom,
+          toCodeUnit: builder.plain.length,
+          url,
+        })
+        builder.regions.push({
+          from: plainFrom,
+          to: builder.plain.length,
+          sourceFrom: index,
+          sourceTo: end + 1,
+        })
         index = end + 1
         continue
       }
@@ -296,20 +416,37 @@ function projectInline(source: string, from: number, to: number, builder: Projec
       if (end >= 0) {
         const plainFrom = builder.plain.length
         emitCodeSpan(builder, source, index + width, end)
-        builder.regions.push({ from: plainFrom, to: builder.plain.length, sourceFrom: index, sourceTo: end + width })
+        builder.regions.push({
+          from: plainFrom,
+          to: builder.plain.length,
+          sourceFrom: index,
+          sourceTo: end + width,
+        })
         index = end + width
         continue
       }
     }
 
-    const emphasis = ["***", "___", "**", "__", "~~", "*", "_"].find((token) => source.startsWith(token, index))
+    const emphasis = ["***", "___", "**", "__", "~~", "*", "_"].find((token) =>
+      source.startsWith(token, index),
+    )
     if (emphasis) {
-      const intrawordUnderscore = emphasis.includes("_") && /[\p{L}\p{N}]/u.test(source[index - 1] ?? "") && /[\p{L}\p{N}]/u.test(source[index + emphasis.length] ?? "")
-      const end = intrawordUnderscore ? -1 : findClosing(source, index, emphasis, to)
+      const intrawordUnderscore =
+        emphasis.includes("_") &&
+        /[\p{L}\p{N}]/u.test(source[index - 1] ?? "") &&
+        /[\p{L}\p{N}]/u.test(source[index + emphasis.length] ?? "")
+      const end = intrawordUnderscore
+        ? -1
+        : findClosing(source, index, emphasis, to)
       if (end >= 0) {
         const plainFrom = builder.plain.length
         projectInline(source, index + emphasis.length, end, builder, references)
-        builder.regions.push({ from: plainFrom, to: builder.plain.length, sourceFrom: index, sourceTo: end + emphasis.length })
+        builder.regions.push({
+          from: plainFrom,
+          to: builder.plain.length,
+          sourceFrom: index,
+          sourceTo: end + emphasis.length,
+        })
         index = end + emphasis.length
         continue
       }
@@ -319,7 +456,11 @@ function projectInline(source: string, from: number, to: number, builder: Projec
     if (bare) {
       const plainFrom = builder.plain.length
       emit(builder, source, index, index + bare.length)
-      builder.links.push({ fromCodeUnit: plainFrom, toCodeUnit: builder.plain.length, url: bare })
+      builder.links.push({
+        fromCodeUnit: plainFrom,
+        toCodeUnit: builder.plain.length,
+        url: bare,
+      })
       index += bare.length
       continue
     }
@@ -336,7 +477,12 @@ function linesOf(source: string): SourceLine[] {
   while (from < source.length) {
     const newline = source.indexOf("\n", from)
     const to = newline < 0 ? source.length : newline
-    lines.push({ from, to, newlineTo: newline < 0 ? to : newline + 1, value: source.slice(from, to) })
+    lines.push({
+      from,
+      to,
+      newlineTo: newline < 0 ? to : newline + 1,
+      value: source.slice(from, to),
+    })
     from = newline < 0 ? source.length : newline + 1
   }
   return lines
@@ -345,7 +491,9 @@ function linesOf(source: string): SourceLine[] {
 function blockPrefixWidth(line: string): number {
   let width = 0
   while (width < line.length) {
-    const container = /^(?: {0,3}>[ \t]?| {0,3}(?:[-+*]|\d+[.)])[ \t]+)/.exec(line.slice(width))?.[0]
+    const container = /^(?: {0,3}>[ \t]?| {0,3}(?:[-+*]|\d+[.)])[ \t]+)/.exec(
+      line.slice(width),
+    )?.[0]
     if (!container) break
     width += container.length
   }
@@ -364,26 +512,51 @@ function tableDelimiter(line: string): boolean {
 }
 
 function thematicBreak(line: string): boolean {
-  return /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/.test(line)
+  return /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/.test(
+    line,
+  )
 }
 
-function projectLine(source: string, line: SourceLine, builder: ProjectionBuilder, references: ReferenceMap): void {
+function projectLine(
+  source: string,
+  line: SourceLine,
+  builder: ProjectionBuilder,
+  references: ReferenceMap,
+): void {
   const prefix = blockPrefixWidth(line.value)
   const plainFrom = builder.plain.length
   projectInline(source, line.from + prefix, line.to, builder, references)
-  if (prefix) builder.regions.push({ from: plainFrom, to: builder.plain.length, sourceFrom: line.from, sourceTo: line.to })
+  if (prefix)
+    builder.regions.push({
+      from: plainFrom,
+      to: builder.plain.length,
+      sourceFrom: line.from,
+      sourceTo: line.to,
+    })
   if (line.newlineTo > line.to) emit(builder, source, line.to, line.newlineTo)
 }
 
-function multilineCodeParagraphEnd(source: string, lines: readonly SourceLine[], start: number, definitionLines: ReadonlySet<number>): number {
+function multilineCodeParagraphEnd(
+  source: string,
+  lines: readonly SourceLine[],
+  start: number,
+  definitionLines: ReadonlySet<number>,
+): number {
   const first = lines[start]!
-  if (blockPrefixWidth(first.value) !== 0 || !first.value.includes("`")) return start
+  if (blockPrefixWidth(first.value) !== 0 || !first.value.includes("`"))
+    return start
   const openRuns: { from: number; width: number }[] = []
   for (let cursor = first.from; cursor < first.to;) {
-    if (source[cursor] !== "`") { cursor++; continue }
+    if (source[cursor] !== "`") {
+      cursor++
+      continue
+    }
     let width = 1
     while (source[cursor + width] === "`") width++
-    if (isEscaped(source, cursor)) { cursor += width; continue }
+    if (isEscaped(source, cursor)) {
+      cursor += width
+      continue
+    }
     const sameLineClose = findClosingCodeRun(source, cursor, width, first.to)
     if (sameLineClose < 0) openRuns.push({ from: cursor, width })
     cursor = sameLineClose < 0 ? cursor + width : sameLineClose + width
@@ -393,35 +566,66 @@ function multilineCodeParagraphEnd(source: string, lines: readonly SourceLine[],
   while (end + 1 < lines.length) {
     const next = lines[end + 1]!
     if (!next.value.trim() || definitionLines.has(next.from)) break
-    if (/^ {0,3}(?:#{1,6}[ \t]+|>|(?:[-+*]|\d+[.)])[ \t]+|`{3,}|~{3,})/.test(next.value)) break
+    if (
+      /^ {0,3}(?:#{1,6}[ \t]+|>|(?:[-+*]|\d+[.)])[ \t]+|`{3,}|~{3,})/.test(
+        next.value,
+      )
+    )
+      break
     end++
   }
   if (end === start) return start
   for (const opener of openRuns) {
-    const close = findClosingCodeRun(source, opener.from, opener.width, lines[end]!.to)
+    const close = findClosingCodeRun(
+      source,
+      opener.from,
+      opener.width,
+      lines[end]!.to,
+    )
     if (close > first.to) return end
   }
   return start
 }
 
 /** Deterministic CommonMark-oriented projection with an exact rendered-grapheme to source map. */
-export function projectMarkdown(source: string): Omit<TextProjection, "revision" | "nodeKind"> {
-  const builder: ProjectionBuilder = { plain: "", charSpans: [], links: [], regions: [] }
+export function projectMarkdown(
+  source: string,
+): Omit<TextProjection, "revision" | "nodeKind"> {
+  const builder: ProjectionBuilder = {
+    plain: "",
+    charSpans: [],
+    links: [],
+    regions: [],
+  }
   const lines = linesOf(source)
   const references = referenceDefinitions(lines)
-  let fence: { marker: "`" | "~"; width: number; sourceFrom: number; plainFrom: number; plainTo: number } | undefined
+  let fence:
+    | {
+        marker: "`" | "~"
+        width: number
+        sourceFrom: number
+        plainFrom: number
+        plainTo: number
+      }
+    | undefined
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
     const line = lines[lineIndex]!
     if (fence) {
       const close = /^( {0,3})(`{3,}|~{3,})[ \t]*$/.exec(line.value)
       if (close?.[2]?.[0] === fence.marker && close[2].length >= fence.width) {
-        builder.regions.push({ from: fence.plainFrom, to: fence.plainTo, sourceFrom: fence.sourceFrom, sourceTo: line.to })
+        builder.regions.push({
+          from: fence.plainFrom,
+          to: fence.plainTo,
+          sourceFrom: fence.sourceFrom,
+          sourceTo: line.to,
+        })
         fence = undefined
       } else {
         emit(builder, source, line.from, line.to)
         fence.plainTo = builder.plain.length
-        if (line.newlineTo > line.to) emit(builder, source, line.to, line.newlineTo)
+        if (line.newlineTo > line.to)
+          emit(builder, source, line.to, line.newlineTo)
       }
       continue
     }
@@ -440,39 +644,68 @@ export function projectMarkdown(source: string): Omit<TextProjection, "revision"
       continue
     }
 
-    const paragraphEnd = multilineCodeParagraphEnd(source, lines, lineIndex, references.lines)
+    const paragraphEnd = multilineCodeParagraphEnd(
+      source,
+      lines,
+      lineIndex,
+      references.lines,
+    )
     if (paragraphEnd > lineIndex) {
       const finalLine = lines[paragraphEnd]!
-      projectInline(source, line.from, finalLine.to, builder, references.definitions)
-      if (finalLine.newlineTo > finalLine.to) emit(builder, source, finalLine.to, finalLine.newlineTo)
+      projectInline(
+        source,
+        line.from,
+        finalLine.to,
+        builder,
+        references.definitions,
+      )
+      if (finalLine.newlineTo > finalLine.to)
+        emit(builder, source, finalLine.to, finalLine.newlineTo)
       lineIndex = paragraphEnd
       continue
     }
 
     const previousLine = lines[lineIndex - 1]
-    const hyphenSetextUnderline = /^ {0,3}-{3,}[ \t]*$/.test(line.value)
-      && !!previousLine?.value.trim()
-      && blockPrefixWidth(previousLine.value) === 0
+    const hyphenSetextUnderline =
+      /^ {0,3}-{3,}[ \t]*$/.test(line.value) &&
+      !!previousLine?.value.trim() &&
+      blockPrefixWidth(previousLine.value) === 0
     if (thematicBreak(line.value) && !hyphenSetextUnderline) {
       emitMapped(builder, "─", line.from, line.to)
-      if (line.newlineTo > line.to) emit(builder, source, line.to, line.newlineTo)
+      if (line.newlineTo > line.to)
+        emit(builder, source, line.to, line.newlineTo)
       continue
     }
 
     const delimiter = lines[lineIndex + 1]
-    if (delimiter && hasTablePipe(line.value) && tableDelimiter(delimiter.value)) {
+    if (
+      delimiter &&
+      hasTablePipe(line.value) &&
+      tableDelimiter(delimiter.value)
+    ) {
       const sourceFrom = line.from
       const plainFrom = builder.plain.length
       projectLine(source, line, builder, references.definitions)
       lineIndex++
       let sourceTo = delimiter.to
-      while (lines[lineIndex + 1] && hasTablePipe(lines[lineIndex + 1]!.value) && lines[lineIndex + 1]!.value.trim() !== "") {
+      while (
+        lines[lineIndex + 1] &&
+        hasTablePipe(lines[lineIndex + 1]!.value) &&
+        lines[lineIndex + 1]!.value.trim() !== ""
+      ) {
         const body = lines[++lineIndex]!
         projectLine(source, body, builder, references.definitions)
         sourceTo = body.to
       }
-      const plainTo = builder.plain.endsWith("\n") ? builder.plain.length - 1 : builder.plain.length
-      builder.regions.push({ from: plainFrom, to: plainTo, sourceFrom, sourceTo })
+      const plainTo = builder.plain.endsWith("\n")
+        ? builder.plain.length - 1
+        : builder.plain.length
+      builder.regions.push({
+        from: plainFrom,
+        to: plainTo,
+        sourceFrom,
+        sourceTo,
+      })
       continue
     }
 
@@ -480,7 +713,12 @@ export function projectMarkdown(source: string): Omit<TextProjection, "revision"
   }
 
   if (fence) {
-    builder.regions.push({ from: fence.plainFrom, to: fence.plainTo, sourceFrom: fence.sourceFrom, sourceTo: source.length })
+    builder.regions.push({
+      from: fence.plainFrom,
+      to: fence.plainTo,
+      sourceFrom: fence.sourceFrom,
+      sourceTo: source.length,
+    })
   }
 
   const sourceSpans: SourceSpan[] = []
@@ -509,19 +747,30 @@ export function projectMarkdown(source: string): Omit<TextProjection, "revision"
     plain: builder.plain,
     source,
     sourceSpans,
-    sourceRegions: builder.regions.map((region) => ({ ...region, from: toGrapheme(region.from), to: toGrapheme(region.to) })),
-    links: builder.links.map((link) => ({ from: toGrapheme(link.fromCodeUnit), to: toGrapheme(link.toCodeUnit), url: link.url })),
+    sourceRegions: builder.regions.map((region) => ({
+      ...region,
+      from: toGrapheme(region.from),
+      to: toGrapheme(region.to),
+    })),
+    links: builder.links.map((link) => ({
+      from: toGrapheme(link.fromCodeUnit),
+      to: toGrapheme(link.toCodeUnit),
+      url: link.url,
+    })),
   }
 }
 
 /** Tool output and patches are literal text, even when they contain Markdown syntax. */
-export function projectPlainText(source: string): Omit<TextProjection, "revision" | "nodeKind"> {
+export function projectPlainText(
+  source: string,
+): Omit<TextProjection, "revision" | "nodeKind"> {
   const sourceSpans: SourceSpan[] = []
   for (const part of segmenter.segment(source)) {
     sourceSpans.push({ from: part.index, to: part.index + part.segment.length })
   }
   const offsetAt = (codeUnit: number): number => {
-    let low = 0, high = sourceSpans.length
+    let low = 0,
+      high = sourceSpans.length
     while (low < high) {
       const middle = (low + high) >>> 1
       if (sourceSpans[middle]!.from < codeUnit) low = middle + 1
@@ -532,7 +781,12 @@ export function projectPlainText(source: string): Omit<TextProjection, "revision
   const links: TextProjection["links"][number][] = []
   for (const match of source.matchAll(/(?:https?|file):\/\//g)) {
     const url = bareUrl(source, match.index, source.length)
-    if (url) links.push({ from: offsetAt(match.index), to: offsetAt(match.index + url.length), url })
+    if (url)
+      links.push({
+        from: offsetAt(match.index),
+        to: offsetAt(match.index + url.length),
+        url,
+      })
   }
   return { plain: source, source, sourceSpans, sourceRegions: [], links }
 }

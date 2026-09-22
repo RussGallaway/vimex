@@ -10,7 +10,10 @@ export function publicationAction(state: PublicationState): PublicationAction {
 
 export type FormulaAction = "deploy" | "skip-prerelease" | "skip-superseded"
 
-export function formulaAction(tag: string, latestStableTag: string): FormulaAction {
+export function formulaAction(
+  tag: string,
+  latestStableTag: string,
+): FormulaAction {
   if (tag.includes("-")) return "skip-prerelease"
   return tag === latestStableTag ? "deploy" : "skip-superseded"
 }
@@ -22,6 +25,8 @@ if (import.meta.main) {
   } else if (command === "formula" && arguments_.length === 2) {
     console.log(formulaAction(arguments_[0]!, arguments_[1]!))
   } else {
-    throw new Error("Usage: policy.ts publication STATE | formula TAG LATEST_STABLE_TAG")
+    throw new Error(
+      "Usage: policy.ts publication STATE | formula TAG LATEST_STABLE_TAG",
+    )
   }
 }

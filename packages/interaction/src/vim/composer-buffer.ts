@@ -2,10 +2,14 @@ import type { ComposerMotion, ComposerVimAction } from "./composer-grammar"
 import type { VimRegister } from "./state-machine"
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" })
-const split = (value: string): string[] => [...segmenter.segment(value)].map(({ segment }) => segment)
+const split = (value: string): string[] =>
+  [...segmenter.segment(value)].map(({ segment }) => segment)
 
 /** Converts a JavaScript text control's UTF-16 cursor boundary to a safe grapheme boundary. */
-export function codeUnitOffsetToGraphemeOffset(text: string, offset: number): number {
+export function codeUnitOffsetToGraphemeOffset(
+  text: string,
+  offset: number,
+): number {
   const bounded = clamp(offset, 0, text.length)
   let graphemeOffset = 0
   for (const part of segmenter.segment(text)) {
@@ -17,7 +21,10 @@ export function codeUnitOffsetToGraphemeOffset(text: string, offset: number): nu
 }
 
 /** Converts a grapheme cursor boundary to a JavaScript UTF-16 string offset. */
-export function graphemeOffsetToCodeUnitOffset(text: string, offset: number): number {
+export function graphemeOffsetToCodeUnitOffset(
+  text: string,
+  offset: number,
+): number {
   const target = Math.max(0, Math.trunc(offset))
   let graphemeOffset = 0
   for (const part of segmenter.segment(text)) {
@@ -73,19 +80,29 @@ function firstContent(parts: readonly string[], offset: number): number {
   return cursor < end ? cursor : start
 }
 
-function normalLineTarget(parts: readonly string[], start: number, end: number, column: number): number {
+function normalLineTarget(
+  parts: readonly string[],
+  start: number,
+  end: number,
+  column: number,
+): number {
   return end > start ? Math.min(start + column, end - 1) : start
 }
 
-function category(value: string | undefined): "space" | "keyword" | "punctuation" {
+function category(
+  value: string | undefined,
+): "space" | "keyword" | "punctuation" {
   if (!value || /^\s$/u.test(value)) return "space"
-  return /^[\p{L}\p{N}_][\p{L}\p{N}\p{M}_]*$/u.test(value) ? "keyword" : "punctuation"
+  return /^[\p{L}\p{N}_][\p{L}\p{N}\p{M}_]*$/u.test(value)
+    ? "keyword"
+    : "punctuation"
 }
 
 function wordForward(parts: readonly string[], origin: number): number {
   let cursor = clamp(origin, 0, Math.max(0, parts.length - 1))
   const kind = category(parts[cursor])
-  if (kind !== "space") while (cursor < parts.length && category(parts[cursor]) === kind) cursor++
+  if (kind !== "space")
+    while (cursor < parts.length && category(parts[cursor]) === kind) cursor++
   while (cursor < parts.length && category(parts[cursor]) === "space") cursor++
   return Math.min(cursor, Math.max(0, parts.length - 1))
 }
@@ -102,15 +119,21 @@ function wordEnd(parts: readonly string[], origin: number): number {
   if (parts.length === 0) return 0
   let cursor = clamp(origin, 0, parts.length - 1)
   const current = category(parts[cursor])
-  if (current !== "space" && cursor + 1 < parts.length && category(parts[cursor + 1]) === current) {
-    while (cursor + 1 < parts.length && category(parts[cursor + 1]) === current) cursor++
+  if (
+    current !== "space" &&
+    cursor + 1 < parts.length &&
+    category(parts[cursor + 1]) === current
+  ) {
+    while (cursor + 1 < parts.length && category(parts[cursor + 1]) === current)
+      cursor++
     return cursor
   }
   cursor++
   while (cursor < parts.length && category(parts[cursor]) === "space") cursor++
   if (cursor >= parts.length) return parts.length - 1
   const kind = category(parts[cursor])
-  while (cursor + 1 < parts.length && category(parts[cursor + 1]) === kind) cursor++
+  while (cursor + 1 < parts.length && category(parts[cursor + 1]) === kind)
+    cursor++
   return cursor
 }
 
@@ -128,18 +151,30 @@ function lastLine(parts: readonly string[]): number {
   return firstContent(parts, lineStart(parts, parts.length))
 }
 
-function moveOnce(parts: readonly string[], offset: number, motion: ComposerMotion): number {
+function moveOnce(
+  parts: readonly string[],
+  offset: number,
+  motion: ComposerMotion,
+): number {
   const start = lineStart(parts, offset)
   const end = lineEnd(parts, offset)
   switch (motion) {
-    case "left": return Math.max(start, offset - 1)
-    case "right": return normalLineTarget(parts, start, end, offset - start + 1)
-    case "line-start": return start
-    case "first-content": return firstContent(parts, offset)
-    case "line-end": return end > start ? end - 1 : start
-    case "word-forward": return wordForward(parts, offset)
-    case "word-backward": return wordBackward(parts, offset)
-    case "word-end": return wordEnd(parts, offset)
+    case "left":
+      return Math.max(start, offset - 1)
+    case "right":
+      return normalLineTarget(parts, start, end, offset - start + 1)
+    case "line-start":
+      return start
+    case "first-content":
+      return firstContent(parts, offset)
+    case "line-end":
+      return end > start ? end - 1 : start
+    case "word-forward":
+      return wordForward(parts, offset)
+    case "word-backward":
+      return wordBackward(parts, offset)
+    case "word-end":
+      return wordEnd(parts, offset)
     case "up": {
       if (start === 0) return offset
       const previousEnd = start - 1
@@ -149,19 +184,33 @@ function moveOnce(parts: readonly string[], offset: number, motion: ComposerMoti
     case "down": {
       if (end >= parts.length) return offset
       const nextStart = end + 1
-      return normalLineTarget(parts, nextStart, lineEnd(parts, nextStart), offset - start)
+      return normalLineTarget(
+        parts,
+        nextStart,
+        lineEnd(parts, nextStart),
+        offset - start,
+      )
     }
-    case "document-start": return targetLine(parts, 1)
-    case "document-end": return lastLine(parts)
+    case "document-start":
+      return targetLine(parts, 1)
+    case "document-end":
+      return lastLine(parts)
   }
 }
 
-function moveBuffer(buffer: ComposerBuffer, motion: ComposerMotion, count: number, select: boolean): ComposerBuffer {
+function moveBuffer(
+  buffer: ComposerBuffer,
+  motion: ComposerMotion,
+  count: number,
+  select: boolean,
+): ComposerBuffer {
   const parts = split(buffer.text)
   const origin = clamp(buffer.cursorOffset, 0, parts.length)
   let target = origin
-  if (motion === "document-start") target = targetLine(parts, Math.max(1, count))
-  else if (motion === "document-end" && count > 0) target = targetLine(parts, count)
+  if (motion === "document-start")
+    target = targetLine(parts, Math.max(1, count))
+  else if (motion === "document-end" && count > 0)
+    target = targetLine(parts, count)
   else if (motion === "up" || motion === "down") {
     const column = origin - lineStart(parts, origin)
     target = origin
@@ -176,20 +225,33 @@ function moveBuffer(buffer: ComposerBuffer, motion: ComposerMotion, count: numbe
       } else {
         if (end >= parts.length) break
         const nextStart = end + 1
-        target = normalLineTarget(parts, nextStart, lineEnd(parts, nextStart), column)
+        target = normalLineTarget(
+          parts,
+          nextStart,
+          lineEnd(parts, nextStart),
+          column,
+        )
       }
     }
   } else {
-    for (let step = 0; step < Math.max(1, count); step++) target = moveOnce(parts, target, motion)
+    for (let step = 0; step < Math.max(1, count); step++)
+      target = moveOnce(parts, target, motion)
   }
   return {
     text: buffer.text,
     cursorOffset: target,
-    selection: select ? { anchor: buffer.selection?.anchor ?? origin, head: target } : undefined,
+    selection: select
+      ? { anchor: buffer.selection?.anchor ?? origin, head: target }
+      : undefined,
   }
 }
 
-function replace(parts: readonly string[], from: number, to: number, inserted: readonly string[]): string[] {
+function replace(
+  parts: readonly string[],
+  from: number,
+  to: number,
+  inserted: readonly string[],
+): string[] {
   return [...parts.slice(0, from), ...inserted, ...parts.slice(to)]
 }
 
@@ -201,17 +263,29 @@ function normalCursor(parts: readonly string[], desired: number): number {
   return normalLineTarget(parts, start, end, bounded - start)
 }
 
-function deleteCharacters(buffer: ComposerBuffer, count: number): { buffer: ComposerBuffer; register?: VimRegister } {
+function deleteCharacters(
+  buffer: ComposerBuffer,
+  count: number,
+): { buffer: ComposerBuffer; register?: VimRegister } {
   const parts = split(buffer.text)
   const cursor = clamp(buffer.cursorOffset, 0, parts.length)
   const end = Math.min(lineEnd(parts, cursor), cursor + Math.max(1, count))
   if (cursor >= end) return { buffer }
-  const register = { text: parts.slice(cursor, end).join(""), shape: "character" as const }
+  const register = {
+    text: parts.slice(cursor, end).join(""),
+    shape: "character" as const,
+  }
   const next = replace(parts, cursor, end, [])
-  return { buffer: { text: next.join(""), cursorOffset: normalCursor(next, cursor) }, register }
+  return {
+    buffer: { text: next.join(""), cursorOffset: normalCursor(next, cursor) },
+    register,
+  }
 }
 
-function deleteLines(buffer: ComposerBuffer, count: number): { buffer: ComposerBuffer; register?: VimRegister } {
+function deleteLines(
+  buffer: ComposerBuffer,
+  count: number,
+): { buffer: ComposerBuffer; register?: VimRegister } {
   const parts = split(buffer.text)
   const start = lineStart(parts, buffer.cursorOffset)
   let end = start
@@ -221,27 +295,52 @@ function deleteLines(buffer: ComposerBuffer, count: number): { buffer: ComposerB
     else break
   }
   const registerEnd = end > start && parts[end - 1] === "\n" ? end - 1 : end
-  const register = { text: parts.slice(start, registerEnd).join(""), shape: "line" as const }
-  const removalStart = end === parts.length && start > 0 && parts[start - 1] === "\n" ? start - 1 : start
+  const register = {
+    text: parts.slice(start, registerEnd).join(""),
+    shape: "line" as const,
+  }
+  const removalStart =
+    end === parts.length && start > 0 && parts[start - 1] === "\n"
+      ? start - 1
+      : start
   const next = replace(parts, removalStart, end, [])
-  return { buffer: { text: next.join(""), cursorOffset: normalCursor(next, start) }, register }
-}
-
-function deleteToLineEnd(buffer: ComposerBuffer, count: number, insertMode: boolean): { buffer: ComposerBuffer; register?: VimRegister } {
-  const parts = split(buffer.text)
-  const cursor = clamp(buffer.cursorOffset, 0, parts.length)
-  let end = lineEnd(parts, cursor)
-  for (let line = 1; line < Math.max(1, count) && end < parts.length; line++) end = lineEnd(parts, end + 1)
-  if (cursor >= end) return { buffer }
-  const register = { text: parts.slice(cursor, end).join(""), shape: "character" as const }
-  const next = replace(parts, cursor, end, [])
   return {
-    buffer: { text: next.join(""), cursorOffset: insertMode ? Math.min(cursor, next.length) : normalCursor(next, cursor) },
+    buffer: { text: next.join(""), cursorOffset: normalCursor(next, start) },
     register,
   }
 }
 
-function enterInsert(buffer: ComposerBuffer, placement: "before" | "after" | "line-start" | "line-end"): ComposerBuffer {
+function deleteToLineEnd(
+  buffer: ComposerBuffer,
+  count: number,
+  insertMode: boolean,
+): { buffer: ComposerBuffer; register?: VimRegister } {
+  const parts = split(buffer.text)
+  const cursor = clamp(buffer.cursorOffset, 0, parts.length)
+  let end = lineEnd(parts, cursor)
+  for (let line = 1; line < Math.max(1, count) && end < parts.length; line++)
+    end = lineEnd(parts, end + 1)
+  if (cursor >= end) return { buffer }
+  const register = {
+    text: parts.slice(cursor, end).join(""),
+    shape: "character" as const,
+  }
+  const next = replace(parts, cursor, end, [])
+  return {
+    buffer: {
+      text: next.join(""),
+      cursorOffset: insertMode
+        ? Math.min(cursor, next.length)
+        : normalCursor(next, cursor),
+    },
+    register,
+  }
+}
+
+function enterInsert(
+  buffer: ComposerBuffer,
+  placement: "before" | "after" | "line-start" | "line-end",
+): ComposerBuffer {
   const parts = split(buffer.text)
   const cursor = clamp(buffer.cursorOffset, 0, parts.length)
   const end = lineEnd(parts, cursor)
@@ -252,7 +351,11 @@ function enterInsert(buffer: ComposerBuffer, placement: "before" | "after" | "li
   return { text: buffer.text, cursorOffset: target }
 }
 
-function openLine(buffer: ComposerBuffer, placement: "above" | "below", count: number): ComposerBuffer {
+function openLine(
+  buffer: ComposerBuffer,
+  placement: "above" | "below",
+  count: number,
+): ComposerBuffer {
   const parts = split(buffer.text)
   const cursor = clamp(buffer.cursorOffset, 0, parts.length)
   const amount = Math.max(1, count)
@@ -264,18 +367,32 @@ function openLine(buffer: ComposerBuffer, placement: "above" | "below", count: n
   const end = lineEnd(parts, cursor)
   const position = end < parts.length ? end + 1 : end
   const next = replace(parts, position, position, Array(amount).fill("\n"))
-  return { text: next.join(""), cursorOffset: end < parts.length ? position : position + 1 }
+  return {
+    text: next.join(""),
+    cursorOffset: end < parts.length ? position : position + 1,
+  }
 }
 
-function paste(buffer: ComposerBuffer, register: VimRegister, placement: "before" | "after", count: number): ComposerBuffer {
+function paste(
+  buffer: ComposerBuffer,
+  register: VimRegister,
+  placement: "before" | "after",
+  count: number,
+): ComposerBuffer {
   if (!register.text) return buffer
   const parts = split(buffer.text)
   const cursor = clamp(buffer.cursorOffset, 0, parts.length)
   if (register.shape === "character") {
     const inserted = split(register.text.repeat(Math.max(1, count)))
-    const position = placement === "after" ? Math.min(cursor + 1, lineEnd(parts, cursor)) : cursor
+    const position =
+      placement === "after"
+        ? Math.min(cursor + 1, lineEnd(parts, cursor))
+        : cursor
     const next = replace(parts, position, position, inserted)
-    return { text: next.join(""), cursorOffset: position + Math.max(0, inserted.length - 1) }
+    return {
+      text: next.join(""),
+      cursorOffset: position + Math.max(0, inserted.length - 1),
+    }
   }
   const payload = Array(Math.max(1, count)).fill(register.text).join("\n")
   const inserted = split(payload)
@@ -283,37 +400,70 @@ function paste(buffer: ComposerBuffer, register: VimRegister, placement: "before
   const end = lineEnd(parts, cursor)
   if (placement === "before") {
     const next = replace(parts, start, start, [...inserted, "\n"])
-    return { text: next.join(""), cursorOffset: start + firstContent(inserted, 0) }
+    return {
+      text: next.join(""),
+      cursorOffset: start + firstContent(inserted, 0),
+    }
   }
   if (end < parts.length) {
     const position = end + 1
     const next = replace(parts, position, position, [...inserted, "\n"])
-    return { text: next.join(""), cursorOffset: position + firstContent(inserted, 0) }
+    return {
+      text: next.join(""),
+      cursorOffset: position + firstContent(inserted, 0),
+    }
   }
   const separator = parts.length > 0 ? ["\n"] : []
   const next = replace(parts, end, end, [...separator, ...inserted])
-  return { text: next.join(""), cursorOffset: end + separator.length + firstContent(inserted, 0) }
+  return {
+    text: next.join(""),
+    cursorOffset: end + separator.length + firstContent(inserted, 0),
+  }
 }
 
-function yank(buffer: ComposerBuffer, register: VimRegister): ComposerBufferResult {
+function yank(
+  buffer: ComposerBuffer,
+  register: VimRegister,
+): ComposerBufferResult {
   if (!buffer.selection) return { buffer, register }
   const parts = split(buffer.text)
   const from = Math.min(buffer.selection.anchor, buffer.selection.head)
   const to = Math.max(buffer.selection.anchor, buffer.selection.head) + 1
   const text = parts.slice(from, to).join("")
   const nextRegister = { text, shape: "character" as const }
-  return { buffer: { text: buffer.text, cursorOffset: buffer.cursorOffset }, register: nextRegister, effect: { type: "copy", text } }
+  return {
+    buffer: { text: buffer.text, cursorOffset: buffer.cursorOffset },
+    register: nextRegister,
+    effect: { type: "copy", text },
+  }
 }
 
-function deleteSelection(buffer: ComposerBuffer, register: VimRegister, insertMode: boolean): ComposerBufferResult {
+function deleteSelection(
+  buffer: ComposerBuffer,
+  register: VimRegister,
+  insertMode: boolean,
+): ComposerBufferResult {
   if (!buffer.selection) return { buffer, register }
   const parts = split(buffer.text)
-  const from = clamp(Math.min(buffer.selection.anchor, buffer.selection.head), 0, parts.length)
-  const to = clamp(Math.max(buffer.selection.anchor, buffer.selection.head) + 1, from, parts.length)
+  const from = clamp(
+    Math.min(buffer.selection.anchor, buffer.selection.head),
+    0,
+    parts.length,
+  )
+  const to = clamp(
+    Math.max(buffer.selection.anchor, buffer.selection.head) + 1,
+    from,
+    parts.length,
+  )
   const text = parts.slice(from, to).join("")
   const next = replace(parts, from, to, [])
   return {
-    buffer: { text: next.join(""), cursorOffset: insertMode ? Math.min(from, next.length) : normalCursor(next, from) },
+    buffer: {
+      text: next.join(""),
+      cursorOffset: insertMode
+        ? Math.min(from, next.length)
+        : normalCursor(next, from),
+    },
     register: text ? { text, shape: "character" } : register,
   }
 }
@@ -324,25 +474,56 @@ export function applyComposerVimAction(
   action: ComposerVimAction,
   register: VimRegister = { text: "", shape: "character" },
 ): ComposerBufferResult {
-  if (action.type === "motion") return { buffer: moveBuffer(buffer, action.motion, action.count, action.select), register }
-  if (action.type === "enter-insert") return { buffer: enterInsert(buffer, action.placement), register }
-  if (action.type === "open-line") return { buffer: openLine(buffer, action.placement, action.count), register }
-  if (action.type === "paste") return { buffer: paste(buffer, register, action.placement, action.count), register }
+  if (action.type === "motion")
+    return {
+      buffer: moveBuffer(buffer, action.motion, action.count, action.select),
+      register,
+    }
+  if (action.type === "enter-insert")
+    return { buffer: enterInsert(buffer, action.placement), register }
+  if (action.type === "open-line")
+    return {
+      buffer: openLine(buffer, action.placement, action.count),
+      register,
+    }
+  if (action.type === "paste")
+    return {
+      buffer: paste(buffer, register, action.placement, action.count),
+      register,
+    }
   if (action.type === "begin-visual") {
-    return { buffer: { ...buffer, selection: { anchor: buffer.cursorOffset, head: buffer.cursorOffset } }, register }
+    return {
+      buffer: {
+        ...buffer,
+        selection: { anchor: buffer.cursorOffset, head: buffer.cursorOffset },
+      },
+      register,
+    }
   }
-  if (action.type === "clear-selection") return { buffer: { text: buffer.text, cursorOffset: buffer.cursorOffset }, register }
+  if (action.type === "clear-selection")
+    return {
+      buffer: { text: buffer.text, cursorOffset: buffer.cursorOffset },
+      register,
+    }
   if (action.type === "yank") return yank(buffer, register)
-  if (action.type === "delete-selection") return deleteSelection(buffer, register, action.enterInsert ?? false)
-  if (action.type === "submit") return { buffer, register, effect: { type: "submit" } }
-  if (action.type === "retry") return { buffer, register, effect: { type: "retry" } }
+  if (action.type === "delete-selection")
+    return deleteSelection(buffer, register, action.enterInsert ?? false)
+  if (action.type === "submit")
+    return { buffer, register, effect: { type: "submit" } }
+  if (action.type === "retry")
+    return { buffer, register, effect: { type: "retry" } }
   if (action.operator === "undo" || action.operator === "redo") {
-    return { buffer, register, effect: { type: "history", direction: action.operator } }
+    return {
+      buffer,
+      register,
+      effect: { type: "history", direction: action.operator },
+    }
   }
-  const changed = action.operator === "delete-char"
-    ? deleteCharacters(buffer, action.count)
-    : action.operator === "delete-line"
-      ? deleteLines(buffer, action.count)
-      : deleteToLineEnd(buffer, action.count, action.enterInsert ?? false)
+  const changed =
+    action.operator === "delete-char"
+      ? deleteCharacters(buffer, action.count)
+      : action.operator === "delete-line"
+        ? deleteLines(buffer, action.count)
+        : deleteToLineEnd(buffer, action.count, action.enterInsert ?? false)
   return { buffer: changed.buffer, register: changed.register ?? register }
 }

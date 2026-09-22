@@ -28,7 +28,9 @@ export function mapThreadSummary(thread: Thread): ThreadSummary {
 export function mapThreadRelation(thread: Thread): ThreadRelation {
   return {
     threadId: threadId(thread.id),
-    ...(thread.parentThreadId ? { parentThreadId: threadId(thread.parentThreadId) } : {}),
+    ...(thread.parentThreadId
+      ? { parentThreadId: threadId(thread.parentThreadId) }
+      : {}),
     ...(thread.agentNickname ? { agentNickname: thread.agentNickname } : {}),
     ...(thread.agentRole ? { agentRole: thread.agentRole } : {}),
     source: thread.source,
@@ -38,18 +40,33 @@ export function mapThreadRelation(thread: Thread): ThreadRelation {
 export function mapThreadStatus(status: ThreadStatus): NormalizedThreadStatus {
   switch (status.type) {
     case "idle":
-    case "notLoaded": return "idle"
-    case "systemError": return "disconnected"
-    case "active": return status.activeFlags.includes("waitingOnApproval") || status.activeFlags.includes("waitingOnUserInput") ? "blocked" : "working"
+    case "notLoaded":
+      return "idle"
+    case "systemError":
+      return "disconnected"
+    case "active":
+      return status.activeFlags.includes("waitingOnApproval") ||
+        status.activeFlags.includes("waitingOnUserInput")
+        ? "blocked"
+        : "working"
   }
 }
 
 export function isThreadLike(value: unknown): value is Thread {
-  return isRecord(value) && typeof value.id === "string" && typeof value.cwd === "string" && isThreadStatus(value.status)
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.cwd === "string" &&
+    isThreadStatus(value.status)
+  )
 }
 
 export function isThreadStatus(value: unknown): value is ThreadStatus {
   if (!isRecord(value) || typeof value.type !== "string") return false
-  return value.type === "idle" || value.type === "notLoaded" || value.type === "systemError"
-    || (value.type === "active" && Array.isArray(value.activeFlags))
+  return (
+    value.type === "idle" ||
+    value.type === "notLoaded" ||
+    value.type === "systemError" ||
+    (value.type === "active" && Array.isArray(value.activeFlags))
+  )
 }

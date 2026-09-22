@@ -6,7 +6,10 @@ import type { ConversationState } from "./thread"
  * Settle presentation without mutating the raw item, so a later final payload
  * can still replace the streamed content.
  */
-export function effectiveItemStatus(conversation: ConversationState, item: ConversationItem): ItemStatus {
+export function effectiveItemStatus(
+  conversation: ConversationState,
+  item: ConversationItem,
+): ItemStatus {
   if (item.status !== "running") return item.status
   const turn = conversation.turns[item.turnId]
   if (!turn || turn.status === "running") return item.status

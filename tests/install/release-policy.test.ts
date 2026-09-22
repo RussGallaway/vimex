@@ -9,7 +9,9 @@ describe("release publication policy", () => {
   })
 
   test("rejects an unknown state instead of choosing a destructive default", () => {
-    expect(() => publicationAction("unknown" as never)).toThrow("Unknown publication state")
+    expect(() => publicationAction("unknown" as never)).toThrow(
+      "Unknown publication state",
+    )
   })
 })
 

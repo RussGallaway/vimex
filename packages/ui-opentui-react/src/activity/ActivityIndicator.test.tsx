@@ -6,8 +6,25 @@ import { ActivityIndicator } from "./ActivityIndicator"
 test("uses an injected clock and scheduler", async () => {
   let heartbeat: (() => void) | undefined
   let cancelled = false
-  const clock = { now: () => 66_000, schedule(task: () => void, intervalMs: number) { expect(intervalMs).toBe(120); heartbeat = task; return () => { cancelled = true } } }
-  const setup = await testRender(<ActivityIndicator active label="Working" startedAt={1_000} clock={clock} />, { width: 40, height: 2 })
+  const clock = {
+    now: () => 66_000,
+    schedule(task: () => void, intervalMs: number) {
+      expect(intervalMs).toBe(120)
+      heartbeat = task
+      return () => {
+        cancelled = true
+      }
+    },
+  }
+  const setup = await testRender(
+    <ActivityIndicator
+      active
+      label="Working"
+      startedAt={1_000}
+      clock={clock}
+    />,
+    { width: 40, height: 2 },
+  )
   try {
     await act(async () => setup.flush())
     expect(setup.captureCharFrame()).toContain("Working · 1m 5s")
@@ -19,50 +36,76 @@ test("uses an injected clock and scheduler", async () => {
 })
 
 test("active heartbeat changes without inventing server progress", async () => {
-  const setup = await testRender(<ActivityIndicator active label="Thinking" />, { width: 40, height: 2 })
+  const setup = await testRender(
+    <ActivityIndicator active label="Thinking" />,
+    { width: 40, height: 2 },
+  )
   try {
     await act(async () => setup.flush())
     const initial = setup.captureCharFrame()
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 150)); await setup.flush() })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      await setup.flush()
+    })
     const next = setup.captureCharFrame()
     expect(next).toContain("Thinking")
     expect(next).not.toBe(initial)
     expect(next).not.toContain("elapsed")
     expect(next).not.toContain("%")
-  } finally { await act(async () => setup.renderer.destroy()) }
+  } finally {
+    await act(async () => setup.renderer.destroy())
+  }
 })
 
 test("static fallback retains a clear waiting label and observed elapsed time", async () => {
-  const setup = await testRender(<ActivityIndicator active animate={false} label="Awaiting approval" tone="waiting" startedAt={Date.now() - 65_000} />, { width: 60, height: 2 })
+  const setup = await testRender(
+    <ActivityIndicator
+      active
+      animate={false}
+      label="Awaiting approval"
+      tone="waiting"
+      startedAt={Date.now() - 65_000}
+    />,
+    { width: 60, height: 2 },
+  )
   try {
     await act(async () => setup.flush())
     expect(setup.captureCharFrame()).toContain("⋯ Awaiting approval · 1m 5s")
-  } finally { await act(async () => setup.renderer.destroy()) }
+  } finally {
+    await act(async () => setup.renderer.destroy())
+  }
 })
 
 test("inactive indicator remains static and does not present a running clock", async () => {
-  const setup = await testRender(<ActivityIndicator active={false} label="Idle" startedAt={0} />, { width: 30, height: 2 })
+  const setup = await testRender(
+    <ActivityIndicator active={false} label="Idle" startedAt={0} />,
+    { width: 30, height: 2 },
+  )
   try {
     await act(async () => setup.flush())
     expect(setup.captureCharFrame()).toContain("· Idle")
     expect(setup.captureCharFrame()).not.toContain("elapsed")
-  } finally { await act(async () => setup.renderer.destroy()) }
+  } finally {
+    await act(async () => setup.renderer.destroy())
+  }
 })
-
 
 test("unmount clears the heartbeat interval", async () => {
   const intervals = spyOn(globalThis, "setInterval")
   const cleared = spyOn(globalThis, "clearInterval")
   let setup: Awaited<ReturnType<typeof testRender>> | undefined
   try {
-    setup = await testRender(<ActivityIndicator active label="Working" />, { width: 30, height: 2 })
+    setup = await testRender(<ActivityIndicator active label="Working" />, {
+      width: 30,
+      height: 2,
+    })
     await act(async () => setup!.flush())
-    const call = intervals.mock.calls.findIndex(args => args[1] === 120)
+    const call = intervals.mock.calls.findIndex((args) => args[1] === 120)
     expect(call).toBeGreaterThanOrEqual(0)
     const timer = intervals.mock.results[call]!.value
     await act(async () => setup!.renderer.destroy())
     setup = undefined
-    expect(cleared.mock.calls.some(args => args[0] === timer)).toBe(true)
+    expect(cleared.mock.calls.some((args) => args[0] === timer)).toBe(true)
   } finally {
     if (setup) await act(async () => setup!.renderer.destroy())
     intervals.mockRestore()

@@ -7,9 +7,17 @@ declare const VIMEX_COMPILED: boolean
 
 function asset(language: "python" | "bash" | "json", name: string): string {
   if (typeof VIMEX_COMPILED !== "undefined" && VIMEX_COMPILED) {
-    return join(dirname(realpathSync(process.execPath)), "assets", "parsers", language, name)
+    return join(
+      dirname(realpathSync(process.execPath)),
+      "assets",
+      "parsers",
+      language,
+      name,
+    )
   }
-  return fileURLToPath(new URL(`../../assets/parsers/${language}/${name}`, import.meta.url))
+  return fileURLToPath(
+    new URL(`../../assets/parsers/${language}/${name}`, import.meta.url),
+  )
 }
 
 /** Renderer-owned, pinned parsers that are available without a network connection. */

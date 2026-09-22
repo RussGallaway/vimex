@@ -47,35 +47,35 @@ While detached:
 
 ### Global and focus
 
-| Key | Command |
-|---|---|
-| `Esc` | Return to Normal mode or close the top transient overlay |
-| `:` | Enter Command mode |
-| `Ctrl-k` (also `Ctrl-w k`) | Focus transcript |
-| `Ctrl-j` (also `Ctrl-w j`) | Focus composer |
-| `Space` | Leader prefix |
+| Key                        | Command                                                  |
+| -------------------------- | -------------------------------------------------------- |
+| `Esc`                      | Return to Normal mode or close the top transient overlay |
+| `:`                        | Enter Command mode                                       |
+| `Ctrl-k` (also `Ctrl-w k`) | Focus transcript                                         |
+| `Ctrl-j` (also `Ctrl-w j`) | Focus composer                                           |
+| `Space`                    | Leader prefix                                            |
 
 `Ctrl-b` is avoided as a default leader because terminal multiplexers and Herdr may already use it.
 
 ### Transcript Normal mode
 
-| Keys | Command |
-|---|---|
-| `j`, `k` | Move by visual line |
-| `Ctrl-e`, `Ctrl-y` | Scroll one line while preserving cursor intent |
-| `Ctrl-d`, `Ctrl-u` | Move half a viewport |
-| `gg`, `G` | First item; tail and resume following |
-| `{`, `}` | Previous or next semantic block |
-| `[[`, `]]` | Previous or next message |
-| `0`, `^`, `$` | Start, first content, or end of logical line |
-| `v`, `V` | Character or line Visual mode |
-| `za`, `zo`, `zc` | Toggle, open, or close fold |
-| `zM`, `zR` | Close or open all folds |
-| `/`, `?` | Search forward or backward |
-| `n`, `N` | Next or previous match |
-| `[u`, `]u` | Previous or next URL |
-| `gx` | Open URL under cursor |
-| `r` | Reference selected or current block in composer |
+| Keys               | Command                                         |
+| ------------------ | ----------------------------------------------- |
+| `j`, `k`           | Move by visual line                             |
+| `Ctrl-e`, `Ctrl-y` | Scroll one line while preserving cursor intent  |
+| `Ctrl-d`, `Ctrl-u` | Move half a viewport                            |
+| `gg`, `G`          | First item; tail and resume following           |
+| `{`, `}`           | Previous or next semantic block                 |
+| `[[`, `]]`         | Previous or next message                        |
+| `0`, `^`, `$`      | Start, first content, or end of logical line    |
+| `v`, `V`           | Character or line Visual mode                   |
+| `za`, `zo`, `zc`   | Toggle, open, or close fold                     |
+| `zM`, `zR`         | Close or open all folds                         |
+| `/`, `?`           | Search forward or backward                      |
+| `n`, `N`           | Next or previous match                          |
+| `[u`, `]u`         | Previous or next URL                            |
+| `gx`               | Open URL under cursor                           |
+| `r`                | Reference selected or current block in composer |
 
 Counts apply where their Vim equivalent is meaningful.
 
@@ -206,7 +206,6 @@ Composer-focused Ctrl-E/Y scroll the transcript by one line and Ctrl-D/U by half
 Tool headers use server-provided action descriptions when available. Expanded command blocks separate the exact execution command from unchanged output, with both represented in the semantic transcript for selection and copying.
 
 Agent navigation: Normal `ga` opens the picker from either pane, `[a`/`]a` cycle an immediate parent and its children, and `\` returns to the immediate parent. A SUBAGENT badge and parent breadcrumb distinguish child views. Ctrl-O/Ctrl-I visit chronological locations across agents and ordinary sessions while restoring the cursor and reading viewport independently and preserving drafts. `s` starts Flash from either pane in Normal mode; transcript Visual also supports it. Ctrl-G remains available while composing in Insert mode.
-
 
 Side conversations open as a right-hand 40% pane, retaining the parent's 60% view. Narrow terminals stack panes; short terminals maximize the focused pane and retain a parent activity summary. Ctrl-W h/l/w changes pane focus, Ctrl-W | maximizes/restores, and Ctrl-W = restores the default split. Ctrl-W c hides the side while work continues; Ctrl-W q quits and retires it. These window shortcuts pause while an overlay is open so a rename or question form is not lost. `:side quote` transfers a selection into the parent's draft without sending it.
 

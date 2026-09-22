@@ -7,12 +7,16 @@ export class Lifecycle {
     this.disposers.push(dispose)
   }
   close(): Promise<void> {
-    return this.closing ??= this.release()
+    return (this.closing ??= this.release())
   }
   private async release(): Promise<void> {
     const errors: unknown[] = []
     for (const dispose of this.disposers.reverse()) {
-      try { await dispose() } catch (error) { errors.push(error) }
+      try {
+        await dispose()
+      } catch (error) {
+        errors.push(error)
+      }
     }
     this.disposers = []
     if (errors.length) throw new AggregateError(errors, "Vimex shutdown failed")
@@ -20,11 +24,19 @@ export class Lifecycle {
 }
 
 /** Keep the initiating failure primary while retaining every cleanup failure for diagnostics. */
-export function failureAfterCleanup(primary: unknown, cleanup: unknown): unknown {
+export function failureAfterCleanup(
+  primary: unknown,
+  cleanup: unknown,
+): unknown {
   if (primary === undefined) return cleanup
   if (cleanup === undefined) return primary
-  const cleanupErrors = cleanup instanceof AggregateError ? cleanup.errors : [cleanup]
-  return new AggregateError([primary, ...cleanupErrors], "Vimex failed and shutdown also failed", { cause: primary })
+  const cleanupErrors =
+    cleanup instanceof AggregateError ? cleanup.errors : [cleanup]
+  return new AggregateError(
+    [primary, ...cleanupErrors],
+    "Vimex failed and shutdown also failed",
+    { cause: primary },
+  )
 }
 
 export interface ApplicationShutdown {
@@ -35,12 +47,30 @@ export interface ApplicationShutdown {
 }
 
 /** Restore the terminal before waiting on arbitrary ports, retaining signal handlers until the end. */
-export async function shutdownApplication(steps: ApplicationShutdown): Promise<void> {
+export async function shutdownApplication(
+  steps: ApplicationShutdown,
+): Promise<void> {
   const errors: unknown[] = []
-  try { await steps.unmount() } catch (error) { errors.push(error) }
-  try { await steps.restoreTerminal() } catch (error) { errors.push(error) }
-  try { await steps.releaseResources() } catch (error) { errors.push(error) }
-  try { steps.detachHandlers() } catch (error) { errors.push(error) }
+  try {
+    await steps.unmount()
+  } catch (error) {
+    errors.push(error)
+  }
+  try {
+    await steps.restoreTerminal()
+  } catch (error) {
+    errors.push(error)
+  }
+  try {
+    await steps.releaseResources()
+  } catch (error) {
+    errors.push(error)
+  }
+  try {
+    steps.detachHandlers()
+  } catch (error) {
+    errors.push(error)
+  }
   if (errors.length) throw new AggregateError(errors, "Vimex shutdown failed")
 }
 
@@ -52,5 +82,7 @@ export class FailureNotice {
     this.active = true
     notify(error instanceof Error ? error.message : String(error))
   }
-  clear(): void { this.active = false }
+  clear(): void {
+    this.active = false
+  }
 }

@@ -12,12 +12,13 @@ export interface ConversationIngressOptions {
   onError?(error: unknown): void
 }
 
-export const systemConversationIngressScheduler: ConversationIngressScheduler = {
-  schedule(task, delayMs) {
-    const timer = setTimeout(task, delayMs)
-    return () => clearTimeout(timer)
-  },
-}
+export const systemConversationIngressScheduler: ConversationIngressScheduler =
+  {
+    schedule(task, delayMs) {
+      const timer = setTimeout(task, delayMs)
+      return () => clearTimeout(timer)
+    },
+  }
 
 /**
  * Settles item-local token deltas on a bounded cadence while preserving every
@@ -38,16 +39,26 @@ export class ConversationIngress {
     private readonly options: ConversationIngressOptions = {},
   ) {}
 
-  private get scheduler(): ConversationIngressScheduler { return this.options.scheduler ?? systemConversationIngressScheduler }
-  private get cadenceMs(): number { return this.options.cadenceMs ?? 16 }
+  private get scheduler(): ConversationIngressScheduler {
+    return this.options.scheduler ?? systemConversationIngressScheduler
+  }
+  private get cadenceMs(): number {
+    return this.options.cadenceMs ?? 16
+  }
   private get maxEventsPerTurn(): number {
     const configured = this.options.maxEventsPerTurn ?? 64
-    return Number.isFinite(configured) ? Math.max(1, Math.floor(configured)) : 64
+    return Number.isFinite(configured)
+      ? Math.max(1, Math.floor(configured))
+      : 64
   }
 
-  get hasPending(): boolean { return this.pending.size > 0 }
+  get hasPending(): boolean {
+    return this.pending.size > 0
+  }
 
-  private deltaKey(event: Extract<ConversationEvent, { type: "item.delta" }>): string {
+  private deltaKey(
+    event: Extract<ConversationEvent, { type: "item.delta" }>,
+  ): string {
     return `${event.threadId.length}:${event.threadId}${event.itemId}`
   }
 
@@ -64,7 +75,8 @@ export class ConversationIngress {
   private enqueue(event: ConversationEvent): number {
     const sequence = this.nextSequence++
     this.pending.set(sequence, event)
-    if (event.type === "item.delta") this.deltaSequences.set(this.deltaKey(event), sequence)
+    if (event.type === "item.delta")
+      this.deltaSequences.set(this.deltaKey(event), sequence)
     else this.deltaSequences.clear()
     return sequence
   }
@@ -73,14 +85,26 @@ export class ConversationIngress {
     if (this.cancelScheduled || !this.pending.size || this.closed) return
     this.cancelScheduled = this.scheduler.schedule(() => {
       this.cancelScheduled = undefined
-      const atomicCount = this.atomicRetryThrough === undefined ? undefined : this.atomicPrefixCount(this.atomicRetryThrough)
-      try { this.drain(atomicCount ?? this.maxEventsPerTurn, atomicCount !== undefined) } catch (error) {
+      const atomicCount =
+        this.atomicRetryThrough === undefined
+          ? undefined
+          : this.atomicPrefixCount(this.atomicRetryThrough)
+      try {
+        this.drain(
+          atomicCount ?? this.maxEventsPerTurn,
+          atomicCount !== undefined,
+        )
+      } catch (error) {
         // A permanent sink failure must not create a hot retry loop. New input
         // or an explicit lifecycle flush will retry the retained batch.
         const cancelRetry = this.cancelScheduled as (() => void) | undefined
         cancelRetry?.()
         this.cancelScheduled = undefined
-        try { this.options.onError?.(error) } catch { /* error reporting is advisory */ }
+        try {
+          this.options.onError?.(error)
+        } catch {
+          /* error reporting is advisory */
+        }
       }
     }, delayMs)
   }
@@ -105,11 +129,16 @@ export class ConversationIngress {
     if (!selected.length) return
     for (const [sequence, event] of selected) {
       this.pending.delete(sequence)
-      if (event.type === "item.delta" && this.deltaSequences.get(this.deltaKey(event)) === sequence) this.deltaSequences.delete(this.deltaKey(event))
+      if (
+        event.type === "item.delta" &&
+        this.deltaSequences.get(this.deltaKey(event)) === sequence
+      )
+        this.deltaSequences.delete(this.deltaKey(event))
     }
     const through = selected.at(-1)![0]
-    const completesAtomicRetry = this.atomicRetryThrough !== undefined
-      && selected.some(([sequence]) => sequence === this.atomicRetryThrough)
+    const completesAtomicRetry =
+      this.atomicRetryThrough !== undefined &&
+      selected.some(([sequence]) => sequence === this.atomicRetryThrough)
     try {
       this.emit(selected.map(([, event]) => event))
     } catch (error) {
@@ -132,9 +161,15 @@ export class ConversationIngress {
     }
     const key = this.deltaKey(event)
     const existingSequence = this.deltaSequences.get(key)
-    const previous = existingSequence === undefined ? undefined : this.pending.get(existingSequence)
+    const previous =
+      existingSequence === undefined
+        ? undefined
+        : this.pending.get(existingSequence)
     if (previous?.type === "item.delta") {
-      this.pending.set(existingSequence!, { ...previous, delta: previous.delta + event.delta })
+      this.pending.set(existingSequence!, {
+        ...previous,
+        delta: previous.delta + event.delta,
+      })
     } else {
       this.enqueue(event)
     }

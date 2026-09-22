@@ -38,9 +38,20 @@ import type { TurnSteerResponse } from "../generated/v0_154_0/v2/TurnSteerRespon
 import type { UserInput } from "../generated/v0_154_0/v2/UserInput"
 import type { ToolRequestUserInputResponse } from "../generated/v0_154_0/v2/ToolRequestUserInputResponse"
 import type { Turn } from "../generated/v0_154_0/v2/Turn"
-import { hydrateTurns, mapNotificationEvents, mapServerRequest, mapThreadRelation, mapThreadSummary, type CodexAdapterEvent, type ThreadRelation } from "../mapping/map-notification"
+import {
+  hydrateTurns,
+  mapNotificationEvents,
+  mapServerRequest,
+  mapThreadRelation,
+  mapThreadSummary,
+  type CodexAdapterEvent,
+  type ThreadRelation,
+} from "../mapping/map-notification"
 import { RpcClient, type ServerCall } from "../rpc/json-rpc-client"
-import { StdioTransport, type StdioTransportOptions } from "../transport/stdio-transport"
+import {
+  StdioTransport,
+  type StdioTransportOptions,
+} from "../transport/stdio-transport"
 import type { CodexTransport } from "../transport/transport"
 
 export interface CodexClientInfo {
@@ -94,8 +105,18 @@ export interface ModelPage {
 }
 
 export type ApprovalResult =
-  | { decision: CommandExecutionApprovalDecision | FileChangeApprovalDecision | string | Record<string, unknown> }
-  | { permissions: GrantedPermissionProfile; scope: "turn" | "session"; strictAutoReview?: boolean }
+  | {
+      decision:
+        | CommandExecutionApprovalDecision
+        | FileChangeApprovalDecision
+        | string
+        | Record<string, unknown>
+    }
+  | {
+      permissions: GrantedPermissionProfile
+      scope: "turn" | "session"
+      strictAutoReview?: boolean
+    }
 
 interface PendingServerRequest {
   request: ServerCall
@@ -106,8 +127,13 @@ interface PendingServerRequest {
 export class CodexAppServerClient {
   private readonly rpc: RpcClient
   private readonly listeners = new Set<(event: CodexAdapterEvent) => void>()
-  private readonly serverRequestListeners = new Set<(request: ServerCall) => void>()
-  private readonly pendingServerRequests = new Map<string, PendingServerRequest>()
+  private readonly serverRequestListeners = new Set<
+    (request: ServerCall) => void
+  >()
+  private readonly pendingServerRequests = new Map<
+    string,
+    PendingServerRequest
+  >()
   private readonly approvalWireIds = new Map<string, RequestId>()
   private connected = false
 
@@ -115,8 +141,12 @@ export class CodexAppServerClient {
     transport: CodexTransport,
     private readonly options: CodexClientOptions = {},
   ) {
-    this.rpc = new RpcClient(transport, { requestTimeoutMs: options.requestTimeoutMs })
-    this.rpc.onNotification((notification) => { for (const event of mapNotificationEvents(notification)) this.emit(event) })
+    this.rpc = new RpcClient(transport, {
+      requestTimeoutMs: options.requestTimeoutMs,
+    })
+    this.rpc.onNotification((notification) => {
+      for (const event of mapNotificationEvents(notification)) this.emit(event)
+    })
     this.rpc.onRequest((request) => this.receiveServerRequest(request))
     this.rpc.onUnknown((payload) => this.emit({ type: "unknown", payload }))
     transport.onError((error) => this.handleDisconnect(error))
@@ -124,10 +154,15 @@ export class CodexAppServerClient {
   }
 
   async connect(): Promise<InitializeResponse> {
-    if (this.connected) throw new Error("Codex app-server client is already connected")
+    if (this.connected)
+      throw new Error("Codex app-server client is already connected")
     await this.rpc.start()
     const result = await this.rpc.request<InitializeResponse>("initialize", {
-      clientInfo: this.options.clientInfo ?? { name: "vimex", title: "Vimex", version: "0.1.0" },
+      clientInfo: this.options.clientInfo ?? {
+        name: "vimex",
+        title: "Vimex",
+        version: "0.1.0",
+      },
       capabilities: {
         experimentalApi: this.options.experimentalApi ?? false,
         requestAttestation: this.options.requestAttestation ?? false,
@@ -154,11 +189,24 @@ export class CodexAppServerClient {
     const request: ThreadListParams = {
       sortKey: "recency_at",
       sortDirection: "desc",
-      sourceKinds: ["cli", "vscode", "exec", "appServer", "subAgent", "subAgentReview", "subAgentCompact", "subAgentThreadSpawn", "subAgentOther"],
+      sourceKinds: [
+        "cli",
+        "vscode",
+        "exec",
+        "appServer",
+        "subAgent",
+        "subAgentReview",
+        "subAgentCompact",
+        "subAgentThreadSpawn",
+        "subAgentOther",
+      ],
       archived: false,
       ...params,
     }
-    const raw = await this.rpc.request<ThreadListResponse>("thread/list", request)
+    const raw = await this.rpc.request<ThreadListResponse>(
+      "thread/list",
+      request,
+    )
     return {
       threads: raw.data.map(mapThreadSummary),
       relations: raw.data.map(mapThreadRelation),
@@ -169,7 +217,10 @@ export class CodexAppServerClient {
   }
 
   async startThread(params: ThreadStartParams = {}): Promise<ThreadSession> {
-    const raw = await this.rpc.request<ThreadStartResponse>("thread/start", params)
+    const raw = await this.rpc.request<ThreadStartResponse>(
+      "thread/start",
+      params,
+    )
     return session(raw)
   }
 
@@ -181,10 +232,12 @@ export class CodexAppServerClient {
         model: model.model,
         label: model.displayName,
         description: model.description,
-        supportedReasoningEfforts: model.supportedReasoningEfforts.map((option) => ({
-          effort: option.reasoningEffort,
-          description: option.description,
-        })),
+        supportedReasoningEfforts: model.supportedReasoningEfforts.map(
+          (option) => ({
+            effort: option.reasoningEffort,
+            description: option.description,
+          }),
+        ),
         defaultReasoningEffort: model.defaultReasoningEffort,
         inputModalities: model.inputModalities,
         isDefault: model.isDefault,
@@ -202,33 +255,62 @@ export class CodexAppServerClient {
     thread: string,
     settings: Omit<ThreadSettingsUpdateParams, "threadId">,
   ): Promise<ThreadSettingsUpdateResponse> {
-    return this.rpc.request("thread/settings/update", { threadId: thread, ...settings })
+    return this.rpc.request("thread/settings/update", {
+      threadId: thread,
+      ...settings,
+    })
   }
 
-  setThreadModel(thread: string, model: string): Promise<ThreadSettingsUpdateResponse> {
+  setThreadModel(
+    thread: string,
+    model: string,
+  ): Promise<ThreadSettingsUpdateResponse> {
     return this.updateThreadSettings(thread, { model })
   }
 
-  setThreadReasoningEffort(thread: string, effort: string): Promise<ThreadSettingsUpdateResponse> {
+  setThreadReasoningEffort(
+    thread: string,
+    effort: string,
+  ): Promise<ThreadSettingsUpdateResponse> {
     return this.updateThreadSettings(thread, { effort })
   }
 
-  setThreadCwd(thread: string, cwd: string): Promise<ThreadSettingsUpdateResponse> {
+  setThreadCwd(
+    thread: string,
+    cwd: string,
+  ): Promise<ThreadSettingsUpdateResponse> {
     return this.updateThreadSettings(thread, { cwd })
   }
 
-  async resumeThread(thread: string, overrides: Omit<ThreadResumeParams, "threadId"> = {}): Promise<ThreadSession> {
+  async resumeThread(
+    thread: string,
+    overrides: Omit<ThreadResumeParams, "threadId"> = {},
+  ): Promise<ThreadSession> {
     if (this.options.experimentalApi) {
-      const raw = await this.rpc.request<ThreadResumeResponse>("thread/resume", {
-        threadId: thread,
-        excludeTurns: true,
-        initialTurnsPage: { limit: 100, sortDirection: "desc", itemsView: "full" },
-        ...overrides,
-      })
+      const raw = await this.rpc.request<ThreadResumeResponse>(
+        "thread/resume",
+        {
+          threadId: thread,
+          excludeTurns: true,
+          initialTurnsPage: {
+            limit: 100,
+            sortDirection: "desc",
+            itemsView: "full",
+          },
+          ...overrides,
+        },
+      )
       return session(raw, await this.loadResumeTurns(raw))
     }
-    const { excludeTurns: _excludeTurns, initialTurnsPage: _initialTurnsPage, ...stableOverrides } = overrides
-    const raw = await this.rpc.request<ThreadResumeResponse>("thread/resume", { threadId: thread, ...stableOverrides })
+    const {
+      excludeTurns: _excludeTurns,
+      initialTurnsPage: _initialTurnsPage,
+      ...stableOverrides
+    } = overrides
+    const raw = await this.rpc.request<ThreadResumeResponse>("thread/resume", {
+      threadId: thread,
+      ...stableOverrides,
+    })
     return session(raw, raw.thread.turns)
   }
 
@@ -255,7 +337,10 @@ export class CodexAppServerClient {
 
   async compactThread(thread: string): Promise<void> {
     const params: ThreadCompactStartParams = { threadId: thread }
-    await this.rpc.request<ThreadCompactStartResponse>("thread/compact/start", params)
+    await this.rpc.request<ThreadCompactStartResponse>(
+      "thread/compact/start",
+      params,
+    )
   }
 
   async archiveThread(thread: string): Promise<void> {
@@ -278,7 +363,10 @@ export class CodexAppServerClient {
     thread: string,
     activeTurnId: string,
     input: string | readonly UserInput[],
-    overrides: Omit<TurnSteerParams, "threadId" | "expectedTurnId" | "input"> = {},
+    overrides: Omit<
+      TurnSteerParams,
+      "threadId" | "expectedTurnId" | "input"
+    > = {},
   ): Promise<TurnSteerResponse> {
     return this.rpc.request("turn/steer", {
       threadId: thread,
@@ -288,28 +376,65 @@ export class CodexAppServerClient {
     } satisfies TurnSteerParams)
   }
 
-  async getGoal(thread: string) { return (await this.rpc.request<ThreadGoalGetResponse>("thread/goal/get", { threadId: thread })).goal }
-  async setGoal(thread: string, update: Omit<ThreadGoalSetParams, "threadId">) { return (await this.rpc.request<ThreadGoalSetResponse>("thread/goal/set", { threadId: thread, ...update })).goal }
-  async clearGoal(thread: string) { return (await this.rpc.request<ThreadGoalClearResponse>("thread/goal/clear", { threadId: thread })).cleared }
+  async getGoal(thread: string) {
+    return (
+      await this.rpc.request<ThreadGoalGetResponse>("thread/goal/get", {
+        threadId: thread,
+      })
+    ).goal
+  }
+  async setGoal(thread: string, update: Omit<ThreadGoalSetParams, "threadId">) {
+    return (
+      await this.rpc.request<ThreadGoalSetResponse>("thread/goal/set", {
+        threadId: thread,
+        ...update,
+      })
+    ).goal
+  }
+  async clearGoal(thread: string) {
+    return (
+      await this.rpc.request<ThreadGoalClearResponse>("thread/goal/clear", {
+        threadId: thread,
+      })
+    ).cleared
+  }
 
-  interruptTurn(thread: string, activeTurnId: string): Promise<TurnInterruptResponse> {
-    return this.rpc.request("turn/interrupt", { threadId: thread, turnId: activeTurnId })
+  interruptTurn(
+    thread: string,
+    activeTurnId: string,
+  ): Promise<TurnInterruptResponse> {
+    return this.rpc.request("turn/interrupt", {
+      threadId: thread,
+      turnId: activeTurnId,
+    })
   }
 
   /** Low-level escape hatch for new server request types. */
-  async respondToServerRequest(requestId: RequestId, result: unknown): Promise<void> {
+  async respondToServerRequest(
+    requestId: RequestId,
+    result: unknown,
+  ): Promise<void> {
     const wireId = this.wireRequestId(requestId)
     const pending = this.pendingServerRequests.get(requestKey(wireId))
-    if (pending?.answered) throw new Error(`Server request already answered: ${String(requestId)}`)
+    if (pending?.answered)
+      throw new Error(`Server request already answered: ${String(requestId)}`)
     await this.rpc.respond(wireId, result)
     if (pending) pending.answered = true
   }
 
-  async resolveApproval(requestId: RequestId, choice: string, rejection = "Declined by user"): Promise<void> {
+  async resolveApproval(
+    requestId: RequestId,
+    choice: string,
+    rejection = "Declined by user",
+  ): Promise<void> {
     const wireId = this.wireRequestId(requestId)
     const pending = this.pendingServerRequests.get(requestKey(wireId))
-    if (!pending) throw new Error(`Unknown or resolved server request: ${String(requestId)}`)
-    if (pending.answered) throw new Error(`Server request already answered: ${String(requestId)}`)
+    if (!pending)
+      throw new Error(
+        `Unknown or resolved server request: ${String(requestId)}`,
+      )
+    if (pending.answered)
+      throw new Error(`Server request already answered: ${String(requestId)}`)
     const result = approvalResult(pending.request, choice, rejection)
     await this.respondToServerRequest(wireId, result)
   }
@@ -322,8 +447,13 @@ export class CodexAppServerClient {
   ): Promise<void> {
     const wireId = this.wireRequestId(requestId)
     const pending = this.pendingServerRequests.get(requestKey(wireId))
-    if (!pending || pending.request.method !== "item/permissions/requestApproval") {
-      throw new Error(`Request ${String(requestId)} is not a permission approval`)
+    if (
+      !pending ||
+      pending.request.method !== "item/permissions/requestApproval"
+    ) {
+      throw new Error(
+        `Request ${String(requestId)} is not a permission approval`,
+      )
     }
     await this.respondToServerRequest(wireId, {
       permissions,
@@ -338,10 +468,17 @@ export class CodexAppServerClient {
   ): Promise<void> {
     const pending = this.pendingServerRequests.get(requestKey(requestId))
     if (!pending || pending.request.method !== "item/tool/requestUserInput") {
-      throw new Error(`Request ${String(requestId)} is not a user-input request`)
+      throw new Error(
+        `Request ${String(requestId)} is not a user-input request`,
+      )
     }
     const response: ToolRequestUserInputResponse = {
-      answers: Object.fromEntries(Object.entries(answers).map(([id, answer]) => [id, { answers: typeof answer === "string" ? [answer] : [...answer] }])),
+      answers: Object.fromEntries(
+        Object.entries(answers).map(([id, answer]) => [
+          id,
+          { answers: typeof answer === "string" ? [answer] : [...answer] },
+        ]),
+      ),
     }
     await this.respondToServerRequest(requestId, response)
   }
@@ -352,21 +489,39 @@ export class CodexAppServerClient {
 
   private receiveServerRequest(request: ServerCall): void {
     const event = mapServerRequest(request)
-    const approval = event.type === "approval.requested" ? event.approval : undefined
+    const approval =
+      event.type === "approval.requested" ? event.approval : undefined
     const supported = approval || event.type === "userInput.requested"
-    if (supported) this.pendingServerRequests.set(requestKey(request.id), { request, approval, answered: false })
+    if (supported)
+      this.pendingServerRequests.set(requestKey(request.id), {
+        request,
+        approval,
+        answered: false,
+      })
     if (approval) this.approvalWireIds.set(approval.id, request.id)
     this.emit(event)
     for (const listener of this.serverRequestListeners) listener(request)
     if (!supported && this.serverRequestListeners.size === 0) {
-      void this.rpc.respondError(request.id, -32601, `Unsupported server request: ${request.method}`)
-        .catch((error: unknown) => this.emit({ type: "error", message: error instanceof Error ? error.message : String(error) }))
+      void this.rpc
+        .respondError(
+          request.id,
+          -32601,
+          `Unsupported server request: ${request.method}`,
+        )
+        .catch((error: unknown) =>
+          this.emit({
+            type: "error",
+            message: error instanceof Error ? error.message : String(error),
+          }),
+        )
     }
   }
 
   private emit(event: CodexAdapterEvent): void {
     if (event.type === "approval.resolved") {
-      const pending = this.pendingServerRequests.get(requestKey(event.requestId))
+      const pending = this.pendingServerRequests.get(
+        requestKey(event.requestId),
+      )
       if (pending?.approval) this.approvalWireIds.delete(pending.approval.id)
       this.pendingServerRequests.delete(requestKey(event.requestId))
     }
@@ -374,7 +529,7 @@ export class CodexAppServerClient {
   }
 
   private wireRequestId(id: RequestId): RequestId {
-    return typeof id === "string" ? this.approvalWireIds.get(id) ?? id : id
+    return typeof id === "string" ? (this.approvalWireIds.get(id) ?? id) : id
   }
 
   private handleDisconnect(error?: Error): void {
@@ -390,25 +545,43 @@ export class CodexAppServerClient {
     }
     this.pendingServerRequests.clear()
     this.approvalWireIds.clear()
-    this.emit({ type: "connection", status: error ? "error" : "disconnected", ...(error ? { error: message } : {}) })
+    this.emit({
+      type: "connection",
+      status: error ? "error" : "disconnected",
+      ...(error ? { error: message } : {}),
+    })
   }
 
   private async loadResumeTurns(raw: ThreadResumeResponse): Promise<Turn[]> {
-    if (raw.initialTurnsPage === undefined && raw.thread.turns.length > 0) return raw.thread.turns
+    if (raw.initialTurnsPage === undefined && raw.thread.turns.length > 0)
+      return raw.thread.turns
     let data = raw.initialTurnsPage?.data ?? []
     let cursor = raw.initialTurnsPage?.nextCursor ?? undefined
     if (!raw.initialTurnsPage) {
-      const first = await this.listTurns({ threadId: raw.thread.id, limit: 100, sortDirection: "desc", itemsView: "full" })
+      const first = await this.listTurns({
+        threadId: raw.thread.id,
+        limit: 100,
+        sortDirection: "desc",
+        itemsView: "full",
+      })
       data = first.data
       cursor = first.nextCursor ?? undefined
     }
     while (cursor) {
-      const page = await this.listTurns({ threadId: raw.thread.id, cursor, limit: 100, sortDirection: "desc", itemsView: "full" })
+      const page = await this.listTurns({
+        threadId: raw.thread.id,
+        cursor,
+        limit: 100,
+        sortDirection: "desc",
+        itemsView: "full",
+      })
       data = [...data, ...page.data]
       cursor = page.nextCursor ?? undefined
     }
     const chronological = [...data].reverse()
-    return Promise.all(chronological.map((turn) => this.loadFullTurn(raw.thread.id, turn)))
+    return Promise.all(
+      chronological.map((turn) => this.loadFullTurn(raw.thread.id, turn)),
+    )
   }
 
   private async loadFullTurn(thread: string, turn: Turn): Promise<Turn> {
@@ -416,7 +589,13 @@ export class CodexAppServerClient {
     let cursor: string | undefined
     const items = []
     do {
-      const page = await this.listItems({ threadId: thread, turnId: turn.id, cursor, limit: 100, sortDirection: "asc" })
+      const page = await this.listItems({
+        threadId: thread,
+        turnId: turn.id,
+        cursor,
+        limit: 100,
+        sortDirection: "asc",
+      })
       items.push(...page.data.map((entry) => entry.item))
       cursor = page.nextCursor ?? undefined
     } while (cursor)
@@ -428,10 +607,16 @@ export function createCodexAppServerClient(
   transportOptions: StdioTransportOptions = {},
   clientOptions: CodexClientOptions = {},
 ): CodexAppServerClient {
-  return new CodexAppServerClient(new StdioTransport(transportOptions), clientOptions)
+  return new CodexAppServerClient(
+    new StdioTransport(transportOptions),
+    clientOptions,
+  )
 }
 
-function session(raw: ThreadStartResponse | ThreadResumeResponse | ThreadForkResponse, turns = raw.thread.turns): ThreadSession {
+function session(
+  raw: ThreadStartResponse | ThreadResumeResponse | ThreadForkResponse,
+  turns = raw.thread.turns,
+): ThreadSession {
   return {
     summary: mapThreadSummary(raw.thread),
     relation: mapThreadRelation(raw.thread),
@@ -451,18 +636,30 @@ function normalizeInput(input: string | readonly UserInput[]): UserInput[] {
     : [...input]
 }
 
-function approvalResult(request: ServerCall, choice: string, rejection: string): ApprovalResult {
+function approvalResult(
+  request: ServerCall,
+  choice: string,
+  rejection: string,
+): ApprovalResult {
   switch (request.method) {
     case "item/commandExecution/requestApproval": {
       const params = request.params as CommandExecutionRequestApprovalParams
       const decision = parseCommandDecision(choice)
-      if (params.availableDecisions?.length && !params.availableDecisions.some((available) => sameDecision(available, decision))) {
-        throw new Error(`Decision ${choice} is not available for request ${String(request.id)}`)
+      if (
+        params.availableDecisions?.length &&
+        !params.availableDecisions.some((available) =>
+          sameDecision(available, decision),
+        )
+      ) {
+        throw new Error(
+          `Decision ${choice} is not available for request ${String(request.id)}`,
+        )
       }
       return { decision }
     }
     case "item/fileChange/requestApproval":
-      if (!isFileDecision(choice)) throw new Error(`Invalid file-change decision: ${choice}`)
+      if (!isFileDecision(choice))
+        throw new Error(`Invalid file-change decision: ${choice}`)
       return { decision: choice }
     case "item/permissions/requestApproval": {
       const params = request.params as PermissionsRequestApprovalParams
@@ -483,8 +680,16 @@ function approvalResult(request: ServerCall, choice: string, rejection: string):
   }
 }
 
-function parseCommandDecision(choice: string): CommandExecutionApprovalDecision {
-  if (choice === "accept" || choice === "acceptForSession" || choice === "decline" || choice === "cancel") return choice
+function parseCommandDecision(
+  choice: string,
+): CommandExecutionApprovalDecision {
+  if (
+    choice === "accept" ||
+    choice === "acceptForSession" ||
+    choice === "decline" ||
+    choice === "cancel"
+  )
+    return choice
   try {
     return JSON.parse(choice) as CommandExecutionApprovalDecision
   } catch {
@@ -492,23 +697,45 @@ function parseCommandDecision(choice: string): CommandExecutionApprovalDecision 
   }
 }
 
-function sameDecision(left: CommandExecutionApprovalDecision, right: CommandExecutionApprovalDecision): boolean {
+function sameDecision(
+  left: CommandExecutionApprovalDecision,
+  right: CommandExecutionApprovalDecision,
+): boolean {
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
 function isFileDecision(choice: string): choice is FileChangeApprovalDecision {
-  return choice === "accept" || choice === "acceptForSession" || choice === "decline" || choice === "cancel"
+  return (
+    choice === "accept" ||
+    choice === "acceptForSession" ||
+    choice === "decline" ||
+    choice === "cancel"
+  )
 }
 
-function requestedPermissions(params: PermissionsRequestApprovalParams): GrantedPermissionProfile {
+function requestedPermissions(
+  params: PermissionsRequestApprovalParams,
+): GrantedPermissionProfile {
   return {
-    ...(params.permissions.network ? { network: params.permissions.network } : {}),
-    ...(params.permissions.fileSystem ? { fileSystem: params.permissions.fileSystem } : {}),
+    ...(params.permissions.network
+      ? { network: params.permissions.network }
+      : {}),
+    ...(params.permissions.fileSystem
+      ? { fileSystem: params.permissions.fileSystem }
+      : {}),
   }
 }
 
-function legacyDecision(choice: string, rejection: string): string | Record<string, unknown> {
-  if (choice === "approved" || choice === "approved_for_session" || choice === "abort") return choice
+function legacyDecision(
+  choice: string,
+  rejection: string,
+): string | Record<string, unknown> {
+  if (
+    choice === "approved" ||
+    choice === "approved_for_session" ||
+    choice === "abort"
+  )
+    return choice
   if (choice === "denied") return { denied: { rejection } }
   throw new Error(`Invalid legacy approval decision: ${choice}`)
 }

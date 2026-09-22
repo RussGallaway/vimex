@@ -2,14 +2,14 @@
 
 Use `:theme NAME` or `/theme NAME`; Tab completes the available names. Changes persist. `:syntax theme` follows the UI palette (default), while `:syntax NAME` selects independent syntax colors.
 
-| Name | Character | Syntax |
-| --- | --- | --- |
-| `ember-tide` | Original warm charcoal | Cool keywords, sage strings, amber values |
-| `nord` | Cool, restrained Polar Night | Frost functions/types, purple values |
-| `gruvbox-material` | Medium dark, warm earth tones | Red keywords, green functions/strings, purple values |
-| `kanagawa` | Wave variant, ink backgrounds | Violet keywords, blue functions, aqua types, pink numbers |
-| `tokyo-night` | Night variant, blue-black | Violet keywords, blue functions, cyan types, orange numbers |
-| `catppuccin-mocha` | Dark pastel | Mauve keywords, blue functions, yellow types, peach numbers |
+| Name               | Character                     | Syntax                                                      |
+| ------------------ | ----------------------------- | ----------------------------------------------------------- |
+| `ember-tide`       | Original warm charcoal        | Cool keywords, sage strings, amber values                   |
+| `nord`             | Cool, restrained Polar Night  | Frost functions/types, purple values                        |
+| `gruvbox-material` | Medium dark, warm earth tones | Red keywords, green functions/strings, purple values        |
+| `kanagawa`         | Wave variant, ink backgrounds | Violet keywords, blue functions, aqua types, pink numbers   |
+| `tokyo-night`      | Night variant, blue-black     | Violet keywords, blue functions, cyan types, orange numbers |
+| `catppuccin-mocha` | Dark pastel                   | Mauve keywords, blue functions, yellow types, peach numbers |
 
 These are Vimex adaptations with syntax roles, selection colors, and diff surfaces, not Neovim plugins. Muted text and panel/diff tints are adjusted where useful for terminal readability. The original default is unchanged. Reduced-color mode neutralizes semantic accents for every palette.
 

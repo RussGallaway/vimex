@@ -184,35 +184,35 @@ Martin Fowler's Presentation Model provides a home for UI behavior independent o
 
 ### Application to Vimex
 
-| Role | Vimex responsibility |
-|---|---|
-| Client | `TranscriptViewport` and OpenTUI components |
-| Manager | `TranscriptRuntime`; upstream `VimexController` |
-| Engines | projection, navigation, measurement composition, window planning |
+| Role            | Vimex responsibility                                              |
+| --------------- | ----------------------------------------------------------------- |
+| Client          | `TranscriptViewport` and OpenTUI components                       |
+| Manager         | `TranscriptRuntime`; upstream `VimexController`                   |
+| Engines         | projection, navigation, measurement composition, window planning  |
 | Resource access | Codex gateway now; optional history loader only if paging arrives |
-| Resources | canonical conversation state and disposable native geometry |
+| Resources       | canonical conversation state and disposable native geometry       |
 
 These are reasoning tools, not directory names.
 
 ## Adopt, adapt, reject
 
-| Pattern | Decision |
-|---|---|
-| One canonical content model | Adopt |
-| Detached viewport/presentation pin | Adopt |
-| Stateful renderer-neutral render model | Adopt as `TranscriptRuntime` |
-| Explicit partial/full damage | Adopt at block granularity |
-| Bounded ingress and event draining | Adopt |
-| Revision-guarded incremental updates | Adopt |
-| Safe full-rebuild fallback | Adopt |
-| Multiple presentations of one state | Adopt |
-| Terminal cell coordinates as identity | Reject |
-| Second authoritative history/tail store | Reject |
-| Full transcript clone on every update | Reject |
-| Item-only Stage 5 virtualization | Reject; use render blocks |
-| Literal architecture-role folder hierarchy | Reject |
-| New transcript-runtime package now | Reject |
-| Persisted native geometry | Reject |
+| Pattern                                    | Decision                     |
+| ------------------------------------------ | ---------------------------- |
+| One canonical content model                | Adopt                        |
+| Detached viewport/presentation pin         | Adopt                        |
+| Stateful renderer-neutral render model     | Adopt as `TranscriptRuntime` |
+| Explicit partial/full damage               | Adopt at block granularity   |
+| Bounded ingress and event draining         | Adopt                        |
+| Revision-guarded incremental updates       | Adopt                        |
+| Safe full-rebuild fallback                 | Adopt                        |
+| Multiple presentations of one state        | Adopt                        |
+| Terminal cell coordinates as identity      | Reject                       |
+| Second authoritative history/tail store    | Reject                       |
+| Full transcript clone on every update      | Reject                       |
+| Item-only Stage 5 virtualization           | Reject; use render blocks    |
+| Literal architecture-role folder hierarchy | Reject                       |
+| New transcript-runtime package now         | Reject                       |
+| Persisted native geometry                  | Reject                       |
 
 ## Questions to validate through implementation
 

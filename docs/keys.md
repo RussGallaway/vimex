@@ -6,36 +6,36 @@ Press `:help` for the compact in-app reference, or `:manual` (`:man`, `/manual`,
 
 ## Focus and global actions
 
-| Key | Action |
-| --- | --- |
+| Key                              | Action                                                                                                                                                                                                        |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `↑` / `Ctrl-k` (also `Ctrl-w k`) | Focus the lowest visible transcript content row when leaving the composer, preserving scroll position. Available in every mode; leaving Insert, Visual, or Command for the transcript returns to Normal mode. |
-| `↓` / `Ctrl-j` (also `Ctrl-w j`) | Focus composer. Available in every mode; leaving Visual or Command returns to Normal mode. |
-| `Ctrl-c` | Interrupt the active Codex turn. |
-| `Esc` | Dismiss the active overlay or return to Normal mode; from Normal mode, interrupt the active Codex turn and focus the transcript. Drafts are preserved. |
-| `:` | Enter Command mode. |
+| `↓` / `Ctrl-j` (also `Ctrl-w j`) | Focus composer. Available in every mode; leaving Visual or Command returns to Normal mode.                                                                                                                    |
+| `Ctrl-c`                         | Interrupt the active Codex turn.                                                                                                                                                                              |
+| `Esc`                            | Dismiss the active overlay or return to Normal mode; from Normal mode, interrupt the active Codex turn and focus the transcript. Drafts are preserved.                                                        |
+| `:`                              | Enter Command mode.                                                                                                                                                                                           |
 
 ## Transcript in Normal or Visual mode
 
-| Key | Action |
-| --- | --- |
-| `h j k l` | Move the logical transcript cursor. |
-| `w/b/e`, `W/B/E` | Move by word or whitespace-delimited WORD; counts and Visual extension supported. |
-| `0`, `$`, `^` | Start of visual line, end of visual line, first content. |
-| `gg`, `G` | First item; last item and resume tail following. |
-| `Ctrl-e`, `Ctrl-y` | Scroll down/up one line without changing mode. |
-| `Ctrl-d`, `Ctrl-u` | Scroll down/up half a viewport. |
-| `Ctrl-f`, `Ctrl-b` | Scroll down/up one viewport. |
-| `{`, `}` (Shift-[ / Shift-]) | Previous/next semantic block. |
-| `[[`, `]]` | Previous/next message. |
-| `[u`, `]u` | Previous/next URL. |
-| `/`, `?` | Search transcript forward/backward; also available from composer Normal mode. |
-| `n`, `N` | Next/previous search match. |
-| `r` | Quote the selected text or current semantic block into the composer. |
-| `gx` | Open the URL at the cursor, or show a URL chooser when needed. |
-| `za`, `zo`, `zc` | Toggle, open, or close the current fold. |
-| `zR`, `zM` | Open or close all folds. |
-| `v`, `V` | Begin character or line Visual selection. |
-| `f` | Request a fork through the selected completed turn. A confirmation overlay opens. |
+| Key                          | Action                                                                            |
+| ---------------------------- | --------------------------------------------------------------------------------- |
+| `h j k l`                    | Move the logical transcript cursor.                                               |
+| `w/b/e`, `W/B/E`             | Move by word or whitespace-delimited WORD; counts and Visual extension supported. |
+| `0`, `$`, `^`                | Start of visual line, end of visual line, first content.                          |
+| `gg`, `G`                    | First item; last item and resume tail following.                                  |
+| `Ctrl-e`, `Ctrl-y`           | Scroll down/up one line without changing mode.                                    |
+| `Ctrl-d`, `Ctrl-u`           | Scroll down/up half a viewport.                                                   |
+| `Ctrl-f`, `Ctrl-b`           | Scroll down/up one viewport.                                                      |
+| `{`, `}` (Shift-[ / Shift-]) | Previous/next semantic block.                                                     |
+| `[[`, `]]`                   | Previous/next message.                                                            |
+| `[u`, `]u`                   | Previous/next URL.                                                                |
+| `/`, `?`                     | Search transcript forward/backward; also available from composer Normal mode.     |
+| `n`, `N`                     | Next/previous search match.                                                       |
+| `r`                          | Quote the selected text or current semantic block into the composer.              |
+| `gx`                         | Open the URL at the cursor, or show a URL chooser when needed.                    |
+| `za`, `zo`, `zc`             | Toggle, open, or close the current fold.                                          |
+| `zR`, `zM`                   | Open or close all folds.                                                          |
+| `v`, `V`                     | Begin character or line Visual selection.                                         |
+| `f`                          | Request a fork through the selected completed turn. A confirmation overlay opens. |
 
 Typing a numeric prefix repeats supported motions, up to four digits.
 
@@ -43,14 +43,14 @@ The transcript shows a precise text cursor in Normal and Visual modes. Move firs
 
 ## Visual mode
 
-| Key | Action |
-| --- | --- |
-| Normal transcript motions | Extend the selection. |
-| `o` | Swap selection anchor and head. |
-| `y` | Copy rendered plain text. |
-| `Y` | Copy canonical Markdown source. |
-| `gx` | Open a URL in the selection/cursor context. |
-| `Esc` | Clear selection and return to Normal mode. |
+| Key                       | Action                                      |
+| ------------------------- | ------------------------------------------- |
+| Normal transcript motions | Extend the selection.                       |
+| `o`                       | Swap selection anchor and head.             |
+| `y`                       | Copy rendered plain text.                   |
+| `Y`                       | Copy canonical Markdown source.             |
+| `gx`                      | Open a URL in the selection/cursor context. |
+| `Esc`                     | Clear selection and return to Normal mode.  |
 
 ## Composer
 
@@ -58,12 +58,12 @@ Use Down or `Ctrl-j` to focus the composer. While composing in Normal, Insert, o
 
 In Insert mode:
 
-| Key | Action |
-| --- | --- |
-| `Esc` | Return to Normal mode. |
-| `Enter` | Submit by default; inserts a newline when `insertEnter` is `newline`. |
+| Key           | Action                                                                              |
+| ------------- | ----------------------------------------------------------------------------------- |
+| `Esc`         | Return to Normal mode.                                                              |
+| `Enter`       | Submit by default; inserts a newline when `insertEnter` is `newline`.               |
 | `Shift+Enter` | Insert a newline. This depends on the terminal reporting modified Enter distinctly. |
-| `Ctrl+Enter` | Steer the active turn, or send when idle. |
+| `Ctrl+Enter`  | Steer the active turn, or send when idle.                                           |
 
 Command entry replaces the bottom status strip while leaving the composer and transcript in place. Enter executes; Escape restores the status strip.
 
@@ -71,15 +71,15 @@ In transcript Normal mode, Enter toggles the current foldable block. Shift-Tab t
 
 ## Views and overlays
 
-| Key or command | Action |
-| --- | --- |
-| `Space s`, `:sessions` | Search and switch sessions. |
+| Key or command                                | Action                                                                             |
+| --------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `Space s`, `:sessions`                        | Search and switch sessions.                                                        |
 | `a` from transcript Normal mode, `:approvals` | Open pending approvals. In composer Normal mode, `a` keeps its Vim append meaning. |
-| `ga`, `:agents` | Open parent/child agent navigation. |
-| `:questions` | Open pending structured questions. |
-| `:parent` | Return to the parent agent thread. |
-| `:manual` | Read the scrollable offline user manual. |
-| `:help` | Open the scrollable key and command reference. |
+| `ga`, `:agents`                               | Open parent/child agent navigation.                                                |
+| `:questions`                                  | Open pending structured questions.                                                 |
+| `:parent`                                     | Return to the parent agent thread.                                                 |
+| `:manual`                                     | Read the scrollable offline user manual.                                           |
+| `:help`                                       | Open the scrollable key and command reference.                                     |
 
 Normal mode also provides a Space leader vocabulary: `Space s` opens sessions, `Space a` opens approvals, `Space q` opens questions, and `Space ?` opens help. The second key is a leader token rather than an independent fallback action.
 
@@ -91,33 +91,32 @@ Typing `/` at the beginning of an Insert-mode draft opens the command drawer abo
 
 Enter `:` to open command completion above the bottom command bar. Up/Down selects a suggestion, Tab completes names or supported arguments, and Ctrl-P/N recalls command history. Enter executes the typed command or selected completion. Esc cancels and restores the previous focus without changing the composer draft.
 
-| Command | Action |
-| --- | --- |
-| `:q` | Quit. |
-| `:help [COMMAND]` | Browse keys and commands, or show usage for one command. |
-| `:sessions [ID]` | Open the session picker or resume an exact thread ID, including one absent from the current list. |
-| `:favorite [on\|off]` | Toggle the active session favorite, or set it explicitly. |
-| `:follow`, `:tail` | Return to the live transcript tail. |
-| `:model [NAME] [EFFORT]` | Open the model and thinking-level picker, or set both directly. Tab completes model IDs and their supported efforts, leaving the cursor ready for the next argument. |
-| `:thinking [LEVEL]` | List supported effort levels or change effort. |
-| `:cwd [PATH]` | Show or change the active thread working directory. Relative paths resolve from its current directory. |
-| `:new [PATH]` | Start a thread, optionally in another directory. |
-| `:rename NAME` | Rename the active thread. |
-| `:approve`, `:reject` | Use a matching quick decision for the first pending approval; open `:approvals` when a choice is ambiguous. |
-| `:stop` | Interrupt the active turn. |
-| `:compact`, `/compact` | Compact the focused session context while idle. The Compacting animation follows server lifecycle events; sending is paused and drafts are preserved until it finishes. |
-| `:restart` | Restart the Codex app server and rehydrate the active thread. |
-| `:fork` | Open fork confirmation at the current message context. |
-| `:fold`, `:unfold` | Fold or unfold all foldable transcript items. |
-| `:yank [text\|markdown]`, `:copy [text\|markdown]` | Copy the selection or current transcript block as rendered text or exact source, also populating the composer register. |
-| `:open [URL]` | Open a supplied URL or the current transcript URL. |
-| `:theme NAME` | Select and persist a UI theme. |
-| `:syntax NAME` | Select and persist a syntax theme; `theme` follows the UI palette. |
-| `:submit [queue\|steer]` | Send the composer draft using the configured default or an explicit queue/steer intent. |
-| `:insert`, `:normal`, `:visual` | Enter a mode; Visual initializes a transcript selection. |
+| Command                                            | Action                                                                                                                                                                  |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `:q`                                               | Quit.                                                                                                                                                                   |
+| `:help [COMMAND]`                                  | Browse keys and commands, or show usage for one command.                                                                                                                |
+| `:sessions [ID]`                                   | Open the session picker or resume an exact thread ID, including one absent from the current list.                                                                       |
+| `:favorite [on\|off]`                              | Toggle the active session favorite, or set it explicitly.                                                                                                               |
+| `:follow`, `:tail`                                 | Return to the live transcript tail.                                                                                                                                     |
+| `:model [NAME] [EFFORT]`                           | Open the model and thinking-level picker, or set both directly. Tab completes model IDs and their supported efforts, leaving the cursor ready for the next argument.    |
+| `:thinking [LEVEL]`                                | List supported effort levels or change effort.                                                                                                                          |
+| `:cwd [PATH]`                                      | Show or change the active thread working directory. Relative paths resolve from its current directory.                                                                  |
+| `:new [PATH]`                                      | Start a thread, optionally in another directory.                                                                                                                        |
+| `:rename NAME`                                     | Rename the active thread.                                                                                                                                               |
+| `:approve`, `:reject`                              | Use a matching quick decision for the first pending approval; open `:approvals` when a choice is ambiguous.                                                             |
+| `:stop`                                            | Interrupt the active turn.                                                                                                                                              |
+| `:compact`, `/compact`                             | Compact the focused session context while idle. The Compacting animation follows server lifecycle events; sending is paused and drafts are preserved until it finishes. |
+| `:restart`                                         | Restart the Codex app server and rehydrate the active thread.                                                                                                           |
+| `:fork`                                            | Open fork confirmation at the current message context.                                                                                                                  |
+| `:fold`, `:unfold`                                 | Fold or unfold all foldable transcript items.                                                                                                                           |
+| `:yank [text\|markdown]`, `:copy [text\|markdown]` | Copy the selection or current transcript block as rendered text or exact source, also populating the composer register.                                                 |
+| `:open [URL]`                                      | Open a supplied URL or the current transcript URL.                                                                                                                      |
+| `:theme NAME`                                      | Select and persist a UI theme.                                                                                                                                          |
+| `:syntax NAME`                                     | Select and persist a syntax theme; `theme` follows the UI palette.                                                                                                      |
+| `:submit [queue\|steer]`                           | Send the composer draft using the configured default or an explicit queue/steer intent.                                                                                 |
+| `:insert`, `:normal`, `:visual`                    | Enter a mode; Visual initializes a transcript selection.                                                                                                                |
 
 Mouse-wheel scrolling moves the transcript by precise terminal rows, preserves composer focus and both text cursors, and detaches from the streaming tail. Reaching the bottom with the wheel keeps the viewport detached; use the explicit follow command to resume following.
-
 
 ## Flash jumps, jumplist, and marks
 
@@ -132,31 +131,28 @@ Inspired by [flash.nvim](https://github.com/folke/flash.nvim)'s labeled search. 
 
 From either pane in Normal mode, `ga` opens the agent picker, `[a` and `]a` cycle the immediate parent and its children, and `\` returns to the immediate parent. Root sessions cycle their direct children. Existing `[[`/`]]` message motions remain available. Subagent sessions show a SUBAGENT badge and a parent breadcrumb; Ctrl-O/Ctrl-I revisit parent, sibling, and local transcript locations in chronological order.
 
-
 ## Side chat
 
 `/side [question]` and `:side [question]` open a forked side conversation alongside the parent. With no question, they reopen the same side conversation, preserving its draft and transcript. The parent stays visible and can keep working. Context begins at the fork point; `:side refresh` supplies newer parent activity to the existing side conversation.
 
-| Key or command | Action |
-| --- | --- |
-| `Ctrl-h` / `Ctrl-l` | Focus main / side directly. |
-| `Ctrl-w h` / `Ctrl-w l` | Alternate main / side focus keys. |
-| `Ctrl-w w` | Cycle visible panes. |
-| `Ctrl-w \|` | Maximize the focused pane; repeat to restore the split. |
-| `Ctrl-w =` | Restore default pane sizes. |
-| `\` in side Normal mode | Focus the immediate parent. |
-| `:side close` or `/side close` | Hide the side pane. Its agent can continue working; `/side` reopens the same conversation. |
-| `:side quit` or `/side quit` | Stop and retire the side agent. It cannot be reopened as that side conversation; the next `/side` creates a fresh fork. |
-| `:side refresh` | Supply the latest parent activity to the side conversation. |
-| `:side maximize` | Toggle maximization of the focused pane. |
-| `:side focus parent` / `:side focus side` | Focus a pane explicitly. |
+| Key or command                            | Action                                                                                                                  |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `Ctrl-h` / `Ctrl-l`                       | Focus main / side directly.                                                                                             |
+| `Ctrl-w h` / `Ctrl-w l`                   | Alternate main / side focus keys.                                                                                       |
+| `Ctrl-w w`                                | Cycle visible panes.                                                                                                    |
+| `Ctrl-w \|`                               | Maximize the focused pane; repeat to restore the split.                                                                 |
+| `Ctrl-w =`                                | Restore default pane sizes.                                                                                             |
+| `\` in side Normal mode                   | Focus the immediate parent.                                                                                             |
+| `:side close` or `/side close`            | Hide the side pane. Its agent can continue working; `/side` reopens the same conversation.                              |
+| `:side quit` or `/side quit`              | Stop and retire the side agent. It cannot be reopened as that side conversation; the next `/side` creates a fresh fork. |
+| `:side refresh`                           | Supply the latest parent activity to the side conversation.                                                             |
+| `:side maximize`                          | Toggle maximization of the focused pane.                                                                                |
+| `:side focus parent` / `:side focus side` | Focus a pane explicitly.                                                                                                |
 
 Up/Down and Ctrl-K/J continue to switch between composer and transcript within the focused pane. Escape retains mode cancellation and turn interruption; it does not close the side pane. Ctrl-O/Ctrl-I continue to navigate visit history.
-
 
 In Normal mode, `Space r` opens `:rename` with an empty name ready to type and the current title shown as a hint. `:rename New title` also renames directly. `t` follows the focused transcript tail from either composer or transcript without changing the draft. Insert mode still types a literal `t`.
 
 Side-pane window shortcuts: `Ctrl-W c` hides the side pane and keeps its agent running; `Ctrl-W q` quits and retires that side session. A later `/side` reopens a hidden side session, or creates a new one after quit.
-
 
 `Space e` in Normal mode expands/collapses the composer. It shows the draft up to the available pane height, then scrolls internally. Session picker opens in **This directory** scope; Tab toggles **All sessions** while preserving the search query. Favorites still obey the current scope; use All sessions or `:sessions ID` to open a known thread outside the current directory.

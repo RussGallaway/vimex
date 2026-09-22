@@ -4,27 +4,49 @@ import { KeymapProvider } from "@opentui/keymap/react"
 import { createRoot } from "@opentui/react"
 import { useRenderer } from "@opentui/react"
 import { useMemo } from "react"
-import { ConnectedSideChatLayout, SideChatLayout } from "./side-chat/SideChatLayout"
-import type { VimexAppProps, VimexUiController, VimexUiSettings } from "./contracts"
+import {
+  ConnectedSideChatLayout,
+  SideChatLayout,
+} from "./side-chat/SideChatLayout"
+import type {
+  VimexAppProps,
+  VimexUiController,
+  VimexUiSettings,
+} from "./contracts"
 import type { WorkbenchPublicationHost } from "@vimex/workbench"
 
 export function VimexRoot(props: VimexAppProps) {
   const renderer = useRenderer()
   const keymap = useMemo(() => createVimexKeymap(renderer), [renderer])
-  return <KeymapProvider keymap={keymap}><SideChatLayout {...props} /></KeymapProvider>
+  return (
+    <KeymapProvider keymap={keymap}>
+      <SideChatLayout {...props} />
+    </KeymapProvider>
+  )
 }
 
 /** Production bridge: layout and panes subscribe to Workbench-owned read models. */
-export function ConnectedVimexRoot(props: { controller: VimexUiController & WorkbenchPublicationHost; settings?: Partial<VimexUiSettings> }) {
+export function ConnectedVimexRoot(props: {
+  controller: VimexUiController & WorkbenchPublicationHost
+  settings?: Partial<VimexUiSettings>
+}) {
   const renderer = useRenderer()
   const keymap = useMemo(() => createVimexKeymap(renderer), [renderer])
-  return <KeymapProvider keymap={keymap}><ConnectedSideChatLayout {...props} /></KeymapProvider>
+  return (
+    <KeymapProvider keymap={keymap}>
+      <ConnectedSideChatLayout {...props} />
+    </KeymapProvider>
+  )
 }
 
 export function mountVimex(renderer: CliRenderer, props: VimexAppProps) {
   const root = createRoot(renderer)
   const keymap = createVimexKeymap(renderer)
-  root.render(<KeymapProvider keymap={keymap}><SideChatLayout {...props} /></KeymapProvider>)
+  root.render(
+    <KeymapProvider keymap={keymap}>
+      <SideChatLayout {...props} />
+    </KeymapProvider>,
+  )
   return root
 }
 

@@ -134,7 +134,6 @@ Features that do not exercise this path should not delay validation of the trans
 - `/skills`: discover current-directory skills via the app-server catalog, handle catalog invalidation, and present a keyboard picker.
 - Preserve path-qualified skill references in drafts, queued messages, retries, and steering; send structured skill inputs through the adapter rather than relying on ambiguous name text.
 
-
 ## UX improvements identified during fold review
 
 These are follow-up candidates, not completed features or changes to v1 acceptance gates:

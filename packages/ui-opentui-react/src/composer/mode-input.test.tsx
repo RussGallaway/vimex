@@ -3,44 +3,119 @@ import { testRender } from "@opentui/react/test-utils"
 import type { TextareaRenderable } from "@opentui/core"
 import { act, useMemo, useState } from "react"
 import { threadId, turnId } from "@vimex/conversation"
-import { activeWorkspace, initialWorkbench, transitionWorkbench, type WorkbenchState } from "@vimex/workbench"
+import {
+  activeWorkspace,
+  initialWorkbench,
+  transitionWorkbench,
+  type WorkbenchState,
+} from "@vimex/workbench"
 import type { VimMode } from "@vimex/interaction"
 import { VimexRoot } from "../index"
 import { inertController, type VimexUiController } from "../contracts"
 
 async function setupMode(mode: VimMode) {
   let observed: WorkbenchState
-  let initial = transitionWorkbench(initialWorkbench(), { type: "thread.open", summary: {
-    id: threadId("mode-input"), title: "Mode input", cwd: "/tmp", model: "test", reasoningEffort: "high", status: "idle",
-  } }).state
-  initial = transitionWorkbench(initial, { type: "interaction.command", command: { type: "focus.set", surface: "composer" } }).state
-  initial = transitionWorkbench(initial, { type: "composer.change", text: "alpha beta", cursorOffset: 0 }).state
-  if (mode === "insert") initial = transitionWorkbench(initial, { type: "interaction.command", command: { type: "mode.insert" } }).state
-  if (mode === "visual") initial = transitionWorkbench(initial, { type: "interaction.command", command: { type: "mode.visual" } }).state
+  let initial = transitionWorkbench(initialWorkbench(), {
+    type: "thread.open",
+    summary: {
+      id: threadId("mode-input"),
+      title: "Mode input",
+      cwd: "/tmp",
+      model: "test",
+      reasoningEffort: "high",
+      status: "idle",
+    },
+  }).state
+  initial = transitionWorkbench(initial, {
+    type: "interaction.command",
+    command: { type: "focus.set", surface: "composer" },
+  }).state
+  initial = transitionWorkbench(initial, {
+    type: "composer.change",
+    text: "alpha beta",
+    cursorOffset: 0,
+  }).state
+  if (mode === "insert")
+    initial = transitionWorkbench(initial, {
+      type: "interaction.command",
+      command: { type: "mode.insert" },
+    }).state
+  if (mode === "visual")
+    initial = transitionWorkbench(initial, {
+      type: "interaction.command",
+      command: { type: "mode.visual" },
+    }).state
   function Harness() {
     const [state, setState] = useState(initial)
     observed = state
-    const controller = useMemo<VimexUiController>(() => ({
-      ...inertController,
-      dispatchInteraction(command) { setState(current => transitionWorkbench(current, { type: "interaction.command", command }).state) },
-      changeDraft(text, cursorOffset) { setState(current => transitionWorkbench(current, { type: "composer.change", text, cursorOffset }).state) },
-    }), [])
+    const controller = useMemo<VimexUiController>(
+      () => ({
+        ...inertController,
+        dispatchInteraction(command) {
+          setState(
+            (current) =>
+              transitionWorkbench(current, {
+                type: "interaction.command",
+                command,
+              }).state,
+          )
+        },
+        changeDraft(text, cursorOffset) {
+          setState(
+            (current) =>
+              transitionWorkbench(current, {
+                type: "composer.change",
+                text,
+                cursorOffset,
+              }).state,
+          )
+        },
+      }),
+      [],
+    )
     return <VimexRoot state={state} controller={controller} />
   }
   let setup!: Awaited<ReturnType<typeof testRender>>
-  await act(async () => { setup = await testRender(<Harness />, { width: 80, height: 24 }) })
+  await act(async () => {
+    setup = await testRender(<Harness />, { width: 80, height: 24 })
+  })
   await act(async () => setup.flush())
-  return { ...setup, composer: setup.renderer.root.findDescendantById("composer") as TextareaRenderable, state: () => observed! }
+  return {
+    ...setup,
+    composer: setup.renderer.root.findDescendantById(
+      "composer",
+    ) as TextareaRenderable,
+    state: () => observed!,
+  }
 }
 
 async function setupSubmission(mode: "insert" | "normal") {
   const id = threadId("submission")
-  let initial = transitionWorkbench(initialWorkbench(), { type: "thread.open", summary: {
-    id, title: "Submission", cwd: "/tmp", model: "test", reasoningEffort: "high", status: "idle",
-  } }).state
-  initial = transitionWorkbench(initial, { type: "interaction.command", command: { type: "focus.set", surface: "composer" } }).state
-  initial = transitionWorkbench(initial, { type: "composer.change", text: "first message", cursorOffset: 13 }).state
-  if (mode === "insert") initial = transitionWorkbench(initial, { type: "interaction.command", command: { type: "mode.insert" } }).state
+  let initial = transitionWorkbench(initialWorkbench(), {
+    type: "thread.open",
+    summary: {
+      id,
+      title: "Submission",
+      cwd: "/tmp",
+      model: "test",
+      reasoningEffort: "high",
+      status: "idle",
+    },
+  }).state
+  initial = transitionWorkbench(initial, {
+    type: "interaction.command",
+    command: { type: "focus.set", surface: "composer" },
+  }).state
+  initial = transitionWorkbench(initial, {
+    type: "composer.change",
+    text: "first message",
+    cursorOffset: 13,
+  }).state
+  if (mode === "insert")
+    initial = transitionWorkbench(initial, {
+      type: "interaction.command",
+      command: { type: "mode.insert" },
+    }).state
 
   let observed = initial
   let updateState!: (command: Parameters<typeof transitionWorkbench>[1]) => void
@@ -48,24 +123,64 @@ async function setupSubmission(mode: "insert" | "normal") {
   function Harness() {
     const [state, setState] = useState(initial)
     observed = state
-    updateState = (command) => setState(current => transitionWorkbench(current, command).state)
-    const controller = useMemo<VimexUiController>(() => ({
-      ...inertController,
-      dispatchInteraction(command) { setState(current => transitionWorkbench(current, { type: "interaction.command", command }).state) },
-      changeDraft(text, cursorOffset) { setState(current => transitionWorkbench(current, { type: "composer.change", text, cursorOffset }).state) },
-      submit(intent) { setState(current => transitionWorkbench(current, { type: "composer.submit", intent, clientMessageId: `submission-${++submission}` }).state) },
-    }), [])
+    updateState = (command) =>
+      setState((current) => transitionWorkbench(current, command).state)
+    const controller = useMemo<VimexUiController>(
+      () => ({
+        ...inertController,
+        dispatchInteraction(command) {
+          setState(
+            (current) =>
+              transitionWorkbench(current, {
+                type: "interaction.command",
+                command,
+              }).state,
+          )
+        },
+        changeDraft(text, cursorOffset) {
+          setState(
+            (current) =>
+              transitionWorkbench(current, {
+                type: "composer.change",
+                text,
+                cursorOffset,
+              }).state,
+          )
+        },
+        submit(intent) {
+          setState(
+            (current) =>
+              transitionWorkbench(current, {
+                type: "composer.submit",
+                intent,
+                clientMessageId: `submission-${++submission}`,
+              }).state,
+          )
+        },
+      }),
+      [],
+    )
     return <VimexRoot state={state} controller={controller} />
   }
 
   let setup!: Awaited<ReturnType<typeof testRender>>
-  await act(async () => { setup = await testRender(<Harness />, { width: 80, height: 24, kittyKeyboard: true }) })
+  await act(async () => {
+    setup = await testRender(<Harness />, {
+      width: 80,
+      height: 24,
+      kittyKeyboard: true,
+    })
+  })
   await act(async () => setup.flush())
   return {
     ...setup,
-    composer: setup.renderer.root.findDescendantById("composer") as TextareaRenderable,
+    composer: setup.renderer.root.findDescendantById(
+      "composer",
+    ) as TextareaRenderable,
     state: () => observed,
-    settle(command: Parameters<typeof transitionWorkbench>[1]) { updateState(command) },
+    settle(command: Parameters<typeof transitionWorkbench>[1]) {
+      updateState(command)
+    },
     thread: id,
   }
 }
@@ -76,30 +191,61 @@ describe("composer mode input isolation", () => {
       const setup = await setupMode(mode)
       try {
         for (const text of ["!@#%&*()_+={}[]|;", "é😀界"]) {
-          await act(async () => { await setup.mockInput.typeText(text); await setup.flush() })
+          await act(async () => {
+            await setup.mockInput.typeText(text)
+            await setup.flush()
+          })
           expect(setup.composer.plainText).toBe("alpha beta")
         }
-        await act(async () => { setup.mockInput.pressKey("BACKSPACE"); setup.mockInput.pressKey("DELETE"); await setup.flush() })
+        await act(async () => {
+          setup.mockInput.pressKey("BACKSPACE")
+          setup.mockInput.pressKey("DELETE")
+          await setup.flush()
+        })
         expect(setup.composer.plainText).toBe("alpha beta")
-        await act(async () => { await setup.mockInput.pasteBracketedText("pasted 😀\nsecond line"); await setup.flush() })
+        await act(async () => {
+          await setup.mockInput.pasteBracketedText("pasted 😀\nsecond line")
+          await setup.flush()
+        })
         expect(setup.composer.plainText).toBe("alpha beta")
-      } finally { await act(async () => setup.renderer.destroy()) }
+      } finally {
+        await act(async () => setup.renderer.destroy())
+      }
     })
   }
 
   test("Normal Vim motions and edits still operate before Insert accepts text and paste", async () => {
     const setup = await setupMode("normal")
     try {
-      await act(async () => { await setup.mockInput.typeText("wx"); await setup.flush() })
+      await act(async () => {
+        await setup.mockInput.typeText("wx")
+        await setup.flush()
+      })
       expect(setup.composer.plainText).toBe("alpha eta")
-      await act(async () => { await setup.mockInput.typeText("i"); await setup.flush() })
-      await act(async () => { await setup.mockInput.typeText("!é"); await setup.mockInput.pasteBracketedText("😀[paste]"); await setup.flush() })
+      await act(async () => {
+        await setup.mockInput.typeText("i")
+        await setup.flush()
+      })
+      await act(async () => {
+        await setup.mockInput.typeText("!é")
+        await setup.mockInput.pasteBracketedText("😀[paste]")
+        await setup.flush()
+      })
       expect(setup.composer.plainText).toBe("alpha !é😀[paste]eta")
-      await act(async () => { setup.mockInput.pressEscape(); await Bun.sleep(30); await setup.flush() })
+      await act(async () => {
+        setup.mockInput.pressEscape()
+        await Bun.sleep(30)
+        await setup.flush()
+      })
       expect(activeWorkspace(setup.state())!.interaction.mode).toBe("normal")
-      await act(async () => { await setup.mockInput.typeText("!@"); await setup.flush() })
+      await act(async () => {
+        await setup.mockInput.typeText("!@")
+        await setup.flush()
+      })
       expect(setup.composer.plainText).toBe("alpha !é😀[paste]eta")
-    } finally { await act(async () => setup.renderer.destroy()) }
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
   })
 
   test("keeps a long multiline draft inside a fixed-height scrolling input", async () => {
@@ -108,7 +254,10 @@ describe("composer mode input isolation", () => {
       const shell = setup.renderer.root.findDescendantById("composer-shell")!
       const initialShellHeight = shell.height
       const initialInputHeight = setup.composer.height
-      const lines = Array.from({ length: 20 }, (_, index) => `line ${index}`).join("\n")
+      const lines = Array.from(
+        { length: 20 },
+        (_, index) => `line ${index}`,
+      ).join("\n")
       await act(async () => {
         await setup.mockInput.pasteBracketedText(`\n${lines}`)
         await setup.flush()
@@ -123,7 +272,9 @@ describe("composer mode input isolation", () => {
       expect(viewport.offsetY).toBeGreaterThan(0)
       expect(cursor.logicalRow).toBeGreaterThanOrEqual(20)
       expect(cursor.visualRow).toBeLessThan(viewport.height)
-    } finally { await act(async () => setup.renderer.destroy()) }
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
   })
 
   test("Insert Enter clears the native buffer before immediate next-draft input", async () => {
@@ -135,8 +286,16 @@ describe("composer mode input isolation", () => {
       })
       const composer = activeWorkspace(setup.state())!.composer
       expect(composer.text).toBe("next draft")
-      expect(composer.outbox).toEqual([expect.objectContaining({ id: "submission-1", text: "first message", status: "sending" })])
-    } finally { await act(async () => setup.renderer.destroy()) }
+      expect(composer.outbox).toEqual([
+        expect.objectContaining({
+          id: "submission-1",
+          text: "first message",
+          status: "sending",
+        }),
+      ])
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
   })
 
   test("Insert Ctrl-Enter steers through native clearing before immediate next-draft input", async () => {
@@ -150,33 +309,75 @@ describe("composer mode input isolation", () => {
       })
       const composer = activeWorkspace(setup.state())!.composer
       expect(composer.text).toBe("next steer draft")
-      expect(composer.outbox).toEqual([expect.objectContaining({
-        id: "submission-1", text: "first message", intent: "steer", status: "sending",
-      })])
-    } finally { await act(async () => setup.renderer.destroy()) }
+      expect(composer.outbox).toEqual([
+        expect.objectContaining({
+          id: "submission-1",
+          text: "first message",
+          intent: "steer",
+          status: "sending",
+        }),
+      ])
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
   })
 
   test("the submitted empty-state render cannot erase bytes already received for the next draft", async () => {
     const id = threadId("stale-submit-render")
-    let initial = transitionWorkbench(initialWorkbench(), { type: "thread.open", summary: {
-      id, title: "Stale submit render", cwd: "/tmp", model: "test", reasoningEffort: "high", status: "idle",
-    } }).state
-    initial = transitionWorkbench(initial, { type: "interaction.command", command: { type: "focus.set", surface: "composer" } }).state
-    initial = transitionWorkbench(initial, { type: "interaction.command", command: { type: "mode.insert" } }).state
-    initial = transitionWorkbench(initial, { type: "composer.change", text: "submitted text", cursorOffset: 14 }).state
+    let initial = transitionWorkbench(initialWorkbench(), {
+      type: "thread.open",
+      summary: {
+        id,
+        title: "Stale submit render",
+        cwd: "/tmp",
+        model: "test",
+        reasoningEffort: "high",
+        status: "idle",
+      },
+    }).state
+    initial = transitionWorkbench(initial, {
+      type: "interaction.command",
+      command: { type: "focus.set", surface: "composer" },
+    }).state
+    initial = transitionWorkbench(initial, {
+      type: "interaction.command",
+      command: { type: "mode.insert" },
+    }).state
+    initial = transitionWorkbench(initial, {
+      type: "composer.change",
+      text: "submitted text",
+      cursorOffset: 14,
+    }).state
     function Harness() {
       const [state, setState] = useState(initial)
-      const controller = useMemo<VimexUiController>(() => ({
-        ...inertController,
-        changeDraft() {},
-        submit(intent) { setState(current => transitionWorkbench(current, { type: "composer.submit", intent, clientMessageId: "stale-1" }).state) },
-      }), [])
+      const controller = useMemo<VimexUiController>(
+        () => ({
+          ...inertController,
+          changeDraft() {},
+          submit(intent) {
+            setState(
+              (current) =>
+                transitionWorkbench(current, {
+                  type: "composer.submit",
+                  intent,
+                  clientMessageId: "stale-1",
+                }).state,
+            )
+          },
+        }),
+        [],
+      )
       return <VimexRoot state={state} controller={controller} />
     }
     let renderer!: Awaited<ReturnType<typeof testRender>>
-    await act(async () => { renderer = await testRender(<Harness />, { width: 80, height: 24 }); await renderer.flush() })
+    await act(async () => {
+      renderer = await testRender(<Harness />, { width: 80, height: 24 })
+      await renderer.flush()
+    })
     try {
-      const textarea = renderer.renderer.root.findDescendantById("composer") as TextareaRenderable
+      const textarea = renderer.renderer.root.findDescendantById(
+        "composer",
+      ) as TextareaRenderable
       await act(async () => {
         renderer.mockInput.pressEnter()
         textarea.setText("NEXT_DRAFT_IN_SAME_DRAIN")
@@ -184,7 +385,9 @@ describe("composer mode input isolation", () => {
         await renderer.flush()
       })
       expect(textarea.plainText).toBe("NEXT_DRAFT_IN_SAME_DRAIN")
-    } finally { await act(async () => renderer.renderer.destroy()) }
+    } finally {
+      await act(async () => renderer.renderer.destroy())
+    }
   })
 
   test("a delayed acknowledgement cannot overwrite the next draft", async () => {
@@ -196,12 +399,19 @@ describe("composer mode input isolation", () => {
         await setup.flush()
       })
       await act(async () => {
-        setup.settle({ type: "composer.ack", threadId: setup.thread, clientMessageId: "submission-1", turnId: turnId("started") })
+        setup.settle({
+          type: "composer.ack",
+          threadId: setup.thread,
+          clientMessageId: "submission-1",
+          turnId: turnId("started"),
+        })
         await setup.flush()
       })
       expect(activeWorkspace(setup.state())!.composer.text).toBe("newer text")
       expect(setup.composer.plainText).toBe("newer text")
-    } finally { await act(async () => setup.renderer.destroy()) }
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
   })
 
   test("a delayed failure retains the submitted outbox copy and the newer draft", async () => {
@@ -213,14 +423,27 @@ describe("composer mode input isolation", () => {
         await setup.flush()
       })
       await act(async () => {
-        setup.settle({ type: "composer.fail", threadId: setup.thread, clientMessageId: "submission-1", reason: "offline" })
+        setup.settle({
+          type: "composer.fail",
+          threadId: setup.thread,
+          clientMessageId: "submission-1",
+          reason: "offline",
+        })
         await setup.flush()
       })
       const composer = activeWorkspace(setup.state())!.composer
       expect(composer.text).toBe("newer text")
-      expect(composer.outbox).toEqual([expect.objectContaining({ text: "first message", status: "failed", reason: "offline" })])
+      expect(composer.outbox).toEqual([
+        expect.objectContaining({
+          text: "first message",
+          status: "failed",
+          reason: "offline",
+        }),
+      ])
       expect(setup.composer.plainText).toBe("newer text")
-    } finally { await act(async () => setup.renderer.destroy()) }
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
   })
 
   test("Normal Enter clears immediately and submits exactly once", async () => {
@@ -233,32 +456,62 @@ describe("composer mode input isolation", () => {
       })
       const composer = activeWorkspace(setup.state())!.composer
       expect(composer.text).toBe("")
-      expect(composer.outbox).toEqual([expect.objectContaining({ text: "first message", status: "sending" })])
-    } finally { await act(async () => setup.renderer.destroy()) }
+      expect(composer.outbox).toEqual([
+        expect.objectContaining({ text: "first message", status: "sending" }),
+      ])
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
   })
 })
-
 
 test("Space e expands wrapped composer content within pane and collapses without data loss", async () => {
   const h = await setupMode("insert")
   try {
-    const draft = Array.from({ length: 45 }, (_, i) => `draft row ${i}`).join("\n")
-    await act(async () => { await h.mockInput.pasteBracketedText(draft); await h.flush(); await h.renderOnce() })
-    await act(async () => { h.mockInput.pressKey("ESCAPE"); await Bun.sleep(30); await h.flush() })
+    const draft = Array.from({ length: 45 }, (_, i) => `draft row ${i}`).join(
+      "\n",
+    )
+    await act(async () => {
+      await h.mockInput.pasteBracketedText(draft)
+      await h.flush()
+      await h.renderOnce()
+    })
+    await act(async () => {
+      h.mockInput.pressKey("ESCAPE")
+      await Bun.sleep(30)
+      await h.flush()
+    })
     const text = h.composer.plainText
     const cursor = h.composer.cursorOffset
     expect(h.composer.height).toBe(3)
-    await act(async () => { await h.mockInput.typeText(" e"); await h.flush(); await h.renderOnce() })
-    await act(async () => { await h.flush(); await h.renderOnce() })
+    await act(async () => {
+      await h.mockInput.typeText(" e")
+      await h.flush()
+      await h.renderOnce()
+    })
+    await act(async () => {
+      await h.flush()
+      await h.renderOnce()
+    })
     expect(h.composer.height).toBeGreaterThan(3)
     expect(h.composer.height).toBeLessThan(24)
     expect(h.composer.plainText).toBe(text)
     expect(h.composer.cursorOffset).toBe(cursor)
-    await act(async () => { h.resize(48, 18); await h.flush(); await h.renderOnce() })
+    await act(async () => {
+      h.resize(48, 18)
+      await h.flush()
+      await h.renderOnce()
+    })
     expect(h.composer.height).toBeLessThan(18)
-    await act(async () => { await h.mockInput.typeText(" e"); await h.flush(); await h.renderOnce() })
+    await act(async () => {
+      await h.mockInput.typeText(" e")
+      await h.flush()
+      await h.renderOnce()
+    })
     expect(h.composer.height).toBe(3)
     expect(h.composer.plainText).toBe(text)
     expect(h.composer.cursorOffset).toBe(cursor)
-  } finally { await act(async () => h.renderer.destroy()) }
+  } finally {
+    await act(async () => h.renderer.destroy())
+  }
 })

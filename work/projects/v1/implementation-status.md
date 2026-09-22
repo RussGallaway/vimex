@@ -30,6 +30,7 @@ See the [acceptance matrix](acceptance-matrix.md) for evidence and gaps against 
 Additional TUI hardening now covers Normal/Visual native-input isolation, Ctrl-J/K focus, semantic word motions, exact-ID session resume, a separate composer panel and bottom command/status strip, responsive session/header layout, and explicit activity indicators. See [TUI testing](tui-testing.md) for source research and visual evidence.
 
 ## Remaining acceptance work
+
 - Exercise the real terminal acceptance matrix, including resized Markdown copying, streaming anchors, thread view restoration, forks, and URLs. The authorized live smoke driver passed 16 checks; remaining gaps are recorded in the acceptance matrix.
 - Establish live keyboard approval resolution and handled-failure terminal restoration evidence; offline tests alone do not satisfy the specification’s real-app-server acceptance requirement.
 - Observe Linux and macOS CI results; local success does not establish the remote matrix.
@@ -48,7 +49,6 @@ Do not change the specification to make unfinished implementation appear complet
 - Composer footer spacing has been reduced per visual feedback, retaining the blank separator above status.
 - Real-PTY immediate-next-draft preservation now passes the eight-check offline driver; evidence is recorded in `/tmp/vimex-visual-e2e/result.json`.
 - `/skills` discovery and structured draft attachments remain required follow-up work under the agreed command UX.
-
 
 Command UX checkpoint: shared descriptors now drive usage, validation, and slash/Ex argument completion; model/thinking/session choices use runtime data. Favorite/follow/exact-session commands, explicit queue/steer submission, current-block copying, and command-driven Visual selection are covered by controller tests. Invalid input stays editable, and `//` escapes a literal slash-leading prompt. Sent user messages use brighter text and inset spacing without a role label; cursor/source copying passes narrow reflow tests. The eight-check offline terminal driver also passes. Structured `/skills` support and the dedicated diff-review screen remain follow-ups.
 

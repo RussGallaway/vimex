@@ -26,13 +26,28 @@ export interface VimBindingContext {
   dispatchMotion(motion: Motion): void
   runComposerKey(key: string): void
   beginVisual(shape: "character" | "line"): void
-  openOverlay(overlay: "sessions" | "approvals" | "questions" | "fork" | "agents" | "urls" | "help"): void
+  openOverlay(
+    overlay:
+      | "sessions"
+      | "approvals"
+      | "questions"
+      | "fork"
+      | "agents"
+      | "urls"
+      | "help",
+  ): void
   scroll(direction: "up" | "down", amount: "line" | "half-page" | "page"): void
 }
 
 export function countBindings(ctx: VimBindingContext): UiBinding[] {
-  return Array.from({ length: 9 }, (_, index) => ({ key: `${index + 1}`, cmd: () => {
-    ctx.countRef.current = `${ctx.countRef.current}${index + 1}`.slice(0, 4)
-    ctx.controller.dispatchInteraction({ type: "count.push", digit: index + 1 })
-  } }))
+  return Array.from({ length: 9 }, (_, index) => ({
+    key: `${index + 1}`,
+    cmd: () => {
+      ctx.countRef.current = `${ctx.countRef.current}${index + 1}`.slice(0, 4)
+      ctx.controller.dispatchInteraction({
+        type: "count.push",
+        digit: index + 1,
+      })
+    },
+  }))
 }

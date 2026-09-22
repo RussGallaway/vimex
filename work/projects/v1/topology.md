@@ -232,23 +232,22 @@ plugins/herdr -> application ports and read models
 
 ## Volatility boundaries
 
-| Likely source of change | Contained in |
-|---|---|
-| Codex schemas and RPC methods | `codex-app-server` |
-| OpenTUI APIs and React rendering | `ui-opentui-react` |
-| Herdr protocol | `plugins/herdr` |
-| Clipboard and URL behavior by OS or terminal | `platform-node` |
-| Vim grammar and command semantics | `interaction` |
-| Transcript selection and reflow invariants | `transcript` |
-| Transcript presentation revisions, damage, and windowing policy | `transcript` |
-| Streaming settlement and presentation lifetime | `workbench` |
-| Native block measurement and terminal rendering | `ui-opentui-react` |
-| Product presentation | UI themes and components |
+| Likely source of change                                         | Contained in             |
+| --------------------------------------------------------------- | ------------------------ |
+| Codex schemas and RPC methods                                   | `codex-app-server`       |
+| OpenTUI APIs and React rendering                                | `ui-opentui-react`       |
+| Herdr protocol                                                  | `plugins/herdr`          |
+| Clipboard and URL behavior by OS or terminal                    | `platform-node`          |
+| Vim grammar and command semantics                               | `interaction`            |
+| Transcript selection and reflow invariants                      | `transcript`             |
+| Transcript presentation revisions, damage, and windowing policy | `transcript`             |
+| Streaming settlement and presentation lifetime                  | `workbench`              |
+| Native block measurement and terminal rendering                 | `ui-opentui-react`       |
+| Product presentation                                            | UI themes and components |
 
 ## Package creation rule
 
 The tree describes ownership, not a demand for empty packages. Start with the vertical slice identified in the roadmap. Extract or fill each package as behavior appears, while preserving the dependency direction from the first commit.
-
 
 ## Current transcript coordination
 
@@ -297,7 +296,6 @@ The React bridge subscribes to cached frame snapshots, sends semantic commands t
 
 Stages 2–4 are complete: the runtime still uses a pass-through window, while native measurement sits behind `measure-rendered-block.ts`. Geometry retains one current immutable variant per materialized block, and width/style/syntax/renderer uncertainty resets the layout generation. Workbench publishes cached layout and pane read models whose identities change only with their narrow semantic inputs; React panes subscribe independently, and persistence and Herdr observe semantic signatures rather than canonical token cadence. Normal scheduled ingress work is capped at 64 distinct streams per turn with zero-delay continuation, while semantic and lifecycle boundaries remain atomic. Stage 5 may replace the pass-through planner with block windowing without changing the renderer contract: `TranscriptFrame.blocks` remains the complete lightweight plan, `TranscriptFrame.window.blocks` becomes the native-mounted and measured subset, and stable block IDs, render payloads, half-open source spans, activity footprints, spacers, overscan, and logical target materialization are already explicit. [The windowing implementation ledger](./transcript-windowing-implementation.md) owns that next implementation stage.
 
-
 File-change presentation remains under `packages/ui-opentui-react/src/transcript/`: `FileChange.tsx` renders per-file patches, `diff-summary.ts` owns presentation counts and native language names, and `diff-layout.test.tsx` validates source-to-screen mapping through `rendered-layout.ts`. Server metadata mapping remains in the Codex adapter; no Git or filesystem responsibility is added to transcript rendering.
 
 Syntax grammar registration belongs to `packages/ui-opentui-react/src/syntax/`; pinned grammar binaries, highlight queries, licenses, and provenance belong to its `assets/parsers/` directory. The executable composition root calls the UI adapter’s registration entry point for these local assets before native Markdown or diff renderables are created. Grammars load lazily; domain packages remain independent of highlighting technology.
@@ -305,7 +303,6 @@ Syntax grammar registration belongs to `packages/ui-opentui-react/src/syntax/`; 
 Flash presentation and visible-cell target indexing live under `ui-opentui-react/src/transcript/` (`FlashJump.tsx`, `flash-targets.ts`). Label overlays never alter canonical transcript text. Jump history and named marks belong to transcript state/operations; workbench local-state stores source offsets for resume and owns focus transitions. Terminal key disambiguation stays in the UI keymap.
 
 Cross-session cursor/viewport history belongs to `workbench/src/application/navigation-history.ts`; it stores bounded semantic locations, leaving native geometry in the renderer and per-thread drafts in their workspaces.
-
 
 Side-chat application state lives in `workbench/src/application/side-chat.ts`, separate from thread transport and screen layout. Retirement and retained parent/child associations persist through local state. `ui-opentui-react/src/side-chat/SideChatLayout.tsx` arranges persistent pane Apps; `pane-geometry.tsx` supplies pane-local dimensions and screen origins to Markdown diffs, Flash labels, composers, and overlays. Focus gates input and hardware-cursor ownership, while both transcripts continue receiving events.
 

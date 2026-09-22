@@ -40,7 +40,6 @@ Performance evidence: the reproducible 135,389-character single-item benchmark m
 
 Validation: eight offline real-PTY interaction checks pass, with reconstructed terminal screenshots in `/tmp/vimex-visual-e2e`. Timing fixtures are opt-in (`VIMEX_PROFILE_TUI=1`), not machine-dependent CI gates. Final full-suite counts are recorded in `implementation-status.md`.
 
-
 ## Shift-Tab responsiveness follow-up
 
 The user identified toggle-all folding as the slow interaction. A full-App diagnostic with 100 settled Markdown messages and one 100-line output measured roughly 669–676 ms to expand and 1,160–1,172 ms to collapse on the committed geometry baseline. After repair, the same fixture measured approximately 69–76 ms to expand and 66–68 ms to collapse. A 20-output variant measured 94–99 ms to expand and 85–86 ms to collapse. These are local diagnostic timings, not CI thresholds or guarantees for arbitrary output sizes.

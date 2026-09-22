@@ -2,19 +2,19 @@
 
 Start with [install and run](install.md), then the [user manual](manual.md).
 
-| Guide | Purpose |
-| --- | --- |
-| [User manual](manual.md) | Offline guide, also available through `:manual` and as `vimex(1)` |
-| [Keyboard reference](keys.md) | Detailed modes, motions, focus, selection, and commands |
-| [Configuration](configuration.md) | Settings, paths, and overrides |
-| [Themes](themes.md) | UI and syntax palettes |
-| [Side chats](side-chats.md) | Forked sidebar lifecycle and navigation |
-| [Goals](goals.md) | Native Codex goals and budgets |
-| [Terminal support](terminal-support.md) | Key encoding and terminal behavior |
-| [Troubleshooting](troubleshooting.md) | Runtime and display recovery |
-| [Homebrew](homebrew.md) | Formulae, taps, bottles, and core admission |
-| [CLI topology](cli-architecture.md) | Proposed command dispatch and distribution boundaries |
-| [Release plan](releasing.md) | Proposed global distribution, updates, and automation |
+| Guide                                   | Purpose                                                           |
+| --------------------------------------- | ----------------------------------------------------------------- |
+| [User manual](manual.md)                | Offline guide, also available through `:manual` and as `vimex(1)` |
+| [Keyboard reference](keys.md)           | Detailed modes, motions, focus, selection, and commands           |
+| [Configuration](configuration.md)       | Settings, paths, and overrides                                    |
+| [Themes](themes.md)                     | UI and syntax palettes                                            |
+| [Side chats](side-chats.md)             | Forked sidebar lifecycle and navigation                           |
+| [Goals](goals.md)                       | Native Codex goals and budgets                                    |
+| [Terminal support](terminal-support.md) | Key encoding and terminal behavior                                |
+| [Troubleshooting](troubleshooting.md)   | Runtime and display recovery                                      |
+| [Homebrew](homebrew.md)                 | Formulae, taps, bottles, and core admission                       |
+| [CLI topology](cli-architecture.md)     | Proposed command dispatch and distribution boundaries             |
+| [Release plan](releasing.md)            | Proposed global distribution, updates, and automation             |
 
 ## In-app and Unix manuals
 

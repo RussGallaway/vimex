@@ -1,5 +1,10 @@
 import type { ThemeName } from "@vimex/interaction"
-import type { WorkbenchState, WorkbenchActions, TranscriptPresentationHost, TranscriptPresentationId } from "@vimex/workbench"
+import type {
+  WorkbenchState,
+  WorkbenchActions,
+  TranscriptPresentationHost,
+  TranscriptPresentationId,
+} from "@vimex/workbench"
 export type { TranscriptAction as TranscriptUiCommand } from "@vimex/workbench"
 export type VimexUiController = WorkbenchActions & TranscriptPresentationHost
 
@@ -37,7 +42,9 @@ export const defaultVimexUiSettings: VimexUiSettings = {
 }
 
 export const inertController: VimexUiController = {
-  transcriptRuntime() { return undefined },
+  transcriptRuntime() {
+    return undefined
+  },
   dispatchInteraction() {},
   changeDraft() {},
   submit() {},

@@ -14,11 +14,16 @@ export class PendingRequests {
 
   create<T>(id: RequestId, method: string): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      const pending: PendingRequest = { method, resolve: resolve as (value: unknown) => void, reject }
-      if (this.timeoutMs > 0) pending.timer = setTimeout(() => {
-        if (!this.values.delete(id)) return
-        reject(new Error(`${method}: timed out after ${this.timeoutMs}ms`))
-      }, this.timeoutMs)
+      const pending: PendingRequest = {
+        method,
+        resolve: resolve as (value: unknown) => void,
+        reject,
+      }
+      if (this.timeoutMs > 0)
+        pending.timer = setTimeout(() => {
+          if (!this.values.delete(id)) return
+          reject(new Error(`${method}: timed out after ${this.timeoutMs}ms`))
+        }, this.timeoutMs)
       this.values.set(id, pending)
     })
   }
@@ -31,6 +36,10 @@ export class PendingRequests {
     return pending
   }
 
-  reject(id: RequestId, error: Error): void { this.take(id)?.reject(error) }
-  rejectAll(error: Error): void { for (const id of [...this.values.keys()]) this.take(id)?.reject(error) }
+  reject(id: RequestId, error: Error): void {
+    this.take(id)?.reject(error)
+  }
+  rejectAll(error: Error): void {
+    for (const id of [...this.values.keys()]) this.take(id)?.reject(error)
+  }
 }

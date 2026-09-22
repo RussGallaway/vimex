@@ -4,7 +4,11 @@ import type { UserQuestionRequest } from "@vimex/approvals"
 import { useBindings } from "@opentui/keymap/react"
 import type { InputRenderable, ScrollBoxRenderable } from "@opentui/core"
 import type { ThreadId, ThreadSummary } from "@vimex/conversation"
-import { commandNames, commandDescriptors, type Overlay } from "@vimex/interaction"
+import {
+  commandNames,
+  commandDescriptors,
+  type Overlay,
+} from "@vimex/interaction"
 import type { AvailableModel, WorkbenchState } from "@vimex/workbench"
 import type { UrlCandidate } from "@vimex/transcript"
 import { useRef, type RefObject } from "react"
@@ -23,40 +27,91 @@ import { OverlayFrame } from "./OverlayFrame"
 function HelpOverlay() {
   const dimensions = usePaneGeometry()
   const helpRef = useRef<ScrollBoxRenderable>(null)
-  useBindings(() => ({ priority: 250, bindings: [
-    ...["j", "down", "ctrl+e"].map(key => ({ key, cmd: () => helpRef.current?.scrollBy(1, "step") })),
-    ...["k", "up", "ctrl+y"].map(key => ({ key, cmd: () => helpRef.current?.scrollBy(-1, "step") })),
-    { key: "ctrl+d", cmd: () => helpRef.current?.scrollBy(0.5, "viewport") },
-    { key: "ctrl+u", cmd: () => helpRef.current?.scrollBy(-0.5, "viewport") },
-    { key: "g", cmd: () => helpRef.current?.scrollTo(0) },
-    { key: "shift+g", cmd: () => helpRef.current?.scrollTo(helpRef.current.scrollHeight) },
-  ] }), [])
+  useBindings(
+    () => ({
+      priority: 250,
+      bindings: [
+        ...["j", "down", "ctrl+e"].map((key) => ({
+          key,
+          cmd: () => helpRef.current?.scrollBy(1, "step"),
+        })),
+        ...["k", "up", "ctrl+y"].map((key) => ({
+          key,
+          cmd: () => helpRef.current?.scrollBy(-1, "step"),
+        })),
+        {
+          key: "ctrl+d",
+          cmd: () => helpRef.current?.scrollBy(0.5, "viewport"),
+        },
+        {
+          key: "ctrl+u",
+          cmd: () => helpRef.current?.scrollBy(-0.5, "viewport"),
+        },
+        { key: "g", cmd: () => helpRef.current?.scrollTo(0) },
+        {
+          key: "shift+g",
+          cmd: () => helpRef.current?.scrollTo(helpRef.current.scrollHeight),
+        },
+      ],
+    }),
+    [],
+  )
   const groups = [
-    ["Modes", "i insert   v visual   : command   esc normal"], ["Move", "h/j/k/l cursor   0/$ line   gg/G transcript"],
-    ["Scroll", "ctrl-y/e line   ctrl-u/d half page   ctrl-b/f page"], ["Act", "y copy   gx open URL   f fork   Esc (Normal)/ctrl-c interrupt"],
+    ["Modes", "i insert   v visual   : command   esc normal"],
+    ["Move", "h/j/k/l cursor   0/$ line   gg/G transcript"],
+    ["Scroll", "ctrl-y/e line   ctrl-u/d half page   ctrl-b/f page"],
+    ["Act", "y copy   gx open URL   f fork   Esc (Normal)/ctrl-c interrupt"],
     ["Jump", "s/Ctrl-g Flash   Ctrl-o/i history   ma mark   `a jump"],
-    ["Fold", "Enter/za toggle   Shift-Tab all"], ["Views", "Space s sessions   Space r rename   a approvals   :help"],
+    ["Fold", "Enter/za toggle   Shift-Tab all"],
+    ["Views", "Space s sessions   Space r rename   a approvals   :help"],
     ["Agents", "ga picker   [a/]a family   \\ parent"],
-    ["Side", "Ctrl-H/L focus   Ctrl-W | maximize   Ctrl-W c close   Ctrl-W q quit"],
+    [
+      "Side",
+      "Ctrl-H/L focus   Ctrl-W | maximize   Ctrl-W c close   Ctrl-W q quit",
+    ],
     ["Follow", "t tail (Normal, either pane)"],
     ["Focus", "↑ transcript   ↓ composer   ctrl-w k/j aliases"],
     ["Composer", "h/j/k/l  w/b  0/$  x/dd  u/ctrl-r  i/a/I/A  v select"],
     ["Menus", "j/k choose   i search   esc normal/close"],
     ["Send", "enter send   ctrl-enter steer   shift-enter newline"],
   ] as const
-  return <OverlayFrame title="Vimex keys and commands" width={82}>
-    <scrollbox id="help-scroll" ref={helpRef} height={Math.min(19, Math.max(1, Math.floor(dimensions.height * 0.85) - 5))}>
-    {groups.map(([title, detail]) => <box key={title} flexDirection="row" marginBottom={1}>
-      <text width={12} flexShrink={0} fg={emberTide.amber}><b>{title}</b></text><text fg={emberTide.textSoft}>{detail}</text>
-    </box>)}
-    <text marginTop={1} marginBottom={1} fg={emberTide.amber}><b>Slash and Ex commands</b></text>
-    {commandNames.map(name => <box key={name} flexDirection="column" marginBottom={1}>
-      <text fg={emberTide.blueBright}>:{commandDescriptors[name].usage}</text>
-      <text fg={emberTide.textSoft}>{commandDescriptors[name].description}</text>
-    </box>)}
-    </scrollbox>
-    <text height={1} fg={emberTide.textMuted} wrapMode="none" truncate>j/k scroll · esc close</text>
-  </OverlayFrame>
+  return (
+    <OverlayFrame title="Vimex keys and commands" width={82}>
+      <scrollbox
+        id="help-scroll"
+        ref={helpRef}
+        height={Math.min(
+          19,
+          Math.max(1, Math.floor(dimensions.height * 0.85) - 5),
+        )}
+      >
+        {groups.map(([title, detail]) => (
+          <box key={title} flexDirection="row" marginBottom={1}>
+            <text width={12} flexShrink={0} fg={emberTide.amber}>
+              <b>{title}</b>
+            </text>
+            <text fg={emberTide.textSoft}>{detail}</text>
+          </box>
+        ))}
+        <text marginTop={1} marginBottom={1} fg={emberTide.amber}>
+          <b>Slash and Ex commands</b>
+        </text>
+        {commandNames.map((name) => (
+          <box key={name} flexDirection="column" marginBottom={1}>
+            <text fg={emberTide.blueBright}>
+              :{commandDescriptors[name].usage}
+            </text>
+            <text fg={emberTide.textSoft}>
+              {commandDescriptors[name].description}
+            </text>
+          </box>
+        ))}
+      </scrollbox>
+      <text height={1} fg={emberTide.textMuted} wrapMode="none" truncate>
+        j/k scroll · esc close
+      </text>
+    </OverlayFrame>
+  )
 }
 
 export function OverlayLayer(props: {
@@ -90,17 +145,73 @@ export function OverlayLayer(props: {
   selected: number
 }) {
   if (!props.overlay) return null
-  return <box position="absolute" top={0} left={0} right={0} bottom={0} alignItems="center" justifyContent="center" zIndex={40} backgroundColor="#0d0f12d8">
-    {props.overlay === "sessions" ? <SessionsOverlay scope={props.sessionScope} onToggleScope={props.onSessionToggleScope} searchEditing={props.sessionSearchEditing} onSearchEditing={props.onSessionSearchEditing} onMove={props.onSessionMove} onRename={props.onSessionRename} onFavorite={props.onSessionFavorite} rows={props.sessions} query={props.sessionQuery} searchRef={props.sessionSearchRef} onQuery={props.onSessionQuery} onSubmit={props.onActivate} active={props.activeThreadId} selected={props.selected} />
-      : props.overlay === "approvals" ? <ApprovalOverlay approval={props.approval} selected={props.selected} />
-      : props.overlay === "questions" ? <QuestionOverlay request={props.question} questionIndex={props.questionIndex} optionIndex={props.selected}
-          answers={props.answers} inputRef={props.questionInputRef} onInput={props.onQuestionInput} onSubmit={props.onActivate} />
-      : props.overlay === "fork" ? <ForkOverlay pending={props.pendingFork} />
-      : props.overlay === "agents" ? <AgentsOverlay rows={props.agents} summaries={props.summaries} selected={props.selected} />
-      : props.overlay === "urls" ? <UrlsOverlay choices={props.urls} selected={props.selected} />
-      : props.overlay === "models" ? <ModelsOverlay models={props.models} error={props.modelCatalogError} selected={props.selected} picker={props.modelPicker} />
-      : props.overlay === "help" ? <HelpOverlay />
-      : props.overlay === "manual" ? <ManualOverlay />
-      : <OverlayFrame title={props.overlay} width={72}><text fg={emberTide.textMuted}>This view is not available yet.</text></OverlayFrame>}
-  </box>
+  return (
+    <box
+      position="absolute"
+      top={0}
+      left={0}
+      right={0}
+      bottom={0}
+      alignItems="center"
+      justifyContent="center"
+      zIndex={40}
+      backgroundColor="#0d0f12d8"
+    >
+      {props.overlay === "sessions" ? (
+        <SessionsOverlay
+          scope={props.sessionScope}
+          onToggleScope={props.onSessionToggleScope}
+          searchEditing={props.sessionSearchEditing}
+          onSearchEditing={props.onSessionSearchEditing}
+          onMove={props.onSessionMove}
+          onRename={props.onSessionRename}
+          onFavorite={props.onSessionFavorite}
+          rows={props.sessions}
+          query={props.sessionQuery}
+          searchRef={props.sessionSearchRef}
+          onQuery={props.onSessionQuery}
+          onSubmit={props.onActivate}
+          active={props.activeThreadId}
+          selected={props.selected}
+        />
+      ) : props.overlay === "approvals" ? (
+        <ApprovalOverlay approval={props.approval} selected={props.selected} />
+      ) : props.overlay === "questions" ? (
+        <QuestionOverlay
+          request={props.question}
+          questionIndex={props.questionIndex}
+          optionIndex={props.selected}
+          answers={props.answers}
+          inputRef={props.questionInputRef}
+          onInput={props.onQuestionInput}
+          onSubmit={props.onActivate}
+        />
+      ) : props.overlay === "fork" ? (
+        <ForkOverlay pending={props.pendingFork} />
+      ) : props.overlay === "agents" ? (
+        <AgentsOverlay
+          rows={props.agents}
+          summaries={props.summaries}
+          selected={props.selected}
+        />
+      ) : props.overlay === "urls" ? (
+        <UrlsOverlay choices={props.urls} selected={props.selected} />
+      ) : props.overlay === "models" ? (
+        <ModelsOverlay
+          models={props.models}
+          error={props.modelCatalogError}
+          selected={props.selected}
+          picker={props.modelPicker}
+        />
+      ) : props.overlay === "help" ? (
+        <HelpOverlay />
+      ) : props.overlay === "manual" ? (
+        <ManualOverlay />
+      ) : (
+        <OverlayFrame title={props.overlay} width={72}>
+          <text fg={emberTide.textMuted}>This view is not available yet.</text>
+        </OverlayFrame>
+      )}
+    </box>
+  )
 }

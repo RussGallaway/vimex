@@ -8,12 +8,23 @@ export interface CommandPorts {
   doctor(config?: string): Promise<void | number>
   upgrade(version?: string): Promise<void | number>
 }
-export async function runCommand(command: CliCommand, ports: CommandPorts): Promise<number> {
+export async function runCommand(
+  command: CliCommand,
+  ports: CommandPorts,
+): Promise<number> {
   switch (command.kind) {
-    case "help": ports.write(helpText); return 0
-    case "version": ports.write(`vimex ${ports.version}`); return 0
-    case "doctor": return await ports.doctor(command.config) ?? 0
-    case "upgrade": return await ports.upgrade(command.version) ?? 0
-    case "launch": await ports.launch(command.options); return 0
+    case "help":
+      ports.write(helpText)
+      return 0
+    case "version":
+      ports.write(`vimex ${ports.version}`)
+      return 0
+    case "doctor":
+      return (await ports.doctor(command.config)) ?? 0
+    case "upgrade":
+      return (await ports.upgrade(command.version)) ?? 0
+    case "launch":
+      await ports.launch(command.options)
+      return 0
   }
 }

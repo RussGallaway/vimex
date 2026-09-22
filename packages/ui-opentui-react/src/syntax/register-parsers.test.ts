@@ -7,7 +7,11 @@ import { TreeSitterClient } from "@opentui/core"
 import { vimexSyntaxParsers } from "./register-parsers"
 
 test("vendored parser descriptors contain only local existing assets", () => {
-  expect(vimexSyntaxParsers.map(parser => parser.filetype)).toEqual(["python", "bash", "json"])
+  expect(vimexSyntaxParsers.map((parser) => parser.filetype)).toEqual([
+    "python",
+    "bash",
+    "json",
+  ])
   for (const parser of vimexSyntaxParsers) {
     expect(parser.wasm).not.toMatch(/^https?:/)
     expect(existsSync(parser.wasm)).toBe(true)
@@ -25,12 +29,27 @@ test("vendored parsers produce real highlights offline, including aliases", asyn
     await client.initialize()
     for (const parser of vimexSyntaxParsers) client.addFiletypeParser(parser)
     const cases = [
-      { filetype: "py", source: "def greet(name):\n    return f'hi {name}'", groups: ["keyword", "function", "string"] },
-      { filetype: "shell", source: "if test -n \"$HOME\"; then echo ok; fi", groups: ["keyword", "function", "string"] },
-      { filetype: "json", source: "{\"count\": 3, \"ready\": true}", groups: ["string.special.key", "number", "constant.builtin"] },
+      {
+        filetype: "py",
+        source: "def greet(name):\n    return f'hi {name}'",
+        groups: ["keyword", "function", "string"],
+      },
+      {
+        filetype: "shell",
+        source: 'if test -n "$HOME"; then echo ok; fi',
+        groups: ["keyword", "function", "string"],
+      },
+      {
+        filetype: "json",
+        source: '{"count": 3, "ready": true}',
+        groups: ["string.special.key", "number", "constant.builtin"],
+      },
     ]
     for (const example of cases) {
-      const result = await client.highlightOnce(example.source, example.filetype)
+      const result = await client.highlightOnce(
+        example.source,
+        example.filetype,
+      )
       expect(result.error).toBeUndefined()
       expect(result.warning).toBeUndefined()
       const captures = new Set(result.highlights?.map(([, , group]) => group))

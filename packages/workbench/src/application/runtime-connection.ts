@@ -1,5 +1,10 @@
 import type { Approval, UserQuestionRequest } from "@vimex/approvals"
-import type { AgentRelationship, ConversationEvent, ThreadId, ThreadSummary } from "@vimex/conversation"
+import type {
+  AgentRelationship,
+  ConversationEvent,
+  ThreadId,
+  ThreadSummary,
+} from "@vimex/conversation"
 
 /** Normalized observations consumed by the workbench projector. */
 export type RuntimeEvent =
@@ -9,7 +14,11 @@ export type RuntimeEvent =
   | { type: "subagent.link"; link: AgentRelationship }
   | { type: "conversation"; event: ConversationEvent }
   | { type: "summary"; summary: ThreadSummary }
-  | { type: "metadata"; threadId: ThreadId; patch: Partial<Omit<ThreadSummary, "id">> }
+  | {
+      type: "metadata"
+      threadId: ThreadId
+      patch: Partial<Omit<ThreadSummary, "id">>
+    }
   | { type: "approval"; approval: Approval }
   | { type: "approval.resolved"; id: string }
   | { type: "disconnected"; message: string; reason?: "restart" }
