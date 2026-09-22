@@ -40,6 +40,8 @@ type AgentItemBase = {
   agentThreadIds: readonly ThreadId[]
   status: ItemStatus
   durationMs?: number
+  /** Derived task progress for spawn rows; separate from the tool call's status. */
+  childTasks?: readonly AgentState[]
 }
 export type AgentItem =
   | (AgentItemBase & {

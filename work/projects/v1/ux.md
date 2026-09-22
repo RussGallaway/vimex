@@ -165,7 +165,7 @@ The session picker is a fuzzy-search overlay grouped by recency. It shows thread
 
 Forking selects the completed turn beginning at a user message and includes that turn’s replies and tool activity, matching Codex’s inclusive turn boundary. The transcript cursor identifies the default boundary; `:fork` opens a small confirmation overlay and then switches to the fork.
 
-Subagent activity appears inline as a foldable item and in a navigable thread relationship. Opening a child thread must preserve the parent's exact view state, and returning must restore it.
+Delegated assignments appear inline as foldable CHILD task rows with task previews and reported lifecycle status, independent of spawn-tool completion. Expanded rows show the assignment, reported result, and `gc` Open child action. Normal `gc` opens the child referenced by the current transcript row, or the picker for multiple targets. Messages and follow-ups remain separate events. Telemetry-only wait and lifecycle reports update the task row without adding transcript noise. Opening a child thread must preserve the parent's exact view state, and returning must restore it.
 
 ## Approvals
 
@@ -205,7 +205,7 @@ Composer-focused Ctrl-E/Y scroll the transcript by one line and Ctrl-D/U by half
 
 Tool headers use server-provided action descriptions when available. Expanded command blocks separate the exact execution command from unchanged output, with both represented in the semantic transcript for selection and copying.
 
-Agent navigation: Normal `ga` opens the picker from either pane, `[a`/`]a` cycle an immediate parent and its children, and `\` returns to the immediate parent. A SUBAGENT badge and parent breadcrumb distinguish child views. Ctrl-O/Ctrl-I visit chronological locations across agents and ordinary sessions while restoring the cursor and reading viewport independently and preserving drafts. `s` starts Flash from either pane in Normal mode; transcript Visual also supports it. Ctrl-G remains available while composing in Insert mode.
+Agent navigation: Normal `ga` opens the picker from either pane, `[a`/`]a` cycle an immediate parent and its children, and `\` returns to the immediate parent. Headers show PARENT for an original conversation with delegated children or a side chat, CHILD for delegated conversations, and SIDE for `/side` conversations. Standalone conversations have no role badge. Child breadcrumbs offer Back to parent; side breadcrumbs offer Focus parent. Roles follow confirmed spawn ancestry and side-chat associations, never message recipients or navigation history. Ctrl-O/Ctrl-I visit chronological locations across agents and ordinary sessions while restoring the cursor and reading viewport independently and preserving drafts. `s` starts Flash from either pane in Normal mode; transcript Visual also supports it. Ctrl-G remains available while composing in Insert mode.
 
 Side conversations open as a right-hand 40% pane, retaining the parent's 60% view. Narrow terminals stack panes; short terminals maximize the focused pane and retain a parent activity summary. Ctrl-W h/l/w changes pane focus, Ctrl-W | maximizes/restores, and Ctrl-W = restores the default split. Ctrl-W c hides the side while work continues; Ctrl-W q quits and retires it. These window shortcuts pause while an overlay is open so a rename or question form is not lost. `:side quote` transfers a selection into the parent's draft without sending it.
 

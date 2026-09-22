@@ -1,3 +1,4 @@
+import { threadContext } from "./thread-context"
 import { compactionBlockReason } from "./compaction"
 import { executeGoalCommand } from "./goal-command"
 import {
@@ -152,6 +153,12 @@ export function incrementalConversationEventDamage(
   if (event.type === "item.delta")
     return { kind: "blocks", itemIds: [event.itemId] }
   if (!conversation) return undefined
+  // A lifecycle report can also update an earlier child assignment row.
+  if (
+    (event.type === "item.started" || event.type === "item.completed") &&
+    event.item.kind === "agent"
+  )
+    return undefined
   if (event.type === "turn.started") {
     return conversation.turns[event.turnId]
       ? undefined
@@ -439,7 +446,6 @@ export class VimexController
   private restartBarrier?: Promise<void>
   private runtimeEpoch = 0
   private readonly answering = new Map<string, symbol>()
-  private readonly parentReturns = new Map<ThreadId, ThreadId>()
   private readonly threadMutations = new Map<ThreadId, Promise<void>>()
   private preferenceTail: Promise<void> = Promise.resolve()
   private preferenceRevision = 0
@@ -1616,20 +1622,11 @@ export class VimexController
       this.notice("This session is not a child of the active thread")
       return
     }
-    this.parentReturns.set(id, parent)
     this.dispatchInteraction({ type: "overlay.close" })
     this.openThread(id)
   }
   returnToParent = (): void => {
-    const child = this.state.activeThreadId
-    const side = sideChatForChild(this.state, child)
-    const sideParent = side?.parentId
-    const parent =
-      child &&
-      (sideParent ??
-        this.parentReturns.get(child) ??
-        this.state.agentRelationships.find((link) => link.childId === child)
-          ?.parentId)
+    const parent = threadContext(this.state).parentId
     if (!parent) {
       this.notice("This session has no known parent")
       return
@@ -1640,11 +1637,7 @@ export class VimexController
   cycleAgent = (direction: "previous" | "next"): void => {
     const active = this.state.activeThreadId
     if (!active) return
-    const parent =
-      this.parentReturns.get(active) ??
-      this.state.agentRelationships.find((link) => link.childId === active)
-        ?.parentId ??
-      active
+    const parent = threadContext(this.state).parentId ?? active
     const family = [
       ...new Set([
         parent,
@@ -1980,6 +1973,28 @@ export class VimexController
     })
   }
   transcript = (command: TranscriptAction): void => {
+    if (command.type === "child.open") {
+      const read = this.presentationContext(command.presentationId)
+      if (!read) return
+      const { threadId, workspace, transcript } = read
+      if (threadId !== this.state.activeThreadId) return
+      const id = transcript.cursor?.itemId
+      const item = id ? workspace.conversation.items[id] : undefined
+      const children =
+        item?.kind === "agent"
+          ? item.agentThreadIds.filter((childId) =>
+              this.state.agentRelationships.some(
+                (link) =>
+                  link.parentId === threadId && link.childId === childId,
+              ),
+            )
+          : []
+      if (children.length === 1) this.openChildThread(children[0]!)
+      else if (children.length > 1)
+        this.dispatchInteraction({ type: "overlay.open", overlay: "agents" })
+      else this.notice("No child conversation on this row")
+      return
+    }
     if (
       command.type === "reference" ||
       command.type === "copy" ||

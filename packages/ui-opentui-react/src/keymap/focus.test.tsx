@@ -505,3 +505,36 @@ for (const surface of ["composer", "transcript"] as const) {
     }
   })
 }
+
+test("gc opens the child at the transcript cursor", async () => {
+  const state = transitionWorkbench(fixture(), {
+    type: "interaction.command",
+    command: { type: "focus.set", surface: "transcript" },
+  }).state
+  const commands: Parameters<VimexUiController["transcript"]>[0][] = []
+  const setup = await testRender(
+    <VimexRoot
+      state={state}
+      controller={{
+        ...inertController,
+        transcript: (command) => {
+          commands.push(command)
+        },
+      }}
+    />,
+    { width: 80, height: 24 },
+  )
+  try {
+    await act(async () => setup.flush())
+    await act(async () => {
+      await setup.mockInput.typeText("gc")
+      await setup.flush()
+    })
+    expect(commands).toContainEqual({
+      type: "child.open",
+      presentationId: "main",
+    })
+  } finally {
+    await act(async () => setup.renderer.destroy())
+  }
+})

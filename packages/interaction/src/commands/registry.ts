@@ -72,7 +72,7 @@ export const commandDescriptions: Readonly<Record<CommandName, string>> = {
   open: "Open a URL",
   rename: "Rename this session",
   questions: "Answer pending questions",
-  agents: "Browse subagent sessions",
+  agents: "Browse parent and child sessions",
   parent: "Return to the parent session",
   restart: "Restart the Codex connection",
   theme: "Choose a color theme",

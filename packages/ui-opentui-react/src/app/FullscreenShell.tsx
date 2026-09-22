@@ -4,7 +4,7 @@ import { emberTide } from "../theme"
 import { ActivityIndicator } from "../activity/ActivityIndicator"
 
 export function FullscreenShell(props: {
-  paneLabel?: "MAIN" | "SIDE"
+  threadRole?: "PARENT" | "CHILD" | "SIDE"
   title?: string
   parentTitle?: string
   connection: WorkbenchState["connection"]
@@ -51,19 +51,19 @@ export function FullscreenShell(props: {
           overflow="hidden"
         >
           <text flexShrink={0} fg={emberTide.amber}>
-            <b>{props.paneLabel ?? "VIMEX"}</b>
+            <b>VIMEX</b>
           </text>
           <text flexShrink={0} fg={emberTide.textMuted}>
             /
           </text>
-          {props.parentTitle ? (
+          {props.threadRole ? (
             <text
               id="agent-context-badge"
               flexShrink={0}
               fg={emberTide.background}
               bg={emberTide.blueBright}
             >
-              <b> SUBAGENT </b>
+              <b> {props.threadRole} </b>
             </text>
           ) : null}
           <text
@@ -117,7 +117,9 @@ export function FullscreenShell(props: {
             {props.parentTitle}
           </text>
           <text flexShrink={0} fg={emberTide.blueBright}>
-            \ parent
+            {props.threadRole === "SIDE"
+              ? "\\ Focus parent"
+              : "\\ Back to parent"}
           </text>
         </box>
       ) : null}

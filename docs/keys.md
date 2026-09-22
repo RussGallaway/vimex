@@ -75,6 +75,7 @@ In transcript Normal mode, Enter toggles the current foldable block. Shift-Tab t
 | --------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `Space s`, `:sessions`                        | Search and switch sessions.                                                        |
 | `a` from transcript Normal mode, `:approvals` | Open pending approvals. In composer Normal mode, `a` keeps its Vim append meaning. |
+| `gc` (transcript Normal mode)                 | Open the child conversation referenced by the current row.                         |
 | `ga`, `:agents`                               | Open parent/child agent navigation.                                                |
 | `:questions`                                  | Open pending structured questions.                                                 |
 | `:parent`                                     | Return to the parent agent thread.                                                 |
@@ -129,7 +130,9 @@ Inspired by [flash.nvim](https://github.com/folke/flash.nvim)'s labeled search. 
 
 ## Agent navigation
 
-From either pane in Normal mode, `ga` opens the agent picker, `[a` and `]a` cycle the immediate parent and its children, and `\` returns to the immediate parent. Root sessions cycle their direct children. Existing `[[`/`]]` message motions remain available. Subagent sessions show a SUBAGENT badge and a parent breadcrumb; Ctrl-O/Ctrl-I revisit parent, sibling, and local transcript locations in chronological order.
+From either pane in Normal mode, `ga` opens the agent picker, `[a` and `]a` cycle the immediate parent and its children, and `\` returns to the immediate parent. Root sessions cycle their direct children. Existing `[[`/`]]` message motions remain available. The original session shows PARENT once it has children or a side chat. Delegated sessions show CHILD and a parent breadcrumb with `\` Back to parent. Side conversations show SIDE with `\` Focus parent. Standalone sessions have no role badge; Ctrl-O/Ctrl-I revisit parent, sibling, and local transcript locations in chronological order.
+
+Child assignments appear as foldable CHILD rows with a task preview and reported progress. Enter expands the assignment and reported result; `gc` opens the child (or the picker for multiple targets). Messages and follow-ups remain separate transcript events.
 
 ## Side chat
 

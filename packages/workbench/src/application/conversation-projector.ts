@@ -1,3 +1,4 @@
+import { recordAgentRelationship } from "./agent-relationships"
 import {
   conversationTurnIdsHave,
   forkConversation,
@@ -24,6 +25,7 @@ import {
 } from "./workbench-state"
 import { scheduleQueued } from "./submission-scheduler"
 import { sideChatForChild } from "./side-chat"
+import { projectChildTaskProgress } from "./child-task-progress"
 export function applyConversationEvent(
   state: WorkbenchState,
   event: ConversationEvent,
@@ -35,7 +37,29 @@ export function applyConversationEvent(
     event.type === "turn.completed"
       ? workspace.conversation.turns[event.turnId]
       : undefined
-  const conversation = reduceConversation(workspace.conversation, event)
+  let conversation = reduceConversation(workspace.conversation, event)
+  if (
+    conversation !== workspace.conversation &&
+    (event.type === "item.started" || event.type === "item.completed")
+  )
+    conversation = projectChildTaskProgress(
+      workspace.conversation,
+      conversation,
+      event.item,
+    )
+  if (
+    (event.type === "item.started" || event.type === "item.completed") &&
+    event.item.kind === "agent" &&
+    event.item.action === "spawn"
+  ) {
+    for (const childId of event.item.agentThreadIds)
+      state = recordAgentRelationship(state, {
+        parentId: event.item.senderThreadId ?? event.threadId,
+        childId,
+        itemId: event.item.id,
+        relation: "spawned",
+      })
+  }
   let transcript = workspace.transcript
   const changedItemId =
     event.type === "item.started" || event.type === "item.completed"

@@ -427,3 +427,35 @@ test("an outer child-association change invalidates a pane even when the child o
   expect(threadForPresentation(before, "main")).toBe(child)
   expect(workbenchPresentationChanged(before, after, "main")).toBe(true)
 })
+
+test("role and side parent title changes publish to their visible presentations", () => {
+  const standalone = run(initialWorkbench(), {
+    type: "thread.open",
+    summary: summary(parent),
+  })
+  const family = run(standalone, {
+    type: "agent.link",
+    link: {
+      parentId: parent,
+      childId: side,
+      itemId: itemId("spawn"),
+      relation: "spawned",
+    },
+  })
+  expect(workbenchPresentationChanged(standalone, family, "main")).toBe(true)
+  const before = splitState()
+  const renamed = run(before, {
+    type: "thread.register",
+    summary: { ...summary(parent), title: "Renamed parent" },
+  })
+  expect(workbenchPresentationChanged(before, renamed, "side")).toBe(true)
+  const hidden = {
+    ...before,
+    activeThreadId: parent,
+    sideChats: {
+      [parent]: { ...before.sideChats[parent]!, visible: false },
+    },
+  }
+  const noSide = { ...hidden, sideChats: {} }
+  expect(workbenchPresentationChanged(noSide, hidden, "main")).toBe(true)
+})

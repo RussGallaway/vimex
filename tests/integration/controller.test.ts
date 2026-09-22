@@ -4172,6 +4172,20 @@ test("agent family cycling includes parent and siblings, wraps, and returns to i
         relation: "spawned",
       },
     })
+  // A child's reply to its parent and messages to siblings must not reparent them.
+  for (const childId of [a, c])
+    h.emit({
+      type: "subagent.link",
+      link: {
+        parentId: b,
+        childId,
+        itemId: itemId(`reply-${childId}`),
+        relation: "target",
+      },
+    })
+  h.controller.returnToParent()
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().activeThreadId).toBe(a)
   for (const expected of [b, c, a]) {
     h.controller.cycleAgent("next")
     await h.controller.settle()
@@ -4496,4 +4510,81 @@ test("CLI resume reports an empty cwd catalog without creating a server thread",
   await expect(h.controller.close()).rejects.toThrow(
     "Vimex controller shutdown failed",
   )
+})
+
+test("child lifecycle refreshes an existing transcript task and gc opens it without losing the parent draft", async () => {
+  const h = harness(),
+    turn = turnId("delegation"),
+    spawnId = itemId("spawn-child")
+  await h.controller.initialize("/tmp")
+  h.controller.changeDraft("Keep this draft", 4)
+  h.emit({
+    type: "conversation",
+    event: { type: "turn.started", threadId: a, turnId: turn },
+  })
+  h.emit({
+    type: "conversation",
+    event: {
+      type: "item.completed",
+      threadId: a,
+      item: {
+        id: spawnId,
+        turnId: turn,
+        kind: "agent",
+        action: "spawn",
+        detail: "Investigate token refresh",
+        agentThreadIds: [b],
+        agentStates: [{ threadId: b, status: "running" }],
+        status: "complete",
+      },
+    },
+  })
+  await h.controller.settle()
+  const runtime = h.controller.transcriptRuntime("main")!
+  const task = () =>
+    runtime
+      .getSnapshot()
+      .blocks.find(
+        (block) => block.key.kind === "item" && block.key.itemId === spawnId,
+      )
+  expect(task()).toMatchObject({
+    item: { childTasks: [{ status: "running" }] },
+  })
+  h.emit({
+    type: "conversation",
+    event: {
+      type: "item.completed",
+      threadId: a,
+      item: {
+        id: itemId("child-result"),
+        turnId: turn,
+        kind: "agent",
+        action: "wait",
+        detail: "",
+        agentThreadIds: [b],
+        agentStates: [
+          { threadId: b, status: "complete", message: "Refresh fixed" },
+        ],
+        status: "complete",
+      },
+    },
+  })
+  await h.controller.settle()
+  expect(task()).toMatchObject({
+    item: { childTasks: [{ status: "complete", message: "Refresh fixed" }] },
+  })
+  h.controller.transcript({
+    type: "jump",
+    target: { itemId: spawnId, graphemeOffset: 0 },
+  })
+  h.controller.transcript({ type: "child.open", presentationId: "main" })
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().activeThreadId).toBe(b)
+  h.controller.returnToParent()
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().activeThreadId).toBe(a)
+  expect(h.controller.getSnapshot().workspaces[a]!.composer.text).toBe(
+    "Keep this draft",
+  )
+  await h.controller.close()
 })

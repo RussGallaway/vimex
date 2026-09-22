@@ -1,3 +1,4 @@
+import { recordAgentRelationship } from "./agent-relationships"
 import { observeCompaction, observeCompactionTurn } from "./compaction"
 import {
   acknowledgeOutgoing,
@@ -496,20 +497,7 @@ export function transitionWorkbench(
       delete questions[command.id]
       return done({ ...state, questions })
     }
-    case "agent.link": {
-      const duplicate = state.agentRelationships.some(
-        (link) =>
-          link.parentId === command.link.parentId &&
-          link.childId === command.link.childId &&
-          link.itemId === command.link.itemId &&
-          link.relation === command.link.relation,
-      )
-      return duplicate
-        ? done(state)
-        : done({
-            ...state,
-            agentRelationships: [...state.agentRelationships, command.link],
-          })
-    }
+    case "agent.link":
+      return done(recordAgentRelationship(state, command.link))
   }
 }

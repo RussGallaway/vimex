@@ -4,11 +4,40 @@ import { itemStatusGlyph } from "./item-status"
 
 type AgentItem = Extract<ConversationItem, { kind: "agent" }>
 
+function childTaskLabel(
+  item: AgentItem,
+  tasks: NonNullable<AgentItem["childTasks"]>,
+): string {
+  for (const [status, label] of [
+    ["running", "Working"],
+    ["pending", "Starting"],
+    ["error", "Failed"],
+    ["missing", "Unavailable"],
+    ["interrupted", "Interrupted"],
+  ] as const)
+    if (tasks.some((task) => task.status === status)) return label
+  if (tasks.length && tasks.length === item.agentThreadIds.length) {
+    if (tasks.every((task) => task.status === "closed")) return "Closed"
+    if (
+      tasks.every(
+        (task) => task.status === "complete" || task.status === "closed",
+      )
+    )
+      return "Completed"
+  }
+  return {
+    error: "Failed",
+    interrupted: "Interrupted",
+    running: "Starting",
+    complete: "Started",
+  }[item.status]
+}
+
 function actionLabel(item: AgentItem): string {
-  if (item.action === "activity") return `Subagent ${item.activity}`
+  if (item.action === "activity") return `Child ${item.activity}`
   switch (item.action) {
     case "spawn":
-      return "Start agent"
+      return "CHILD"
     case "send-input":
       return "Send input to agent"
     case "send-message":
@@ -35,6 +64,96 @@ export function AgentActivity({
   item: AgentItem
   folded: boolean
 }) {
+  const tasks = item.childTasks ?? item.agentStates ?? []
+  if (item.action === "spawn") {
+    const status = childTaskLabel(item, tasks)
+    return (
+      <box
+        backgroundColor={emberTide.backgroundRaised}
+        paddingX={1}
+        paddingY={folded ? 0 : 1}
+      >
+        <box height={1} flexDirection="row" gap={1}>
+          <text
+            id={`decoration:fold:${item.id}`}
+            flexShrink={0}
+            fg={emberTide.textMuted}
+          >
+            {folded ? "▸" : "▾"}
+          </text>
+          <text
+            id={`decoration:action:${item.id}`}
+            flexShrink={0}
+            fg={emberTide.blueBright}
+          >
+            CHILD ·
+          </text>
+          <text
+            id={
+              folded
+                ? `agent-detail:${item.id}`
+                : `decoration:assignment:${item.id}`
+            }
+            flexGrow={1}
+            minWidth={0}
+            flexShrink={1}
+            truncate
+            wrapMode="none"
+            fg={emberTide.text}
+          >
+            {folded ? item.detail || "Delegated task" : "Assignment"}
+          </text>
+          <text
+            id={`decoration:status:${item.id}`}
+            flexShrink={0}
+            fg={
+              status === "Failed"
+                ? emberTide.red
+                : status === "Completed"
+                  ? emberTide.sage
+                  : emberTide.textMuted
+            }
+          >
+            · {status}
+          </text>
+        </box>
+        {!folded ? (
+          <box marginTop={1}>
+            <text
+              id={`agent-detail:${item.id}`}
+              fg={emberTide.textSoft}
+              wrapMode="word"
+            >
+              {item.detail}
+            </text>
+            {tasks.map((task) => (
+              <text
+                key={task.threadId}
+                id={`decoration:agent-state:${item.id}:${task.threadId}`}
+                fg={emberTide.textMuted}
+                wrapMode="word"
+              >
+                {task.threadId} · {task.status}
+                {task.message
+                  ? `\n${task.status === "complete" ? "Result" : "Update"}: ${task.message}`
+                  : ""}
+              </text>
+            ))}
+            {item.agentThreadIds.length ? (
+              <text
+                id={`decoration:open-child:${item.id}`}
+                fg={emberTide.blueBright}
+              >
+                {item.agentThreadIds.length === 1
+                  ? "gc Open child"
+                  : "gc Choose child"}
+              </text>
+            ) : null}
+          </box>
+        ) : null}
+      </box>
+    )
+  }
   const running = item.status === "running"
   const targetSummary =
     item.agentPath?.split("/").filter(Boolean).at(-1) ??

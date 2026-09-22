@@ -35,6 +35,7 @@ import {
   activeWorkspace,
   liveActivity,
   sideChatForChild,
+  threadContext,
 } from "@vimex/workbench"
 import {
   useCallback,
@@ -157,15 +158,13 @@ export function VimexApp({
   const semanticTranscript = workspace?.transcript ?? blankTranscript
   const composer = workspace?.composer ?? blankComposer
   const interaction = workspace?.interaction ?? blankInteraction
-  const parentLink = state.agentRelationships.find(
-    (link) => link.childId === state.activeThreadId,
-  )
+  const context = threadContext(state)
   const inheritedTurnIds = sideChatForChild(
     state,
     state.activeThreadId,
   )?.inheritedTurnIds
-  const parentTitle = parentLink
-    ? state.summaries[parentLink.parentId]?.title || parentLink.parentId
+  const parentTitle = context.parentId
+    ? state.summaries[context.parentId]?.title || context.parentId
     : undefined
   const summary = state.activeThreadId
     ? state.summaries[state.activeThreadId]
@@ -1357,7 +1356,7 @@ export function VimexApp({
 
   return (
     <FullscreenShell
-      paneLabel={paneLabel}
+      threadRole={context.role}
       title={summary?.title}
       parentTitle={parentTitle}
       connection={state.connection}

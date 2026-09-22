@@ -75,6 +75,7 @@ export interface WorkbenchState {
   workspaces: Readonly<Record<string, ThreadWorkspace>>
   approvals: ApprovalsState
   questions: Readonly<Record<string, UserQuestionRequest>>
+  /** Confirmed spawn ancestry: one parent per child, independent of activity items. */
   agentRelationships: readonly AgentRelationship[]
   connection: "connecting" | "connected" | "disconnected" | "error"
   error?: string

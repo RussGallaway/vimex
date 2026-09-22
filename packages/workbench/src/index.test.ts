@@ -809,3 +809,31 @@ test("late interruption events cannot clear a newer turn's stopping state", () =
   expect(state.interruptingTurns[thread]).toBe(next)
   expect(liveActivity(state)).toEqual({ working: true, label: "Stopping" })
 })
+
+test("ancestry ignores communication, deduplicates spawn evidence, and rejects cycles", () => {
+  const parent = threadId("parent"),
+    child = threadId("child"),
+    sibling = threadId("sibling")
+  let state = initialWorkbench()
+  const link = {
+    parentId: parent,
+    childId: child,
+    itemId: itemId("spawn"),
+    relation: "spawned" as const,
+  }
+  state = run(state, { type: "agent.link", link }).state
+  for (const extra of [
+    { ...link, itemId: itemId("thread:child") },
+    { ...link, parentId: child, childId: parent, relation: "target" as const },
+    {
+      ...link,
+      parentId: child,
+      childId: sibling,
+      relation: "activity" as const,
+    },
+    { ...link, parentId: child, childId: parent },
+    { ...link, parentId: child },
+  ])
+    state = run(state, { type: "agent.link", link: extra }).state
+  expect(state.agentRelationships).toEqual([link])
+})

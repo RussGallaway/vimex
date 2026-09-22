@@ -219,6 +219,9 @@ test("side split shows both transcripts, routes input to focused composer, and m
   const h = await harness()
   try {
     expect(h.captureCharFrame()).toContain("SIDE · focused")
+    expect(h.captureCharFrame()).toContain("PARENT")
+    expect(h.captureCharFrame()).toContain("Focus parent")
+    expect(h.captureCharFrame()).not.toContain("SUBAGENT")
     const main = h.renderer.root.findDescendantById("main-pane")!
     const side = h.renderer.root.findDescendantById("side-pane")!
     expect(main.x).toBe(0)
@@ -420,7 +423,7 @@ test("short terminals maximize active pane while retaining live parent status", 
     const side = h.renderer.root.findDescendantById("side-pane")!
     expect(side.visible).toBe(true)
     expect(side.findDescendantById("transcript")!.height).toBeGreaterThan(0)
-    expect(h.captureCharFrame()).toContain("Main:")
+    expect(h.captureCharFrame()).toContain("Parent:")
     await h.windowKey("h")
     const visibleMain = h.renderer.root.findDescendantById("main-pane")!
     const hiddenSide = h.renderer.root.findDescendantById("side-pane")!

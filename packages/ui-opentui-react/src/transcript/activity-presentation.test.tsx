@@ -655,3 +655,77 @@ test("successful turns without observed timing add no synthetic footer", async (
     await act(async () => setup.renderer.destroy())
   }
 })
+
+for (const width of [44, 100]) {
+  test(`child assignment and task status stay visible at ${width} columns`, async () => {
+    const item = {
+      id: itemId("task"),
+      turnId: turnId("turn"),
+      kind: "agent" as const,
+      action: "spawn" as const,
+      detail: "Investigate token refresh and the background renewal race",
+      agentThreadIds: [threadId("child")],
+      status: "complete" as const,
+      childTasks: [{ threadId: threadId("child"), status: "running" as const }],
+    }
+    const setup = await testRender(<AgentActivity item={item} folded />, {
+      width,
+      height: 5,
+    })
+    try {
+      await act(async () => {
+        await setup.flush()
+        await setup.renderOnce()
+      })
+      const frame = setup.captureCharFrame()
+      expect(frame).toContain("CHILD")
+      expect(frame).toContain("Investiga")
+      expect(frame).toContain("Working")
+      expect(frame).not.toContain("Completed")
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+}
+
+test("expanded child task shows the assignment, reported result, and open shortcut", async () => {
+  const setup = await testRender(
+    <AgentActivity
+      item={{
+        id: itemId("task-result"),
+        turnId: turnId("turn"),
+        kind: "agent",
+        action: "spawn",
+        detail: "Investigate token refresh",
+        agentThreadIds: [threadId("child")],
+        status: "complete",
+        childTasks: [
+          {
+            threadId: threadId("child"),
+            status: "complete",
+            message: "Fixed the refresh race",
+          },
+        ],
+      }}
+      folded={false}
+    />,
+    { width: 70, height: 12 },
+  )
+  try {
+    await act(async () => {
+      await setup.flush()
+      await setup.renderOnce()
+    })
+    const frame = setup.captureCharFrame()
+    for (const text of [
+      "CHILD",
+      "Completed",
+      "Investigate token refresh",
+      "Fixed the refresh race",
+      "gc Open child",
+    ])
+      expect(frame).toContain(text)
+  } finally {
+    await act(async () => setup.renderer.destroy())
+  }
+})

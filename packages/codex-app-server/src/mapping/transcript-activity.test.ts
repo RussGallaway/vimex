@@ -373,3 +373,37 @@ test("hydrates observed turn timing", () => {
     },
   ])
 })
+
+test("only spawning establishes ancestry; messaging and other targets stay transcript activity", () => {
+  for (const tool of [
+    "spawnAgent",
+    "sendMessage",
+    "sendInput",
+    "followupTask",
+    "resumeAgent",
+    "wait",
+    "interruptAgent",
+    "closeAgent",
+    "listAgents",
+  ] as const) {
+    const events = mapNotificationEvents({
+      method: "item/completed",
+      params: {
+        threadId: "child",
+        turnId: "turn",
+        item: {
+          type: "collabAgentToolCall",
+          id: tool,
+          tool,
+          status: "completed",
+          senderThreadId: "child",
+          receiverThreadIds: ["parent"],
+          agentsStates: {},
+        },
+      },
+    })
+    expect(events.some((event) => event.type === "conversation")).toBe(true)
+    const links = events.filter((event) => event.type === "subagent.link")
+    expect(links).toHaveLength(tool === "spawnAgent" ? 1 : 0)
+  }
+})

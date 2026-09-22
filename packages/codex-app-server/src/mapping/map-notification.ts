@@ -411,15 +411,16 @@ export function mapNotificationEvents(
           agentPath: normalized.agentPath,
         },
       })
-    if (normalized?.kind === "agent" && normalized.action !== "activity")
+    if (normalized?.kind === "agent" && normalized.action === "spawn")
       for (const receiver of normalized.agentThreadIds) {
         events.push({
           type: "subagent.link",
           link: {
-            ownerThreadId: threadId(params.threadId),
+            ownerThreadId:
+              normalized.senderThreadId ?? threadId(params.threadId),
             agentThreadId: receiver,
             itemId: normalized.id,
-            relation: normalized.action === "spawn" ? "spawned" : "target",
+            relation: "spawned",
           },
         })
       }

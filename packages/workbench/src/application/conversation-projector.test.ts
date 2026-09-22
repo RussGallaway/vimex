@@ -73,3 +73,220 @@ test("side-child projection misses inherited history through a logarithmic persi
     ).toBeLessThanOrEqual(2 * (Math.ceil(Math.log2(inheritedCount + 1)) + 1))
   }
 })
+
+test("child task progress updates the assignment without changing tool outcomes or adding telemetry rows", () => {
+  const parent = threadId("parent"),
+    child = threadId("child"),
+    turn = turnId("turn"),
+    spawnId = itemId("spawn")
+  let state = {
+    ...initialWorkbench(),
+    workspaces: { [parent]: createWorkspace(parent) },
+  }
+  const spawn = {
+    id: spawnId,
+    turnId: turn,
+    kind: "agent" as const,
+    action: "spawn" as const,
+    detail: "Investigate token refresh",
+    agentThreadIds: [child],
+    status: "running" as const,
+    agentStates: [{ threadId: child, status: "pending" as const }],
+  }
+  state = applyConversationEvent(state, {
+    type: "item.started",
+    threadId: parent,
+    item: spawn,
+  }).state
+  state = applyConversationEvent(state, {
+    type: "item.completed",
+    threadId: parent,
+    item: {
+      ...spawn,
+      status: "complete",
+      agentStates: [{ threadId: child, status: "running" }],
+    },
+  }).state
+  const task = () => state.workspaces[parent]!.conversation.items[spawnId]!
+  expect(task()).toMatchObject({
+    status: "complete",
+    childTasks: [{ threadId: child, status: "running" }],
+  })
+  state = applyConversationEvent(state, {
+    type: "turn.completed",
+    threadId: parent,
+    turnId: turn,
+    outcome: "complete",
+  }).state
+  expect(task()).toMatchObject({ childTasks: [{ status: "running" }] })
+  state = applyConversationEvent(state, {
+    type: "item.completed",
+    threadId: parent,
+    item: {
+      id: itemId("wait"),
+      turnId: turn,
+      kind: "agent",
+      action: "wait",
+      detail: "",
+      status: "complete",
+      agentThreadIds: [child],
+      agentStates: [
+        {
+          threadId: child,
+          status: "complete",
+          message: "Fixed the refresh race",
+        },
+      ],
+    },
+  }).state
+  expect(task()).toMatchObject({
+    status: "complete",
+    childTasks: [{ status: "complete", message: "Fixed the refresh race" }],
+  })
+  state = applyConversationEvent(state, {
+    type: "item.completed",
+    threadId: parent,
+    item: {
+      id: itemId("done"),
+      turnId: turn,
+      kind: "agent",
+      action: "activity",
+      activity: "completed",
+      agentPath: "/root/child",
+      detail: "",
+      status: "complete",
+      agentThreadIds: [child],
+    },
+  }).state
+  expect(task()).toMatchObject({
+    childTasks: [{ status: "complete", message: "Fixed the refresh race" }],
+  })
+  expect(state.workspaces[parent]!.transcript.order).toEqual([spawnId])
+  expect(
+    state.workspaces[parent]!.transcript.projectionById[spawnId]!.source,
+  ).toBe(spawn.detail)
+})
+
+test("late spawn completion retains newer lifecycle status and follow-ups remain separate", () => {
+  const parent = threadId("parent-late"),
+    child = threadId("child-late"),
+    turn = turnId("turn"),
+    spawnId = itemId("spawn-late")
+  let state = {
+    ...initialWorkbench(),
+    workspaces: { [parent]: createWorkspace(parent) },
+  }
+  const spawn = {
+    id: spawnId,
+    turnId: turn,
+    kind: "agent" as const,
+    action: "spawn" as const,
+    detail: "Check tests",
+    agentThreadIds: [child],
+    status: "running" as const,
+    agentStates: [{ threadId: child, status: "pending" as const }],
+  }
+  state = applyConversationEvent(state, {
+    type: "item.started",
+    threadId: parent,
+    item: spawn,
+  }).state
+  state = applyConversationEvent(state, {
+    type: "item.completed",
+    threadId: parent,
+    item: {
+      id: itemId("interrupted"),
+      turnId: turn,
+      kind: "agent",
+      action: "activity",
+      activity: "interrupted",
+      agentPath: "/root/child",
+      detail: "",
+      agentThreadIds: [child],
+      status: "complete",
+    },
+  }).state
+  state = applyConversationEvent(state, {
+    type: "item.completed",
+    threadId: parent,
+    item: { ...spawn, status: "complete" },
+  }).state
+  expect(state.workspaces[parent]!.conversation.items[spawnId]).toMatchObject({
+    childTasks: [{ status: "interrupted" }],
+  })
+  state = applyConversationEvent(state, {
+    type: "item.completed",
+    threadId: parent,
+    item: {
+      id: itemId("follow-up"),
+      turnId: turn,
+      kind: "agent",
+      action: "follow-up",
+      detail: "Check edge cases too",
+      agentThreadIds: [child],
+      agentStates: [{ threadId: child, status: "running" }],
+      status: "complete",
+    },
+  }).state
+  expect(state.workspaces[parent]!.conversation.items[spawnId]).toMatchObject({
+    childTasks: [{ status: "running" }],
+  })
+  expect(state.workspaces[parent]!.transcript.order).toEqual([
+    spawnId,
+    itemId("follow-up"),
+  ])
+})
+
+test("a child result arriving before the spawn reply is attached when the child ID becomes known", () => {
+  const parent = threadId("early-parent"),
+    child = threadId("early-child"),
+    turn = turnId("turn"),
+    spawnId = itemId("early-spawn")
+  let state = {
+    ...initialWorkbench(),
+    workspaces: { [parent]: createWorkspace(parent) },
+  }
+  const spawn = {
+    id: spawnId,
+    turnId: turn,
+    kind: "agent" as const,
+    action: "spawn" as const,
+    detail: "Quick check",
+    agentThreadIds: [],
+    status: "running" as const,
+  }
+  state = applyConversationEvent(state, {
+    type: "item.started",
+    threadId: parent,
+    item: spawn,
+  }).state
+  state = applyConversationEvent(state, {
+    type: "item.completed",
+    threadId: parent,
+    item: {
+      id: itemId("early-result"),
+      turnId: turn,
+      kind: "agent",
+      action: "wait",
+      detail: "",
+      status: "complete",
+      agentThreadIds: [child],
+      agentStates: [
+        { threadId: child, status: "complete", message: "All clear" },
+      ],
+    },
+  }).state
+  state = applyConversationEvent(state, {
+    type: "item.completed",
+    threadId: parent,
+    item: {
+      ...spawn,
+      status: "complete",
+      agentThreadIds: [child],
+      agentStates: [{ threadId: child, status: "running" }],
+    },
+  }).state
+  expect(state.workspaces[parent]!.conversation.items[spawnId]).toMatchObject({
+    childTasks: [{ status: "complete", message: "All clear" }],
+  })
+})

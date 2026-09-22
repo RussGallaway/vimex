@@ -1,3 +1,4 @@
+import { threadContext } from "./thread-context"
 import type { ThreadId } from "@vimex/conversation"
 import type { InteractionState } from "@vimex/interaction"
 import type { DisplayPreferences } from "./display-preferences"
@@ -155,12 +156,6 @@ function pendingQuestion(state: WorkbenchState, id: ThreadId | undefined) {
     : undefined
 }
 
-function parentLink(state: WorkbenchState, id: ThreadId | undefined) {
-  return id
-    ? state.agentRelationships.find((link) => link.childId === id)
-    : undefined
-}
-
 function sideForThread(
   state: WorkbenchState,
   id: ThreadId | undefined,
@@ -228,22 +223,23 @@ export function workbenchPresentationChanged(
     sideForThread(before, leftId) !== sideForThread(after, rightId)
   )
     return true
-  if (before.agentRelationships !== after.agentRelationships) {
-    const leftParent = parentLink(before, leftId),
-      rightParent = parentLink(after, rightId)
-    if (leftParent !== rightParent || right?.interaction.overlay === "agents")
+  if (
+    before.agentRelationships !== after.agentRelationships ||
+    before.sideChats !== after.sideChats ||
+    before.summaries !== after.summaries
+  ) {
+    const leftContext = threadContext(before, leftId),
+      rightContext = threadContext(after, rightId)
+    if (
+      leftContext.role !== rightContext.role ||
+      leftContext.parentId !== rightContext.parentId ||
+      (before.agentRelationships !== after.agentRelationships &&
+        right?.interaction.overlay === "agents") ||
+      (leftContext.parentId &&
+        before.summaries[leftContext.parentId]?.title !==
+          after.summaries[rightContext.parentId!]?.title)
+    )
       return true
-  }
-  if (before.summaries !== after.summaries) {
-    const leftParent = parentLink(before, leftId),
-      rightParent = parentLink(after, rightId)
-    const leftParentSummary = leftParent
-      ? before.summaries[leftParent.parentId]
-      : undefined
-    const rightParentSummary = rightParent
-      ? after.summaries[rightParent.parentId]
-      : undefined
-    if (leftParentSummary !== rightParentSummary) return true
   }
 
   if (

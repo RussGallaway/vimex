@@ -88,6 +88,10 @@ Space s or :sessions opens the picker, initially scoped to the current directory
 
 :rename NAME renames the focused session. :favorite toggles its favorite state; :favorite on/off sets it explicitly. :new [PATH] starts a session. :cwd [PATH] shows or changes its working directory.
 
+Headers show PARENT for an original conversation with children or a side chat, CHILD for a delegated conversation, and SIDE for a side conversation. Standalone conversations have no role badge. Child breadcrumbs show Back to parent; side breadcrumbs show Focus parent.
+
+Child assignments appear as foldable CHILD transcript rows with task previews and reported progress. Enter expands the assignment and any reported result; gc in transcript Normal mode opens the child, or the picker for multiple targets. Messages and follow-ups remain separate events.
+
 ga opens the agent picker. [a and ]a cycle the immediate family. Backslash returns to the immediate parent. Ctrl-O/I also navigate session and agent visits.
 
 f or :fork opens confirmation to fork through the selected completed turn.

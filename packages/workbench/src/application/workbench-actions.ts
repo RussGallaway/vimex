@@ -38,6 +38,7 @@ export type TranscriptAction =
   | { type: "search.next"; reverse?: boolean; count?: number }
   | { type: "selection.swap" }
   | { type: "reference"; presentationId: TranscriptPresentationId }
+  | { type: "child.open"; presentationId: TranscriptPresentationId }
   | {
       type: "cursor.move"
       target: LogicalPoint

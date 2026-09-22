@@ -44,7 +44,7 @@ export function AgentsOverlay(props: {
     list.requestRender()
   }, [selectedRow])
   return (
-    <OverlayFrame title="Agent sessions" width={88}>
+    <OverlayFrame title="Parent and child sessions" width={88}>
       <text fg={emberTide.textMuted}>
         ↑/↓ move · enter navigate · esc close
       </text>
@@ -68,10 +68,12 @@ export function AgentsOverlay(props: {
                     : emberTide.text
                 }
               >
-                {row.direction === "parent" ? "↑ parent" : "↓ child"} ·{" "}
+                {row.direction === "parent" ? "↑ Parent" : "↓ Child"} ·{" "}
                 {props.summaries[row.threadId]?.title ?? row.threadId}
               </text>
-              <text fg={emberTide.textMuted}>{row.link.relation}</text>
+              <text fg={emberTide.textMuted}>
+                {props.summaries[row.threadId]?.status ?? ""}
+              </text>
             </box>
             <text fg={emberTide.textMuted}>
               {row.link.agentPath ?? props.summaries[row.threadId]?.cwd ?? ""}

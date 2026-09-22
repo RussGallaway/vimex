@@ -93,6 +93,14 @@ export function normalBindings(ctx: VimBindingContext): UiBinding[] {
       ? ([
           { key: "ga", cmd: () => ctx.openOverlay("agents") },
           {
+            key: "gc",
+            cmd: () =>
+              ctx.controller.transcript({
+                type: "child.open",
+                presentationId: ctx.presentationId,
+              }),
+          },
+          {
             key: "gx",
             cmd: () =>
               ctx.controller.transcript({

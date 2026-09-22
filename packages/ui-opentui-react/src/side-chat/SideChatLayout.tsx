@@ -281,7 +281,7 @@ function SideChatFrame(props: {
         >
           <text flexShrink={0} fg={emberTide.blueBright}>
             <b>
-              {active === side.threadId ? "SIDE" : "MAIN"}
+              {active === side.threadId ? "SIDE" : "PARENT"}
               {maximized ? " · maximized" : " · focused"}
             </b>
           </text>
@@ -297,7 +297,7 @@ function SideChatFrame(props: {
               : side.status === "quitting"
                 ? "Quitting side…"
                 : limitedHeight
-                  ? `Main: ${parentActivity.label ?? "idle"} · ${side.contextLabel ?? "Side conversation"}`
+                  ? `Parent: ${parentActivity.label ?? "idle"} · ${side.contextLabel ?? "Side conversation"}`
                   : (side.contextLabel ?? "Forked side conversation")}
           </text>
           {dimensions.width >= 90 ? (
