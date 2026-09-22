@@ -4,6 +4,7 @@ Status: Stage 5 is complete and verified through the acceptance-first Stage 5.6 
 
 - [Transcript runtime design](./transcript-runtime.md) owns the normative model and invariants.
 - [Transcript runtime implementation](./transcript-runtime-implementation.md) owns Stages 1–4 and their evidence.
+- [Transcript windowing dogfooding](./transcript-windowing-dogfooding.md) maps observed UX symptoms to the architectural boundaries and evidence worth inspecting after Stage 5 acceptance.
 - [Transcript runtime research](./transcript-runtime-research.md) owns supporting evidence and references.
 - This document owns Stage 5 implementation order, verification, performance evidence, and commit history.
 

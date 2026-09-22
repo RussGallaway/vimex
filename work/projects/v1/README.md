@@ -19,6 +19,7 @@ This directory is the design authority for v1.
 - [transcript-runtime.md](./transcript-runtime.md) defines compact activity presentation, streaming isolation, and the path to size-independent transcript windowing.
 - [transcript-runtime-research.md](./transcript-runtime-research.md) records the external research and reasoning behind the transcript runtime design.
 - [transcript-runtime-implementation.md](./transcript-runtime-implementation.md) tracks implementation order, exit criteria, measurements, and evidence.
+- [transcript-windowing-dogfooding.md](./transcript-windowing-dogfooding.md) maps observed windowing UX symptoms to architectural boundaries and provides the evidence and triage workflow for fix-forward dogfooding.
 
 ## Document ownership
 
