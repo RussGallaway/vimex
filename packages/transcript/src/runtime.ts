@@ -51,6 +51,7 @@ import {
 import {
   appendTranscriptBlock,
   blockKey,
+  blockGraphemeRange,
   buildTranscriptBlocks,
   buildTranscriptItemBlock,
   buildTranscriptItemBlocks,
@@ -970,6 +971,9 @@ export class TranscriptRuntime {
   private activityProtectionState: TranscriptState
   private windowPolicy: TranscriptWindowPolicy | undefined
   private heightIndex: TranscriptHeightIndex | undefined
+  // Reuse recent immutable layouts without retaining native roots or history-sized maps.
+  private readonly recentGeometry = new Map<string, BlockGeometry>()
+  private recentGeometryPoints = 0
   private readonly diagnostics: TranscriptRuntimeDiagnostics | undefined
   private readonly itemBlockIndexes = new Map<ItemId, number>()
   private readonly hiddenDamage = new HiddenDamageAccumulator()
@@ -978,6 +982,7 @@ export class TranscriptRuntime {
   private notifying = false
   private readonly queuedInputs: TranscriptRuntimeInput[] = []
   private lastRevealId = -1
+  private viewportIntentRevision = 0
   private excludedTurnIds: ReadonlySet<TurnId>
 
   constructor(
@@ -1016,6 +1021,185 @@ export class TranscriptRuntime {
   }
 
   getSnapshot = (): TranscriptFrame => this.frame
+
+  /** Explicit navigation can supersede queued input; streaming and geometry cannot. */
+  getViewportIntentRevision = (): number => this.viewportIntentRevision
+
+  private rememberGeometry(geometry: BlockGeometry): void {
+    if (!this.windowPolicy) return
+    const key = geometry.key.blockKey
+    const prior = this.recentGeometry.get(key)
+    if (prior) {
+      this.recentGeometryPoints -= (prior.pointCount ?? 0) + prior.lines.length
+      this.recentGeometry.delete(key)
+    }
+    const points =
+      (geometry.pointCount ?? Object.keys(geometry.points).length) +
+      geometry.lines.length
+    if (points > 32_768) return
+    this.recentGeometry.set(key, geometry)
+    this.recentGeometryPoints += points
+    while (
+      this.recentGeometry.size > 64 ||
+      this.recentGeometryPoints > 32_768
+    ) {
+      const oldest = this.recentGeometry.entries().next().value!
+      this.recentGeometry.delete(oldest[0])
+      this.recentGeometryPoints -=
+        (oldest[1].pointCount ?? 0) + oldest[1].lines.length
+    }
+  }
+
+  private clearRecentGeometry(): void {
+    this.recentGeometry.clear()
+    this.recentGeometryPoints = 0
+  }
+
+  private cachedGeometry(
+    frame: TranscriptFrame,
+    block: TranscriptBlock,
+    index = this.heightIndex,
+  ): BlockGeometry | undefined {
+    const key = blockKey(block)
+    const cached = this.recentGeometry.get(key)
+    const presentation = frame.window.activityPresentation[key]?.kind ?? "item"
+    const ordinal = index?.blockIndex(key)
+    if (
+      !cached ||
+      ordinal === undefined ||
+      index?.rowRange(ordinal, ordinal + 1)?.rows !== cached.rows ||
+      frame.geometry.width !== cached.key.width ||
+      frame.geometry.styleRevision !== cached.key.styleRevision ||
+      !geometryMatchesBlock(
+        cached,
+        block,
+        block.key.kind === "item" &&
+          (presentation !== "item" ||
+            Boolean(frame.transcript.folded[block.key.itemId])),
+        presentation,
+      )
+    )
+      return undefined
+    this.recentGeometry.delete(key)
+    this.recentGeometry.set(key, cached)
+    return cached
+  }
+
+  /** Keep visible block destinations in place; scroll only at a viewport edge. */
+  navigationScreenRow(
+    point: LogicalPoint,
+    direction: "forward" | "backward",
+    viewportRows = this.windowPolicy?.viewportRows,
+  ): number | undefined {
+    if (!viewportRows) return undefined
+    const lastRow = Math.max(0, viewportRows - 1)
+    const index = this.heightIndex
+    const rowFor = (target: LogicalPoint): number | undefined => {
+      if (!index) {
+        // Fully mounted consumers have exact composed rows, without a height index.
+        for (const block of this.frame.geometry.blockRows) {
+          if (block.itemId !== target.itemId) continue
+          const geometry = this.frame.geometry.byBlockKey[block.blockKey]
+          const local =
+            geometry?.points[target.graphemeOffset] ??
+            (geometry?.key.folded
+              ? Object.values(geometry.points)[0]
+              : undefined)
+          if (local) return block.start + local.row
+        }
+        return undefined
+      }
+      const ordinal = transcriptPointBlockIndex(
+        this.frame.blocks,
+        index,
+        target,
+        undefined,
+      )
+      const block =
+        ordinal === undefined ? undefined : this.frame.blocks[ordinal]
+      if (!block || ordinal === undefined) return undefined
+      const geometry =
+        this.frame.geometry.byBlockKey[blockKey(block)] ??
+        this.cachedGeometry(this.frame, block)
+      const local =
+        geometry?.points[target.graphemeOffset] ??
+        (geometry?.key.folded ? Object.values(geometry.points)[0] : undefined)
+      return local ? index.prefixRows(ordinal) + local.row : undefined
+    }
+    const viewport = this.frame.transcript.viewport
+    const anchorRow =
+      viewport.kind === "point" ? rowFor(viewport.point) : undefined
+    const top =
+      viewport.kind === "tail"
+        ? Math.max(
+            0,
+            (index?.totalRows ?? this.frame.geometry.totalRows) - viewportRows,
+          )
+        : anchorRow === undefined
+          ? undefined
+          : Math.max(0, anchorRow - viewport.preferredScreenRow)
+    const destination = rowFor(point)
+    return top === undefined || destination === undefined
+      ? direction === "forward"
+        ? lastRow
+        : 0
+      : Math.max(0, Math.min(lastRow, destination - top))
+  }
+
+  /** Resolve scroll destinations even when their native rows are not mounted. */
+  scrollAnchorAtRow(
+    row: number,
+  ): { point: LogicalPoint; preferredScreenRow: number } | undefined {
+    const index = this.heightIndex
+    if (!index || !Number.isFinite(row) || index.totalRows <= 0)
+      return undefined
+    const targetRow = Math.max(
+      0,
+      Math.min(Math.floor(row), index.totalRows - 1),
+    )
+    let ordinal = index.blockAtRow(targetRow)
+    if (ordinal === undefined) return undefined
+    // Skip nonsemantic turn footers and zero-height members of collapsed groups.
+    let backward = false
+    while (ordinal >= 0 && ordinal < this.frame.blocks.length) {
+      const block = this.frame.blocks[ordinal]!
+      const start = index.prefixRows(ordinal)
+      const end = index.prefixRows(ordinal + 1)
+      if ("projection" in block && end > start) {
+        const geometry =
+          this.frame.geometry.byBlockKey[blockKey(block)] ??
+          this.cachedGeometry(this.frame, block)
+        const points = Object.values(geometry?.points ?? {}).filter(
+          (point) => !point.hidden,
+        )
+        const localRow = Math.max(0, targetRow - start)
+        const point = points
+          .filter((point) => point.row >= localRow)
+          .sort((a, b) => a.row - b.row || a.column - b.column)[0]
+        return {
+          point: {
+            itemId: block.key.itemId,
+            graphemeOffset:
+              point?.graphemeOffset ?? blockGraphemeRange(block).from,
+          },
+          preferredScreenRow: Math.max(
+            0,
+            start + (point?.row ?? 0) - targetRow,
+          ),
+        }
+      }
+      const next = !backward ? index.blockAtRow(end) : undefined
+      if (next !== undefined && next > ordinal) ordinal = next
+      else {
+        backward = true
+        const previous = index.blockAtRow(start - 1)
+        if (start <= 0 || previous === undefined || previous >= ordinal)
+          return undefined
+        ordinal = previous
+      }
+    }
+    return undefined
+  }
   getThreadId = (): ThreadId => this.latestInput.threadId
   measurementBase = (
     frame: TranscriptFrame = this.frame,
@@ -1216,9 +1400,27 @@ export class TranscriptRuntime {
   ): TranscriptFrame {
     if (!this.windowPolicy) return frame
     const viewport = frame.transcript.viewport
+    const focusOrdinal =
+      viewport.kind === "point" && index
+        ? transcriptPointBlockIndex(
+            frame.blocks,
+            index,
+            viewport.point,
+            undefined,
+          )
+        : undefined
+    const focusBlock =
+      focusOrdinal === undefined ? undefined : frame.blocks[focusOrdinal]
+    const focusGeometry = focusBlock
+      ? this.cachedGeometry(frame, focusBlock, index)
+      : undefined
     const localRow =
       viewport.kind === "point"
-        ? pointBlockLocalRow(frame.window.blocks, geometryByKey, viewport.point)
+        ? (pointBlockLocalRow(
+            frame.window.blocks,
+            geometryByKey,
+            viewport.point,
+          ) ?? focusGeometry?.points[viewport.point.graphemeOffset]?.row)
         : undefined
     const attachment =
       frame.mode === "follow" || viewport.kind === "tail"
@@ -1245,7 +1447,18 @@ export class TranscriptRuntime {
     if (this.diagnostics)
       this.diagnostics.blockPlanWindowSliceItems += planned.blocks.length
     const window = sameWindow(frame.window, planned) ? frame.window : planned
+    let restoredGeometry: Record<string, BlockGeometry> | undefined
+    const plannedFrame = window === frame.window ? frame : { ...frame, window }
+    for (const block of window.blocks) {
+      const key = blockKey(block)
+      if (geometryByKey[key]) continue
+      const cached = this.cachedGeometry(plannedFrame, block, index)
+      if (!cached) continue
+      restoredGeometry ??= { ...geometryByKey }
+      restoredGeometry[key] = cached
+    }
     const alreadyWindowLocal =
+      !restoredGeometry &&
       window === frame.window &&
       frame.geometry.totalRows === index?.totalRows &&
       frame.geometry.blockRows.length === window.blocks.length &&
@@ -1258,7 +1471,7 @@ export class TranscriptRuntime {
       : composeTranscriptWindowGeometry(
           window.blocks,
           frame.transcript.folded,
-          geometryByKey,
+          restoredGeometry ?? geometryByKey,
           frame.geometry.generation,
           frame.geometry.revision,
           window.topSpacerRows,
@@ -1266,6 +1479,12 @@ export class TranscriptRuntime {
           frame.geometry.width,
           frame.geometry.styleRevision,
           window.activityPresentation,
+          (key) => {
+            const ordinal = index?.blockIndex(key)
+            return ordinal === undefined
+              ? undefined
+              : index?.rowRange(ordinal, ordinal + 1)?.rows
+          },
         )
     if (!alreadyWindowLocal && this.diagnostics)
       this.diagnostics.windowGeometryBlockVisits += window.blocks.length
@@ -1835,6 +2054,12 @@ export class TranscriptRuntime {
             raw.geometry.width,
             raw.geometry.styleRevision,
             raw.window.activityPresentation,
+            (key) => {
+              const ordinal = index?.blockIndex(key)
+              return ordinal === undefined
+                ? undefined
+                : index?.rowRange(ordinal, ordinal + 1)?.rows
+            },
           )
         : reconciledGeometry(
             raw.geometry,
@@ -1961,6 +2186,8 @@ export class TranscriptRuntime {
         nextIndex = replaced
       }
     }
+    for (const measurement of batch.measurements)
+      this.rememberGeometry(nextByKey[measurement.key.blockKey]!)
     if (!this.windowPolicy) {
       const geometry = composeTranscriptGeometry(
         this.frame.blocks,
@@ -1993,6 +2220,12 @@ export class TranscriptRuntime {
       first.key.width,
       first.key.styleRevision,
       presentation,
+      (key) => {
+        const ordinal = nextIndex?.blockIndex(key)
+        return ordinal === undefined
+          ? undefined
+          : nextIndex?.rowRange(ordinal, ordinal + 1)?.rows
+      },
     )
     const corrected = this.withPlannedWindow(
       Object.freeze({
@@ -2011,6 +2244,7 @@ export class TranscriptRuntime {
   /** Invalidate the active layout generation so late native results are rejected. */
   resetLayout(_reason: LayoutResetReason): TranscriptFrame {
     if (this.disposed || this.notifying) return this.frame
+    this.clearRecentGeometry()
     const geometry = emptyTranscriptGeometry(
       this.frame.geometry.generation + 1,
       this.frame.geometry.revision + 1,
@@ -2146,11 +2380,21 @@ export class TranscriptRuntime {
     const lineageChanged =
       input.threadId !== priorInput.threadId ||
       input.canonicalGeneration !== priorInput.canonicalGeneration
+    if (lineageChanged) this.clearRecentGeometry()
     if (
       !lineageChanged &&
       input.canonicalRevision < priorInput.canonicalRevision
     )
       return priorFrame
+    if (
+      lineageChanged ||
+      (input.reveal && input.reveal.id > this.lastRevealId) ||
+      (input.canonicalRevision === priorInput.canonicalRevision &&
+        input.transcript.viewport !== priorInput.transcript.viewport &&
+        input.presentationDamage !== undefined &&
+        input.presentationDamage.kind !== "none")
+    )
+      this.viewportIntentRevision += 1
     const exclusionsChanged = !sameList(
       input.excludedTurnIds,
       priorInput.excludedTurnIds,
@@ -2271,6 +2515,7 @@ export class TranscriptRuntime {
   }
 
   dispose(): void {
+    this.clearRecentGeometry()
     if (this.disposed) return
     this.disposed = true
     this.queuedInputs.length = 0

@@ -1,6 +1,6 @@
-import { expect, test } from "bun:test"
+import { expect, test, spyOn } from "bun:test"
 import {
-  CliRenderEvents,
+  CliRenderer,
   type DiffRenderable,
   type ScrollBoxRenderable,
 } from "@opentui/core"
@@ -189,7 +189,7 @@ test("windowed correction preserves a detached logical anchor through reflow abo
           <box
             key={blockKey(block)}
             id={transcriptBlockRenderableId(block)}
-            height={rowsByKey[blockKey(block)] ?? 1}
+            paddingBottom={rowsByKey[blockKey(block)] ?? 0}
             flexShrink={0}
           >
             {"projection" in block ? (
@@ -235,10 +235,18 @@ test("windowed correction preserves a detached logical anchor through reflow abo
       [anchorKey, 7],
       [belowKey, 4],
     ] as const) {
+      const block = runtime
+        .getSnapshot()
+        .window.blocks.find((block) => blockKey(block) === key)!
+      const native = setup.renderer.root.findDescendantById(
+        transcriptBlockRenderableId(block),
+      )!
+      const previousHeight = native.height
       await act(async () => {
         resizeBlock(key, rows)
       })
       await settle()
+      expect(native.height).toBe(previousHeight + rows)
       expect(anchorRow()).toBe(2)
       expect(runtime.getSnapshot().geometry.blockRows.length).toBe(
         runtime.getSnapshot().window.blocks.length,
@@ -272,7 +280,7 @@ test("windowed correction preserves a detached logical anchor through reflow abo
   }
 })
 
-test("hidden transcript layout owns no native roots, frame listener, or measurement work", async () => {
+test("hidden transcript layout owns no native roots, frame callback, or measurement work", async () => {
   const fixture = buildTranscriptScalingFixture(100)
   const point = Object.freeze({
     itemId: fixture.targets.middle,
@@ -344,11 +352,27 @@ test("hidden transcript layout owns no native roots, frame listener, or measurem
     )
   }
 
+  const activeCallbacks = new Set<
+    Parameters<CliRenderer["setFrameCallback"]>[0]
+  >()
+  const register = CliRenderer.prototype.setFrameCallback
+  const unregister = CliRenderer.prototype.removeFrameCallback
+  const registerSpy = spyOn(
+    CliRenderer.prototype,
+    "setFrameCallback",
+  ).mockImplementation(function (this: CliRenderer, callback) {
+    activeCallbacks.add(callback)
+    register.call(this, callback)
+  })
+  const unregisterSpy = spyOn(
+    CliRenderer.prototype,
+    "removeFrameCallback",
+  ).mockImplementation(function (this: CliRenderer, callback) {
+    activeCallbacks.delete(callback)
+    unregister.call(this, callback)
+  })
   const setup = await testRender(<Harness />, { width: 40, height: 10 })
-  const frameListeners = () =>
-    (
-      setup.renderer as unknown as { listenerCount(event: string): number }
-    ).listenerCount(CliRenderEvents.FRAME)
+  const frameCallbacks = () => activeCallbacks.size
   const settle = async () => {
     for (let index = 0; index < 4; index++)
       await act(async () => {
@@ -358,7 +382,8 @@ test("hidden transcript layout owns no native roots, frame listener, or measurem
   }
   try {
     await settle()
-    expect(frameListeners()).toBe(1)
+    const visibleCallbacks = frameCallbacks()
+    expect(visibleCallbacks).toBeGreaterThan(0)
     expect(setup.renderer.root.findDescendantById("transcript")).toBeDefined()
     const visibleScroll = setup.renderer.root.findDescendantById(
       "transcript",
@@ -373,7 +398,7 @@ test("hidden transcript layout owns no native roots, frame listener, or measurem
       await setup.flush()
       await setup.renderOnce()
     })
-    expect(frameListeners()).toBe(0)
+    expect(frameCallbacks()).toBe(visibleCallbacks - 1)
     expect(setup.renderer.root.findDescendantById("transcript")).toBeUndefined()
     expect(latest!.measuredLayout.current).toBeUndefined()
     const hiddenReports = measurementReports
@@ -388,7 +413,7 @@ test("hidden transcript layout owns no native roots, frame listener, or measurem
         await setup.renderOnce()
       })
     expect(measurementReports).toBe(hiddenReports)
-    expect(frameListeners()).toBe(0)
+    expect(frameCallbacks()).toBe(visibleCallbacks - 1)
 
     await act(async () => {
       setVisible(true)
@@ -396,7 +421,7 @@ test("hidden transcript layout owns no native roots, frame listener, or measurem
       await setup.renderOnce()
     })
     await settle()
-    expect(frameListeners()).toBe(1)
+    expect(frameCallbacks()).toBe(visibleCallbacks)
     const revealedScroll = setup.renderer.root.findDescendantById(
       "transcript",
     ) as ScrollBoxRenderable
@@ -409,5 +434,7 @@ test("hidden transcript layout owns no native roots, frame listener, or measurem
     runtime.dispose()
     syntax.destroy()
     await act(async () => setup.renderer.destroy())
+    registerSpy.mockRestore()
+    unregisterSpy.mockRestore()
   }
 })

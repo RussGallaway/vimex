@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test"
+import { afterEach, expect, test } from "bun:test"
 import {
   createConversationReductionDiagnostics,
   forkBoundary,
@@ -50,6 +50,14 @@ import {
   transcriptPointBlockIndex,
 } from "./window"
 import { createHeightIndex } from "./height-index"
+
+// Each stress case allocates several 100k-block immutable histories, including
+// weakly keyed geometry/projection caches. Reclaim those dead fixtures after
+// their owning test, rather than charging the next small test for deferred GC.
+// Runtime disposal alone cannot collect immutable snapshots still on its stack.
+afterEach(() => {
+  Bun.gc(true)
+})
 
 function runtimeInput(
   fixture: Readonly<{ threadId: TranscriptRuntimeInput["threadId"] }>,

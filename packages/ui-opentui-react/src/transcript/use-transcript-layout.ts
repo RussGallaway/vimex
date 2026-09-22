@@ -1,5 +1,6 @@
-import { CliRenderEvents, type ScrollBoxRenderable } from "@opentui/core"
-import { useRenderer } from "@opentui/react"
+import { type ScrollBoxRenderable } from "@opentui/core"
+import { flushSync, useRenderer } from "@opentui/react"
+import { prepareNativeTranscriptLayout } from "./scroll-preparation"
 import type { ThreadId } from "@vimex/conversation"
 import {
   blockGraphemeRange,
@@ -25,6 +26,7 @@ import {
   measureRenderedTranscript,
   measuredPoint,
   topVisiblePoint,
+  visibleMeasuredPoints,
   bottomVisiblePoint,
   rebaseTranscriptLayout,
   releaseRenderedTranscriptLayout,
@@ -55,15 +57,30 @@ export function useTranscriptLayout(options: {
   onAnchor?(point: LogicalPoint, preferredScreenRow: number): void
 }) {
   const renderer = useRenderer()
+  const prepareScroll = useRef<(() => void) | undefined>(undefined)
   const { transcript, threadId, width, height, scrollRef, controller } = options
   const latest = useRef(options)
   latest.current = options
   const measuredLayout = useRef<TranscriptLayout | undefined>(undefined)
   const currentMeasuredLayout = useRef<TranscriptLayout | undefined>(undefined)
   const [, publishPlacement] = useState(0)
+  const queuedViewport = useRef<TranscriptState["viewport"] | undefined>(
+    undefined,
+  )
+  const queuedIntentRevision = useRef<number | undefined>(undefined)
+  const pendingScrollRows = useRef<
+    Array<{ rows: number; cursor?: "follow" | "clamp" }>
+  >([])
+  const pendingCursor = useRef<{ row: number; column: number } | undefined>(
+    undefined,
+  )
+  const pendingNativeScroll = useRef(false)
   const pendingAnchor = useRef(false)
   const pendingRestore = useRef(false)
   const lastScrollTop = useRef(0)
+  const prepositionedBlocks = useRef<
+    TranscriptFrame["window"]["blocks"] | undefined
+  >(undefined)
   const hasRuntimeGeometry = Boolean(
     options.frame && options.frame.geometry.measuredBlockCount > 0,
   )
@@ -97,6 +114,13 @@ export function useTranscriptLayout(options: {
   )
   useLayoutEffect(() => {
     measuredLayout.current = undefined
+    currentMeasuredLayout.current = undefined
+    prepositionedBlocks.current = undefined
+    pendingScrollRows.current = []
+    pendingCursor.current = undefined
+    pendingNativeScroll.current = false
+    queuedViewport.current = undefined
+    queuedIntentRevision.current = undefined
     pendingAnchor.current = false
     pendingRestore.current = transcript.viewport.kind === "point"
     lastScrollTop.current = scrollRef.current?.scrollTop ?? 0
@@ -107,6 +131,12 @@ export function useTranscriptLayout(options: {
     // their last placement escape into input handling after a later reveal.
     measuredLayout.current = undefined
     currentMeasuredLayout.current = undefined
+    prepositionedBlocks.current = undefined
+    pendingScrollRows.current = []
+    pendingCursor.current = undefined
+    pendingNativeScroll.current = false
+    queuedViewport.current = undefined
+    queuedIntentRevision.current = undefined
     pendingAnchor.current = false
     pendingRestore.current = false
     lastScrollTop.current = 0
@@ -139,16 +169,35 @@ export function useTranscriptLayout(options: {
     const deltaY = lastScrollTop.current - scrollbox.scrollTop
     const translated = translateTranscriptLayout(prior, 0, deltaY)
     const anchor = topVisiblePoint(translated, scrollbox)
-    if (!anchor) return false
+    let fallback: ReturnType<TranscriptRuntime["scrollAnchorAtRow"]>
+    if (!anchor && current.runtime) {
+      // Convert the native viewport into indexed document rows using the last
+      // mounted placement, including its padding and cumulative translation.
+      const entry = Object.entries(translated.placementByBlockKey ?? {}).find(
+        ([key]) => translated.geometry?.rowByBlockKey[key] !== undefined,
+      )
+      const documentRow = entry
+        ? translated.geometry!.rowByBlockKey[entry[0]]! +
+          scrollbox.viewport.screenY -
+          entry[1].screenY -
+          (translated.screenOffset?.y ?? 0)
+        : scrollbox.scrollTop
+      fallback = current.runtime.scrollAnchorAtRow(documentRow)
+    }
+    if (!anchor && !fallback) return false
     measuredLayout.current = translated
     lastScrollTop.current = scrollbox.scrollTop
     pendingAnchor.current = false
-    pendingRestore.current = false
-    const point = {
-      itemId: anchor.itemId,
-      graphemeOffset: anchor.graphemeOffset,
-    }
-    const row = anchor.screenY - scrollbox.viewport.screenY
+    pendingRestore.current = Boolean(fallback)
+    const point = anchor
+      ? {
+          itemId: anchor.itemId,
+          graphemeOffset: anchor.graphemeOffset,
+        }
+      : fallback!.point
+    const row = anchor
+      ? anchor.screenY - scrollbox.viewport.screenY
+      : fallback!.preferredScreenRow
     if (current.onAnchor) current.onAnchor(point, row)
     else
       controller.transcript({
@@ -159,11 +208,30 @@ export function useTranscriptLayout(options: {
     return true
   }, [controller, scrollRef])
 
-  const onManualScroll = useCallback(() => {
-    pendingAnchor.current = true
-    pendingRestore.current = false
-    renderer.requestRender()
-  }, [renderer])
+  const onManualScroll = useCallback(
+    (rows?: number, cursor?: "follow" | "clamp") => {
+      const viewport =
+        latest.current.runtime?.getSnapshot().transcript.viewport ??
+        latest.current.transcript.viewport
+      const intentRevision = latest.current.runtime?.getViewportIntentRevision()
+      if (
+        queuedIntentRevision.current !== undefined
+          ? queuedIntentRevision.current !== intentRevision
+          : queuedViewport.current && queuedViewport.current !== viewport
+      ) {
+        pendingScrollRows.current = []
+        pendingCursor.current = undefined
+        pendingNativeScroll.current = false
+      }
+      queuedViewport.current = viewport
+      queuedIntentRevision.current = intentRevision
+      if (rows === undefined) pendingNativeScroll.current = true
+      else pendingScrollRows.current.push({ rows, cursor })
+      pendingRestore.current = false
+      renderer.requestRender()
+    },
+    [renderer],
+  )
 
   const prepositionWindowForPoint = useCallback(
     (
@@ -185,7 +253,6 @@ export function useTranscriptLayout(options: {
         )
       })
       if (!target || !("projection" in target)) return
-      scrollbox.scrollChildIntoView(transcriptBlockRenderableId(target))
       const key = blockKey(target)
       const blockRow =
         frame.geometry.rowByBlockKey[key] ?? frame.window.topSpacerRows
@@ -194,16 +261,20 @@ export function useTranscriptLayout(options: {
       const renderable = scrollbox.getRenderable(
         transcriptBlockRenderableId(target),
       )
-      if (
-        !renderable ||
-        renderable.screenY < scrollbox.viewport.screenY ||
-        renderable.screenY >=
-          scrollbox.viewport.screenY + scrollbox.viewport.height
-      ) {
+      // A cold root must be placed far enough into view for its descendants
+      // to receive native layout, even when its height is still estimated.
+      if (renderable)
+        scrollbox.scrollBy(
+          renderable.screenY -
+            scrollbox.viewport.screenY +
+            localRow -
+            preferredScreenRow,
+          "step",
+        )
+      else
         scrollbox.scrollTo(
           Math.max(0, blockRow + localRow - preferredScreenRow),
         )
-      }
       lastScrollTop.current = scrollbox.scrollTop
     },
     [scrollRef],
@@ -228,13 +299,19 @@ export function useTranscriptLayout(options: {
           pendingRestore.current &&
           current.transcript.viewport.kind === "point" &&
           measuredLayout.current?.materializedBlocks !==
-            current.frame.window.blocks
+            current.frame.window.blocks &&
+          prepositionedBlocks.current !== current.frame.window.blocks
         ) {
+          prepositionedBlocks.current = current.frame.window.blocks
+          const beforePreposition = scrollbox.scrollTop
           prepositionWindowForPoint(
             current.frame,
             current.transcript.viewport.point,
             current.transcript.viewport.preferredScreenRow,
           )
+          // Placement changed; refresh native descendant coordinates before
+          // accepting any block-local measurement from this window.
+          if (scrollbox.scrollTop !== beforePreposition) return
         }
       }
       // A manual scroll establishes semantic meaning before dirty native
@@ -264,6 +341,7 @@ export function useTranscriptLayout(options: {
       if (current.measurementDiagnostics)
         current.onMeasurementDiagnostics?.(current.measurementDiagnostics)
       if (!next) return
+      currentMeasuredLayout.current = next
       // Measurement owns a geometry cache. Its stable identity avoids serializing
       // every logical point merely to discover that a frame has not changed.
       if (next !== measuredLayout.current) {
@@ -279,7 +357,7 @@ export function useTranscriptLayout(options: {
         // without changing transcript state. Reapply a detached logical anchor
         // after each real geometry revision so async reflow cannot move it.
         if (
-          geometryChanged &&
+          (geometryChanged || lastScrollTop.current === scrollbox.scrollTop) &&
           current.transcript.viewport.kind === "point" &&
           !pendingAnchor.current
         )
@@ -323,10 +401,202 @@ export function useTranscriptLayout(options: {
           )
       }
     }
-    renderer.on(CliRenderEvents.FRAME, measure)
+    const prepare = () => {
+      const scrollbox = scrollRef.current
+      if (!scrollbox) return
+      const viewport =
+        latest.current.runtime?.getSnapshot().transcript.viewport ??
+        latest.current.transcript.viewport
+      const superseded =
+        queuedIntentRevision.current !== undefined
+          ? queuedIntentRevision.current !==
+            latest.current.runtime?.getViewportIntentRevision()
+          : queuedViewport.current && queuedViewport.current !== viewport
+      if (superseded) {
+        pendingScrollRows.current = []
+        pendingCursor.current = undefined
+        pendingNativeScroll.current = false
+      }
+      queuedViewport.current = undefined
+      queuedIntentRevision.current = undefined
+      const wasNativeScroll = pendingNativeScroll.current
+      if (pendingNativeScroll.current) {
+        pendingScrollRows.current.push({
+          rows: scrollbox.scrollTop - lastScrollTop.current,
+        })
+        scrollbox.scrollTo(lastScrollTop.current)
+        pendingNativeScroll.current = false
+        if (!pendingScrollRows.current.length) pendingAnchor.current = true
+      }
+      const advance = () => {
+        const prior = measuredLayout.current
+        const top = scrollbox.viewport.screenY
+        // Coalesce only consecutive moves in the same direction. A reversal
+        // must be applied after clamping the preceding run at the boundary.
+        const intent = pendingScrollRows.current.shift() ?? { rows: 0 }
+        let requested = intent.rows
+        while (
+          pendingScrollRows.current.length &&
+          pendingScrollRows.current[0]!.cursor === intent.cursor &&
+          Math.sign(pendingScrollRows.current[0]!.rows) === Math.sign(requested)
+        )
+          requested += pendingScrollRows.current.shift()!.rows
+        const frame = latest.current.frame
+        const coherent =
+          prior &&
+          (!frame ||
+            (prior.materializedBlocks === frame.window.blocks &&
+              prior.geometry === frame.geometry))
+        let anchoredStep = 0
+        if (coherent) {
+          for (const point of visibleMeasuredPoints(prior, {
+            screenY: Math.min(top, top + requested),
+            height: Math.abs(requested) + 1,
+          })) {
+            const delta = point.screenY - top
+            if (
+              !point.hidden &&
+              Math.sign(delta) === Math.sign(requested) &&
+              Math.abs(delta) <= Math.abs(requested) &&
+              Math.abs(delta) > Math.abs(anchoredStep)
+            )
+              anchoredStep = delta
+          }
+        }
+        const step =
+          anchoredStep ||
+          Math.sign(requested) *
+            Math.min(
+              Math.abs(requested),
+              Math.max(1, Math.floor(scrollbox.viewport.height / 2)),
+            )
+        const cursor =
+          latest.current.runtime?.getSnapshot().transcript.cursor ??
+          latest.current.transcript.cursor
+        const cursorPoint =
+          cursor && prior ? measuredPoint(prior, cursor) : undefined
+        scrollbox.stickyScroll = false
+        const oldTop = scrollbox.scrollTop
+        scrollbox.scrollBy(step, "step")
+        if (oldTop !== scrollbox.scrollTop && requested !== step)
+          pendingScrollRows.current.unshift({
+            ...intent,
+            rows: requested - step,
+          })
+        if (intent.cursor && cursorPoint) {
+          const translatedRow =
+            cursorPoint.screenY -
+            top -
+            (intent.cursor === "clamp" ? scrollbox.scrollTop - oldTop : 0)
+          // A visible cursor keeps its exact logical offset, even when multiple
+          // offsets (such as a newline boundary) share one rendered cell.
+          if (
+            intent.cursor === "follow" ||
+            translatedRow < 0 ||
+            translatedRow >= scrollbox.viewport.height
+          )
+            pendingCursor.current = {
+              row: Math.max(
+                0,
+                Math.min(scrollbox.viewport.height - 1, translatedRow),
+              ),
+              column: cursorPoint.screenX - scrollbox.viewport.screenX,
+            }
+        }
+        pendingAnchor.current = true
+        pendingRestore.current = false
+        flushSync(() => captureScrolledAnchor())
+      }
+      // Capture manual intent against the previous coherent layout before any
+      // simultaneous content change can replace its geometry.
+      if (
+        wasNativeScroll &&
+        pendingScrollRows.current.length &&
+        !pendingRestore.current &&
+        measuredLayout.current
+      )
+        advance()
+      for (let pass = 0; pass < 128; pass++) {
+        const before = latest.current.runtime?.getSnapshot()
+        const top = scrollbox.scrollTop
+        flushSync(() => {
+          prepareNativeTranscriptLayout(renderer)
+          measure()
+        })
+        const settled =
+          before === latest.current.runtime?.getSnapshot() &&
+          top === scrollbox.scrollTop &&
+          !pendingAnchor.current &&
+          !pendingRestore.current
+        if (!settled) continue
+        if (pendingCursor.current && measuredLayout.current) {
+          const desired = pendingCursor.current
+          pendingCursor.current = undefined
+          const candidates = visibleMeasuredPoints(
+            measuredLayout.current,
+            scrollbox.viewport,
+          ).filter((point) => !point.hidden)
+          let target: (typeof candidates)[number] | undefined
+          let distance = Infinity
+          for (const point of candidates) {
+            const rowDistance = Math.abs(
+              point.screenY - scrollbox.viewport.screenY - desired.row,
+            )
+            const columnDistance = Math.abs(
+              point.screenX - scrollbox.viewport.screenX - desired.column,
+            )
+            const score = rowDistance * (renderer.width + 1) + columnDistance
+            if (score < distance) {
+              target = point
+              distance = score
+            }
+          }
+          if (target) {
+            const cursor =
+              latest.current.runtime?.getSnapshot().transcript.cursor ??
+              latest.current.transcript.cursor
+            if (
+              cursor?.itemId !== target.itemId ||
+              cursor.graphemeOffset !== target.graphemeOffset
+            ) {
+              const point = {
+                itemId: target.itemId,
+                graphemeOffset: target.graphemeOffset,
+              }
+              flushSync(() =>
+                controller.transcript({
+                  type: "cursor.move",
+                  target: point,
+                  preferredScreenRow:
+                    target.screenY - scrollbox.viewport.screenY,
+                  extend: false,
+                }),
+              )
+              continue
+            }
+          }
+        }
+        if (!pendingScrollRows.current.length || pass >= 112) break
+        // Consume the largest displacement whose rows are already measured.
+        // Cold remainder is resolved after the next neighborhood is prepared.
+        advance()
+      }
+      if (pendingScrollRows.current.length) {
+        queuedViewport.current =
+          latest.current.runtime?.getSnapshot().transcript.viewport ??
+          latest.current.transcript.viewport
+        queuedIntentRevision.current =
+          latest.current.runtime?.getViewportIntentRevision()
+        renderer.requestRender()
+      }
+    }
+    const frameCallback = async () => prepare()
+    prepareScroll.current = prepare
+    renderer.setFrameCallback(frameCallback)
     renderer.requestRender()
     return () => {
-      renderer.off(CliRenderEvents.FRAME, measure)
+      if (prepareScroll.current === prepare) prepareScroll.current = undefined
+      renderer.removeFrameCallback(frameCallback)
       if (ownedScrollbox) releaseRenderedTranscriptLayout(ownedScrollbox)
     }
   }, [
@@ -390,7 +660,12 @@ export function useTranscriptLayout(options: {
   // Input consumers must never bypass the current runtime frame by reading an
   // older native layout during the remeasurement frame.
   currentMeasuredLayout.current = currentLayout ?? rebased
+  const flushManualScroll = useCallback(() => {
+    if (pendingScrollRows.current.length || pendingCursor.current)
+      prepareScroll.current?.()
+  }, [])
   return {
+    flushManualScroll,
     enterVisibleTranscript,
     layout,
     measuredLayout: currentMeasuredLayout,

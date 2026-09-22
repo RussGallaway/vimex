@@ -214,6 +214,7 @@ export function composeTranscriptWindowGeometry(
       { readonly kind: Exclude<TranscriptBlockPresentation, "item"> }
     >
   > = {},
+  indexedRows?: (blockKey: string) => number | undefined,
 ): TranscriptGeometry {
   return composeGeometry(
     blocks,
@@ -226,6 +227,7 @@ export function composeTranscriptWindowGeometry(
     width,
     styleRevision,
     presentationByBlock,
+    indexedRows,
   )
 }
 
@@ -245,6 +247,7 @@ function composeGeometry(
       { readonly kind: Exclude<TranscriptBlockPresentation, "item"> }
     >
   > = {},
+  indexedRows?: (blockKey: string) => number | undefined,
 ): TranscriptGeometry {
   const retained: Record<string, BlockGeometry> = {}
   const rowByBlockKey: Record<string, number> = {}
@@ -269,7 +272,7 @@ function composeGeometry(
         ? Math.max(0, geometry.rows)
         : presentation === "activity-hidden"
           ? 0
-          : Math.max(1, block.estimatedRows)
+          : Math.max(1, indexedRows?.(key) ?? block.estimatedRows)
     blockRows.push(
       Object.freeze({
         blockKey: key,

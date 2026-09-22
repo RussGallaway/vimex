@@ -168,6 +168,53 @@ React requires external-store snapshots to be immutable and referentially stable
 - Do not mistake culling for windowing.
 - Isolate OpenTUI private measurement APIs behind one adapter module.
 
+## Scrollback continuity follow-up (2026-09-22)
+
+The original research establishes ownership and bounded work, not smoothness of every painted frame. User reports after Stage 5 and the first scroll fixes triggered a dedicated [scrollback investigation](./transcript-scrollback-investigation.md). Further feature development is gated on transcript navigation quality. The investigation compares current windowing with a fully mounted control and records native paints before post-frame measurement changes state.
+
+### Grok Build
+
+Inspected official `xai-org/grok-build` at `07e35a3dfeed2f200d319ef6c893b5ea286d9a51`. This is source inspection; upstream tests and interactive smoothness were not executed.
+
+Grok also virtualizes variable-height scrollback. Its important distinction is a preparation phase that resolves visible geometry and restores anchors before painting. Newly visible estimates are replaced repeatedly until the viewport is exact. Height measurement and painting use the same rendered-content cache.
+
+- [Preparation](https://github.com/xai-org/grok-build/blob/07e35a3dfeed2f200d319ef6c893b5ea286d9a51/crates/codegen/xai-grok-pager/src/scrollback/state/mod.rs#L1316)
+- [Visible-height settlement](https://github.com/xai-org/grok-build/blob/07e35a3dfeed2f200d319ef6c893b5ea286d9a51/crates/codegen/xai-grok-pager/src/scrollback/state/layout.rs#L731)
+- [Shared rendered-content measurement](https://github.com/xai-org/grok-build/blob/07e35a3dfeed2f200d319ef6c893b5ea286d9a51/crates/codegen/xai-grok-pager/src/scrollback/wrappers/entry_renderer.rs#L544)
+
+It measures a neighborhood around cold selection targets, retains exact scalar heights after evicting heavy rendered output, and discards a pending structural correction if subsequent user navigation changed the captured offset. Vimex already retains scalar heights; the open question is whether retaining lightweight row/point mappings would prevent warm revisits from becoming cold layout operations.
+
+- [Target preparation](https://github.com/xai-org/grok-build/blob/07e35a3dfeed2f200d319ef6c893b5ea286d9a51/crates/codegen/xai-grok-pager/src/scrollback/state/layout.rs#L861)
+- [Measurement and eviction](https://github.com/xai-org/grok-build/blob/07e35a3dfeed2f200d319ef6c893b5ea286d9a51/crates/codegen/xai-grok-pager/src/scrollback/state/layout.rs#L591)
+- [Correction yields to navigation](https://github.com/xai-org/grok-build/blob/07e35a3dfeed2f200d319ef6c893b5ea286d9a51/crates/codegen/xai-grok-pager/src/scrollback/state/layout.rs#L530)
+
+Tests worth adapting require repeated preparation to be a no-op, compare lazy heights with an independent exact oracle, preserve detached markers during growth/removal above them, and exercise cold paging and distant selection. A read-only scroll HUD and input logs provide event-loop diagnostics.
+
+- [Convergence and exact oracle](https://github.com/xai-org/grok-build/blob/07e35a3dfeed2f200d319ef6c893b5ea286d9a51/crates/codegen/xai-grok-pager/src/scrollback/state/layout_tests.rs#L1682)
+- [Cold paging](https://github.com/xai-org/grok-build/blob/07e35a3dfeed2f200d319ef6c893b5ea286d9a51/crates/codegen/xai-grok-pager/src/scrollback/state/layout_tests.rs#L1976)
+- [Scroll HUD](https://github.com/xai-org/grok-build/blob/07e35a3dfeed2f200d319ef6c893b5ea286d9a51/crates/codegen/xai-grok-pager/src/views/scroll_debug_hud.rs)
+
+Do not treat this as proof of flawless virtualization or bounded latency. Its settlement loop permits up to entry-count-plus-two iterations, corrections rebuild prefix positions, and rendering a large entry can be expensive. Its Ratatui preparation/render ownership does not directly transfer to React/OpenTUI.
+
+### OpenCode and OpenTUI
+
+Inspected `anomalyco/opencode` at `2406400f0aeb07b36d0495af4e05aaca49159832` and `anomalyco/opentui` at `5eeed22a2f42a842d26c9bd000b06c02d245103c`.
+
+OpenCode mounts messages in a native sticky ScrollBox and uses actual child coordinates for message jumps, excluding tool-only messages. This is a useful full-mount reference, but offers less granular navigation than Vimex. Its tool spacing is updated during the lifecycle pass before Yoga, with first-frame insertion/removal assertions.
+
+- [Mounted message list](https://github.com/anomalyco/opencode/blob/2406400f0aeb07b36d0495af4e05aaca49159832/packages/tui/src/routes/session/index.tsx#L1180)
+- [Native-coordinate navigation](https://github.com/anomalyco/opencode/blob/2406400f0aeb07b36d0495af4e05aaca49159832/packages/tui/src/routes/session/index.tsx#L377)
+- [Pre-layout spacing](https://github.com/anomalyco/opencode/blob/2406400f0aeb07b36d0495af4e05aaca49159832/packages/tui/src/util/layout.ts)
+- [First-frame regression](https://github.com/anomalyco/opencode/blob/2406400f0aeb07b36d0495af4e05aaca49159832/packages/tui/test/cli/tui/inline-tool-wrap-snapshot.test.tsx#L337)
+
+Current upstream OpenTUI distinguishes lifecycle, layout, and painting phases. Vimex pins 0.5.11; an upstream mechanism must be checked against that installed version before adoption. Local inspection establishes that its `FRAME` event fires after native rendering; the current Vimex layout hook performs anchor correction on that event.
+
+- [Upstream lifecycle and layout order](https://github.com/anomalyco/opentui/blob/5eeed22a2f42a842d26c9bd000b06c02d245103c/packages/core/src/Renderable.ts#L1780)
+
+### Updated decision boundary
+
+Retain windowing if we can prepare and paint coherent destinations within the input latency budget. A fully mounted control deserves empirical evaluation at realistic sizes; a small control succeeding does not justify discarding bounded rendering. Larger overscan or additional settlement frames alone do not satisfy the user-visible requirement. See the investigation for baseline results and the devil's advocate assessment.
+
 ## Architecture methods
 
 Juval Löwy's volatility-based decomposition advises decomposing around likely sources of change rather than use-case steps. The Method does not require literal folders for every layer.

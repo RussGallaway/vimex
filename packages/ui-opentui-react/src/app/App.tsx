@@ -271,26 +271,31 @@ export function VimexApp({
   const composerInteractionRef = useRef(interaction)
   const composerThreadRef = useRef(state.activeThreadId)
   composerInteractionRef.current = interaction
-  const { layout, measuredLayout, onManualScroll, enterVisibleTranscript } =
-    useTranscriptLayout({
-      threadId: state.activeThreadId,
-      transcript,
-      frame: transcriptFrame,
-      runtime: transcriptRuntime,
-      styleRevision: transcriptStyleRevision,
-      width: dimensions.width,
-      height: dimensions.height,
-      scrollRef,
-      controller,
-      visible: presentationVisible,
-      onAnchor:
-        paneLabel || !interactive
-          ? (point, row) => {
-              if (state.activeThreadId)
-                controller.anchorThread(state.activeThreadId, point, row)
-            }
-          : undefined,
-    })
+  const {
+    layout,
+    measuredLayout,
+    onManualScroll,
+    enterVisibleTranscript,
+    flushManualScroll,
+  } = useTranscriptLayout({
+    threadId: state.activeThreadId,
+    transcript,
+    frame: transcriptFrame,
+    runtime: transcriptRuntime,
+    styleRevision: transcriptStyleRevision,
+    width: dimensions.width,
+    height: dimensions.height,
+    scrollRef,
+    controller,
+    visible: presentationVisible,
+    onAnchor:
+      paneLabel || !interactive
+        ? (point, row) => {
+            if (state.activeThreadId)
+              controller.anchorThread(state.activeThreadId, point, row)
+          }
+        : undefined,
+  })
   const busy = activeTurn(interaction, workspace?.conversation.activeTurnId)
   const pendingApproval = state.approvals.order
     .map((id) => state.approvals.byId[id])
@@ -688,6 +693,7 @@ export function VimexApp({
     if (
       !presentationVisible ||
       !interactive ||
+      transcriptRuntime ||
       interaction.surface !== "transcript" ||
       transcript.viewport.kind === "tail" ||
       !transcript.cursor
@@ -768,14 +774,17 @@ export function VimexApp({
           repeat,
         )
       }
-      if (result)
+      if (result) {
         controller.transcript({
           type:
             motion === "first" || motion === "last" ? "jump" : "cursor.move",
           target: result.point,
           preferredScreenRow: (() => {
-            const measured = measuredPoint(activeLayout, result.point)
             const viewport = scrollRef.current?.viewport
+            if (motion === "first") return 0
+            if (motion === "last" && viewport)
+              return Math.max(0, viewport.height - 1)
+            const measured = measuredPoint(activeLayout, result.point)
             if (measured && viewport)
               return Math.max(
                 0,
@@ -784,9 +793,6 @@ export function VimexApp({
                   measured.screenY - viewport.screenY,
                 ),
               )
-            if (motion === "first") return 0
-            if (motion === "last" && viewport)
-              return Math.max(0, viewport.height - 1)
             const origin = measuredPoint(activeLayout, transcript.cursor)
             return origin && viewport
               ? Math.max(
@@ -799,7 +805,13 @@ export function VimexApp({
               : 0
           })(),
           extend: interaction.mode === "visual",
+          ...(motion === "first" || motion === "last"
+            ? { preserveFolds: true }
+            : {}),
         })
+        if (motion === "last" && interaction.mode !== "visual")
+          controller.transcript({ type: "viewport.tail" })
+      }
     },
     [controller, dimensions.width, interaction.mode, layout, transcript],
   )
@@ -951,22 +963,28 @@ export function VimexApp({
       const effectiveAmount =
         explicitCount && amount === "half-page" ? "line" : amount
       const repeat = explicitCount ?? 1
-      scrollRef.current?.scrollBy(
+      onManualScroll(
         delta *
           repeat *
           (effectiveAmount === "line"
             ? 1
             : effectiveAmount === "half-page"
-              ? 0.5
-              : 1),
-        effectiveAmount === "line" ? "step" : "viewport",
+              ? Math.max(
+                  1,
+                  Math.floor((scrollRef.current?.viewport.height ?? 1) / 2),
+                )
+              : (scrollRef.current?.viewport.height ?? 1)),
+        interaction.surface === "transcript"
+          ? amount === "line"
+            ? "clamp"
+            : "follow"
+          : undefined,
       )
-      onManualScroll()
       countRef.current = ""
       if (explicitCount !== undefined)
         controller.dispatchInteraction({ type: "count.clear" })
     },
-    [controller, onManualScroll],
+    [controller, onManualScroll, interaction.surface],
   )
 
   const beginVisual = useCallback(
@@ -1148,6 +1166,7 @@ export function VimexApp({
     openOverlay,
     scroll,
     enterVisibleTranscript,
+    flushManualScroll,
   }
   const changeCommandLine = useCallback(
     (value: string) => {

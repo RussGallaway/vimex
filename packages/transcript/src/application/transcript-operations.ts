@@ -163,11 +163,13 @@ function sameLocation(
 function atLocation(
   state: TranscriptState,
   location: JumpLocation,
+  preserveFolds = false,
 ): TranscriptState {
   if (!validLocation(state, location)) return state
-  const revealed = state.folded[location.point.itemId]
-    ? setFold(state, location.point.itemId, false)
-    : state
+  const revealed =
+    !preserveFolds && state.folded[location.point.itemId]
+      ? setFold(state, location.point.itemId, false)
+      : state
   return moveCursor(revealed, location.point, location.preferredScreenRow)
 }
 function jumpTo(
@@ -175,6 +177,7 @@ function jumpTo(
   target: JumpLocation,
   origin?: JumpLocation,
   clearActiveSelection = false,
+  preserveFolds = false,
 ): TranscriptState {
   const normalizedTarget = normalizeLocation(state, target)
   if (!normalizedTarget) return state
@@ -182,12 +185,12 @@ function jumpTo(
     state = { ...state, selection: undefined }
   const from = normalizeLocation(state, origin) ?? currentLocation(state)
   if (sameLocation(from, normalizedTarget))
-    return atLocation(state, normalizedTarget)
+    return atLocation(state, normalizedTarget, preserveFolds)
   const back = from
     ? [...state.jumps.back, from].slice(-JUMP_LIMIT)
     : state.jumps.back
   return {
-    ...atLocation(state, normalizedTarget),
+    ...atLocation(state, normalizedTarget, preserveFolds),
     jumps: { back, forward: [] },
   }
 }
@@ -503,6 +506,7 @@ export function reduceTranscript(
         command.target,
         command.origin,
         command.clearSelection,
+        command.preserveFolds,
       )
     case "jump.back":
       return jumpHistory(state, "back", command.origin)

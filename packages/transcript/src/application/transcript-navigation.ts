@@ -191,13 +191,27 @@ export function moveBySemanticBlock(
   direction: NavigationDirection,
   point = state.cursor,
   count = 1,
+  options: { readonly isItemHidden?: (itemId: ItemId) => boolean } = {},
 ): LogicalPoint | undefined {
   if (!point) return undefined
   const blockCache = new Map<ItemId, readonly SemanticBlock[]>()
   const blocksIn = (itemId: ItemId) => {
     const cached = blockCache.get(itemId)
     if (cached) return cached
-    const blocks = semanticBlocksForItem(state, itemId)
+    // Browsing follows collapsed presentation rows without revealing their
+    // canonical paragraphs. Explicit search/mark targets retain full access.
+    const projection = state.projectionById[itemId]
+    const blocks: readonly SemanticBlock[] = options.isItemHidden?.(itemId)
+      ? []
+      : state.folded[itemId] && projection
+        ? [
+            {
+              itemId,
+              from: { itemId, graphemeOffset: 0 },
+              to: { itemId, graphemeOffset: projection.sourceSpans.length },
+            },
+          ]
+        : semanticBlocksForItem(state, itemId)
     blockCache.set(itemId, blocks)
     return blocks
   }

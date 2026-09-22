@@ -21,6 +21,7 @@ export interface VimBindingContext {
   scrollRef: RefObject<ScrollBoxRenderable | null>
   toggleComposer(): void
   enterVisibleTranscript(): void
+  flushManualScroll?(): void
   submitComposer(intent: SubmissionIntent): void
   countedMotion(motion: Motion): void
   dispatchMotion(motion: Motion): void

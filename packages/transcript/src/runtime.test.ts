@@ -3302,3 +3302,252 @@ test("forward revision gaps accept summarized damage while stale input is ignore
   expect(runtime.getThreadId()).toBe(otherThread)
   expect(switched.blocks[0]).not.toBe(reset.blocks[0])
 })
+
+test("scrolling into cold tool rows materializes the indexed destination without unfolding", () => {
+  let source = fixture()
+  source = {
+    ...source,
+    transcript: {
+      ...source.transcript,
+      foldDefaults: { reasoning: false, tools: true },
+    },
+  }
+  for (let index = 0; index < 100; index++)
+    source = apply(source, {
+      type: "item.started",
+      threadId: thread,
+      item: {
+        id: itemId(`scroll-tool-${index}`),
+        turnId: turn,
+        kind: "command",
+        title: `Command ${index}`,
+        detail: "first paragraph\n\nsecond paragraph",
+        status: "complete",
+      },
+    })
+  const runtime = new TranscriptRuntime(input(source, "follow"), {
+    windowPolicy: { viewportRows: 4, overscanRows: 4 },
+  })
+  const anchor = runtime.scrollAnchorAtRow(21)!
+  expect(anchor.point).toEqual({
+    itemId: itemId("scroll-tool-20"),
+    graphemeOffset: 0,
+  })
+  expect(
+    pointIsMaterialized(runtime.getSnapshot().window.blocks, anchor.point),
+  ).toBe(false)
+  source = {
+    ...source,
+    transcript: {
+      ...source.transcript,
+      viewport: { kind: "point", ...anchor },
+    },
+  }
+  const frame = runtime.update({
+    ...input(source, "detached"),
+    presentationDamage: { kind: "view" },
+  })
+  expect(pointIsMaterialized(frame.window.blocks, anchor.point)).toBe(true)
+  expect(source.transcript.folded[anchor.point.itemId]).toBe(true)
+})
+
+test("warm revisits retain bounded exact geometry while evicted blocks retain indexed heights", () => {
+  let source = fixture()
+  for (let n = 0; n < 90; n++)
+    source = apply(source, {
+      type: "item.started",
+      threadId: thread,
+      item: {
+        id: itemId(`cached-${n}`),
+        turnId: turn,
+        kind: "command",
+        title: `Command ${n}`,
+        detail: "output",
+        status: n === 79 ? "running" : "complete",
+      },
+    })
+  const runtime = new TranscriptRuntime(input(source, "follow"), {
+    windowPolicy: { viewportRows: 2, overscanRows: 0 },
+  })
+  const visit = (n: number) => {
+    const point = { itemId: itemId(`cached-${n}`), graphemeOffset: 0 }
+    source = {
+      ...source,
+      transcript: {
+        ...source.transcript,
+        viewport: { kind: "point", point, preferredScreenRow: 0 },
+      },
+    }
+    return runtime.update({
+      ...input(source, "detached"),
+      presentationDamage: { kind: "view" },
+    })
+  }
+  const keyFor = (n: number) =>
+    blockKey(
+      runtime
+        .getSnapshot()
+        .blocks.find(
+          (b) =>
+            b.key.kind === "item" && b.key.itemId === itemId(`cached-${n}`),
+        )!,
+    )
+  visit(0)
+  const key = keyFor(0)
+  runtime.reportMeasurements(
+    batch(runtime, [{ ...measurement(runtime, key), rows: 7 }]),
+  )
+  const exact = runtime.getSnapshot().geometry.byBlockKey[key]
+  visit(89)
+  expect(runtime.getSnapshot().geometry.byBlockKey[key]).toBeUndefined()
+  expect(visit(0).geometry.byBlockKey[key]).toBe(exact)
+  source = {
+    ...source,
+    transcript: {
+      ...source.transcript,
+      folded: setTranscriptFoldValue(
+        source.transcript.folded,
+        itemId("cached-0"),
+        true,
+      ),
+    },
+  }
+  const folded = runtime.update({
+    ...input(source, "detached"),
+    presentationDamage: { kind: "folds", itemIds: [itemId("cached-0")] },
+  })
+  expect(folded.geometry.byBlockKey[key]).toBeUndefined()
+  source = {
+    ...source,
+    transcript: {
+      ...source.transcript,
+      folded: setTranscriptFoldValue(
+        source.transcript.folded,
+        itemId("cached-0"),
+        false,
+      ),
+    },
+  }
+  runtime.update({
+    ...input(source, "detached"),
+    presentationDamage: { kind: "folds", itemIds: [itemId("cached-0")] },
+  })
+  runtime.reportMeasurements(
+    batch(runtime, [
+      { ...measurement(runtime, key, { nativeRevision: 2 }), rows: 7 },
+    ]),
+  )
+  for (let n = 1; n < 80; n++) {
+    visit(n)
+    runtime.reportMeasurements(
+      batch(runtime, [
+        {
+          ...measurement(runtime, keyFor(n), { nativeRevision: n + 1 }),
+          rows: 7,
+        },
+      ]),
+    )
+  }
+  const evicted = visit(0)
+  expect(evicted.geometry.byBlockKey[key]).toBeUndefined()
+  expect(
+    evicted.geometry.blockRows.find((row) => row.blockKey === key)?.rows,
+  ).toBe(7)
+  runtime.resetLayout("width")
+  expect(visit(79).geometry.measuredBlockCount).toBe(0)
+  const lastKey = keyFor(79)
+  runtime.reportMeasurements(
+    batch(runtime, [
+      {
+        ...measurement(runtime, lastKey),
+        rows: 7,
+        lines: Array.from({ length: 32_769 }, () => ({
+          from: 0,
+          to: 0,
+          row: 0,
+        })),
+      },
+    ]),
+  )
+  visit(0)
+  expect(visit(79).geometry.byBlockKey[lastKey]).toBeUndefined()
+  runtime.reportMeasurements(
+    batch(runtime, [measurement(runtime, lastKey, { nativeRevision: 3 })]),
+  )
+  visit(0)
+  source = apply(source, {
+    type: "item.completed",
+    threadId: thread,
+    item: {
+      id: itemId("cached-79"),
+      turnId: turn,
+      kind: "command",
+      title: "Changed",
+      detail: "different content",
+      status: "complete",
+    },
+  })
+  runtime.update(
+    input(source, "follow", { kind: "blocks", itemIds: [itemId("cached-79")] }),
+  )
+  expect(visit(79).geometry.byBlockKey[lastKey]).toBeUndefined()
+  runtime.dispose()
+})
+
+test("viewport intent revisions distinguish explicit navigation from streaming and geometry", () => {
+  let source = fixture()
+  const runtime = new TranscriptRuntime(input(source, "follow"))
+  const revision = runtime.getViewportIntentRevision()
+  runtime.reportMeasurements(
+    batch(runtime, [measurement(runtime, `item:${answer}:root`)]),
+  )
+  runtime.resetLayout("width")
+  expect(runtime.getViewportIntentRevision()).toBe(revision)
+  source = apply(source, {
+    type: "item.delta",
+    threadId: thread,
+    itemId: answer,
+    delta: " streamed",
+  })
+  source = {
+    ...source,
+    transcript: { ...source.transcript, viewport: { kind: "tail" } },
+  }
+  runtime.update({
+    ...input(source, "follow", { kind: "blocks", itemIds: [answer] }),
+    presentationDamage: { kind: "view" },
+  })
+  expect(runtime.getViewportIntentRevision()).toBe(revision)
+  runtime.update(input(source, "follow"))
+  expect(runtime.getViewportIntentRevision()).toBe(revision)
+  const target = { itemId: answer, graphemeOffset: 0 }
+  source = {
+    ...source,
+    transcript: {
+      ...source.transcript,
+      viewport: { kind: "point", point: target, preferredScreenRow: 0 },
+    },
+  }
+  runtime.update({
+    ...input(source, "detached"),
+    presentationDamage: { kind: "view" },
+  })
+  expect(runtime.getViewportIntentRevision()).toBe(revision + 1)
+  const reveal = input(source, "detached", { kind: "none" }, target)
+  runtime.update(reveal)
+  expect(runtime.getViewportIntentRevision()).toBe(revision + 2)
+  runtime.update(reveal)
+  expect(runtime.getViewportIntentRevision()).toBe(revision + 2)
+  source = {
+    ...source,
+    transcript: { ...source.transcript, viewport: { kind: "tail" } },
+  }
+  runtime.update({
+    ...input(source, "follow"),
+    presentationDamage: { kind: "view" },
+  })
+  expect(runtime.getViewportIntentRevision()).toBe(revision + 3)
+  runtime.update({ ...reveal, canonicalRevision: 0 })
+  expect(runtime.getViewportIntentRevision()).toBe(revision + 3)
+  runtime.dispose()
+})

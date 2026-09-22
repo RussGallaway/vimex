@@ -181,7 +181,7 @@ function observeNativeTree(state: RenderedBlockState, root: Renderable): void {
   visit(root)
 }
 
-function cellsIn(renderer: CliRenderer, renderable: Renderable): ScreenCell[] {
+function cellsIn(renderable: Renderable): ScreenCell[] {
   const measured: ScreenCell[] = []
   const visit = (current: Renderable) => {
     if (current.id.startsWith("decoration:")) return
@@ -197,15 +197,18 @@ function cellsIn(renderer: CliRenderer, renderable: Renderable): ScreenCell[] {
       for (let sourceRow = 0; sourceRow < lines.length; sourceRow += 1) {
         let column = 0
         const candidates = visualsBySource.get(sourceRow) ?? []
+        const sourceStart = info.lineStartCols[candidates[0]!] ?? 0
         let candidateIndex = 0
         for (const part of graphemes(lines[sourceRow] ?? "")) {
           while (
             candidateIndex + 1 < candidates.length &&
-            (info.lineStartCols[candidates[candidateIndex + 1]!] ?? 0) <= column
+            (info.lineStartCols[candidates[candidateIndex + 1]!] ?? 0) -
+              sourceStart <=
+              column
           )
             candidateIndex += 1
           const visual = candidates[candidateIndex] ?? sourceRow
-          const start = info.lineStartCols[visual] ?? 0
+          const start = (info.lineStartCols[visual] ?? 0) - sourceStart
           if (current.width > 0 && current.height > 0)
             measured.push({
               char: [...part][0] ?? part,
@@ -224,30 +227,10 @@ function cellsIn(renderer: CliRenderer, renderable: Renderable): ScreenCell[] {
       if ("screenX" in child) visit(child as Renderable)
   }
   visit(renderable)
-  if (measured.length) return measured.sort((a, b) => a.y - b.y || a.x - b.x)
-
-  const buffer = renderer.currentRenderBuffer
-  const cells: ScreenCell[] = []
-  const left = Math.max(0, renderable.screenX)
-  const top = Math.max(0, renderable.screenY)
-  const right = Math.min(buffer.width, renderable.screenX + renderable.width)
-  const bottom = Math.min(buffer.height, renderable.screenY + renderable.height)
-  const lines = buffer.getSpanLines()
-  for (let y = top; y < bottom; y += 1) {
-    let x = 0
-    for (const span of lines[y]?.spans ?? []) {
-      const spanStart = x
-      let localX = 0
-      for (const part of graphemes(span.text)) {
-        const cellX = spanStart + localX
-        if (cellX >= left && cellX < right)
-          cells.push({ char: [...part][0] ?? part, x: cellX, y })
-        localX += graphemeCellWidth(part)
-      }
-      x = spanStart + span.width
-    }
-  }
-  return cells
+  // The current terminal buffer can belong to a different window while a new
+  // destination is being prepared. Only native text owned by this block may
+  // provide semantic coordinates; old screen cells are never a layout oracle.
+  return measured.sort((a, b) => a.y - b.y || a.x - b.x)
 }
 
 function sameCell(grapheme: string, cell: Pick<ScreenCell, "char">): boolean {
@@ -261,7 +244,7 @@ function measureRaw(
   renderable: Renderable,
   text: string,
 ): Record<number, NativePoint> {
-  const cells = cellsIn(renderer, renderable)
+  const cells = cellsIn(renderable)
   const parts = graphemes(text)
   const result: Record<number, NativePoint> = {}
   let cellIndex = 0

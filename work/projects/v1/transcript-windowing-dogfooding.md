@@ -1,6 +1,6 @@
 # Transcript Windowing Dogfooding Guide
 
-Status: active field guide. This is a symptom map and observation log, not a speculative backlog or an extension of Stage 5 acceptance.
+Status: active field guide. As of 2026-09-22, transcript scrollback and navigation quality gates further feature development. Stage 5 bounded-work acceptance remains useful evidence, but does not establish frame-by-frame visual continuity. See [the scrollback investigation](./transcript-scrollback-investigation.md).
 
 ## Purpose
 
@@ -102,7 +102,7 @@ The first boundary where correct input becomes incorrect output owns the investi
 
 ## UX areas to watch while dogfooding
 
-These are ordinary workflows worth noticing, not a requirement to manufacture every permutation before continuing feature development.
+These workflows define the investigation matrix. Reproduce the reported failures first, then extend coverage around their causes. Further feature development waits for transcript navigation acceptance.
 
 ### Following and detachment
 
@@ -145,7 +145,7 @@ Do not reopen these solely because they are theoretically proportional to input 
 - conservative or ambiguous content may use the exact dense/full-rebuild fallback;
 - complex Markdown, running items, folded items, and unsupported oversized roots are not promised universal fragmentation;
 - windowing does not page canonical conversation history from the server or bound the semantic model's total memory;
-- timing samples are diagnostics; deterministic mounted, measured, changed, publication, identity, and operation counts are the acceptance gates.
+- previous Stage 5 timing samples were diagnostic and operation counts established bounded work; the scrollback investigation additionally requires frame continuity and measured input latency, with hardware and terminal context recorded.
 
 Investigate one of these only after a realistic reproduction violates UX expectations or a Stage 5 bounded-work invariant.
 
@@ -153,23 +153,33 @@ Investigate one of these only after a realistic reproduction violates UX expecta
 
 Use the smallest severity that describes demonstrated impact:
 
-| Severity    | Demonstrated impact                                                                           | Default response                                        |
-| ----------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| Semantic    | wrong copied text, lost state, wrong target, reordered content, or canonical corruption       | stop and repair before relying on the affected workflow |
-| Blocking    | crash, unrecoverable blank transcript, or ordinary input starvation                           | reproduce and repair promptly                           |
-| UX          | jump, flicker, stale frame, awkward settlement, or surprising follow behavior with a recovery | record and fix forward when reproducible                |
-| Performance | measured work grows with history or one realistic item overwhelms the native tree             | add a deterministic scaling fixture before optimizing   |
-| Observation | suspicious behavior seen once without adequate evidence                                       | retain the report; do not design from it yet            |
+| Severity    | Demonstrated impact                                                                           | Default response                                                     |
+| ----------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Semantic    | wrong copied text, lost state, wrong target, reordered content, or canonical corruption       | stop and repair before relying on the affected workflow              |
+| Blocking    | crash, unrecoverable blank transcript, or ordinary input starvation                           | reproduce and repair promptly                                        |
+| UX          | jump, flicker, stale frame, awkward settlement, or surprising follow behavior with a recovery | reproduce and block further feature work until navigation acceptance |
+| Performance | measured work grows with history or one realistic item overwhelms the native tree             | add a deterministic scaling fixture before optimizing                |
+| Observation | suspicious behavior seen once without adequate evidence                                       | retain the report; do not design from it yet                         |
 
 ## Observation log
 
 Add concise entries here or link a dedicated issue when investigation becomes substantial.
 
-| Date | Build | Symptom                                             | Severity | Reproduction/artifact | Suspected boundary | Status   |
-| ---- | ----- | --------------------------------------------------- | -------- | --------------------- | ------------------ | -------- |
-| —    | —     | No post-acceptance dogfooding findings recorded yet | —        | —                     | —                  | Watching |
+| Date       | Build                                          | Symptom                                                       | Severity | Reproduction/artifact                                     | Suspected boundary                                   | Status        |
+| ---------- | ---------------------------------------------- | ------------------------------------------------------------- | -------- | --------------------------------------------------------- | ---------------------------------------------------- | ------------- |
+| 2026-09-22 | Working tree with prior scroll and brace fixes | User still reports flickering and buggy transcript scrollback | UX       | [Investigation](./transcript-scrollback-investigation.md) | Native paint, measurement, window and anchor handoff | Investigating |
 
 When a finding is repaired, link the regression test and commit. Keep the original symptom wording so later reports can be recognized even if the underlying implementation changes.
+
+## Hands-on checkpoint after prepaint preparation
+
+Run the working tree with `bun run start` (or `bun run start --demo` for the offline fixture). An installed release does not automatically include these uncommitted changes.
+
+While output is arriving, scroll backward with Ctrl-U/Ctrl-Y and the mouse, type a draft, navigate earlier tool blocks with `{`/`}`, then work back down and use `G`. Also try `gg` immediately followed by `G`, rapid reversals near both ends, and folded versus expanded tools.
+
+The experience should remain one continuous transcript: no entry pause, transition banner, blank frame, content correction, or forced return to the tail. New output should preserve the reading anchor; `G` should resume following without losing the draft or changing folds. Correct navigation is the acceptance gate before further feature work.
+
+Record the command/build, terminal dimensions, folded state, whether output was streaming, and the shortest failing key sequence. Distinguish wrong destination, visible correction, and delayed response. Headless frame tests are supporting evidence; this hands-on checkpoint remains unaccepted until actually exercised.
 
 ## Architectural references
 

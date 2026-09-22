@@ -23,7 +23,7 @@ const answer = itemId("wheel-answer")
 // VIMEX_PROFILE_TUI=1 bun test packages/ui-opentui-react/src/transcript/wheel-interaction.test.tsx -t 'full App'
 const profileTest = process.env.VIMEX_PROFILE_TUI === "1" ? test : test.skip
 
-async function wheelHarness() {
+async function wheelHarness(toolCount = 0) {
   let emit: (event: RuntimeEvent) => void = () => {}
   const summary = {
     id: thread,
@@ -86,6 +86,25 @@ async function wheelHarness() {
       },
     },
   })
+  for (let index = 0; index < toolCount; index++)
+    emit({
+      type: "conversation",
+      event: {
+        type: "item.started",
+        threadId: thread,
+        item: {
+          id: itemId(`scroll-command-${index}`),
+          turnId: turnId("wheel-turn"),
+          kind: "command",
+          title: `Command ${index}`,
+          detail: "first paragraph\n\nsecond paragraph",
+          status: "complete",
+        },
+      },
+    })
+  const tailText = toolCount
+    ? `Command ${toolCount - 1}`
+    : "Line 59 readable output"
   const reactCommits: number[] = []
   function Harness() {
     const root = <ConnectedVimexRoot controller={controller} />
@@ -107,7 +126,7 @@ async function wheelHarness() {
   })
   for (
     let count = 0;
-    count < 20 && !setup.captureCharFrame().includes("Line 59 readable output");
+    count < 20 && !setup.captureCharFrame().includes(tailText);
     count++
   ) {
     await act(async () => {
@@ -116,7 +135,7 @@ async function wheelHarness() {
       await setup.renderOnce()
     })
   }
-  expect(setup.captureCharFrame()).toContain("Line 59 readable output")
+  expect(setup.captureCharFrame()).toContain(tailText)
   const workspace = () => controller.getSnapshot().workspaces[thread]!
   const keys = async (value: string) => {
     await act(async () => {
@@ -679,3 +698,42 @@ for (const paragraphCount of [60, 1200])
     },
     30000,
   )
+
+for (const [key, repeats] of [
+  ["u", 8],
+  ["y", 56],
+] as const)
+  test(`rapid Ctrl-${key} across unmounted tool cards keeps visible content and an anchor`, async () => {
+    const h = await wheelHarness(100)
+    try {
+      const scroll = h.renderer.root.findDescendantById(
+        "transcript",
+      ) as ScrollBoxRenderable
+      for (let frame = 0; frame < 4; frame++)
+        await act(async () => {
+          await h.flush()
+          await h.renderOnce()
+        })
+      const initialScrollTop = scroll.scrollTop
+      const folded = h.workspace().transcript.folded
+      await act(async () => {
+        for (let index = 0; index < repeats; index++)
+          h.mockInput.pressKey(key, { ctrl: true })
+        await h.flush()
+        await h.renderOnce()
+      })
+      // The destination must detach immediately, even outside mounted rows.
+      expect(h.workspace().transcript.viewport.kind).toBe("point")
+      for (let frame = 0; frame < 10; frame++) {
+        await act(async () => {
+          await h.flush()
+          await h.renderOnce()
+        })
+        expect(h.captureCharFrame()).toMatch(/Command \d+/)
+      }
+      expect(scroll.scrollTop).toBeLessThan(initialScrollTop)
+      expect(h.workspace().transcript.folded).toEqual(folded)
+    } finally {
+      await h.close()
+    }
+  })

@@ -72,7 +72,7 @@ h/j/k/l move the text cursor; w/b/e move by word. 0 and $ move to line boundarie
 
 Ctrl-E/Y scroll down/up one row; Ctrl-D/U scroll half a viewport; Ctrl-F/B scroll a viewport in the transcript. Ctrl-E/Y/D/U also scroll the transcript while the composer keeps focus. Mouse-wheel scrolling preserves focus and detaches tail following.
 
-{ and } move by semantic block. [[ and ]] move by message. / and ? search from Normal mode in either pane; n/N repeat the search.
+{ and } move by semantic block, keeping collapsed tool cards and compact tool groups closed as one stop each. Expanded tools retain paragraph navigation. [[ and ]] move by message. / and ? search from Normal mode in either pane; n/N repeat the search.
 
 s opens Flash in Normal mode. Ctrl-G opens Flash from either pane, including composer Insert. Type visible text and then a label to jump. Escape cancels.
 

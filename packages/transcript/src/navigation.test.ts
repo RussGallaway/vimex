@@ -16,6 +16,7 @@ import {
   moveByUrlReference,
   moveCursor,
   referenceText,
+  reduceTranscript,
   semanticBlocks,
   swapSelection,
   syncTranscriptItem,
@@ -483,4 +484,69 @@ test("URL and block motions normalize counts consistently with search and word m
           moveByUrlReference(state, direction, origin, { count, wrap }),
         )
       }
+})
+
+test("folded tools are one block in either direction without losing explicit reveal targets", () => {
+  let state = syncTranscriptItem(
+    initialTranscript(),
+    message("before", "Before"),
+  )
+  const tool = itemId("folded-tool")
+  state = syncTranscriptItem(state, {
+    id: tool,
+    turnId: turnId("turn"),
+    kind: "command",
+    title: "Run",
+    detail: "first paragraph\n\nlast paragraph",
+    status: "complete",
+  })
+  state = syncTranscriptItem(state, message("after", "After"))
+  state = reduceTranscript(state, {
+    type: "fold.set",
+    itemId: tool,
+    folded: true,
+  })
+  const header = { itemId: tool, graphemeOffset: 0 }
+  expect(
+    moveBySemanticBlock(state, "forward", {
+      itemId: itemId("before"),
+      graphemeOffset: 0,
+    }),
+  ).toEqual(header)
+  expect(
+    moveBySemanticBlock(state, "backward", {
+      itemId: itemId("after"),
+      graphemeOffset: 0,
+    }),
+  ).toEqual(header)
+  expect(moveBySemanticBlock(state, "forward", header)).toEqual({
+    itemId: itemId("after"),
+    graphemeOffset: 0,
+  })
+  state = reduceTranscript(state, {
+    type: "jump.to",
+    target: { point: header, preferredScreenRow: 2 },
+    preserveFolds: true,
+  })
+  expect(state.folded[tool]).toBe(true)
+  const output = { itemId: tool, graphemeOffset: 19 }
+  state = reduceTranscript(state, {
+    type: "mark.set",
+    name: "a",
+    target: { point: output, preferredScreenRow: 2 },
+  })
+  state = reduceTranscript(state, { type: "mark.jump", name: "a" })
+  expect(state.folded[tool]).toBe(false)
+  expect(state.cursor).toEqual(output)
+  state = reduceTranscript(state, {
+    type: "fold.set",
+    itemId: tool,
+    folded: true,
+  })
+  state = reduceTranscript(state, {
+    type: "search.jump",
+    target: { point: output, preferredScreenRow: 2 },
+  })
+  expect(state.folded[tool]).toBe(false)
+  expect(state.cursor).toEqual(output)
 })

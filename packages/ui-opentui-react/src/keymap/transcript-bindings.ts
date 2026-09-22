@@ -17,10 +17,18 @@ export function transcriptBindings(ctx: VimBindingContext): UiBinding[] {
       | "WORD-previous"
       | "WORD-end",
   ) => {
+    // Relative navigation must start from a preceding scroll's resulting cursor,
+    // even when both keys arrive before the next terminal frame.
+    ctx.flushManualScroll?.()
     const count = Number(ctx.countRef.current || "1")
     ctx.countRef.current = ""
     ctx.controller.dispatchInteraction({ type: "count.clear" })
-    ctx.controller.transcript({ type: "navigate", motion, count })
+    ctx.controller.transcript({
+      type: "navigate",
+      motion,
+      count,
+      viewportRows: ctx.scrollRef.current?.viewport.height,
+    })
   }
   const repeatSearch = (reverse = false) => {
     const count = Number(ctx.countRef.current || "1")

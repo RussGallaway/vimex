@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
 import {
   MarkdownRenderable,
+  CodeRenderable,
+  type Renderable,
   type InputRenderable,
   type ScrollBoxRenderable,
   type TextareaRenderable,
@@ -551,17 +553,21 @@ describe("Vimex OpenTUI shell", () => {
         `markdown:${changed.id}`,
       ) as MarkdownRenderable
       markdown.content = changed.markdown
-      const deadline = performance.now() + 250
-      do {
-        await act(async () => {
-          setup.renderer.requestRender()
-          await setup.renderOnce()
-          await new Promise((resolve) => setTimeout(resolve, 5))
-        })
-      } while (
-        !setup.captureCharFrame().includes("composer!") &&
-        performance.now() < deadline
-      )
+      await act(async () => {
+        setup.renderer.requestRender()
+        await setup.renderOnce()
+        // Native Markdown renders through asynchronous Code children. Await
+        // their completion instead of racing a wall-clock polling deadline.
+        const highlights: Promise<void>[] = []
+        const visit = (node: Renderable) => {
+          if (node instanceof CodeRenderable)
+            highlights.push(node.highlightingDone)
+          for (const child of node.getChildren()) visit(child)
+        }
+        visit(markdown)
+        await Promise.all(highlights)
+        await setup.renderOnce()
+      })
       const after = measureRenderedTranscript(
         setup.renderer,
         scrollbox,

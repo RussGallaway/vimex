@@ -33,6 +33,7 @@ export type TranscriptAction =
         | "WORD-previous"
         | "WORD-end"
       count?: number
+      viewportRows?: number
     }
   | { type: "search"; query: string; direction: "forward" | "backward" }
   | { type: "search.next"; reverse?: boolean; count?: number }
@@ -48,6 +49,7 @@ export type TranscriptAction =
   | {
       type: "jump"
       target: LogicalPoint
+      preserveFolds?: boolean
       preferredScreenRow?: number
       extend?: boolean
       origin?: LogicalPoint

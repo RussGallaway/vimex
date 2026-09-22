@@ -67,6 +67,8 @@ In Insert mode:
 
 Command entry replaces the bottom status strip while leaving the composer and transcript in place. Enter executes; Escape restores the status strip.
 
+{ and } treat each collapsed tool card or compact tool group as one stop and keep it collapsed. Expanded tools retain paragraph navigation. Search, marks, and URL jumps can reveal a target inside collapsed output.
+
 In transcript Normal mode, Enter toggles the current foldable block. Shift-Tab toggles all foldable blocks from either transcript or composer without changing focus or the draft: if any block is collapsed it expands all; otherwise it collapses all. Command completion and overlays keep their local Tab behavior. `zR` and `zM` retain their uppercase Vim meanings. Current-block `za`/`zo`/`zc` operate only on foldable transcript blocks, in Normal or Visual mode; they do not change composer text or fold ordinary messages. Visual selections remain intact when toggling folds.
 
 ## Views and overlays

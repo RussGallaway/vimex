@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test"
 import { TextRenderable, type Renderable } from "@opentui/core"
 import { testRender } from "@opentui/react/test-utils"
+import { flushSync } from "@opentui/react"
+import { prepareNativeTranscriptLayout } from "./scroll-preparation"
 import {
   createConversation,
   itemId,
@@ -460,11 +462,12 @@ test("same-size native child replacement invalidates and observes the new tree",
         (entry) => entry.renderable === renderable,
       ),
     ).toBe(true)
+    prepareNativeTranscriptLayout(setup.renderer)
     const changed = measureRenderedBlock(input)
     expect(changed).not.toBe(first)
     expect(changed.nativeRevision).toBeGreaterThan(first.nativeRevision)
-    expect(changed.points[3]?.column).toBe(1)
-    expect(first.points[3]?.column).toBe(0)
+    expect(changed.points[3]?.column).toBe(2)
+    expect(first.points[3]?.column).toBe(1)
   } finally {
     await act(async () => setup.renderer.destroy())
   }
@@ -526,6 +529,62 @@ test("a remounted native root advances the revision for the same logical block",
     expect(secondRoot).not.toBe(firstRoot)
     expect(second.nativeRevision).toBeGreaterThan(first.nativeRevision)
     expect(second).not.toBe(first)
+  } finally {
+    await act(async () => setup.renderer.destroy())
+  }
+})
+
+test("prepaint measurement never borrows semantic cells from the previous screen", async () => {
+  const block = blockFor("alpha")
+  let removeText!: () => void
+  function Harness() {
+    const [empty, setEmpty] = useState(false)
+    removeText = () => setEmpty(true)
+    return (
+      <box id="cold-block" height={3}>
+        {empty ? null : <text>prefix alpha</text>}
+      </box>
+    )
+  }
+  const setup = await testRender(<Harness />, { width: 40, height: 10 })
+  try {
+    await act(async () => {
+      await setup.flush()
+      await setup.renderOnce()
+    })
+    expect(setup.captureCharFrame()).toContain("prefix alpha")
+    let sampled = false
+    let geometry: ReturnType<typeof measureRenderedBlock> | undefined
+    const prepare = async () => {
+      if (sampled) return
+      sampled = true
+      flushSync(removeText)
+      prepareNativeTranscriptLayout(setup.renderer)
+      geometry = measureRenderedBlock({
+        renderer: setup.renderer,
+        renderable: setup.renderer.root.findDescendantById(
+          "cold-block",
+        ) as Renderable,
+        block,
+        width: 40,
+        styleRevision: "test",
+        folded: true,
+      })
+    }
+    setup.renderer.setFrameCallback(prepare)
+    await act(async () => {
+      await setup.renderOnce()
+    })
+    setup.renderer.removeFrameCallback(prepare)
+    expect(sampled).toBe(true)
+    expect(geometry).toBeDefined()
+    expect(geometry!.points[0]?.column).toBe(0)
+    expect(geometry!.points[0]?.row).toBe(0)
+    expect(
+      Object.values(geometry!.points)
+        .filter((point) => !point.hidden)
+        .map((point) => point.graphemeOffset),
+    ).toEqual([0])
   } finally {
     await act(async () => setup.renderer.destroy())
   }

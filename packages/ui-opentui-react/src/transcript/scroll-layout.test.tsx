@@ -20,6 +20,7 @@ import {
 } from "@vimex/transcript"
 import { buildTranscriptScalingFixture } from "@vimex/testkit"
 import { ToolCall } from "./ToolCall"
+import { prepareNativeTranscriptLayout } from "./scroll-preparation"
 import {
   measureRenderedTranscript,
   measuredPoint,
@@ -476,6 +477,8 @@ test("a block-damage append is discovered after an initially empty render plan",
       await h.renderOnce()
       await h.renderOnce()
     })
+    // Production prepares native descendants before measuring new roots.
+    prepareNativeTranscriptLayout(h.renderer)
     expect(
       measureRenderedTranscript(h.renderer, scroll, {
         frame: appended,
@@ -491,6 +494,9 @@ test("a block-damage append is discovered after an initially empty render plan",
       measured.geometry.byBlockKey[`item:${item.id}:root`]?.key.contentRevision,
     ).toBe(appended.blocks[0]?.contentRevision)
     expect(measured.geometry.totalPoints).toBeGreaterThan(0)
+    expect(
+      measured.geometry.byBlockKey[`item:${item.id}:root`]?.points[4],
+    ).toMatchObject({ row: 0, column: 4 })
     expect(
       measureRenderedTranscript(h.renderer, scroll, {
         frame: measured,

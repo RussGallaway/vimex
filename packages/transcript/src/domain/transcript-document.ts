@@ -1543,6 +1543,8 @@ export type TranscriptCommand =
       target: JumpLocation
       origin?: JumpLocation
       clearSelection?: boolean
+      /** Browse a visible row without changing its explicit fold state. */
+      preserveFolds?: boolean
     }
   | { type: "jump.back"; origin?: JumpLocation }
   | { type: "jump.forward"; origin?: JumpLocation }

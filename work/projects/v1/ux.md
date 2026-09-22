@@ -201,7 +201,7 @@ The composer has no extra bottom padding below its model footer; one blank row s
 
 Skill discovery and path-qualified skill insertion remain pending; a textual `$name` alone is not sufficient to preserve skill identity.
 
-Composer-focused Ctrl-E/Y scroll the transcript by one line and Ctrl-D/U by half a page in Normal, Insert, and Visual modes, preserving the composer cursor and selection. Transcript block navigation supports both literal braces and explicit Shift-bracket terminal events.
+Composer-focused Ctrl-E/Y scroll the transcript by one line and Ctrl-D/U by half a page in Normal, Insert, and Visual modes, preserving the composer cursor and selection. Transcript block navigation supports both literal braces and explicit Shift-bracket terminal events. Collapsed tool cards and compact tool groups are single stops; block navigation preserves their folds, while expanded tools retain paragraph navigation. Manual scrolling resolves destinations outside the mounted window before restoring the viewport anchor.
 
 Tool headers use server-provided action descriptions when available. Expanded command blocks separate the exact execution command from unchanged output, with both represented in the semantic transcript for selection and copying.
 

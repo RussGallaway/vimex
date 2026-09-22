@@ -2009,6 +2009,8 @@ export class VimexController
       point?: LogicalPoint,
       record = true,
       revealReason?: TranscriptRevealRequest["reason"],
+      preserveFolds = false,
+      preferredScreenRow = 2,
     ) => {
       if (!point) return
       this.dispatch(
@@ -2017,7 +2019,8 @@ export class VimexController
               type: "transcript.navigate",
               command: {
                 type: "jump.to",
-                target: { point, preferredScreenRow: 2 },
+                target: { point, preferredScreenRow },
+                preserveFolds,
               },
               revealReason,
             }
@@ -2071,16 +2074,42 @@ export class VimexController
             ),
             false,
           )
-        } else if (command.motion.startsWith("block-"))
-          move(
-            moveBySemanticBlock(
-              transcript,
-              direction,
-              transcript.cursor,
-              count,
-            ),
+        } else if (command.motion.startsWith("block-")) {
+          const presentation = this.activeTranscriptPresentation()
+          const frame = presentation
+            ? this.transcriptRuntime(presentation)?.getSnapshot()
+            : undefined
+          const target = moveBySemanticBlock(
+            transcript,
+            direction,
+            transcript.cursor,
+            count,
+            {
+              isItemHidden: (itemId) => {
+                const batch = frame?.window.activityBatchByItem[itemId]
+                return Boolean(
+                  batch &&
+                  itemId !== batch.leadItemId &&
+                  frame?.window.activityPresentation[batch.blockKeys[0]!]
+                    ?.kind === "activity-lead",
+                )
+              },
+            },
           )
-        else if (command.motion.startsWith("url-"))
+          move(
+            target,
+            true,
+            undefined,
+            true,
+            target && presentation
+              ? this.transcriptRuntime(presentation)?.navigationScreenRow(
+                  target,
+                  direction,
+                  command.viewportRows,
+                )
+              : undefined,
+          )
+        } else if (command.motion.startsWith("url-"))
           move(
             moveByUrl(transcript, direction, transcript.cursor, {
               count,
@@ -2186,6 +2215,7 @@ export class VimexController
             Boolean(command.extend) && preserveVisual() ? "visual" : "normal",
           command: {
             type: "jump.to",
+            preserveFolds: command.preserveFolds,
             target: {
               point: command.target,
               preferredScreenRow: command.preferredScreenRow ?? 2,
