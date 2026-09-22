@@ -2,6 +2,10 @@
 
 Vimex is a Bun/TypeScript monorepo. Its v1 product and architecture documents are part of the implementation contract; read [the v1 index](work/projects/v1/README.md), especially the specification, architecture, and topology, before moving behavior across packages.
 
+## Concurrent agent work
+
+Follow [AGENTS.md](AGENTS.md) and use `bun run claim` before editing in a shared checkout. See [coordination](docs/coordination.md) for commands, handoffs, and recovery.
+
 ## Setup
 
 Use Bun 1.3.6, matching the root `packageManager` field and CI. Install dependencies from the repository root:
