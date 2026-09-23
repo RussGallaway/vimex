@@ -133,6 +133,12 @@ for (const [name, keyword, fn, number] of [
   ["kanagawa", "#957fb8", "#7e9cd8", "#d27e99"],
   ["tokyo-night", "#bb9af7", "#7aa2f7", "#ff9e64"],
   ["catppuccin-mocha", "#cba6f7", "#89b4fa", "#fab387"],
+  ["rose-pine-dawn", "#963452", "#245f77", "#815200"],
+  ["everforest", "#e67e80", "#a7c080", "#d699b6"],
+  ["solarized-light", "#b43335", "#1e698f", "#806000"],
+  ["solarized-dark", "#ef7774", "#62b3df", "#b3a8e6"],
+  ["one-dark", "#c678dd", "#61afef", "#d19a66"],
+  ["dracula", "#ff79c6", "#50fa7b", "#bd93f9"],
 ] as const)
   test(`${name} preserves its distinct syntax roles and readable surfaces`, () => {
     const syntax = createEmberTideSyntax(name)
@@ -156,6 +162,10 @@ for (const [name, keyword, fn, number] of [
       ]) {
         expect(contrast(palette.text, surface)).toBeGreaterThanOrEqual(4.5)
       }
+      if (name === "kanagawa")
+        expect(
+          contrast(palette.textMuted, palette.backgroundPanel),
+        ).toBeGreaterThanOrEqual(4.5)
       expect(syntax.getStyle("string")!.fg!.toString()).toBe(
         RGBA.fromHex(palette.sage).toString(),
       )
@@ -163,4 +173,35 @@ for (const [name, keyword, fn, number] of [
     } finally {
       syntax.destroy()
     }
+  })
+
+for (const name of [
+  "rose-pine-dawn",
+  "everforest",
+  "solarized-light",
+  "solarized-dark",
+  "one-dark",
+  "dracula",
+] as const)
+  test(`${name} keeps panel, selection, and diff labels readable`, () => {
+    const palette = themePalette(name)
+    for (const surface of [
+      palette.background,
+      palette.backgroundRaised,
+      palette.backgroundPanel,
+      palette.selection,
+      palette.diffAdded,
+      palette.diffRemoved,
+      palette.diffContext,
+    ]) {
+      expect(contrast(palette.text, surface)).toBeGreaterThanOrEqual(4.5)
+      expect(contrast(palette.textSoft, surface)).toBeGreaterThanOrEqual(4.5)
+      expect(contrast(palette.textMuted, surface)).toBeGreaterThanOrEqual(4.5)
+    }
+    expect(
+      contrast(palette.diffAddedBright, palette.diffAdded),
+    ).toBeGreaterThanOrEqual(3)
+    expect(
+      contrast(palette.diffRemovedBright, palette.diffRemoved),
+    ).toBeGreaterThanOrEqual(3)
   })

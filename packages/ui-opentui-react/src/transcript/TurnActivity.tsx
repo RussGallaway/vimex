@@ -9,6 +9,8 @@ export const TurnActivity = memo(function TurnActivity({
   turn,
 }: {
   turn: Turn
+  /** Invalidates memoized native colors when the palette changes. */
+  themeRevision?: string
 }) {
   if (!hasTurnActivity(turn)) return null
   const observedDuration =

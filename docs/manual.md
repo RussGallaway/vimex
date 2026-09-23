@@ -116,7 +116,7 @@ Ctrl-H focuses main; Ctrl-L focuses side. Ctrl-W h/l are alternatives. Ctrl-W w 
 
 :model opens a model and reasoning-effort picker. :model MODEL EFFORT sets both directly. :thinking [LEVEL] shows or sets reasoning effort.
 
-:theme NAME sets UI colors. :syntax theme follows that palette; :syntax NAME chooses syntax colors separately. Choices include ember-tide, nord, gruvbox-material, kanagawa, tokyo-night, and catppuccin-mocha.
+:theme NAME sets UI colors. :syntax theme follows that palette; :syntax NAME chooses syntax colors separately. Choices include ember-tide, nord, gruvbox-material, kanagawa, tokyo-night, catppuccin-mocha, rose-pine-dawn, everforest, solarized-light, solarized-dark, one-dark, and dracula.
 
 :approvals and :questions open pending agent requests. :stop interrupts. :restart reconnects the Codex server and restores sessions and drafts; uncertain submissions require explicit retry. It does not reload Vimex's own program code. :q exits.
 

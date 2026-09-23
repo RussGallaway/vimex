@@ -25,6 +25,7 @@ export interface TranscriptViewportProps {
   state: TranscriptState
   surface: InteractionState["surface"]
   syntax: SyntaxStyle
+  themeRevision?: string
   agentSummaries?: Readonly<Record<string, ThreadSummary>>
   scrollRef: RefObject<ScrollBoxRenderable | null>
   onManualScroll?: () => void
@@ -39,6 +40,7 @@ export function sameTranscriptViewportProps(
     before.state === after.state &&
     before.surface === after.surface &&
     before.syntax === after.syntax &&
+    before.themeRevision === after.themeRevision &&
     before.agentSummaries === after.agentSummaries &&
     before.scrollRef === after.scrollRef &&
     before.onManualScroll === after.onManualScroll
@@ -104,7 +106,10 @@ export const TranscriptViewport = memo(function TranscriptViewport(
               flexShrink={0}
             >
               <box height={1} flexShrink={0} />
-              <TurnActivity turn={block.turn} />
+              <TurnActivity
+                turn={block.turn}
+                themeRevision={props.themeRevision}
+              />
               <box height={1} flexShrink={0} />
             </box>
           )
@@ -134,6 +139,7 @@ export const TranscriptViewport = memo(function TranscriptViewport(
               current={current}
               selected={selected}
               followedByActivity={Boolean(activity.batch.followedByActivity)}
+              themeRevision={props.themeRevision}
             />
           )
         return (
@@ -231,6 +237,7 @@ const ActivityBatchRow = memo(function ActivityBatchRow(props: {
   current: boolean
   selected: boolean
   followedByActivity: boolean
+  themeRevision?: string
 }) {
   return (
     <box id={props.renderableId} flexShrink={0}>

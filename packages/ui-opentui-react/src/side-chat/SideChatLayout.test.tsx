@@ -20,6 +20,7 @@ import {
 } from "@vimex/workbench"
 import { ConnectedVimexRoot, VimexRoot } from "../index"
 import { inertController, type VimexUiController } from "../contracts"
+import { emberTide, selectTheme, themePalette } from "../theme"
 import { useVisiblePresentationSnapshot } from "./SideChatLayout"
 
 const parent = threadId("parent"),
@@ -658,6 +659,14 @@ test("connected maximize and close suspend both pane publications and runtime su
     expect(mainPane.findDescendantById("composer")).toBe(mainComposer)
     expect(controller.transcriptRuntime("main")).toBe(mainRuntime)
 
+    await act(async () => {
+      controller.executeNamedCommand("theme nord")
+      await controller.settle()
+      await setup.flush()
+      await setup.renderOnce()
+    })
+    expect(emberTide.name).toBe(themePalette("nord").name)
+
     await update(() => {
       mainRuntime.resetLayout("width")
     })
@@ -669,6 +678,13 @@ test("connected maximize and close suspend both pane publications and runtime su
     expect(controller.transcriptRuntime("main")!.getSnapshot()).toBe(
       mainRuntime.getSnapshot(),
     )
+    await act(async () => {
+      controller.executeNamedCommand("theme kanagawa")
+      await controller.settle()
+      await setup.flush()
+      await setup.renderOnce()
+    })
+    expect(emberTide.name).toBe(themePalette("kanagawa").name)
 
     await update(() => controller.sideChat("reset"))
     expect(presentationSubscriptions).toEqual({ main: 1, side: 1 })
@@ -686,6 +702,7 @@ test("connected maximize and close suspend both pane publications and runtime su
   } finally {
     await act(async () => setup.renderer.destroy())
     await controller.close()
+    selectTheme("ember-tide")
   }
   expect(presentationSubscriptions).toEqual({ main: 0, side: 0 })
   expect(runtimeSubscriptions).toEqual({ main: 0, side: 0 })

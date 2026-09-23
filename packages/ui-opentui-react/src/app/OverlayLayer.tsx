@@ -162,7 +162,7 @@ export function OverlayLayer(props: {
       alignItems="center"
       justifyContent="center"
       zIndex={40}
-      backgroundColor="#0d0f12d8"
+      backgroundColor={`${emberTide.background}d8`}
     >
       {props.overlay === "sessions" ? (
         <SessionsOverlay

@@ -6,5 +6,11 @@ export const themeNames = [
   "gruvbox-material",
   "tokyo-night",
   "catppuccin-mocha",
+  "rose-pine-dawn",
+  "everforest",
+  "solarized-light",
+  "solarized-dark",
+  "one-dark",
+  "dracula",
 ] as const
 export type ThemeName = (typeof themeNames)[number]

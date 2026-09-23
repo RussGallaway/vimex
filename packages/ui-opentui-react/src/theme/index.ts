@@ -7,6 +7,14 @@ import {
   tokyoNight,
   catppuccinMocha,
 } from "./additional-palettes"
+import {
+  rosePineDawn,
+  everforest,
+  solarizedLight,
+  solarizedDark,
+  oneDark,
+  dracula,
+} from "./new-palettes"
 export type { VimexTheme } from "./types"
 
 const emberTideBase: VimexTheme = {
@@ -85,7 +93,7 @@ export const kanagawa: VimexTheme = {
   borderMuted: "#363646",
   text: "#dcd7ba",
   textSoft: "#c8c093",
-  textMuted: "#727169",
+  textMuted: "#989486",
   blue: "#7e9cd8",
   blueBright: "#7fb4ca",
   sage: "#98bb6c",
@@ -119,6 +127,12 @@ const themes = {
   "gruvbox-material": gruvboxMaterial,
   "tokyo-night": tokyoNight,
   "catppuccin-mocha": catppuccinMocha,
+  "rose-pine-dawn": rosePineDawn,
+  everforest,
+  "solarized-light": solarizedLight,
+  "solarized-dark": solarizedDark,
+  "one-dark": oneDark,
+  dracula,
 } satisfies Record<ThemeName, VimexTheme>
 let selectedTheme: VimexTheme = emberTideBase
 function reduced(palette: VimexTheme): VimexTheme {

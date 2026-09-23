@@ -155,7 +155,7 @@ export function VimexApp({
     ...settingsInput,
     ...state.preferences,
   }
-  selectTheme(settings.theme, settings.reducedColor)
+  if (presentationVisible) selectTheme(settings.theme, settings.reducedColor)
   const dimensions = usePaneGeometry()
   const workspace = activeWorkspace(state)
   const semanticTranscript = workspace?.transcript ?? blankTranscript
@@ -1512,6 +1512,7 @@ export function VimexApp({
             state={transcript}
             surface={interaction.surface}
             syntax={syntax}
+            themeRevision={transcriptStyleRevision}
             agentSummaries={state.summaries}
             scrollRef={scrollRef}
             onManualScroll={onManualScroll}
