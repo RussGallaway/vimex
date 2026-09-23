@@ -81,6 +81,17 @@ for await (const line of createInterface({ input: process.stdin })) {
       })
       break
     case "thread/fork": {
+      if (request.params.deferGoalContinuation && request.params.ephemeral) {
+        send({
+          id: request.id,
+          error: {
+            code: -32600,
+            message:
+              "thread/fork: `deferGoalContinuation` cannot be combined with `ephemeral`",
+          },
+        })
+        break
+      }
       if (
         request.params.ephemeral !== true ||
         request.params.excludeTurns !== true
@@ -106,7 +117,24 @@ for await (const line of createInterface({ input: process.stdin })) {
       break
     }
     case "thread/goal/clear":
+      if (request.params.threadId?.startsWith("side-child-"))
+        throw new Error("ephemeral side threads do not support goals")
       result({ cleared: false })
+      break
+    case "thread/inject_items":
+      if (
+        !request.params.items?.some(
+          (item: any) =>
+            item.type === "message" &&
+            item.content?.some(
+              (part: any) =>
+                part.type === "input_text" &&
+                part.text?.includes("Side conversation boundary"),
+            ),
+        )
+      )
+        throw new Error("side fork must receive a conversation boundary")
+      result({})
       break
     case "thread/goal/get":
       result({ goal: null })

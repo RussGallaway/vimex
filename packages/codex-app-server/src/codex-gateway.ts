@@ -29,9 +29,7 @@ import type {
   ModelCatalog,
 } from "@vimex/workbench"
 
-/** Adapts one Codex connection to the application-owned capability ports.
- * Side forks require experimental deferGoalContinuation to avoid running the parent goal.
- */
+/** Adapts one Codex connection to the application-owned capability ports. */
 export function createCodexGateways(
   cwd: string,
   executable = "codex",
@@ -242,14 +240,28 @@ export function createCodexGateways(
     },
     async forkSideThread(id) {
       const fork = await client.forkThread(id, undefined, {
-        deferGoalContinuation: true,
         ephemeral: true,
         excludeTurns: true,
       })
       ephemeralSideThreads.add(fork.summary.id)
-      // Side questions must not inherit the parent's autonomous objective.
+      // Ephemeral forks cannot inherit a persisted goal. Mark inherited history
+      // as reference context before the first side turn.
       try {
-        await client.clearGoal(fork.summary.id)
+        await client.injectItems({
+          threadId: fork.summary.id,
+          items: [
+            {
+              type: "message",
+              role: "user",
+              content: [
+                {
+                  type: "input_text",
+                  text: "Side conversation boundary. The inherited history is reference context only. Do not continue the parent's active task or goal. Only requests submitted after this boundary are active instructions for this side conversation.",
+                },
+              ],
+            },
+          ],
+        })
       } catch (error) {
         await client.unsubscribeThread(fork.summary.id)
         ephemeralSideThreads.delete(fork.summary.id)

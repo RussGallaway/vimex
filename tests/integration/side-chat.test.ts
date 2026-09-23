@@ -820,7 +820,7 @@ test("late retirement of one side does not dispose another parent's presentation
   await h.controller.close()
 })
 
-test("quit drains an in-flight goal update, suppresses queued goals, then clears before archive", async () => {
+test("quit drains an in-flight mutation and suppresses queued work on an ephemeral side", async () => {
   const h = harness()
   await h.controller.initialize("/tmp")
   h.controller.sideChat("open")
@@ -843,8 +843,7 @@ test("quit drains an in-flight goal update, suppresses queued goals, then clears
     }
   }
   h.backend.clearGoal = async () => {
-    calls.push("clear")
-    return true
+    throw new Error("ephemeral side must not clear a goal")
   }
   h.backend.retireThread = async () => {
     calls.push("archive")
@@ -858,12 +857,7 @@ test("quit drains an in-flight goal update, suppresses queued goals, then clears
   expect(calls).toEqual(["set First objective"])
   finish()
   await h.controller.settle()
-  expect(calls).toEqual([
-    "set First objective",
-    "set completed",
-    "clear",
-    "archive",
-  ])
+  expect(calls).toEqual(["set First objective", "set completed", "archive"])
   expect(h.controller.getSnapshot().retiredSideThreadIds).toContain(
     threadId("side-1"),
   )
@@ -896,8 +890,7 @@ test("quit drains in-flight approval and question responses and blocks further w
     })
   }
   h.backend.clearGoal = async () => {
-    calls.push("clear")
-    return true
+    throw new Error("ephemeral side must not clear a goal")
   }
   h.backend.interruptTurn = async (_id, turn) => {
     calls.push(`interrupt ${turn}`)
@@ -954,7 +947,6 @@ test("quit drains in-flight approval and question responses and blocks further w
   expect(calls).toEqual([
     "approve",
     "answer",
-    "clear",
     "interrupt approved-turn",
     "archive",
   ])
@@ -993,13 +985,15 @@ test("quitting cancels queued turns without consuming drafts and failed retireme
   h.controller.changeDraft("queued follow-up", 3)
   h.controller.submit("next-turn")
   let release!: () => void
-  h.backend.clearGoal = async () => {
+  let retirementStarted!: () => void
+  const retirement = new Promise<void>((resolve) => {
+    retirementStarted = resolve
+  })
+  h.backend.retireThread = async () => {
+    retirementStarted()
     await new Promise<void>((resolve) => {
       release = resolve
     })
-    return false
-  }
-  h.backend.retireThread = async () => {
     throw new Error("archive failed")
   }
   h.controller.sideChat("quit")
@@ -1013,6 +1007,7 @@ test("quitting cancels queued turns without consuming drafts and failed retireme
       outcome: "complete",
     },
   })
+  await retirement
   release()
   await h.controller.settle()
   expect(h.starts).toEqual(["first turn"])

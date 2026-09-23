@@ -350,7 +350,8 @@ export class VimexController
           throw new Error("Runtime changed while quitting side chat")
         this.hydrate(snapshot, false)
       }
-      await this.ports.conversation.clearGoal?.(id)
+      if (!sideChatForChild(this.state, id)?.ephemeral)
+        await this.ports.conversation.clearGoal?.(id)
       assertRuntime()
       const turn = this.state.workspaces[id]?.conversation.activeTurnId
       if (turn) await this.ports.conversation.interruptTurn(id, turn)

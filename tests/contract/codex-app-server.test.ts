@@ -1286,7 +1286,7 @@ test("goal capability uses pinned get/set/clear RPC contracts and omits unreques
   await client.close()
 })
 
-test("side fork is ephemeral, clears inherited goal, and retirement unsubscribes child", async () => {
+test("side fork isolates inherited work before the first turn and retirement unsubscribes child", async () => {
   const { client, transport } = await connectedClient(true)
   const gateway = createCodexGateways("/repo", "codex", () => client)
   try {
@@ -1298,13 +1298,29 @@ test("side fork is ephemeral, clears inherited goal, and retirement unsubscribes
     )
     expect(findSent(transport, "thread/fork").params).toEqual({
       threadId: "thr-1",
-      deferGoalContinuation: true,
       ephemeral: true,
       excludeTurns: true,
     })
-    await respondNext(transport, "thread/goal/clear", { cleared: true })
-    expect(findSent(transport, "thread/goal/clear").params).toEqual({
+    await respondNext(transport, "thread/inject_items", {})
+    expect(
+      transport.sent.some((request) => request.method === "thread/goal/clear"),
+    ).toBe(false)
+    expect(findSent(transport, "thread/inject_items").params).toEqual({
       threadId: "side-thread",
+      items: [
+        {
+          type: "message",
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: expect.stringContaining(
+                "Do not continue the parent's active task or goal",
+              ),
+            },
+          ],
+        },
+      ],
     })
     expect((await fork).summary.id).toBe(threadId("side-thread"))
     const retiring = gateway.conversation.retireThread!(threadId("side-thread"))

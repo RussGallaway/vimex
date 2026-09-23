@@ -19,6 +19,8 @@ import type { ModelListResponse } from "../generated/v0_154_0/v2/ModelListRespon
 import type { PermissionsRequestApprovalParams } from "../generated/v0_154_0/v2/PermissionsRequestApprovalParams"
 import type { ThreadForkParams } from "../generated/v0_154_0/v2/ThreadForkParams"
 import type { ThreadForkResponse } from "../generated/v0_154_0/v2/ThreadForkResponse"
+import type { ThreadInjectItemsParams } from "../generated/v0_154_0/v2/ThreadInjectItemsParams"
+import type { ThreadInjectItemsResponse } from "../generated/v0_154_0/v2/ThreadInjectItemsResponse"
 import type { ThreadListParams } from "../generated/v0_154_0/v2/ThreadListParams"
 import type { ThreadListResponse } from "../generated/v0_154_0/v2/ThreadListResponse"
 import type { ThreadTurnsListParams } from "../generated/v0_154_0/v2/ThreadTurnsListParams"
@@ -336,6 +338,13 @@ export class CodexAppServerClient {
       ...overrides,
     })
     return session(raw)
+  }
+
+  async injectItems(params: ThreadInjectItemsParams): Promise<void> {
+    await this.rpc.request<ThreadInjectItemsResponse>(
+      "thread/inject_items",
+      params,
+    )
   }
 
   async compactThread(thread: string): Promise<void> {
