@@ -70,7 +70,7 @@ Space e expands or collapses the composer. Expanded drafts can scroll internally
 
 h/j/k/l move the text cursor; w/b/e move by word. 0 and $ move to line boundaries. gg goes to the start. G or t resumes following the tail. :tail and :follow do the same.
 
-Ctrl-E/Y scroll down/up one row; Ctrl-D/U scroll half a viewport; Ctrl-F/B scroll a viewport in the transcript. Ctrl-E/Y/D/U also scroll the transcript while the composer keeps focus. Mouse-wheel scrolling preserves focus and detaches tail following.
+Ctrl-E/Y scroll down/up one row; Ctrl-D/U scroll half a viewport; Ctrl-F/B scroll a viewport in the transcript. Ctrl-E/Y/D/U also scroll the transcript while the composer keeps focus. Mouse-wheel scrolling preserves focus. Scrolling upward detaches tail following; scrolling back to the bottom resumes it automatically.
 
 With transcript focus, half-page and full-page scrolling move the cursor with the viewport, keeping its screen row where possible. Ctrl-E/Y keep it on the same text until it would leave the viewport, then move it to a visible row. With composer focus, scrolling preserves the editing cursor and draft.
 

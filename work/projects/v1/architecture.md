@@ -196,7 +196,7 @@ The Stage 3 implementation now follows that boundary. `packages/transcript/src/g
 
 Scroll-only changes reuse immutable block-local geometry with a screen translation; content, fold, and width changes produce explicit damage. Cursor movement uses row indexes rather than flattening all text points for each keypress. Unknown revision relationships fall back to a full presentation rebuild.
 
-Mouse-wheel deltas remain linear and detach native following immediately. Keyboard page jumps remain immediate; neither path introduces an animation timer. Only explicit tail attachment resumes following output. Native scroll state must not override the semantic viewport contract at the bottom edge.
+Mouse-wheel deltas remain linear and detach native following immediately when scrolling upward. Keyboard page jumps remain immediate; neither path introduces an animation timer. A downward manual scroll that reaches the bottom attaches the semantic tail and resumes following output, as do explicit tail actions. Native scroll state must not override the semantic viewport contract at the bottom edge.
 
 These are in-process feature modules, not new services or package boundaries. Native rendering remains renderer-owned; logical navigation and renderer-neutral presentation policy remain in the transcript package. Large cold reflows and complete end-to-end latency require separate profiling from warm scroll benchmarks.
 

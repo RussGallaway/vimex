@@ -77,6 +77,7 @@ export function useTranscriptLayout(options: {
     undefined,
   )
   const pendingNativeScroll = useRef(false)
+  const pendingNativeDirection = useRef<"up" | "down" | undefined>(undefined)
   const pendingAnchor = useRef(false)
   const pendingRestore = useRef(false)
   const lastScrollTop = useRef(0)
@@ -121,6 +122,7 @@ export function useTranscriptLayout(options: {
     pendingScrollRows.current = []
     pendingCursor.current = undefined
     pendingNativeScroll.current = false
+    pendingNativeDirection.current = undefined
     queuedViewport.current = undefined
     queuedIntentRevision.current = undefined
     pendingAnchor.current = false
@@ -137,6 +139,7 @@ export function useTranscriptLayout(options: {
     pendingScrollRows.current = []
     pendingCursor.current = undefined
     pendingNativeScroll.current = false
+    pendingNativeDirection.current = undefined
     queuedViewport.current = undefined
     queuedIntentRevision.current = undefined
     pendingAnchor.current = false
@@ -323,7 +326,7 @@ export function useTranscriptLayout(options: {
   }, [controller, renderer, scrollRef])
 
   const onManualScroll = useCallback(
-    (rows?: number, cursor?: "follow" | "clamp") => {
+    (rows?: number, cursor?: "follow" | "clamp", direction?: "up" | "down") => {
       const viewport =
         latest.current.runtime?.getSnapshot().transcript.viewport ??
         latest.current.transcript.viewport
@@ -336,11 +339,14 @@ export function useTranscriptLayout(options: {
         pendingScrollRows.current = []
         pendingCursor.current = undefined
         pendingNativeScroll.current = false
+        pendingNativeDirection.current = undefined
       }
       queuedViewport.current = viewport
       queuedIntentRevision.current = intentRevision
-      if (rows === undefined) pendingNativeScroll.current = true
-      else pendingScrollRows.current.push({ rows, cursor })
+      if (rows === undefined) {
+        pendingNativeScroll.current = true
+        pendingNativeDirection.current = direction
+      } else pendingScrollRows.current.push({ rows, cursor })
       pendingRestore.current = false
       renderer.requestRender()
     },
@@ -530,16 +536,22 @@ export function useTranscriptLayout(options: {
         pendingScrollRows.current = []
         pendingCursor.current = undefined
         pendingNativeScroll.current = false
+        pendingNativeDirection.current = undefined
       }
       queuedViewport.current = undefined
       queuedIntentRevision.current = undefined
       const wasNativeScroll = pendingNativeScroll.current
       if (pendingNativeScroll.current) {
+        const displacement = scrollbox.scrollTop - lastScrollTop.current
         pendingScrollRows.current.push({
-          rows: scrollbox.scrollTop - lastScrollTop.current,
+          rows:
+            displacement === 0 && pendingNativeDirection.current === "down"
+              ? 1
+              : displacement,
         })
         scrollbox.scrollTo(lastScrollTop.current)
         pendingNativeScroll.current = false
+        pendingNativeDirection.current = undefined
         if (!pendingScrollRows.current.length) pendingAnchor.current = true
       }
       const advance = () => {
@@ -586,6 +598,24 @@ export function useTranscriptLayout(options: {
         scrollbox.scrollBy(step, "step")
         const moved = scrollbox.scrollTop - oldTop
         const remaining = requested - moved
+        if (
+          requested > 0 &&
+          scrollbox.scrollTop >=
+            Math.max(0, scrollbox.scrollHeight - scrollbox.viewport.height)
+        ) {
+          // The current downward intent is complete at the tail. Keep later
+          // queued keys so an opposite-direction key in the same batch runs.
+          pendingCursor.current = undefined
+          pendingAnchor.current = false
+          pendingRestore.current = false
+          scrollbox.stickyScroll = true
+          const viewport =
+            latest.current.runtime?.getSnapshot().transcript.viewport ??
+            latest.current.transcript.viewport
+          if (viewport.kind === "point")
+            flushSync(() => controller.transcript({ type: "viewport.tail" }))
+          return
+        }
         if (moved !== 0 && remaining !== 0)
           pendingScrollRows.current.unshift({
             ...intent,

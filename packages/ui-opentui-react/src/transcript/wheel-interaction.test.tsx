@@ -222,8 +222,8 @@ for (const mode of ["normal", "insert", "visual"] as const)
       expect(composer.focused).toBe(true)
       await wheel("down", 15)
       expect(scrollbox.scrollTop).toBe(bottom)
-      expect(h.workspace().transcript.viewport.kind).toBe("point")
-      expect(scrollbox.stickyScroll).toBe(false)
+      expect(h.workspace().transcript.viewport.kind).toBe("tail")
+      expect(scrollbox.stickyScroll).toBe(true)
       await act(async () => {
         h.emit({
           type: "conversation",
@@ -240,9 +240,9 @@ for (const mode of ["normal", "insert", "visual"] as const)
         await h.flush()
         await h.renderOnce()
       })
-      expect(scrollbox.scrollTop).toBe(bottom)
-      expect(h.workspace().transcript.viewport.kind).toBe("point")
-      await wheel("up", bottom + 5)
+      expect(scrollbox.scrollTop).toBeGreaterThan(bottom)
+      expect(h.workspace().transcript.viewport.kind).toBe("tail")
+      await wheel("up", scrollbox.scrollTop + 5)
       expect(scrollbox.scrollTop).toBe(0)
       await wheel("down")
       expect(scrollbox.scrollTop).toBe(1)
@@ -251,7 +251,95 @@ for (const mode of ["normal", "insert", "visual"] as const)
     }
   })
 
-test("wheel preserves transcript Visual selection and only explicit follow reattaches streaming", async () => {
+test("wheel and keyboard scrolling to the detached bottom resume following", async () => {
+  const h = await wheelHarness()
+  try {
+    const scrollbox = h.renderer.root.findDescendantById(
+      "transcript",
+    ) as ScrollBoxRenderable
+    const wheel = async (direction: "up" | "down", count = 1) => {
+      await act(async () => {
+        for (let index = 0; index < count; index++)
+          await h.mockMouse.scroll(scrollbox.x + 10, scrollbox.y + 3, direction)
+        await h.flush()
+        await h.renderOnce()
+      })
+      await act(async () => {
+        await h.flush()
+        await h.renderOnce()
+      })
+    }
+    await wheel("up", 3)
+    expect(h.workspace().transcript.viewport.kind).toBe("point")
+    await act(async () => {
+      h.emit({
+        type: "conversation",
+        event: {
+          type: "item.delta",
+          threadId: thread,
+          itemId: answer,
+          delta: "\n\nHidden until the reader returns",
+        },
+      })
+      await h.flush()
+      await h.renderOnce()
+    })
+    expect(h.workspace().transcript.unseenEntries).toBe(1)
+    expect(h.captureCharFrame()).not.toContain(
+      "Hidden until the reader returns",
+    )
+
+    await wheel("down", 3)
+    expect(h.workspace().transcript.viewport.kind).toBe("tail")
+    expect(h.workspace().transcript.unseenEntries).toBe(0)
+    expect(h.captureCharFrame()).toContain("Hidden until the reader returns")
+
+    await wheel("up", 2)
+    expect(h.workspace().transcript.viewport.kind).toBe("point")
+    await act(async () => {
+      h.mockInput.pressKey("e", { ctrl: true })
+      h.mockInput.pressKey("e", { ctrl: true })
+      await h.flush()
+      await h.renderOnce()
+    })
+    await act(async () => {
+      await h.flush()
+      await h.renderOnce()
+    })
+    expect(h.workspace().transcript.viewport.kind).toBe("tail")
+  } finally {
+    await h.close()
+  }
+})
+
+test("a queued upward scroll still runs after a downward scroll reaches the tail", async () => {
+  const h = await wheelHarness()
+  try {
+    const scrollbox = h.renderer.root.findDescendantById(
+      "transcript",
+    ) as ScrollBoxRenderable
+    const bottom = scrollbox.scrollTop
+    await act(async () => {
+      h.mockInput.pressKey("y", { ctrl: true })
+      await h.flush()
+      await h.renderOnce()
+    })
+    expect(scrollbox.scrollTop).toBe(bottom - 1)
+    expect(h.workspace().transcript.viewport.kind).toBe("point")
+    await act(async () => {
+      h.mockInput.pressKey("e", { ctrl: true })
+      h.mockInput.pressKey("y", { ctrl: true })
+      await h.flush()
+      await h.renderOnce()
+    })
+    expect(scrollbox.scrollTop).toBe(bottom - 1)
+    expect(h.workspace().transcript.viewport.kind).toBe("point")
+  } finally {
+    await h.close()
+  }
+})
+
+test("wheel preserves transcript Visual selection while reading older output", async () => {
   const h = await wheelHarness()
   try {
     await h.keys("ggvll")
@@ -318,8 +406,22 @@ test("wheel preserves transcript Visual selection and only explicit follow reatt
       await h.renderOnce()
     })
     expect(scrollbox.scrollTop).toBe(bottom)
-    expect(scrollbox.stickyScroll).toBe(false)
-    expect(h.workspace().transcript.viewport.kind).toBe("point")
+    expect(scrollbox.stickyScroll).toBe(true)
+    expect(h.workspace().transcript.viewport.kind).toBe("tail")
+    await act(async () => {
+      h.emit({
+        type: "conversation",
+        event: {
+          type: "item.delta",
+          threadId: thread,
+          itemId: answer,
+          delta: "\n\nSTILL FOLLOWING AFTER BOTTOM WHEEL",
+        },
+      })
+      await h.flush()
+      await h.renderOnce()
+    })
+    expect(h.captureCharFrame()).toContain("STILL FOLLOWING AFTER BOTTOM WHEEL")
   } finally {
     await h.close()
   }

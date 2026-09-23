@@ -128,7 +128,7 @@ Enter `:` to open command completion above the bottom command bar. Up/Down selec
 | `:submit [queue\|steer]`                           | Send the composer draft using the configured default or an explicit queue/steer intent.                                                                                 |
 | `:insert`, `:normal`, `:visual`                    | Enter a mode; Visual initializes a transcript selection.                                                                                                                |
 
-Mouse-wheel scrolling moves the transcript by precise terminal rows, preserves composer focus and both text cursors, and detaches from the streaming tail. Reaching the bottom with the wheel keeps the viewport detached; use the explicit follow command to resume following.
+Mouse-wheel scrolling moves the transcript by precise terminal rows and preserves composer focus and both text cursors. Scrolling upward detaches from the streaming tail; scrolling back to the bottom resumes following automatically. `G`, `t`, `:tail`, and `:follow` also resume following directly.
 
 ## Flash jumps, jumplist, and marks
 

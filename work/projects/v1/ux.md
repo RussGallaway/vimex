@@ -41,7 +41,7 @@ While detached:
 - Composer focus and Insert mode leave the anchor unchanged.
 - Folding and terminal resize reproject the same logical anchor.
 
-`G` moves to the bottom and reattaches. Merely entering Normal mode does not reattach.
+Scrolling down to the bottom reattaches and resumes following output. `G` moves to the bottom and reattaches directly. Merely entering Normal mode does not reattach.
 
 ## Default navigation
 

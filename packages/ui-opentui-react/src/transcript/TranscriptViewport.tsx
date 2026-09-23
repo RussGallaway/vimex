@@ -28,7 +28,11 @@ export interface TranscriptViewportProps {
   themeRevision?: string
   agentSummaries?: Readonly<Record<string, ThreadSummary>>
   scrollRef: RefObject<ScrollBoxRenderable | null>
-  onManualScroll?: () => void
+  onManualScroll?: (
+    rows?: number,
+    cursor?: "follow" | "clamp",
+    direction?: "up" | "down",
+  ) => void
 }
 
 export function sameTranscriptViewportProps(
@@ -72,7 +76,7 @@ export const TranscriptViewport = memo(function TranscriptViewport(
         if (event.modifiers.shift) return
         if (props.scrollRef.current)
           props.scrollRef.current.stickyScroll = false
-        props.onManualScroll?.()
+        props.onManualScroll?.(undefined, undefined, event.scroll.direction)
         event.stopPropagation()
       }}
       stickyStart="bottom"

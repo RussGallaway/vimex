@@ -32,7 +32,9 @@ import { measureRenderedTranscript } from "../transcript/rendered-layout"
 import { reduceInteraction, type Overlay } from "@vimex/interaction"
 import { createEmberTideSyntax } from "../theme"
 
-function fixture(): WorkbenchState {
+function fixture(
+  markdown = "## Result\n\nStreaming **Markdown** stays above the composer.",
+): WorkbenchState {
   const thread = threadId("thread-1")
   const summary: ThreadSummary = {
     id: thread,
@@ -58,8 +60,7 @@ function fixture(): WorkbenchState {
         id: itemId("answer"),
         turnId: turnId("turn"),
         kind: "assistant",
-        markdown:
-          "## Result\n\nStreaming **Markdown** stays above the composer.",
+        markdown,
         status: "running",
       },
     },
@@ -706,6 +707,33 @@ describe("Vimex OpenTUI shell", () => {
   })
 
   test("Ctrl-e records the rendered top point as the semantic viewport anchor", async () => {
+    const markdown = Array.from(
+      { length: 80 },
+      (_, index) => `Line ${index} of the answer`,
+    ).join("\n")
+    const state = fixture(markdown)
+    const thread = state.activeThreadId!
+    const workspace = state.workspaces[thread]!
+    const detachedState: WorkbenchState = {
+      ...state,
+      workspaces: {
+        ...state.workspaces,
+        [thread]: {
+          ...workspace,
+          transcript: {
+            ...workspace.transcript,
+            viewport: {
+              kind: "point",
+              point: {
+                itemId: itemId("answer"),
+                graphemeOffset: markdown.indexOf("Line 30"),
+              },
+              preferredScreenRow: 2,
+            },
+          },
+        },
+      },
+    }
     const transcriptCommands: TranscriptUiCommand[] = []
     const controller: VimexUiController = {
       ...inertController,
@@ -714,11 +742,20 @@ describe("Vimex OpenTUI shell", () => {
       },
     }
     const setup = await testRender(
-      <VimexRoot state={fixture()} controller={controller} />,
+      <VimexRoot state={detachedState} controller={controller} />,
       { width: 52, height: 14 },
     )
     try {
-      await act(async () => setup.flush())
+      await act(async () => {
+        await setup.flush()
+        await setup.renderOnce()
+      })
+      const scroll = setup.renderer.root.findDescendantById(
+        "transcript",
+      ) as ScrollBoxRenderable
+      expect(scroll.scrollTop).toBeLessThan(
+        scroll.scrollHeight - scroll.viewport.height - 1,
+      )
       setup.mockInput.pressKey("e", { ctrl: true })
       await act(async () => {
         await setup.flush()
