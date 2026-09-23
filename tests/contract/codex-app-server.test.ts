@@ -200,6 +200,20 @@ describe("JSONL stdio transport", () => {
 })
 
 describe("Codex app-server client", () => {
+  test("receives a later user-facing thread name", async () => {
+    const { client, transport } = await connectedClient()
+    const events: CodexAdapterEvent[] = []
+    client.onEvent((event) => events.push(event))
+    transport.receive({
+      method: "thread/name/updated",
+      params: { threadId: "thr-1", threadName: "My\n  session" },
+    })
+    expect(events).toContainEqual({
+      type: "thread.name",
+      threadId: threadId("thr-1"),
+      name: "My session",
+    })
+  })
   test("initializes before issuing calls and correlates out-of-order responses", async () => {
     const { client, transport } = await connectedClient()
     const listed = client.listThreads()
@@ -223,6 +237,7 @@ describe("Codex app-server client", () => {
           "subAgentCompact",
           "subAgentThreadSpawn",
           "subAgentOther",
+          "unknown",
         ],
       },
     })

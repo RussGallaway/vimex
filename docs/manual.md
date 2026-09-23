@@ -86,9 +86,9 @@ Enter or za toggles the current fold. zo/zc open/close it. zR/zM open/close all 
 
 ## SESSIONS AND AGENTS
 
-Space s or :sessions opens the picker, initially scoped to the current directory. Tab toggles all sessions. j/k or arrows navigate; i or / enters search. Escape leaves search, then closes the picker. :sessions ID opens an exact thread.
+Space s or :sessions opens the picker and refreshes its session list, initially scoped to the current directory. Tab toggles all directories. The picker lists parent sessions; child agents remain available through agent navigation or an exact thread ID. j/k or arrows navigate; i or / enters search. Escape leaves search, then closes the picker. :sessions ID opens an exact thread.
 
-:rename NAME renames the focused session. :favorite toggles its favorite state; :favorite on/off sets it explicitly. :new [PATH] starts a session. :cwd [PATH] shows or changes its working directory.
+:rename NAME renames the focused session. Until renamed, the title is a short, single-line excerpt of the first message. :favorite toggles its favorite state; :favorite on/off sets it explicitly. :new [PATH] starts a session. :cwd [PATH] shows or changes its working directory.
 
 Headers show PARENT for an original conversation with children or a side chat, CHILD for a delegated conversation, and SIDE for a side conversation. Standalone conversations have no role badge. Child breadcrumbs show Back to parent; side breadcrumbs show Focus parent.
 

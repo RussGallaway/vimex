@@ -163,4 +163,4 @@ In Normal mode, `Space r` opens `:rename` with an empty name ready to type and t
 
 Side-pane window shortcuts: `Ctrl-W c` hides the side pane and keeps its agent running; `Ctrl-W q` quits and retires that side session. A later `/side` reopens a hidden side session, or creates a new one after quit.
 
-`Space e` in Normal mode expands/collapses the composer. It shows the draft up to the available pane height, then scrolls internally. Session picker opens in **This directory** scope; Tab toggles **All sessions** while preserving the search query. Favorites still obey the current scope; use All sessions or `:sessions ID` to open a known thread outside the current directory.
+`Space e` in Normal mode expands/collapses the composer. It shows the draft up to the available pane height, then scrolls internally. The session picker refreshes when opened and starts in **This directory** scope; Tab toggles **All sessions** while preserving the search query. Its ordinary rows show parent sessions; use agent navigation or an exact ID for a child. Favorites still obey the current scope; use All sessions or `:sessions ID` to open a known thread outside the current directory.

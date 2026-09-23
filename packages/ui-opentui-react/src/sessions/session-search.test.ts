@@ -44,6 +44,36 @@ test("an exact resumable Codex thread ID never fuzzily selects another session",
   expect(searchSessions([unrelated], {}, target)).toEqual([{ id: target }])
 })
 
+test("child sessions stay out of the ordinary picker but remain addressable by ID", () => {
+  const parent = threadId("parent")
+  const child = threadId("child")
+  const summaries: Record<string, ThreadSummary> = {
+    [parent]: {
+      id: parent,
+      title: "Parent session",
+      cwd: "/work",
+      model: "test",
+      reasoningEffort: "high",
+      status: "idle",
+    },
+    [child]: {
+      id: child,
+      parentThreadId: parent,
+      title: "Child session",
+      cwd: "/work",
+      model: "test",
+      reasoningEffort: "high",
+      status: "idle",
+    },
+  }
+  expect(searchSessions([parent, child], summaries, "", [], "/work")).toEqual([
+    { id: parent, summary: summaries[parent] },
+  ])
+  expect(
+    searchSessions([parent, child], summaries, child, [], "/work"),
+  ).toEqual([{ id: child, summary: summaries[child] }])
+})
+
 test("favorites sort before recency without bypassing filters or exact IDs", () => {
   const old = threadId("old"),
     recent = threadId("recent")

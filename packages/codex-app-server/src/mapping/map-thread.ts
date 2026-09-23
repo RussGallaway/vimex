@@ -1,4 +1,4 @@
-import { threadId, type ThreadSummary } from "@vimex/conversation"
+import { previewTitle, threadId, type ThreadSummary } from "@vimex/conversation"
 import type { Thread } from "../generated/v0_154_0/v2/Thread"
 import type { ThreadStatus } from "../generated/v0_154_0/v2/ThreadStatus"
 import { isRecord } from "../rpc/request-router"
@@ -13,9 +13,15 @@ export interface ThreadRelation {
 }
 
 export function mapThreadSummary(thread: Thread): ThreadSummary {
+  const name = thread.name?.replace(/\s+/gu, " ").trim()
+  const preview = thread.preview?.trim()
   return {
     id: threadId(thread.id),
-    title: thread.name || thread.preview || "Untitled thread",
+    title: name || previewTitle(thread.preview ?? ""),
+    titleSource: name ? "name" : preview ? "preview" : "untitled",
+    ...(thread.parentThreadId
+      ? { parentThreadId: threadId(thread.parentThreadId) }
+      : {}),
     model: thread.model ?? "unknown",
     reasoningEffort: thread.reasoningEffort ?? "default",
     cwd: thread.cwd,

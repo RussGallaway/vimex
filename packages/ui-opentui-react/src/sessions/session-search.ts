@@ -37,14 +37,14 @@ export function searchSessions(
 ): SessionRow[] {
   const favoriteIds = new Set(favorites)
   const normalize = (path: string) => path.replace(/\/+$/, "") || "/"
-  const available = [...new Set([...threads, ...favorites])].filter(
+  const candidates = [...new Set([...threads, ...favorites])].filter(
     (id) =>
       cwd === undefined ||
       (summaries[id]?.cwd !== undefined &&
         normalize(summaries[id]!.cwd) === normalize(cwd)),
   )
   const exactQuery = query.trim()
-  const exact = available.find((id) => id === exactQuery)
+  const exact = candidates.find((id) => id === exactQuery)
   if (exact)
     return [
       {
@@ -64,6 +64,7 @@ export function searchSessions(
   ) {
     return [{ id: threadId(exactQuery) }]
   }
+  const available = candidates.filter((id) => !summaries[id]?.parentThreadId)
   return available
     .map((id, order) => {
       const summary = summaries[id]

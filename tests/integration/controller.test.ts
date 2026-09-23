@@ -4497,6 +4497,67 @@ test("CLI resume last and picker scope existing sessions by cwd without creating
     await h.controller.close()
   }
 })
+
+test("resume last skips a newer child session", async () => {
+  const h = harness()
+  const child = threadId("child")
+  const resumed: string[] = []
+  h.backend.listThreads = async () => [
+    { ...summary(a), updatedAt: 10 },
+    { ...summary(child), parentThreadId: a, updatedAt: 20 },
+  ]
+  h.backend.resumeThread = async (id) => {
+    resumed.push(id)
+    return { summary: summary(id), events: [] }
+  }
+  await h.controller.initialize("/tmp", undefined, undefined, "last")
+  expect(resumed).toEqual([a])
+  await h.controller.close()
+})
+
+test("opening sessions refreshes additions and removes externally archived rows", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  h.controller.toggleFavorite(b)
+  const newcomer = threadId("newcomer")
+  h.backend.listThreads = async () => [summary(a), summary(newcomer)]
+  h.controller.dispatchInteraction({
+    type: "overlay.open",
+    overlay: "sessions",
+  })
+  await h.controller.settle()
+  const state = h.controller.getSnapshot()
+  expect(state.threadOrder).toContain(newcomer)
+  expect(state.threadOrder).not.toContain(b)
+  expect(state.favoriteThreadIds).not.toContain(b)
+  await h.controller.close()
+})
+
+test("first live message supplies a clipped title until the session is named", async () => {
+  const h = harness()
+  const unnamed = {
+    ...summary(a),
+    title: "Untitled thread",
+    titleSource: "untitled" as const,
+  }
+  h.backend.startThread = async () => ({ summary: unnamed, events: [] })
+  await h.controller.initialize("/tmp")
+  h.controller.changeDraft("Investigate the picker\n\nand session titles", 49)
+  h.controller.submit("next-turn")
+  expect(h.controller.getSnapshot().summaries[a]?.title).toBe(
+    "Investigate the picker and session titles",
+  )
+  await h.controller.settle()
+  h.controller.renameThread(a, "My session")
+  await h.controller.settle()
+  h.controller.dispatchInteraction({
+    type: "overlay.open",
+    overlay: "sessions",
+  })
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().summaries[a]?.title).toBe("My session")
+  await h.controller.close()
+})
 test("CLI resume reports an empty cwd catalog without creating a server thread", async () => {
   const h = harness()
   h.backend.listThreads = async () => []

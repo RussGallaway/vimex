@@ -64,6 +64,13 @@ export function createCodexGateways(
       case "thread.summary":
         normalized = { type: "summary", summary: event.summary }
         break
+      case "thread.name":
+        normalized = {
+          type: "metadata",
+          threadId: event.threadId,
+          patch: { title: event.name, titleSource: "name" },
+        }
+        break
       case "thread.goal":
         normalized = {
           type: "metadata",

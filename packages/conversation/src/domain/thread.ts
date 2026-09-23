@@ -12,6 +12,8 @@ export interface ThreadSummary {
   goal?: import("./thread-goal").ThreadGoal | null
   id: ThreadId
   title: string
+  titleSource?: "name" | "preview" | "untitled"
+  parentThreadId?: ThreadId
   model: string
   reasoningEffort: string
   cwd: string
@@ -20,4 +22,14 @@ export interface ThreadSummary {
   contextUsed?: number
   contextLimit?: number
   status: "idle" | "working" | "blocked" | "disconnected"
+}
+
+/** Keep the first-message fallback safe for single-line session chrome. */
+export function previewTitle(message: string, limit = 80): string {
+  const normalized = message.replace(/\s+/gu, " ").trim()
+  if (!normalized) return "Untitled thread"
+  const characters = Array.from(normalized)
+  return characters.length > limit
+    ? `${characters.slice(0, limit).join("")}…`
+    : normalized
 }

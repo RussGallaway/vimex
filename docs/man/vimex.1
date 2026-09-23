@@ -123,13 +123,16 @@ tool blocks from either pane without changing file diffs; its choice
 also applies to new tools. Tool calls start collapsed; file diffs
 start expanded.
 .SH SESSIONS AND AGENTS
-Space s or :sessions opens the picker, initially scoped to the current
-directory. Tab toggles all sessions. j/k or arrows navigate; i or /
-enters search. Escape leaves search, then closes the picker. :sessions
-ID opens an exact thread.
+Space s or :sessions opens the picker and refreshes its session list,
+initially scoped to the current directory. Tab toggles all
+directories. The picker lists parent sessions; child agents remain
+available through agent navigation or an exact thread ID. j/k or
+arrows navigate; i or / enters search. Escape leaves search, then
+closes the picker. :sessions ID opens an exact thread.
 .PP
-:rename NAME renames the focused session. :favorite toggles its
-favorite state; :favorite on/off sets it explicitly. :new [PATH]
+:rename NAME renames the focused session. Until renamed, the title is
+a short, single\-line excerpt of the first message. :favorite toggles
+its favorite state; :favorite on/off sets it explicitly. :new [PATH]
 starts a session. :cwd [PATH] shows or changes its working directory.
 .PP
 Headers show PARENT for an original conversation with children or a

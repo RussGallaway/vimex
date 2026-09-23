@@ -55,6 +55,7 @@ export type CodexAdapterEvent =
     }
   | { type: "conversation"; event: ConversationEvent }
   | { type: "thread.summary"; summary: ThreadSummary; relation: ThreadRelation }
+  | { type: "thread.name"; threadId: ReturnType<typeof threadId>; name: string }
   | { type: "subagent.link"; link: SubagentLink }
   | {
       type: "thread.status"
@@ -97,6 +98,19 @@ export function mapNotification(
   if (!isRecord(params))
     return { type: "unknown", method: notification.method, payload: params }
   switch (notification.method) {
+    case "thread/name/updated": {
+      const name =
+        typeof params.threadName === "string"
+          ? params.threadName.replace(/\s+/gu, " ").trim()
+          : ""
+      if (typeof params.threadId === "string" && name)
+        return {
+          type: "thread.name",
+          threadId: threadId(params.threadId),
+          name,
+        }
+      break
+    }
     case "thread/goal/updated": {
       const goal = mapGoal(params.goal)
       if (typeof params.threadId === "string" && goal)

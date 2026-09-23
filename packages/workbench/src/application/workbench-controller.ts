@@ -81,6 +81,7 @@ import { transitionWorkbench } from "./reduce-workbench"
 import {
   forkBoundary,
   persistentConversationTurnIds,
+  previewTitle,
   threadId,
   turnItemIdsHave,
   type ThreadId,
@@ -431,6 +432,8 @@ export class VimexController
   private readonly pending = new Set<Promise<void>>()
   private readonly threadContinuations = new Map<ThreadId, Set<Promise<void>>>()
   private readonly loaded = new Set<ThreadId>()
+  private catalogThreadIds = new Set<ThreadId>()
+  private sessionCatalogRequest?: Promise<void>
   private readonly buffered = new Map<ThreadId, ConversationEvent[]>()
   private readonly resumes = new Map<ThreadId, Promise<SessionSnapshot>>()
   private unsubscribe?: () => void
@@ -1223,8 +1226,64 @@ export class VimexController
   }
 
   private register(summary: SessionSnapshot["summary"]): void {
-    if (!this.state.retiredSideThreadIds.includes(summary.id))
-      this.dispatch({ type: "thread.register", summary })
+    if (this.state.retiredSideThreadIds.includes(summary.id)) return
+    const current = this.state.summaries[summary.id]
+    this.dispatch({
+      type: "thread.register",
+      summary:
+        (current?.titleSource === "name" && summary.titleSource !== "name") ||
+        (current?.titleSource === "preview" &&
+          summary.titleSource === "untitled")
+          ? {
+              ...summary,
+              title: current.title,
+              titleSource: current.titleSource,
+            }
+          : summary,
+    })
+  }
+  private refreshSessionCatalog(): Promise<void> {
+    if (this.sessionCatalogRequest) return this.sessionCatalogRequest
+    const epoch = this.runtimeEpoch
+    const request = (async () => {
+      const summaries = await this.ports.conversation.listThreads()
+      if (!this.currentRuntime(epoch)) return
+      const previous = this.catalogThreadIds
+      const visibleSummaries = summaries.filter(
+        (summary) => !this.state.retiredSideThreadIds.includes(summary.id),
+      )
+      const current = new Set(visibleSummaries.map((summary) => summary.id))
+      for (const summary of visibleSummaries) this.register(summary)
+      const state = this.state
+      const local = state.threadOrder.filter(
+        (id) =>
+          !previous.has(id) ||
+          (id === state.activeThreadId && !current.has(id)),
+      )
+      const threadOrder = [
+        ...new Set([
+          ...local,
+          ...visibleSummaries.map((summary) => summary.id),
+        ]),
+      ]
+      const favoriteThreadIds = state.favoriteThreadIds.filter(
+        (id) => !previous.has(id) || current.has(id),
+      )
+      this.catalogThreadIds = current
+      this.setState({ ...state, threadOrder, favoriteThreadIds })
+    })()
+    this.sessionCatalogRequest = request
+    void request.then(
+      () => {
+        if (this.sessionCatalogRequest === request)
+          this.sessionCatalogRequest = undefined
+      },
+      () => {
+        if (this.sessionCatalogRequest === request)
+          this.sessionCatalogRequest = undefined
+      },
+    )
+    return request
   }
   private async unlessClosing<T>(
     operation: Promise<T>,
@@ -1349,6 +1408,9 @@ export class VimexController
         this.ports.conversation.listThreads(),
       )
       if (!summaries || !this.currentRuntime(epoch)) return
+      this.catalogThreadIds = new Set(
+        summaries.value.map((summary) => summary.id),
+      )
       for (const summary of summaries.value) this.register(summary)
       if (resumeMode && !resume) {
         const matching = summaries.value
@@ -1356,7 +1418,8 @@ export class VimexController
             (summary) =>
               this.ports.resolveDirectory(cwd, summary.cwd) ===
                 this.ports.resolveDirectory(cwd, cwd) &&
-              !this.state.retiredSideThreadIds.includes(summary.id),
+              !this.state.retiredSideThreadIds.includes(summary.id) &&
+              !summary.parentThreadId,
           )
           .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
         resume = matching[0]?.id
@@ -1501,6 +1564,8 @@ export class VimexController
   }
   dispatchInteraction: WorkbenchActions["dispatchInteraction"] = (command) => {
     this.dispatch({ type: "interaction.command", command })
+    if (command.type === "overlay.open" && command.overlay === "sessions")
+      this.launch(() => this.refreshSessionCatalog())
     if (
       command.type === "mode.command" ||
       (command.type === "overlay.open" && command.overlay === "models")
@@ -1517,12 +1582,27 @@ export class VimexController
         await this.loadModels()
       })
   }
-  submit: WorkbenchActions["submit"] = (intent) =>
+  submit: WorkbenchActions["submit"] = (intent) => {
+    const clientMessageId = crypto.randomUUID()
+    const thread = this.state.activeThreadId
     this.dispatch({
       type: "composer.submit",
       intent,
-      clientMessageId: crypto.randomUUID(),
+      clientMessageId,
     })
+    const outgoing = thread
+      ? this.state.workspaces[thread]?.composer.outbox.find(
+          (message) => message.id === clientMessageId,
+        )
+      : undefined
+    const summary = thread ? this.state.summaries[thread] : undefined
+    if (summary?.titleSource === "untitled" && outgoing)
+      this.dispatch({
+        type: "thread.summary.patch",
+        threadId: summary.id,
+        patch: { title: previewTitle(outgoing.text), titleSource: "preview" },
+      })
+  }
   retryOutgoing = (id: string): void =>
     this.dispatch({ type: "composer.retry", clientMessageId: id })
   copyText = (text: string): void => {
@@ -1750,7 +1830,7 @@ export class VimexController
   toggleFavorite = (id: ThreadId): void =>
     this.dispatch({ type: "thread.favorite.toggle", threadId: id })
   renameThread = (id: ThreadId, title: string): void => {
-    const name = title.trim()
+    const name = title.replace(/\s+/gu, " ").trim()
     if (!name) {
       this.notice("A session name cannot be empty")
       return
@@ -1761,7 +1841,7 @@ export class VimexController
         this.dispatch({
           type: "thread.summary.patch",
           threadId: id,
-          patch: { title: name },
+          patch: { title: name, titleSource: "name" },
         })
     })
   }
@@ -2564,12 +2644,12 @@ export class VimexController
         this.ports.quit()
         break
       case "sessions": {
-        if (!argument)
+        if (!argument) {
           this.dispatchInteraction({
             type: "overlay.open",
             overlay: "sessions",
           })
-        else this.openThread(threadId(argument))
+        } else this.openThread(threadId(argument))
         break
       }
       case "manual":

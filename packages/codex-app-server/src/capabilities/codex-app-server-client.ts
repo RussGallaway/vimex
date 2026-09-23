@@ -199,6 +199,7 @@ export class CodexAppServerClient {
         "subAgentCompact",
         "subAgentThreadSpawn",
         "subAgentOther",
+        "unknown",
       ],
       archived: false,
       ...params,
