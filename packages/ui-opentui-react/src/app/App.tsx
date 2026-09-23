@@ -35,6 +35,7 @@ import {
 } from "@vimex/transcript"
 import {
   activeWorkspace,
+  agentRoster,
   liveActivity,
   sideChatForChild,
   sideChatForThread,
@@ -67,7 +68,7 @@ import {
   measuredPoint,
   transcriptRenderableIdForPoint,
 } from "../transcript/rendered-layout"
-import { createEmberTideSyntax, selectTheme } from "../theme"
+import { createEmberTideSyntax, emberTide, selectTheme } from "../theme"
 import { commonBindings } from "../keymap/common-bindings"
 import { normalBindings } from "../keymap/normal-bindings"
 import { visualBindings } from "../keymap/visual-bindings"
@@ -82,7 +83,6 @@ import {
   CommandLine,
 } from "../composer/CommandLine"
 import { searchSessions } from "../sessions/session-search"
-import { agentNavigationRows } from "../agents/AgentsOverlay"
 import { useTranscriptRuntime } from "../transcript/use-transcript-runtime"
 
 const blankTranscript = initialTranscript()
@@ -280,6 +280,7 @@ export function VimexApp({
     { stage: "models" } | { stage: "efforts"; modelId: string }
   >({ stage: "models" })
   const [allSessions, setAllSessions] = useState(false)
+  const [hideFinishedAgents, setHideFinishedAgents] = useState(false)
   const sessionCwd = allSessions ? undefined : summary?.cwd
   const [composerExpanded, setComposerExpanded] = useState(false)
   const [jumpOpen, setJumpOpen] = useState(false)
@@ -322,17 +323,25 @@ export function VimexApp({
         : undefined,
   })
   const busy = activeTurn(interaction, workspace?.conversation.activeTurnId)
-  const pendingApproval = state.approvals.order
-    .map((id) => state.approvals.byId[id])
-    .find(
-      (approval) =>
-        approval !== undefined &&
-        approval.threadId === state.activeThreadId &&
-        (approval.status === "pending" || approval.status === "failed"),
-    )
-  const pendingQuestion = Object.values(state.questions).find(
-    (question) => question.threadId === state.activeThreadId,
-  )
+  const approvals = state.approvals.order.flatMap((id) => {
+    const approval = state.approvals.byId[id]
+    return approval &&
+      (approval.status === "pending" || approval.status === "failed")
+      ? [approval]
+      : []
+  })
+  const pendingApproval =
+    approvals.find((approval) => approval.threadId === state.activeThreadId) ??
+    approvals[0]
+  const questions = Object.values(state.questions)
+  const pendingQuestion =
+    questions.find((question) => question.threadId === state.activeThreadId) ??
+    questions[0]
+  const shownQuestionRef = useRef<typeof pendingQuestion>(undefined)
+  const requestThreadId =
+    interaction.overlay === "questions"
+      ? pendingQuestion?.threadId
+      : pendingApproval?.threadId
   const activity = liveActivity(state)
   const activityLabel = pendingApproval
     ? "Approval needed"
@@ -359,8 +368,18 @@ export function VimexApp({
     ],
   )
   const agentRows = useMemo(
-    () => agentNavigationRows(state.activeThreadId, state.agentRelationships),
-    [state.activeThreadId, state.agentRelationships],
+    () =>
+      interaction.overlay === "agents"
+        ? agentRoster(state).filter(
+            (row) =>
+              (!state.agentPickerTargets ||
+                state.agentPickerTargets.includes(row.threadId)) &&
+              (state.agentPickerTargets ||
+                !hideFinishedAgents ||
+                row.status === "running"),
+          )
+        : [],
+    [state, interaction.overlay, hideFinishedAgents],
   )
   const selectionCount = useMemo(
     () => selectedGraphemeCount(transcript),
@@ -444,6 +463,28 @@ export function VimexApp({
       tools: settings.foldTools,
     })
   }, [interactive, controller, settings.foldTools, state.activeThreadId])
+  useEffect(() => {
+    if (
+      !interactive ||
+      interaction.overlay ||
+      summary?.canAcceptDirectInput !== false
+    )
+      return
+    if (interaction.mode === "insert")
+      controller.dispatchInteraction({ type: "mode.normal" })
+    if (interaction.surface === "composer")
+      controller.dispatchInteraction({
+        type: "focus.set",
+        surface: "transcript",
+      })
+  }, [
+    controller,
+    interactive,
+    interaction.mode,
+    interaction.overlay,
+    interaction.surface,
+    summary?.canAcceptDirectInput,
+  ])
   useLayoutEffect(() => {
     overlayIndexRef.current = 0
     setOverlayIndex(0)
@@ -459,14 +500,26 @@ export function VimexApp({
     setQuestionAnswers({})
   }, [pendingQuestion?.id])
   useEffect(() => {
+    if (!pendingQuestion) shownQuestionRef.current = undefined
+    else if (interaction.overlay === "questions")
+      shownQuestionRef.current = pendingQuestion
+  }, [interaction.overlay, pendingQuestion])
+  useEffect(() => {
     if (!interactive) return
     if (state.pendingFork && interaction.overlay !== "fork")
       controller.dispatchInteraction({ type: "overlay.open", overlay: "fork" })
-    else if (!state.pendingFork && pendingQuestion && !interaction.overlay)
+    else if (
+      !state.pendingFork &&
+      pendingQuestion &&
+      shownQuestionRef.current !== pendingQuestion &&
+      !interaction.overlay
+    ) {
+      shownQuestionRef.current = pendingQuestion
       controller.dispatchInteraction({
         type: "overlay.open",
         overlay: "questions",
       })
+    }
   }, [
     interactive,
     controller,
@@ -1128,8 +1181,7 @@ export function VimexApp({
     } else if (interaction.overlay === "agents") {
       const row =
         agentRows[Math.min(activeIndex, Math.max(0, agentRows.length - 1))]
-      if (row?.direction === "parent") controller.returnToParent()
-      if (row?.direction === "child") controller.openChildThread(row.threadId)
+      if (row) controller.openChildThread(row.threadId)
     } else if (interaction.overlay === "urls") {
       const choice =
         urlChoices?.[
@@ -1410,6 +1462,20 @@ export function VimexApp({
                     },
                   }))
                 : []),
+              ...(interaction.overlay === "agents" && !state.agentPickerTargets
+                ? [
+                    {
+                      key: "h",
+                      cmd: () => {
+                        overlayIndexRef.current = 0
+                        flushSync(() => {
+                          setHideFinishedAgents((value) => !value)
+                          setOverlayIndex(0)
+                        })
+                      },
+                    },
+                  ]
+                : []),
             ],
     }),
     [
@@ -1423,6 +1489,7 @@ export function VimexApp({
       pendingApproval,
       questionOwnsReturn,
       state.availableModels,
+      state.agentPickerTargets,
     ],
   )
 
@@ -1445,6 +1512,7 @@ export function VimexApp({
             state={transcript}
             surface={interaction.surface}
             syntax={syntax}
+            agentSummaries={state.summaries}
             scrollRef={scrollRef}
             onManualScroll={onManualScroll}
           />
@@ -1471,52 +1539,64 @@ export function VimexApp({
         ) : undefined
       }
       composer={
-        <Composer
-          interactive={interactive}
-          visible={presentationVisible}
-          expanded={composerExpanded}
-          key={state.activeThreadId}
-          state={composer}
-          mode={interaction.mode}
-          activeTurn={busy}
-          model={summary?.model}
-          reasoningEffort={summary?.reasoningEffort}
-          maxHeight={
-            composerExpanded
-              ? Math.max(1, dimensions.height - (parentTitle ? 10 : 9))
-              : Math.max(
-                  3,
-                  Math.floor(
-                    dimensions.height *
-                      Math.max(0.1, Math.min(0.6, settings.composerMaxHeight)),
-                  ),
-                )
-          }
-          insertEnter={settings.insertEnter}
-          busySubmit={settings.busySubmit}
-          textareaRef={textareaRef}
-          submitRef={composerSubmitRef}
-          onChange={slashCommands.changeDraft}
-          drawer={
-            slashCommands.active ? (
-              <SlashCommandDrawer
-                choices={slashCommands.choices}
-                selected={slashCommands.selected}
-                hint={slashCommands.feedback}
-              />
-            ) : undefined
-          }
-          onSubmit={slashCommands.submit}
-          onEscape={() => {
-            if (composerInteractionRef.current.mode === "visual")
-              runComposerKey("escape")
-            else if (composerInteractionRef.current.mode === "insert")
-              controller.dispatchInteraction({ type: "mode.normal" })
-          }}
-          onRetry={controller.retryOutgoing}
-          onImageClipboard={controller.attachImageFromClipboard}
-          onImagePath={controller.attachImageFromPath}
-        />
+        summary?.canAcceptDirectInput === false ? (
+          <box paddingX={1} paddingY={1}>
+            <text fg={emberTide.textMuted}>
+              Child transcript · \\ returns to parent · send instructions from
+              the parent
+            </text>
+          </box>
+        ) : (
+          <Composer
+            interactive={interactive}
+            visible={presentationVisible}
+            expanded={composerExpanded}
+            key={state.activeThreadId}
+            state={composer}
+            mode={interaction.mode}
+            activeTurn={busy}
+            model={summary?.model}
+            reasoningEffort={summary?.reasoningEffort}
+            maxHeight={
+              composerExpanded
+                ? Math.max(1, dimensions.height - (parentTitle ? 10 : 9))
+                : Math.max(
+                    3,
+                    Math.floor(
+                      dimensions.height *
+                        Math.max(
+                          0.1,
+                          Math.min(0.6, settings.composerMaxHeight),
+                        ),
+                    ),
+                  )
+            }
+            insertEnter={settings.insertEnter}
+            busySubmit={settings.busySubmit}
+            textareaRef={textareaRef}
+            submitRef={composerSubmitRef}
+            onChange={slashCommands.changeDraft}
+            drawer={
+              slashCommands.active ? (
+                <SlashCommandDrawer
+                  choices={slashCommands.choices}
+                  selected={slashCommands.selected}
+                  hint={slashCommands.feedback}
+                />
+              ) : undefined
+            }
+            onSubmit={slashCommands.submit}
+            onEscape={() => {
+              if (composerInteractionRef.current.mode === "visual")
+                runComposerKey("escape")
+              else if (composerInteractionRef.current.mode === "insert")
+                controller.dispatchInteraction({ type: "mode.normal" })
+            }}
+            onRetry={controller.retryOutgoing}
+            onImageClipboard={controller.attachImageFromClipboard}
+            onImagePath={controller.attachImageFromPath}
+          />
+        )
       }
       statusline={
         <Statusline
@@ -1621,6 +1701,13 @@ export function VimexApp({
               activeThreadId={state.activeThreadId}
               approval={pendingApproval}
               question={pendingQuestion}
+              requestSource={
+                requestThreadId && requestThreadId !== state.activeThreadId
+                  ? state.summaries[requestThreadId]?.agentNickname ||
+                    state.summaries[requestThreadId]?.title ||
+                    "Child agent"
+                  : undefined
+              }
               questionIndex={questionIndex}
               answers={questionAnswers}
               questionInputRef={questionInputRef}
@@ -1635,6 +1722,10 @@ export function VimexApp({
               onActivate={activateOverlay}
               pendingFork={state.pendingFork}
               agents={agentRows}
+              hideFinishedAgents={
+                hideFinishedAgents && !state.agentPickerTargets
+              }
+              scopedAgents={Boolean(state.agentPickerTargets)}
               urls={urlChoices ?? []}
               selected={overlayIndex}
             />

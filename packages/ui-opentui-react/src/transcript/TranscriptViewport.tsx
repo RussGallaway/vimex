@@ -3,7 +3,7 @@ import {
   type ScrollBoxRenderable,
   type SyntaxStyle,
 } from "@opentui/core"
-import type { ConversationItem } from "@vimex/conversation"
+import type { ConversationItem, ThreadSummary } from "@vimex/conversation"
 import type { InteractionState } from "@vimex/interaction"
 import {
   blockKey,
@@ -25,6 +25,7 @@ export interface TranscriptViewportProps {
   state: TranscriptState
   surface: InteractionState["surface"]
   syntax: SyntaxStyle
+  agentSummaries?: Readonly<Record<string, ThreadSummary>>
   scrollRef: RefObject<ScrollBoxRenderable | null>
   onManualScroll?: () => void
 }
@@ -38,6 +39,7 @@ export function sameTranscriptViewportProps(
     before.state === after.state &&
     before.surface === after.surface &&
     before.syntax === after.syntax &&
+    before.agentSummaries === after.agentSummaries &&
     before.scrollRef === after.scrollRef &&
     before.onManualScroll === after.onManualScroll
   )
@@ -143,6 +145,11 @@ export const TranscriptViewport = memo(function TranscriptViewport(
             current={current}
             selected={selected}
             syntax={props.syntax}
+            agentSummaries={
+              block.renderItem.kind === "agent"
+                ? props.agentSummaries
+                : undefined
+            }
           />
         )
       })}
@@ -164,6 +171,7 @@ const TranscriptRow = memo(function TranscriptRow(props: {
   current: boolean
   selected: boolean
   syntax: SyntaxStyle
+  agentSummaries?: Readonly<Record<string, ThreadSummary>>
 }) {
   const item = props.block.renderItem as ConversationItem
   const continues = Boolean(
@@ -205,6 +213,7 @@ const TranscriptRow = memo(function TranscriptRow(props: {
           sourceItem={props.block.item as ConversationItem}
           folded={props.folded}
           syntax={props.syntax}
+          agentSummaries={props.agentSummaries}
           blockId={props.block.key.blockId}
           fragment={props.block.fragment}
         />

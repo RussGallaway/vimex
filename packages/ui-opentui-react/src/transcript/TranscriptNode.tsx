@@ -1,5 +1,5 @@
 import type { SyntaxStyle } from "@opentui/core"
-import type { ConversationItem } from "@vimex/conversation"
+import type { ConversationItem, ThreadSummary } from "@vimex/conversation"
 import type { TranscriptItemFragment } from "@vimex/transcript"
 import { FileChange } from "./FileChange"
 import { MarkdownMessage } from "./MarkdownMessage"
@@ -12,6 +12,7 @@ export function TranscriptNode(props: {
   sourceItem?: ConversationItem
   folded: boolean
   syntax: SyntaxStyle
+  agentSummaries?: Readonly<Record<string, ThreadSummary>>
   blockId?: string
   fragment?: TranscriptItemFragment
 }) {
@@ -54,7 +55,13 @@ export function TranscriptNode(props: {
         />
       )
     case "agent":
-      return <AgentActivity item={props.item} folded={props.folded} />
+      return (
+        <AgentActivity
+          item={props.item}
+          folded={props.folded}
+          agentSummaries={props.agentSummaries}
+        />
+      )
     case "command":
     case "tool":
     case "unknown":

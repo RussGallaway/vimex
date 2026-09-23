@@ -12,15 +12,27 @@ export interface ThreadRelation {
   source: unknown
 }
 
+function singleLine(value: string | null): string | undefined {
+  return value?.replace(/\s+/gu, " ").trim() || undefined
+}
+
 export function mapThreadSummary(thread: Thread): ThreadSummary {
-  const name = thread.name?.replace(/\s+/gu, " ").trim()
+  const name = singleLine(thread.name)
   const preview = thread.preview?.trim()
+  const agentNickname = singleLine(thread.agentNickname)
+  const agentRole = singleLine(thread.agentRole)
   return {
     id: threadId(thread.id),
     title: name || previewTitle(thread.preview ?? ""),
     titleSource: name ? "name" : preview ? "preview" : "untitled",
     ...(thread.parentThreadId
       ? { parentThreadId: threadId(thread.parentThreadId) }
+      : {}),
+    ...(agentNickname ? { agentNickname } : {}),
+    ...(agentRole ? { agentRole } : {}),
+    ...(thread.canAcceptDirectInput !== null &&
+    thread.canAcceptDirectInput !== undefined
+      ? { canAcceptDirectInput: thread.canAcceptDirectInput }
       : {}),
     model: thread.model ?? "unknown",
     reasoningEffort: thread.reasoningEffort ?? "default",
@@ -32,13 +44,15 @@ export function mapThreadSummary(thread: Thread): ThreadSummary {
 }
 
 export function mapThreadRelation(thread: Thread): ThreadRelation {
+  const agentNickname = singleLine(thread.agentNickname)
+  const agentRole = singleLine(thread.agentRole)
   return {
     threadId: threadId(thread.id),
     ...(thread.parentThreadId
       ? { parentThreadId: threadId(thread.parentThreadId) }
       : {}),
-    ...(thread.agentNickname ? { agentNickname: thread.agentNickname } : {}),
-    ...(thread.agentRole ? { agentRole: thread.agentRole } : {}),
+    ...(agentNickname ? { agentNickname } : {}),
+    ...(agentRole ? { agentRole } : {}),
     source: thread.source,
   }
 }

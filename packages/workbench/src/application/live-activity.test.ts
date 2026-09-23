@@ -139,3 +139,56 @@ test("failed terminal turns stop the working heartbeat", () => {
   }).state
   expect(liveActivity(state)).toEqual({ working: false })
 })
+
+test("shows Waiting for agents only while the current wait call is running", () => {
+  const thread = threadId("waiting"),
+    turn = turnId("turn"),
+    wait = itemId("wait")
+  let state = transitionWorkbench(initialWorkbench(), {
+    type: "thread.open",
+    summary: {
+      id: thread,
+      title: "Waiting",
+      cwd: "/work",
+      model: "test",
+      reasoningEffort: "high",
+      status: "working",
+    },
+  }).state
+  state = transitionWorkbench(state, {
+    type: "conversation.event",
+    event: {
+      type: "turn.started",
+      threadId: thread,
+      turnId: turn,
+      startedAt: 40_000,
+    },
+  }).state
+  const item = {
+    id: wait,
+    turnId: turn,
+    kind: "agent" as const,
+    action: "wait" as const,
+    detail: "",
+    agentThreadIds: [threadId("child")],
+    status: "running" as const,
+  }
+  state = transitionWorkbench(state, {
+    type: "conversation.event",
+    event: { type: "item.started", threadId: thread, item },
+  }).state
+  expect(liveActivity(state)).toEqual({
+    working: true,
+    label: "Waiting for agents",
+    startedAt: 40_000,
+  })
+  state = transitionWorkbench(state, {
+    type: "conversation.event",
+    event: {
+      type: "item.completed",
+      threadId: thread,
+      item: { ...item, status: "complete" },
+    },
+  }).state
+  expect(liveActivity(state).label).toBe("Working")
+})

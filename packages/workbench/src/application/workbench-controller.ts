@@ -1,4 +1,5 @@
 import { threadContext } from "./thread-context"
+import { agentRoster } from "./agent-roster"
 import { compactionBlockReason } from "./compaction"
 import { executeGoalCommand } from "./goal-command"
 import {
@@ -1233,6 +1234,11 @@ export class VimexController
   private register(summary: SessionSnapshot["summary"]): void {
     if (this.state.retiredSideThreadIds.includes(summary.id)) return
     const current = this.state.summaries[summary.id]
+    const withKnownCapability =
+      current?.canAcceptDirectInput !== undefined &&
+      summary.canAcceptDirectInput === undefined
+        ? { ...summary, canAcceptDirectInput: current.canAcceptDirectInput }
+        : summary
     this.dispatch({
       type: "thread.register",
       summary:
@@ -1240,11 +1246,11 @@ export class VimexController
         (current?.titleSource === "preview" &&
           summary.titleSource === "untitled")
           ? {
-              ...summary,
+              ...withKnownCapability,
               title: current.title,
               titleSource: current.titleSource,
             }
-          : summary,
+          : withKnownCapability,
     })
   }
   private refreshSessionCatalog(): Promise<void> {
@@ -1568,6 +1574,23 @@ export class VimexController
     return promise
   }
   dispatchInteraction: WorkbenchActions["dispatchInteraction"] = (command) => {
+    const active = this.state.activeThreadId
+    if (
+      active &&
+      this.state.summaries[active]?.canAcceptDirectInput === false &&
+      !this.state.workspaces[active]?.interaction.overlay &&
+      (command.type === "mode.insert" ||
+        (command.type === "focus.set" && command.surface === "composer"))
+    ) {
+      this.notice("Send instructions to this child through its parent")
+      return
+    }
+    if (
+      (command.type === "overlay.open" && command.overlay === "agents") ||
+      command.type === "overlay.close"
+    )
+      if (this.state.agentPickerTargets)
+        this.setState({ ...this.state, agentPickerTargets: undefined })
     this.dispatch({ type: "interaction.command", command })
     if (command.type === "overlay.open" && command.overlay === "sessions")
       this.launch(() => this.refreshSessionCatalog())
@@ -1650,6 +1673,15 @@ export class VimexController
   submit: WorkbenchActions["submit"] = (intent) => {
     if (this.closing) return false
     const thread = this.state.activeThreadId
+    if (
+      thread &&
+      this.state.summaries[thread]?.canAcceptDirectInput === false
+    ) {
+      this.notice(
+        "This child is controlled by its parent. Return to the parent to send instructions.",
+      )
+      return false
+    }
     if (thread && this.pendingImages.has(thread)) {
       this.notice("Image is still attaching; send again when its chip appears")
       return false
@@ -1761,10 +1793,6 @@ export class VimexController
   ) => {
     const approval = this.state.approvals.byId[approvalId]
     if (!approval) return
-    if (approval.threadId !== this.state.activeThreadId) {
-      this.notice("Open the approval from its active session before responding")
-      return
-    }
     this.dispatch({ type: "approval.resolve", approvalId, choiceId })
   }
   answerQuestions = (
@@ -1775,10 +1803,6 @@ export class VimexController
     if (!request || this.answering.has(id)) return
     if (this.retiringThread(request.threadId)) {
       this.notice("Side chat is quitting; new work is paused")
-      return
-    }
-    if (request.threadId !== this.state.activeThreadId) {
-      this.notice("Open the question's session before responding")
       return
     }
     const token = Symbol(id)
@@ -1839,14 +1863,8 @@ export class VimexController
     })
   }
   openChildThread = (id: ThreadId): void => {
-    const parent = this.state.activeThreadId
-    if (
-      !parent ||
-      !this.state.agentRelationships.some(
-        (link) => link.parentId === parent && link.childId === id,
-      )
-    ) {
-      this.notice("This session is not a child of the active thread")
+    if (!agentRoster(this.state).some((row) => row.threadId === id)) {
+      this.notice("This agent is not in the current conversation")
       return
     }
     this.dispatchInteraction({ type: "overlay.close" })
@@ -1869,7 +1887,13 @@ export class VimexController
       ...new Set([
         parent,
         ...this.state.agentRelationships
-          .filter((link) => link.parentId === parent)
+          .filter(
+            (link) =>
+              link.parentId === parent &&
+              link.relation === "spawned" &&
+              !sideChatForChild(this.state, link.childId) &&
+              !this.state.retiredSideThreadIds.includes(link.childId),
+          )
           .map((link) => link.childId),
       ]),
     ]
@@ -1879,9 +1903,12 @@ export class VimexController
     }
     const index = family.indexOf(active)
     const target =
-      family[
-        (index + (direction === "next" ? 1 : family.length - 1)) % family.length
-      ]
+      index < 0
+        ? parent
+        : family[
+            (index + (direction === "next" ? 1 : family.length - 1)) %
+              family.length
+          ]
     if (target) this.openThread(target)
   }
   private clearNavigationIntent(): void {
@@ -2264,9 +2291,10 @@ export class VimexController
             )
           : []
       if (children.length === 1) this.openChildThread(children[0]!)
-      else if (children.length > 1)
+      else if (children.length > 1) {
         this.dispatchInteraction({ type: "overlay.open", overlay: "agents" })
-      else this.notice("No child conversation on this row")
+        this.setState({ ...this.state, agentPickerTargets: children })
+      } else this.notice("No child conversation on this row")
       return
     }
     if (

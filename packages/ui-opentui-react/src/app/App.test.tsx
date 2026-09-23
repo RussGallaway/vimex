@@ -1477,6 +1477,110 @@ describe("Vimex OpenTUI shell", () => {
     }
   })
 
+  test("a pending child question opens from the parent once and stays dismissed", async () => {
+    const base = fixture()
+    const child = threadId("question-child")
+    const initial: WorkbenchState = {
+      ...base,
+      summaries: {
+        ...base.summaries,
+        [child]: {
+          ...base.summaries[base.activeThreadId!]!,
+          id: child,
+          agentNickname: "codex_docs",
+        },
+      },
+      questions: {
+        child: {
+          id: "child",
+          threadId: child,
+          turnId: turnId("child-turn"),
+          questions: [
+            {
+              id: "choice",
+              header: "Continue",
+              question: "Proceed?",
+              allowOther: false,
+              secret: false,
+              options: [{ label: "Yes", description: "Continue" }],
+            },
+          ],
+        },
+      },
+    }
+    const commands: string[] = []
+    let dismiss!: () => void
+    let replaceRequest!: () => void
+    let latestOverlay: Overlay | null | undefined
+    function Harness() {
+      const [state, setState] = useState(initial)
+      latestOverlay =
+        state.workspaces[state.activeThreadId!]!.interaction.overlay
+      replaceRequest = () =>
+        setState((previous) => ({
+          ...previous,
+          questions: {
+            ...previous.questions,
+            child: {
+              ...previous.questions.child!,
+              questions: [
+                { ...previous.questions.child!.questions[0]!, header: "Again" },
+              ],
+            },
+          },
+        }))
+      const controller: VimexUiController = {
+        ...inertController,
+        dispatchInteraction(command) {
+          commands.push(command.type)
+          setState((previous) => {
+            const id = previous.activeThreadId!
+            const workspace = previous.workspaces[id]!
+            return {
+              ...previous,
+              workspaces: {
+                ...previous.workspaces,
+                [id]: {
+                  ...workspace,
+                  interaction: reduceInteraction(
+                    workspace.interaction,
+                    command,
+                  ),
+                },
+              },
+            }
+          })
+        },
+      }
+      dismiss = () => controller.dispatchInteraction({ type: "overlay.close" })
+      return <VimexRoot state={state} controller={controller} />
+    }
+    const setup = await testRender(<Harness />, { width: 82, height: 22 })
+    try {
+      await act(async () => setup.flush())
+      expect(setup.captureCharFrame()).toContain("From codex_docs")
+      await act(async () => {
+        dismiss()
+        await setup.flush()
+        await setup.renderOnce()
+      })
+      expect(commands).toContain("overlay.close")
+      expect(commands).toEqual(["overlay.open", "overlay.close"])
+      expect(latestOverlay).toBeNull()
+      await act(async () => {
+        replaceRequest()
+        await setup.flush()
+      })
+      expect(commands).toEqual([
+        "overlay.open",
+        "overlay.close",
+        "overlay.open",
+      ])
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
   test("submits an option-only Codex question with global Return", async () => {
     let state = withOverlay(fixture(), "questions")
     const id = state.activeThreadId!
@@ -1644,6 +1748,172 @@ describe("Vimex OpenTUI shell", () => {
         await setup.flush()
       })
       expect(opened).toEqual([child])
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
+  test("agent roster separates running and finished children and hides finished with h", async () => {
+    const base = fixture()
+    const parent = base.activeThreadId!
+    const running = threadId("running-child")
+    const finished = threadId("finished-child")
+    let state = transitionWorkbench(base, {
+      type: "conversation.event",
+      event: {
+        type: "item.completed",
+        threadId: parent,
+        item: {
+          id: itemId("spawn-agents"),
+          turnId: turnId("turn"),
+          kind: "agent",
+          action: "spawn",
+          detail: "Compare subagent UX",
+          agentThreadIds: [running, finished],
+          childTasks: [
+            { threadId: running, status: "running" },
+            { threadId: finished, status: "complete", message: "Done" },
+          ],
+          status: "complete",
+        },
+      },
+    }).state
+    state = withOverlay(
+      {
+        ...state,
+        summaries: {
+          ...state.summaries,
+          [running]: {
+            ...state.summaries[parent]!,
+            id: running,
+            agentNickname: "opencode_ux",
+          },
+          [finished]: {
+            ...state.summaries[parent]!,
+            id: finished,
+            agentNickname: "grok_ux",
+          },
+        },
+        agentRelationships: [
+          {
+            parentId: parent,
+            childId: running,
+            itemId: itemId("spawn-agents"),
+            relation: "spawned",
+          },
+          {
+            parentId: parent,
+            childId: finished,
+            itemId: itemId("spawn-agents"),
+            relation: "spawned",
+          },
+        ],
+      },
+      "agents",
+    )
+    const setup = await testRender(
+      <VimexRoot state={state} controller={inertController} />,
+      { width: 82, height: 22 },
+    )
+    try {
+      await act(async () => setup.flush())
+      expect(setup.captureCharFrame()).toContain("RUNNING")
+      expect(setup.captureCharFrame()).toContain("FINISHED")
+      expect(setup.captureCharFrame()).toContain("opencode_ux")
+      expect(setup.captureCharFrame()).toContain("grok_ux")
+      await act(async () => {
+        setup.mockInput.pressKey("h")
+        await setup.flush()
+      })
+      expect(setup.captureCharFrame()).toContain("opencode_ux")
+      expect(setup.captureCharFrame()).not.toContain("grok_ux")
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
+  test("shows a child approval in the parent overlay with its source", async () => {
+    const child = threadId("child-approval")
+    let state = transitionWorkbench(fixture(), {
+      type: "approval.received",
+      approval: {
+        id: "child-request",
+        threadId: child,
+        kind: "command",
+        title: "Run test command",
+        detail: "bun test",
+        choices: [{ id: "accept", label: "Accept" }],
+        status: "pending",
+      },
+    }).state
+    state = withOverlay(
+      {
+        ...state,
+        summaries: {
+          ...state.summaries,
+          [child]: {
+            id: child,
+            title: "Child",
+            agentNickname: "codex_docs",
+            cwd: "/work/vimex",
+            model: "gpt-6",
+            reasoningEffort: "high",
+            status: "working",
+          },
+        },
+      },
+      "approvals",
+    )
+    const resolved: string[] = []
+    const setup = await testRender(
+      <VimexRoot
+        state={state}
+        controller={{
+          ...inertController,
+          resolveApproval(id, choice) {
+            resolved.push(`${id}:${choice}`)
+          },
+        }}
+      />,
+      { width: 82, height: 22 },
+    )
+    try {
+      await act(async () => setup.flush())
+      expect(setup.captureCharFrame()).toContain("From codex_docs")
+      await act(async () => {
+        setup.mockInput.pressEnter()
+        await setup.flush()
+      })
+      expect(resolved).toEqual(["child-request:accept"])
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
+  test("read-only Codex children show navigation guidance in place of the composer", async () => {
+    const state = fixture()
+    const active = state.activeThreadId!
+    const setup = await testRender(
+      <VimexRoot
+        state={{
+          ...state,
+          summaries: {
+            ...state.summaries,
+            [active]: {
+              ...state.summaries[active]!,
+              canAcceptDirectInput: false,
+            },
+          },
+        }}
+        controller={inertController}
+      />,
+      { width: 82, height: 22 },
+    )
+    try {
+      await act(async () => setup.flush())
+      const frame = setup.captureCharFrame()
+      expect(frame).toContain("send instructions from the parent")
+      expect(frame).not.toContain("Message Codex")
     } finally {
       await act(async () => setup.renderer.destroy())
     }

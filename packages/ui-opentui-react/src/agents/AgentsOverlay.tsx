@@ -1,89 +1,111 @@
 import type { ScrollBoxRenderable } from "@opentui/core"
-import type {
-  AgentRelationship,
-  ThreadId,
-  ThreadSummary,
-} from "@vimex/conversation"
+import type { AgentRosterRow } from "@vimex/workbench"
 import { useEffect, useRef } from "react"
 import { OverlayFrame } from "../app/OverlayFrame"
 import { emberTide } from "../theme"
 
-export interface AgentNavigationRow {
-  direction: "parent" | "child"
-  threadId: ThreadId
-  link: AgentRelationship
-}
-export function agentNavigationRows(
-  active: ThreadId | undefined,
-  links: readonly AgentRelationship[],
-): AgentNavigationRow[] {
-  if (!active) return []
-  const rows: AgentNavigationRow[] = []
-  for (const link of links) {
-    if (link.childId === active)
-      rows.push({ direction: "parent", threadId: link.parentId, link })
-    else if (link.parentId === active)
-      rows.push({ direction: "child", threadId: link.childId, link })
-  }
-  return rows
+const glyph: Record<AgentRosterRow["status"], string> = {
+  running: "◌",
+  complete: "✓",
+  error: "✕",
+  interrupted: "■",
 }
 
 export function AgentsOverlay(props: {
-  rows: readonly AgentNavigationRow[]
-  summaries: Readonly<Record<string, ThreadSummary>>
+  rows: readonly AgentRosterRow[]
   selected: number
+  hideFinished: boolean
+  scoped: boolean
 }) {
   const listRef = useRef<ScrollBoxRenderable>(null)
-  const selectedRow = props.rows[props.selected]
+  const selectedThreadId = props.rows[props.selected]?.threadId
   useEffect(() => {
     const list = listRef.current
-    if (!selectedRow || !list) return
-    list.scrollChildIntoView(
-      `agent-row:${selectedRow.direction}:${selectedRow.threadId}`,
-    )
+    if (!selectedThreadId || !list) return
+    list.scrollChildIntoView(`agent-row:${selectedThreadId}`)
     list.requestRender()
-  }, [selectedRow])
+  }, [selectedThreadId])
+  let runningHeader = false
+  let finishedHeader = false
   return (
-    <OverlayFrame title="Parent and child sessions" width={88}>
+    <OverlayFrame
+      title={
+        props.scoped ? "Choose child transcript" : "Agents · this conversation"
+      }
+      width={88}
+    >
       <text fg={emberTide.textMuted}>
-        ↑/↓ move · enter navigate · esc close
+        ↑/↓ move · enter open ·{" "}
+        {props.scoped
+          ? ""
+          : `h ${props.hideFinished ? "show" : "hide"} finished · `}
+        esc close
       </text>
       <scrollbox ref={listRef} flexGrow={1} minHeight={4} marginTop={1}>
-        {props.rows.map((row, index) => (
-          <box
-            id={`agent-row:${row.direction}:${row.threadId}`}
-            key={`${row.direction}:${row.threadId}`}
-            height={2}
-            flexShrink={0}
-            paddingX={1}
-            backgroundColor={
-              index === props.selected ? emberTide.selection : undefined
-            }
-          >
-            <box height={1} flexDirection="row" justifyContent="space-between">
-              <text
-                fg={
-                  index === props.selected
-                    ? emberTide.selectionText
-                    : emberTide.text
+        {props.rows.map((row, index) => {
+          const firstRunning = row.status === "running" && !runningHeader
+          const firstFinished = row.status !== "running" && !finishedHeader
+          if (firstRunning) runningHeader = true
+          if (firstFinished) finishedHeader = true
+          return (
+            <box key={row.threadId} flexDirection="column">
+              {firstRunning || firstFinished ? (
+                <text marginTop={index ? 1 : 0} fg={emberTide.textMuted}>
+                  {firstRunning ? "RUNNING" : "FINISHED"}
+                </text>
+              ) : null}
+              <box
+                id={`agent-row:${row.threadId}`}
+                height={2}
+                flexShrink={0}
+                paddingX={1}
+                backgroundColor={
+                  index === props.selected ? emberTide.selection : undefined
                 }
               >
-                {row.direction === "parent" ? "↑ Parent" : "↓ Child"} ·{" "}
-                {props.summaries[row.threadId]?.title ?? row.threadId}
-              </text>
-              <text fg={emberTide.textMuted}>
-                {props.summaries[row.threadId]?.status ?? ""}
-              </text>
+                <box
+                  height={1}
+                  flexDirection="row"
+                  justifyContent="space-between"
+                  gap={1}
+                >
+                  <text
+                    flexGrow={1}
+                    flexShrink={1}
+                    minWidth={0}
+                    wrapMode="none"
+                    truncate
+                    fg={
+                      index === props.selected
+                        ? emberTide.selectionText
+                        : emberTide.text
+                    }
+                  >
+                    {glyph[row.status]} {row.name}
+                  </text>
+                  <text flexShrink={0} fg={emberTide.textMuted}>
+                    {row.status === "running"
+                      ? " · Working"
+                      : row.status === "complete"
+                        ? " · Completed"
+                        : row.status === "error"
+                          ? " · Failed"
+                          : " · Interrupted"}
+                  </text>
+                </box>
+                <text fg={emberTide.textMuted} wrapMode="none" truncate>
+                  {row.result || row.assignment || ""}
+                </text>
+              </box>
             </box>
-            <text fg={emberTide.textMuted}>
-              {row.link.agentPath ?? props.summaries[row.threadId]?.cwd ?? ""}
-            </text>
-          </box>
-        ))}
+          )
+        })}
       </scrollbox>
       {props.rows.length === 0 ? (
         <text marginTop={1} fg={emberTide.textMuted}>
-          No linked agent sessions
+          {props.hideFinished
+            ? "No running agents"
+            : "No agents in this conversation"}
         </text>
       ) : null}
     </OverlayFrame>

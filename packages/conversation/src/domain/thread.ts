@@ -14,6 +14,9 @@ export interface ThreadSummary {
   title: string
   titleSource?: "name" | "preview" | "untitled"
   parentThreadId?: ThreadId
+  agentNickname?: string
+  agentRole?: string
+  canAcceptDirectInput?: boolean
   model: string
   reasoningEffort: string
   cwd: string

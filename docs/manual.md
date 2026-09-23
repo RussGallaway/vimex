@@ -94,9 +94,9 @@ Space s or :sessions opens the picker and refreshes its session list, initially 
 
 Headers show PARENT for an original conversation with children or a side chat, CHILD for a delegated conversation, and SIDE for a side conversation. Standalone conversations have no role badge. Child breadcrumbs show Back to parent; side breadcrumbs show Focus parent.
 
-Child assignments appear as foldable CHILD transcript rows with task previews and reported progress. Enter expands the assignment and any reported result; gc in transcript Normal mode opens the child, or the picker for multiple targets. Messages and follow-ups remain separate events.
+Child assignments appear as compact foldable rows named for the child agent. Enter expands the assignment and any reported result; gc in transcript Normal mode opens that child's transcript, or a chooser scoped to the row when it has multiple children. Codex children that do not accept direct input can be read, with instructions sent through their parent. While a wait call is active, the parent activity reads Waiting for agents; its completion returns to Working without marking the children finished. Messages and follow-ups remain separate events.
 
-ga opens the agent picker. [a and ]a cycle the immediate family. Backslash returns to the immediate parent. Ctrl-O/I also navigate session and agent visits.
+ga opens the agent roster for the current root conversation, grouped into Running and Finished. It includes nested spawned children and excludes /side conversations. h hides or shows finished agents; Enter opens the selected transcript. [a and ]a cycle the immediate family. Backslash returns to the immediate parent. Ctrl-O/I also navigate session and agent visits.
 
 f or :fork opens confirmation to fork through the selected completed turn.
 

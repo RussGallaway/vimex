@@ -9,10 +9,14 @@ import {
   commandDescriptors,
   type Overlay,
 } from "@vimex/interaction"
-import type { AvailableModel, WorkbenchState } from "@vimex/workbench"
+import type {
+  AgentRosterRow,
+  AvailableModel,
+  WorkbenchState,
+} from "@vimex/workbench"
 import type { UrlCandidate } from "@vimex/transcript"
 import { useRef, type RefObject } from "react"
-import { AgentsOverlay, type AgentNavigationRow } from "../agents/AgentsOverlay"
+import { AgentsOverlay } from "../agents/AgentsOverlay"
 import { ApprovalOverlay } from "../approvals/ApprovalOverlay"
 import { ForkOverlay } from "../fork/ForkOverlay"
 import { QuestionOverlay } from "../questions/QuestionOverlay"
@@ -64,7 +68,7 @@ function HelpOverlay() {
     ["Jump", "s/Ctrl-g Flash   Ctrl-o/i history   ma mark   `a jump"],
     ["Fold", "Enter/za toggle   Shift-Tab all"],
     ["Views", "Space s sessions   Space r rename   a approvals   :help"],
-    ["Agents", "ga picker   [a/]a family   \\ parent"],
+    ["Agents", "ga roster   gc child   [a/]a family   \\ parent"],
     [
       "Side",
       "Ctrl-H/L focus   Ctrl-W | maximize   Ctrl-W c close   Ctrl-W q quit",
@@ -134,13 +138,16 @@ export function OverlayLayer(props: {
   activeThreadId?: ThreadId
   approval?: Approval
   question?: UserQuestionRequest
+  requestSource?: string
   questionIndex: number
   answers: Readonly<Record<string, string | readonly string[]>>
   questionInputRef: RefObject<InputRenderable | null>
   onQuestionInput(value: string): void
   onActivate(): void
   pendingFork?: WorkbenchState["pendingFork"]
-  agents: readonly AgentNavigationRow[]
+  agents: readonly AgentRosterRow[]
+  hideFinishedAgents?: boolean
+  scopedAgents?: boolean
   urls: readonly UrlCandidate[]
   selected: number
 }) {
@@ -175,10 +182,15 @@ export function OverlayLayer(props: {
           selected={props.selected}
         />
       ) : props.overlay === "approvals" ? (
-        <ApprovalOverlay approval={props.approval} selected={props.selected} />
+        <ApprovalOverlay
+          approval={props.approval}
+          selected={props.selected}
+          source={props.requestSource}
+        />
       ) : props.overlay === "questions" ? (
         <QuestionOverlay
           request={props.question}
+          source={props.requestSource}
           questionIndex={props.questionIndex}
           optionIndex={props.selected}
           answers={props.answers}
@@ -191,8 +203,9 @@ export function OverlayLayer(props: {
       ) : props.overlay === "agents" ? (
         <AgentsOverlay
           rows={props.agents}
-          summaries={props.summaries}
           selected={props.selected}
+          hideFinished={Boolean(props.hideFinishedAgents)}
+          scoped={Boolean(props.scopedAgents)}
         />
       ) : props.overlay === "urls" ? (
         <UrlsOverlay choices={props.urls} selected={props.selected} />

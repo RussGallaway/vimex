@@ -79,6 +79,8 @@ export interface WorkbenchState {
   questions: Readonly<Record<string, UserQuestionRequest>>
   /** Confirmed spawn ancestry: one parent per child, independent of activity items. */
   agentRelationships: readonly AgentRelationship[]
+  /** A gc chooser is limited to the children of the selected spawn item. */
+  agentPickerTargets?: readonly ThreadId[]
   connection: "connecting" | "connected" | "disconnected" | "error"
   error?: string
 }
@@ -252,13 +254,18 @@ export function openThread(
   state: WorkbenchState,
   summary: ThreadSummary,
 ): WorkbenchState {
+  const knownCapability = state.summaries[summary.id]?.canAcceptDirectInput
+  const mergedSummary =
+    summary.canAcceptDirectInput === undefined && knownCapability !== undefined
+      ? { ...summary, canAcceptDirectInput: knownCapability }
+      : summary
   return {
     ...state,
     activeThreadId: summary.id,
     threadOrder: state.summaries[summary.id]
       ? state.threadOrder
       : [summary.id, ...state.threadOrder],
-    summaries: { ...state.summaries, [summary.id]: summary },
+    summaries: { ...state.summaries, [summary.id]: mergedSummary },
     workspaces: {
       ...state.workspaces,
       [summary.id]: state.workspaces[summary.id] ?? createWorkspace(summary.id),

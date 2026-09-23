@@ -666,7 +666,7 @@ test("successful turns without observed timing add no synthetic footer", async (
 })
 
 for (const width of [44, 100]) {
-  test(`child assignment and task status stay visible at ${width} columns`, async () => {
+  test(`folded child task stays compact at ${width} columns`, async () => {
     const item = {
       id: itemId("task"),
       turnId: turnId("turn"),
@@ -677,20 +677,36 @@ for (const width of [44, 100]) {
       status: "complete" as const,
       childTasks: [{ threadId: threadId("child"), status: "running" as const }],
     }
-    const setup = await testRender(<AgentActivity item={item} folded />, {
-      width,
-      height: 5,
-    })
+    const setup = await testRender(
+      <AgentActivity
+        item={item}
+        folded
+        agentSummaries={{
+          child: {
+            id: threadId("child"),
+            title: "Child",
+            agentNickname: "refresh_ux",
+            cwd: "/work",
+            model: "test",
+            reasoningEffort: "high",
+            status: "working",
+          },
+        }}
+      />,
+      {
+        width,
+        height: 5,
+      },
+    )
     try {
       await act(async () => {
         await setup.flush()
         await setup.renderOnce()
       })
       const frame = setup.captureCharFrame()
-      expect(frame).toContain("CHILD")
-      expect(frame).toContain("Investiga")
-      expect(frame).toContain("Working")
-      expect(frame).not.toContain("Completed")
+      expect(frame).toContain("◌ refresh_ux")
+      expect(frame).not.toContain("Investigate token refresh")
+      expect(frame).not.toContain("Working")
     } finally {
       await act(async () => setup.renderer.destroy())
     }
@@ -727,13 +743,111 @@ test("expanded child task shows the assignment, reported result, and open shortc
     })
     const frame = setup.captureCharFrame()
     for (const text of [
-      "CHILD",
+      "Agent 1",
       "Completed",
+      "Assignment",
       "Investigate token refresh",
       "Fixed the refresh race",
-      "gc Open child",
+      "gc Open transcript",
     ])
       expect(frame).toContain(text)
+  } finally {
+    await act(async () => setup.renderer.destroy())
+  }
+})
+
+test("expanded child row keeps status visible beside a long agent name", async () => {
+  const setup = await testRender(
+    <AgentActivity
+      item={{
+        id: itemId("long-agent-name"),
+        turnId: turnId("turn"),
+        kind: "agent",
+        action: "spawn",
+        detail: "Review the renderer",
+        agentThreadIds: [threadId("child")],
+        status: "complete",
+        childTasks: [{ threadId: threadId("child"), status: "complete" }],
+      }}
+      folded={false}
+      agentSummaries={{
+        child: {
+          id: threadId("child"),
+          title: "Child",
+          agentNickname: "extremely_long_subagent_name_for_a_narrow_terminal",
+          cwd: "/work",
+          model: "test",
+          reasoningEffort: "high",
+          status: "idle",
+        },
+      }}
+    />,
+    { width: 44, height: 12 },
+  )
+  try {
+    await act(async () => {
+      await setup.flush()
+      await setup.renderOnce()
+    })
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("Completed")
+    expect(frame).toContain("Assignment: Review the renderer")
+  } finally {
+    await act(async () => setup.renderer.destroy())
+  }
+})
+
+test("multi-agent spawn keeps a failed child visible while another works", async () => {
+  const setup = await testRender(
+    <AgentActivity
+      item={{
+        id: itemId("two-agents"),
+        turnId: turnId("turn"),
+        kind: "agent",
+        action: "spawn",
+        detail: "Compare reference clients",
+        agentThreadIds: [threadId("one"), threadId("two")],
+        status: "complete",
+        childTasks: [
+          { threadId: threadId("one"), status: "running" },
+          { threadId: threadId("two"), status: "error", message: "Timed out" },
+        ],
+      }}
+      folded={false}
+      agentSummaries={{
+        one: {
+          id: threadId("one"),
+          title: "One",
+          agentNickname: "opencode_ux",
+          cwd: "/work",
+          model: "test",
+          reasoningEffort: "high",
+          status: "working",
+        },
+        two: {
+          id: threadId("two"),
+          title: "Two",
+          agentNickname: "grok_ux",
+          cwd: "/work",
+          model: "test",
+          reasoningEffort: "high",
+          status: "idle",
+        },
+      }}
+    />,
+    { width: 70, height: 12 },
+  )
+  try {
+    await act(async () => {
+      await setup.flush()
+      await setup.renderOnce()
+    })
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("✕ 2 agents")
+    expect(frame).toContain("Failed")
+    expect(frame).toContain("opencode_ux · running")
+    expect(frame).toContain("grok_ux · error")
+    expect(frame).toContain("gc Choose child transcript")
   } finally {
     await act(async () => setup.renderer.destroy())
   }

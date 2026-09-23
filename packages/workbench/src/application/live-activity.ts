@@ -22,5 +22,20 @@ export function liveActivity(
   if (threadId && state.compactingThreads[threadId])
     return { working: true, label: "Compacting", startedAt: turn?.startedAt }
   if (!threadId || !conversation || !turnId) return { working: false }
+  if (
+    turn?.itemIds.some((id) => {
+      const item = conversation.items[id]
+      return (
+        item?.kind === "agent" &&
+        item.action === "wait" &&
+        item.status === "running"
+      )
+    })
+  )
+    return {
+      working: true,
+      label: "Waiting for agents",
+      startedAt: turn.startedAt,
+    }
   return { working: true, label: "Working", startedAt: turn?.startedAt }
 }

@@ -5,11 +5,15 @@ import { emberTide } from "../theme"
 export function ApprovalOverlay(props: {
   approval?: Approval
   selected: number
+  source?: string
 }) {
   return (
     <OverlayFrame title="Approval required" width={88}>
       {props.approval ? (
         <>
+          {props.source ? (
+            <text fg={emberTide.textMuted}>From {props.source}</text>
+          ) : null}
           <text fg={emberTide.amber}>
             <b>{props.approval.title}</b>
           </text>

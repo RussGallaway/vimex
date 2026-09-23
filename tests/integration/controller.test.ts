@@ -3401,7 +3401,7 @@ test("a stale question completion cannot delete a same-id request from the resta
   expect(h.controller.getSnapshot().questions.same).toEqual(current)
 })
 
-test("approval commands are active-session scoped and successful RPC acknowledgement clears state", async () => {
+test("approval command prefers the active session while a child approval remains globally answerable", async () => {
   const h = harness()
   await h.controller.initialize("/tmp")
   const resolved: string[] = []
@@ -3441,7 +3441,58 @@ test("approval commands are active-session scoped and successful RPC acknowledge
   )
   h.controller.resolveApproval("background", "accept")
   await h.controller.settle()
-  expect(resolved).toEqual(["active"])
+  expect(resolved).toEqual(["active", "background"])
+  expect(h.controller.getSnapshot().approvals.byId.background).toBeUndefined()
+})
+
+test("a Codex child that rejects direct input remains inspectable but cannot be submitted to", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  h.emit({
+    type: "subagent.link",
+    link: {
+      parentId: a,
+      childId: b,
+      itemId: itemId("spawn"),
+      relation: "spawned",
+    },
+  })
+  h.controller.openChildThread(b)
+  await h.controller.settle()
+  h.emit({
+    type: "metadata",
+    threadId: b,
+    patch: { canAcceptDirectInput: false },
+  })
+  h.emit({ type: "summary", summary: summary(b) })
+  expect(h.controller.getSnapshot().summaries[b]?.canAcceptDirectInput).toBe(
+    false,
+  )
+  h.controller.openThread(a)
+  await h.controller.settle()
+  h.controller.openThread(b)
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().summaries[b]?.canAcceptDirectInput).toBe(
+    false,
+  )
+  h.controller.dispatchInteraction({ type: "mode.insert" })
+  expect(h.controller.getSnapshot().workspaces[b]?.interaction.mode).toBe(
+    "normal",
+  )
+  h.controller.changeDraft("Direct message", 14)
+  expect(h.controller.submit("next-turn")).toBe(false)
+  h.controller.changeDraft("!pwd", 4)
+  expect(h.controller.submit("next-turn")).toBe(false)
+  await h.controller.settle()
+  expect(h.starts).toEqual([])
+  expect(h.shellCommands).toEqual([])
+  h.controller.returnToParent()
+  await h.controller.settle()
+  h.controller.changeDraft("Ask the child through me", 24)
+  expect(h.controller.submit("next-turn")).toBe(true)
+  await h.controller.settle()
+  expect(h.starts).toEqual(["Ask the child through me"])
+  await h.controller.close()
 })
 
 test("a queued steer waits for turn.started when start RPC acknowledges without events", async () => {
@@ -4352,6 +4403,15 @@ test("agent family cycling includes parent and siblings, wraps, and returns to i
         relation: "target",
       },
     })
+  h.emit({
+    type: "subagent.link",
+    link: {
+      parentId: a,
+      childId: threadId("target-only"),
+      itemId: itemId("message-target"),
+      relation: "target",
+    },
+  })
   h.controller.returnToParent()
   await h.controller.settle()
   expect(h.controller.getSnapshot().activeThreadId).toBe(a)
@@ -4368,6 +4428,14 @@ test("agent family cycling includes parent and siblings, wraps, and returns to i
   h.controller.returnToParent()
   await h.controller.settle()
   expect(h.controller.getSnapshot().activeThreadId).toBe(b)
+  h.controller.openThread(a)
+  await h.controller.settle()
+  h.controller.sideChat("open")
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().activeThreadId).toBe(threadId("side"))
+  h.controller.cycleAgent("next")
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().activeThreadId).toBe(a)
   await h.controller.close()
 })
 
@@ -4816,5 +4884,51 @@ test("child lifecycle refreshes an existing transcript task and gc opens it with
   expect(h.controller.getSnapshot().workspaces[a]!.composer.text).toBe(
     "Keep this draft",
   )
+  await h.controller.close()
+})
+
+test("gc scopes a multi-child chooser to the selected spawn and ga restores the full roster", async () => {
+  const h = harness()
+  const c = threadId("c")
+  const turn = turnId("multiple-children")
+  const spawn = itemId("spawn-multiple")
+  await h.controller.initialize("/tmp")
+  h.emit({
+    type: "conversation",
+    event: { type: "turn.started", threadId: a, turnId: turn },
+  })
+  h.emit({
+    type: "conversation",
+    event: {
+      type: "item.completed",
+      threadId: a,
+      item: {
+        id: spawn,
+        turnId: turn,
+        kind: "agent",
+        action: "spawn",
+        detail: "Compare references",
+        agentThreadIds: [b, c],
+        status: "complete",
+      },
+    },
+  })
+  for (const childId of [b, c])
+    h.emit({
+      type: "subagent.link",
+      link: { parentId: a, childId, itemId: spawn, relation: "spawned" },
+    })
+  await h.controller.settle()
+  h.controller.transcript({
+    type: "jump",
+    target: { itemId: spawn, graphemeOffset: 0 },
+  })
+  h.controller.transcript({ type: "child.open", presentationId: "main" })
+  expect(h.controller.getSnapshot().agentPickerTargets).toEqual([b, c])
+  expect(h.controller.getSnapshot().workspaces[a]?.interaction.overlay).toBe(
+    "agents",
+  )
+  h.controller.dispatchInteraction({ type: "overlay.open", overlay: "agents" })
+  expect(h.controller.getSnapshot().agentPickerTargets).toBeUndefined()
   await h.controller.close()
 })

@@ -12,6 +12,7 @@ import { emberTide } from "../theme"
 
 export function QuestionOverlay(props: {
   request?: UserQuestionRequest
+  source?: string
   questionIndex: number
   optionIndex: number
   answers: Readonly<Record<string, string | readonly string[]>>
@@ -53,11 +54,16 @@ export function QuestionOverlay(props: {
     <OverlayFrame title="Codex question" width={88}>
       {question ? (
         <>
-          <text fg={emberTide.textMuted}>
+          {props.source ? (
+            <text flexShrink={0} fg={emberTide.textMuted}>
+              From {props.source}
+            </text>
+          ) : null}
+          <text flexShrink={0} fg={emberTide.textMuted}>
             {props.questionIndex + 1} / {props.request!.questions.length} ·{" "}
             {question.header}
           </text>
-          <text marginTop={1} fg={emberTide.text}>
+          <text flexShrink={0} marginTop={1} fg={emberTide.text}>
             <b>{question.question}</b>
           </text>
           {question.options?.length ? (
@@ -159,7 +165,7 @@ export function QuestionOverlay(props: {
               </box>
             )
           ) : null}
-          <text marginTop={1} fg={emberTide.textMuted}>
+          <text flexShrink={0} marginTop={1} fg={emberTide.textMuted}>
             ↑/↓ choose · enter answer/next · esc keeps request pending
           </text>
         </>

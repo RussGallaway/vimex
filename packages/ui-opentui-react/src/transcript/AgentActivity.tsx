@@ -1,4 +1,4 @@
-import type { ConversationItem } from "@vimex/conversation"
+import type { ConversationItem, ThreadSummary } from "@vimex/conversation"
 import { emberTide } from "../theme"
 import { itemStatusGlyph } from "./item-status"
 
@@ -9,11 +9,11 @@ function childTaskLabel(
   tasks: NonNullable<AgentItem["childTasks"]>,
 ): string {
   for (const [status, label] of [
-    ["running", "Working"],
-    ["pending", "Starting"],
     ["error", "Failed"],
     ["missing", "Unavailable"],
     ["interrupted", "Interrupted"],
+    ["running", "Working"],
+    ["pending", "Starting"],
   ] as const)
     if (tasks.some((task) => task.status === status)) return label
   if (tasks.length && tasks.length === item.agentThreadIds.length) {
@@ -60,13 +60,38 @@ function actionLabel(item: AgentItem): string {
 export function AgentActivity({
   item,
   folded,
+  agentSummaries,
 }: {
   item: AgentItem
   folded: boolean
+  agentSummaries?: Readonly<Record<string, ThreadSummary>>
 }) {
   const tasks = item.childTasks ?? item.agentStates ?? []
   if (item.action === "spawn") {
     const status = childTaskLabel(item, tasks)
+    const childName = (id: string, index: number) => {
+      const summary = agentSummaries?.[id]
+      return (
+        summary?.agentNickname ||
+        summary?.agentRole ||
+        (summary?.titleSource === "name" ? summary.title : undefined) ||
+        `Agent ${index + 1}`
+      )
+    }
+    const glyph =
+      status === "Completed" || status === "Closed"
+        ? "✓"
+        : status === "Failed" || status === "Unavailable"
+          ? "✕"
+          : status === "Interrupted"
+            ? "■"
+            : "◌"
+    const label =
+      item.agentThreadIds.length === 1
+        ? childName(item.agentThreadIds[0]!, 0)
+        : item.agentThreadIds.length > 1
+          ? `${item.agentThreadIds.length} agents`
+          : "Starting agent"
     return (
       <box
         backgroundColor={emberTide.backgroundRaised}
@@ -83,57 +108,49 @@ export function AgentActivity({
           </text>
           <text
             id={`decoration:action:${item.id}`}
-            flexShrink={0}
+            flexShrink={1}
+            minWidth={0}
+            wrapMode="none"
+            truncate
             fg={emberTide.blueBright}
           >
-            CHILD ·
+            {glyph} {label}
           </text>
-          <text
-            id={
-              folded
-                ? `agent-detail:${item.id}`
-                : `decoration:assignment:${item.id}`
-            }
-            flexGrow={1}
-            minWidth={0}
-            flexShrink={1}
-            truncate
-            wrapMode="none"
-            fg={emberTide.text}
-          >
-            {folded ? item.detail || "Delegated task" : "Assignment"}
-          </text>
-          <text
-            id={`decoration:status:${item.id}`}
-            flexShrink={0}
-            fg={
-              status === "Failed"
-                ? emberTide.red
-                : status === "Completed"
-                  ? emberTide.sage
-                  : emberTide.textMuted
-            }
-          >
-            · {status}
-          </text>
+          {!folded ? (
+            <text
+              id={`decoration:status:${item.id}`}
+              flexShrink={0}
+              fg={
+                status === "Failed"
+                  ? emberTide.red
+                  : status === "Completed"
+                    ? emberTide.sage
+                    : emberTide.textMuted
+              }
+            >
+              {status}
+            </text>
+          ) : null}
         </box>
         {!folded ? (
           <box marginTop={1}>
-            <text
-              id={`agent-detail:${item.id}`}
-              fg={emberTide.textSoft}
-              wrapMode="word"
-            >
-              {item.detail}
-            </text>
-            {tasks.map((task) => (
+            {item.detail ? (
+              <text
+                id={`agent-detail:${item.id}`}
+                fg={emberTide.textSoft}
+                wrapMode="word"
+              >
+                Assignment: {item.detail}
+              </text>
+            ) : null}
+            {tasks.map((task, index) => (
               <text
                 key={task.threadId}
                 id={`decoration:agent-state:${item.id}:${task.threadId}`}
                 fg={emberTide.textMuted}
                 wrapMode="word"
               >
-                {task.threadId} · {task.status}
+                {childName(task.threadId, index)} · {task.status}
                 {task.message
                   ? `\n${task.status === "complete" ? "Result" : "Update"}: ${task.message}`
                   : ""}
@@ -145,8 +162,8 @@ export function AgentActivity({
                 fg={emberTide.blueBright}
               >
                 {item.agentThreadIds.length === 1
-                  ? "gc Open child"
-                  : "gc Choose child"}
+                  ? "gc Open transcript"
+                  : "gc Choose child transcript"}
               </text>
             ) : null}
           </box>
