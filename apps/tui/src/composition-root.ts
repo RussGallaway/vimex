@@ -36,6 +36,7 @@ import {
 import { createCodexGateways } from "@vimex/codex-app-server"
 import { createDemoGateway } from "./demo-gateway"
 import { VimexController } from "@vimex/workbench"
+import { imageInput } from "./images"
 
 export async function runApplication(options: CliOptions) {
   let controller!: VimexController
@@ -101,6 +102,10 @@ export async function runApplication(options: CliOptions) {
       terminal: createRendererClipboardAdapter(renderer),
     })
     lifecycle.add(() => clipboard.dispose())
+    const images = imageInput(clipboard)
+    lifecycle.add(async () => {
+      if (!persistenceError) await images.cleanup(localState)
+    })
     const herdr = new HerdrReporter(options.demo ? undefined : detectHerdr())
     lifecycle.add(() => herdr.dispose())
     const externalActions = createHerdrExternalActions({
@@ -122,6 +127,7 @@ export async function runApplication(options: CliOptions) {
           await clipboard.writeText(text, { destination: "best-available" })
         },
       },
+      images,
       openUrl: externalActions.openUrl,
       quit: finish,
       onLocalState(state: import("@vimex/workbench").LocalState) {

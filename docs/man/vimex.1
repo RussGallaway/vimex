@@ -117,6 +117,15 @@ source. In the composer, p/P paste the register. r from the transcript
 quotes the selection or current block into the draft. gx opens a URL;
 [u and ]u navigate URLs.
 .PP
+In composer Insert mode, Ctrl\-V attaches an image from the host
+clipboard. Dropping a PNG, JPEG, GIF, or WebP file into the composer
+attaches its pasted path and inserts an inline [Image 1] marker at the
+cursor. You can type around the marker; Backspace or Delete beside it
+removes the image. Image\-only messages are supported. Queued and
+failed messages retain their images in their message positions. The
+clipboard belongs to the machine running Vimex; over SSH, a dropped
+file path must be accessible on that machine.
+.PP
 Enter or za toggles the current fold. zo/zc open/close it. zR/zM
 open/close all folds, including diffs. Shift\-Tab opens or closes all
 tool blocks from either pane without changing file diffs; its choice

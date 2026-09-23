@@ -6,9 +6,17 @@ export function updateDraft(
   text: string,
   cursorOffset = graphemeCount(text),
 ): ComposerState {
+  const images = state.images.every(
+    (image) => !image.marker || text.includes(image.marker),
+  )
+    ? state.images
+    : state.images.filter(
+        (image) => !image.marker || text.includes(image.marker),
+      )
   return {
     ...state,
     text,
+    images,
     cursorOffset: Math.max(0, Math.min(cursorOffset, graphemeCount(text))),
     revision: state.revision + 1,
   }

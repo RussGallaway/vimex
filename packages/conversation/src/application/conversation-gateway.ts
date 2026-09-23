@@ -19,6 +19,8 @@ export interface AgentRelationship {
   relation: "spawned" | "activity" | "target"
   agentPath?: string
 }
+export type ConversationInput =
+  { type: "text"; text: string } | { type: "image"; path: string }
 
 /** Conversation capabilities required by client use cases, independent of transport. */
 export interface ConversationGateway {
@@ -36,12 +38,14 @@ export interface ConversationGateway {
     id: ThreadId,
     text: string,
     clientMessageId: string,
+    input?: readonly ConversationInput[],
   ): Promise<readonly ConversationEvent[]>
   steerTurn(
     id: ThreadId,
     turn: TurnId,
     text: string,
     clientMessageId: string,
+    input?: readonly ConversationInput[],
   ): Promise<void>
   interruptTurn(id: ThreadId, turn: TurnId): Promise<void>
   renameThread(id: ThreadId, name: string): Promise<void>

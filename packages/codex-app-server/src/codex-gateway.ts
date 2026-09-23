@@ -4,7 +4,25 @@ import {
 } from "./capabilities/codex-app-server-client"
 import { CodexApprovalGateway } from "./codex-approval-gateway"
 import { hydrateTurns } from "./mapping/map-item"
-import { itemId, type ConversationGateway } from "@vimex/conversation"
+import {
+  itemId,
+  type ConversationGateway,
+  type ConversationInput,
+} from "@vimex/conversation"
+import type { UserInput } from "./generated/v0_154_0/v2/UserInput"
+
+function normalizeConversationInput(
+  text: string,
+  input?: readonly ConversationInput[],
+): string | UserInput[] {
+  return !input?.length
+    ? text
+    : input.map((part) =>
+        part.type === "text"
+          ? { type: "text" as const, text: part.text, text_elements: [] }
+          : { type: "localImage" as const, path: part.path },
+      )
+}
 import type {
   RuntimeEvent,
   RuntimeConnection,
@@ -265,16 +283,25 @@ export function createCodexGateways(
     async forkThread(id, through) {
       return observeSession(await client.forkThread(id, through))
     },
-    async startTurn(id, text, clientMessageId) {
-      const response = await client.startTurn(id, text, {
-        clientUserMessageId: clientMessageId,
-      })
+    async startTurn(id, text, clientMessageId, input) {
+      const response = await client.startTurn(
+        id,
+        normalizeConversationInput(text, input),
+        {
+          clientUserMessageId: clientMessageId,
+        },
+      )
       return hydrateTurns([response.turn], id)
     },
-    async steerTurn(id, turn, text, clientMessageId) {
-      await client.steerTurn(id, turn, text, {
-        clientUserMessageId: clientMessageId,
-      })
+    async steerTurn(id, turn, text, clientMessageId, input) {
+      await client.steerTurn(
+        id,
+        turn,
+        normalizeConversationInput(text, input),
+        {
+          clientUserMessageId: clientMessageId,
+        },
+      )
     },
     async interruptTurn(id, turn) {
       await client.interruptTurn(id, turn)

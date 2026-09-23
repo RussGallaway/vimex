@@ -4,6 +4,42 @@ import type { ThreadItem } from "../generated/v0_154_0/v2/ThreadItem"
 import { hydrateTurns, mapThreadItem } from "./map-item"
 import { mapNotification, mapNotificationEvents } from "./map-notification"
 
+test("keeps image markers visible when loading a sent user message", () => {
+  const item = mapThreadItem(
+    {
+      type: "userMessage",
+      id: "photo",
+      clientId: null,
+      content: [
+        { type: "text", text: "Inspect this", text_elements: [] },
+        { type: "localImage", path: "/private/image.png" },
+        { type: "image", url: "data:image/png;base64,abc" },
+      ],
+    },
+    "turn",
+    true,
+  )
+  expect(item).toMatchObject({
+    kind: "user",
+    markdown: "Inspect this [Image 1] [Image 2]",
+  })
+  expect(
+    mapThreadItem(
+      {
+        type: "userMessage",
+        id: "split-text",
+        clientId: null,
+        content: [
+          { type: "text", text: "first", text_elements: [] },
+          { type: "text", text: "second", text_elements: [] },
+        ],
+      },
+      "turn",
+      true,
+    ),
+  ).toMatchObject({ markdown: "first\nsecond" })
+})
+
 test("maps every collaboration action without parsing presentation titles downstream", () => {
   const expected = {
     spawnAgent: "spawn",

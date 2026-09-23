@@ -126,6 +126,68 @@ test("unacknowledged submissions survive restart as explicit failed retries", ()
   expect(restored.composer.outbox[2]?.reason).toBe("offline")
 })
 
+test("draft and queued image paths survive local view restore", () => {
+  const image = {
+    id: "image",
+    label: "capture.png",
+    path: "/owned/capture.png",
+  }
+  const workspace = createWorkspace(id)
+  workspace.composer = {
+    ...workspace.composer,
+    images: [image],
+    outbox: [
+      {
+        id: "queued-image",
+        text: "",
+        images: [image],
+        intent: "next-turn",
+        status: "queued",
+      },
+    ],
+    revision: 1,
+  }
+  const state = {
+    ...openThread(initialWorkbench(), {
+      id,
+      title: "thread",
+      cwd: "/tmp",
+      model: "model",
+      reasoningEffort: "high",
+      status: "idle" as const,
+    }),
+    workspaces: { [id]: workspace },
+  }
+  const saved = parseLocalState(
+    JSON.parse(JSON.stringify(captureLocalState(state, emptyLocalState()))),
+  )
+  const restored = restoreThreadView(createWorkspace(id), saved.threads[id]!)
+  expect(restored.composer.text).toBe("[Image 1] ")
+  expect(restored.composer.images).toEqual([{ ...image, marker: "[Image 1]" }])
+  expect(restored.composer.outbox[0]).toMatchObject({
+    images: [image],
+    status: "failed",
+  })
+})
+
+test("inline image draft restores its marker and attachment position", () => {
+  const image = {
+    id: "inline",
+    label: "photo.png",
+    path: "/owned/photo.png",
+    marker: "[Image 1]",
+  }
+  const restored = restoreThreadView(createWorkspace(id), {
+    ...saved,
+    draft: "before [Image 1] after",
+    images: [image],
+    cursorOffset: 16,
+  })
+  expect(restored.composer.text).toBe("before [Image 1] after")
+  expect(restored.composer.images).toEqual([image])
+  expect(restored.composer.cursorOffset).toBe(16)
+})
+
 test("version-one state without an outbox remains compatible", () => {
   const legacy = { ...saved } as Partial<SavedThreadView>
   delete legacy.outbox

@@ -469,13 +469,29 @@ function providerActivity(
   return { family: "provider", label: displayProvider(provider) }
 }
 function inputText(content: readonly UserInput[]): string {
-  return content
-    .filter(
-      (input): input is Extract<UserInput, { type: "text" }> =>
-        input.type === "text",
-    )
-    .map((input) => input.text)
-    .join("\n")
+  let image = 0
+  let result = ""
+  let previous: "text" | "image" | undefined
+  for (const input of content) {
+    const kind =
+      input.type === "text"
+        ? "text"
+        : input.type === "image" || input.type === "localImage"
+          ? "image"
+          : undefined
+    if (!kind) continue
+    const value = input.type === "text" ? input.text : `[Image ${++image}]`
+    if (!value) continue
+    const separator =
+      previous === "text" && kind === "text"
+        ? "\n"
+        : result && !/\s$/u.test(result) && !/^\s/u.test(value)
+          ? " "
+          : ""
+    result += separator + value
+    previous = kind
+  }
+  return result
 }
 function itemType(item: never): string {
   const value = item as unknown

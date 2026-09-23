@@ -47,7 +47,12 @@ export const inertController: VimexUiController = {
   },
   dispatchInteraction() {},
   changeDraft() {},
-  submit() {},
+  attachImageFromClipboard() {},
+  attachImageFromPath() {},
+  removeImage() {},
+  submit() {
+    return true
+  },
   transcript() {},
   answerQuestions() {},
   openChildThread() {},

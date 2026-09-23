@@ -48,6 +48,10 @@ function harness(
     onLifecycle?: (state: WorkbenchLifecycleSnapshot) => void
     preferences?: PreferenceStore
     conversationIngressScheduler?: ConversationIngressScheduler
+    images?: {
+      fromClipboard(): Promise<{ label: string; path: string } | undefined>
+      fromPath(path: string): Promise<{ label: string; path: string }>
+    }
   } = {},
 ) {
   let listener: (event: RuntimeEvent) => void = () => {}
@@ -111,6 +115,7 @@ function harness(
     onLifecycle: options.onLifecycle,
     preferences: options.preferences,
     conversationIngressScheduler: options.conversationIngressScheduler,
+    images: options.images,
     clipboard: {
       writeText: async (text) => {
         copied.push(text)
@@ -131,6 +136,54 @@ function harness(
     emit: (event: RuntimeEvent) => listener(event),
   }
 }
+
+test("image import blocks premature send, then sends the owned path with the draft", async () => {
+  let finishImage!: (image: { label: string; path: string }) => void
+  const h = harness({
+    images: {
+      fromClipboard: () =>
+        new Promise((resolve) => {
+          finishImage = resolve
+        }),
+      fromPath: async (path) => ({ label: "dropped", path }),
+    },
+  })
+  await h.controller.initialize("/tmp")
+  const sent: Array<{
+    text: string
+    input?: readonly import("@vimex/conversation").ConversationInput[]
+  }> = []
+  h.backend.startTurn = async (_id, text, _messageId, input) => {
+    sent.push({ text, input })
+    return []
+  }
+  h.controller.changeDraft("inspect this", 12)
+  h.controller.attachImageFromClipboard()
+  expect(h.controller.submit("next-turn")).toBe(false)
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe(
+    "inspect this",
+  )
+  finishImage({ label: "clipboard image", path: "/owned/image.png" })
+  await h.controller.settle()
+  expect(
+    h.controller.getSnapshot().workspaces[a]?.composer.images,
+  ).toMatchObject([{ path: "/owned/image.png" }])
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe(
+    "inspect this [Image 1] ",
+  )
+  expect(h.controller.submit("next-turn")).toBe(true)
+  await h.controller.settle()
+  expect(sent).toEqual([
+    {
+      text: "inspect this [Image 1]",
+      input: [
+        { type: "text", text: "inspect this " },
+        { type: "image", path: "/owned/image.png" },
+      ],
+    },
+  ])
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.images).toEqual([])
+})
 
 function manualIngressScheduler() {
   const tasks: Array<{ task: () => void; cancelled: boolean }> = []

@@ -13,7 +13,10 @@ import type { VimMode } from "@vimex/interaction"
 import { VimexRoot } from "../index"
 import { inertController, type VimexUiController } from "../contracts"
 
-async function setupMode(mode: VimMode) {
+async function setupMode(
+  mode: VimMode,
+  images?: { path(path: string): void; clipboard(): void },
+) {
   let observed: WorkbenchState
   let initial = transitionWorkbench(initialWorkbench(), {
     type: "thread.open",
@@ -67,6 +70,29 @@ async function setupMode(mode: VimMode) {
                 type: "composer.change",
                 text,
                 cursorOffset,
+              }).state,
+          )
+        },
+        attachImageFromPath(path, cursorOffset) {
+          images?.path(path)
+          setState(
+            (current) =>
+              transitionWorkbench(current, {
+                type: "composer.image.attach",
+                image: { id: "dropped", label: "capture image.png", path },
+                cursorOffset,
+              }).state,
+          )
+        },
+        attachImageFromClipboard() {
+          images?.clipboard()
+        },
+        removeImage(imageId) {
+          setState(
+            (current) =>
+              transitionWorkbench(current, {
+                type: "composer.image.remove",
+                imageId,
               }).state,
           )
         },
@@ -186,6 +212,63 @@ async function setupSubmission(mode: "insert" | "normal") {
 }
 
 describe("composer mode input isolation", () => {
+  test("Insert captures a dropped image path and Ctrl-V requests a host clipboard image", async () => {
+    const paths: string[] = []
+    let clipboardReads = 0
+    const setup = await setupMode("insert", {
+      path: (path) => paths.push(path),
+      clipboard: () => {
+        clipboardReads++
+      },
+    })
+    try {
+      await act(async () => {
+        await setup.mockInput.pasteBracketedText("/tmp/capture image.png")
+        setup.mockInput.pressKey("v", { ctrl: true })
+        await setup.flush()
+      })
+      expect(paths).toEqual(["/tmp/capture image.png"])
+      expect(clipboardReads).toBe(1)
+      expect(setup.composer.plainText).toBe("[Image 1] alpha beta")
+      expect(
+        setup.renderer.root.findDescendantById("composer-images"),
+      ).toBeUndefined()
+      await act(async () => {
+        setup.composer.cursorOffset = "[Image 1]".length
+        await setup.flush()
+        setup.mockInput.pressKey("BACKSPACE")
+        await setup.flush()
+      })
+      expect(activeWorkspace(setup.state())?.composer.images).toEqual([])
+      expect(setup.composer.plainText).toBe(" alpha beta")
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+  test("an inline image stays atomic after wide text", async () => {
+    const setup = await setupMode("insert", {
+      path: () => {},
+      clipboard: () => {},
+    })
+    try {
+      await act(async () => {
+        setup.mockInput.typeText("界")
+        await setup.flush()
+        await setup.mockInput.pasteBracketedText("/tmp/photo.png")
+        await setup.flush()
+      })
+      expect(setup.composer.plainText).toBe("界 [Image 1] alpha beta")
+      await act(async () => {
+        setup.composer.cursorOffset = Bun.stringWidth("界 [Image 1]")
+        await setup.flush()
+        setup.mockInput.pressKey("BACKSPACE")
+        await setup.flush()
+      })
+      expect(activeWorkspace(setup.state())?.composer.images).toEqual([])
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
   for (const mode of ["normal", "visual"] as const) {
     test(`${mode} rejects unmatched punctuation, Unicode, native deletion and bracketed paste`, async () => {
       const setup = await setupMode(mode)

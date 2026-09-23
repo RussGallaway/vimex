@@ -1,9 +1,11 @@
 import { recordAgentRelationship } from "./agent-relationships"
 import { observeCompaction, observeCompactionTurn } from "./compaction"
 import {
+  attachImage,
   acknowledgeOutgoing,
   failOutgoing,
   retryOutgoing,
+  removeImage,
   submitDraft,
   updateDraft,
 } from "@vimex/composer"
@@ -331,6 +333,25 @@ export function transitionWorkbench(
                 command.text,
                 command.cursorOffset,
               ),
+            })),
+          )
+        : done(state)
+    }
+    case "composer.image.attach":
+    case "composer.image.remove": {
+      const id = targetThread(state, command.threadId)
+      return id
+        ? done(
+            updateWorkspace(state, id, (workspace) => ({
+              ...workspace,
+              composer:
+                command.type === "composer.image.attach"
+                  ? attachImage(
+                      workspace.composer,
+                      command.image,
+                      command.cursorOffset,
+                    )
+                  : removeImage(workspace.composer, command.imageId),
             })),
           )
         : done(state)

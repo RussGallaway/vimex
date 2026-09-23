@@ -96,7 +96,10 @@ export interface WorkbenchActions {
   ): void
   dispatchInteraction(command: InteractionCommand): void
   changeDraft(text: string, cursorOffset: number): void
-  submit(intent: SubmissionIntent): void
+  attachImageFromClipboard(cursorOffset?: number): void
+  attachImageFromPath(path: string, cursorOffset?: number): void
+  removeImage(id: string): void
+  submit(intent: SubmissionIntent): boolean | void
   transcript(command: TranscriptAction): void
   answerQuestions(
     id: string,

@@ -123,6 +123,10 @@ export interface ControllerPorts {
   models: ModelCatalog
   resolveDirectory(base: string, path: string): string
   clipboard: { writeText(text: string): Promise<void> }
+  images?: {
+    fromClipboard(): Promise<{ label: string; path: string } | undefined>
+    fromPath(path: string): Promise<{ label: string; path: string }>
+  }
   openUrl(url: string): Promise<void>
   quit(): void
   /** Legacy broad observer retained for compatibility and tests. */
@@ -449,6 +453,7 @@ export class VimexController
   private restartBarrier?: Promise<void>
   private runtimeEpoch = 0
   private readonly answering = new Map<string, symbol>()
+  private readonly pendingImages = new Map<ThreadId, number>()
   private readonly threadMutations = new Map<ThreadId, Promise<void>>()
   private preferenceTail: Promise<void> = Promise.resolve()
   private preferenceRevision = 0
@@ -1582,7 +1587,74 @@ export class VimexController
         await this.loadModels()
       })
   }
+  attachImageFromClipboard: WorkbenchActions["attachImageFromClipboard"] = (
+    cursorOffset,
+  ) => {
+    const threadId = this.state.activeThreadId
+    if (!threadId || !this.ports.images) return
+    const at =
+      cursorOffset ?? this.state.workspaces[threadId]?.composer.cursorOffset
+    this.importImage(threadId, async () => {
+      const image = await this.ports.images!.fromClipboard()
+      if (!image) {
+        this.notice("No image found on the host clipboard")
+        return
+      }
+      this.dispatch({
+        type: "composer.image.attach",
+        threadId,
+        image: { ...image, id: crypto.randomUUID() },
+        cursorOffset: at,
+      })
+    })
+  }
+  attachImageFromPath: WorkbenchActions["attachImageFromPath"] = (
+    path,
+    cursorOffset,
+  ) => {
+    const threadId = this.state.activeThreadId
+    if (!threadId || !this.ports.images) return
+    const at =
+      cursorOffset ?? this.state.workspaces[threadId]?.composer.cursorOffset
+    this.importImage(threadId, async () => {
+      const image = await this.ports.images!.fromPath(path)
+      this.dispatch({
+        type: "composer.image.attach",
+        threadId,
+        image: { ...image, id: crypto.randomUUID() },
+        cursorOffset: at,
+      })
+    })
+  }
+  private importImage(
+    threadId: ThreadId,
+    operation: () => Promise<void>,
+  ): void {
+    this.pendingImages.set(
+      threadId,
+      (this.pendingImages.get(threadId) ?? 0) + 1,
+    )
+    const pending = this.launch(operation)
+    if (!pending) {
+      this.pendingImages.delete(threadId)
+      return
+    }
+    void pending.finally(() => {
+      const count = (this.pendingImages.get(threadId) ?? 1) - 1
+      if (count) this.pendingImages.set(threadId, count)
+      else this.pendingImages.delete(threadId)
+    })
+  }
+  removeImage: WorkbenchActions["removeImage"] = (id) =>
+    this.dispatch({ type: "composer.image.remove", imageId: id })
   submit: WorkbenchActions["submit"] = (intent) => {
+    if (
+      this.state.activeThreadId &&
+      this.pendingImages.has(this.state.activeThreadId)
+    ) {
+      this.notice("Image is still attaching; send again when its chip appears")
+      return false
+    }
     const clientMessageId = crypto.randomUUID()
     const thread = this.state.activeThreadId
     this.dispatch({
@@ -1600,8 +1672,12 @@ export class VimexController
       this.dispatch({
         type: "thread.summary.patch",
         threadId: summary.id,
-        patch: { title: previewTitle(outgoing.text), titleSource: "preview" },
+        patch: {
+          title: previewTitle(outgoing.text || "Image"),
+          titleSource: "preview",
+        },
       })
+    return Boolean(outgoing)
   }
   retryOutgoing = (id: string): void =>
     this.dispatch({ type: "composer.retry", clientMessageId: id })
@@ -2965,6 +3041,11 @@ export class VimexController
         if (this.retiringThread(effect.threadId)) return
         try {
           let submittedTurn: TurnId | undefined
+          const input = effect.input?.map((part) =>
+            part.type === "text"
+              ? part
+              : { type: "image" as const, path: part.path },
+          )
           const turn =
             this.state.workspaces[effect.threadId]?.conversation.activeTurnId
           if (effect.type === "conversation.turn.steer" && turn)
@@ -2973,12 +3054,14 @@ export class VimexController
               turn,
               effect.text,
               effect.clientMessageId,
+              input,
             )
           else {
             const events = await this.ports.conversation.startTurn(
               effect.threadId,
               effect.text,
               effect.clientMessageId,
+              input,
             )
             if (!this.currentRuntime(epoch)) return
             submittedTurn = events.find(

@@ -1,6 +1,7 @@
 import {
   firstQueuedMessage,
   markOutgoingSending,
+  composerParts,
   type ComposerState,
 } from "@vimex/composer"
 import type { ThreadId, TurnId } from "@vimex/conversation"
@@ -18,12 +19,18 @@ export function submissionEffect(
         type: "conversation.turn.steer",
         threadId: thread,
         text: outgoing.text,
+        ...(outgoing.images?.length
+          ? { input: composerParts(outgoing.text, outgoing.images) }
+          : {}),
         clientMessageId: outgoing.id,
       }
     : {
         type: "conversation.turn.start",
         threadId: thread,
         text: outgoing.text,
+        ...(outgoing.images?.length
+          ? { input: composerParts(outgoing.text, outgoing.images) }
+          : {}),
         clientMessageId: outgoing.id,
       }
 }

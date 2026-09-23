@@ -955,6 +955,49 @@ describe("Codex app-server client", () => {
 })
 
 describe("Codex gateway lifecycle", () => {
+  test("sends image attachments as app-server localImage inputs for turns and steering", async () => {
+    const { client, transport } = await connectedClient()
+    const gateway = createCodexGateways("/repo", "codex", () => client)
+    try {
+      const started = gateway.conversation.startTurn(
+        threadId("thr-1"),
+        "inspect",
+        "message-1",
+        [
+          { type: "text", text: "inspect " },
+          { type: "image", path: "/owned/screen.png" },
+          { type: "text", text: " now" },
+        ],
+      )
+      await respondNext(transport, "turn/start", {
+        turn: { id: "turn-1", items: [], status: "inProgress", error: null },
+      })
+      await started
+      expect(findSent(transport, "turn/start").params).toMatchObject({
+        input: [
+          { type: "text", text: "inspect ", text_elements: [] },
+          { type: "localImage", path: "/owned/screen.png" },
+          { type: "text", text: " now", text_elements: [] },
+        ],
+        clientUserMessageId: "message-1",
+      })
+      const steered = gateway.conversation.steerTurn(
+        threadId("thr-1"),
+        turnId("turn-1"),
+        "",
+        "message-2",
+        [{ type: "image", path: "/owned/second.png" }],
+      )
+      await respondNext(transport, "turn/steer", { turnId: "turn-1" })
+      await steered
+      expect(findSent(transport, "turn/steer").params).toMatchObject({
+        input: [{ type: "localImage", path: "/owned/second.png" }],
+        clientUserMessageId: "message-2",
+      })
+    } finally {
+      await gateway.connection.close()
+    }
+  })
   test("restarts through a new handshake, invalidates connection state, and keeps subscribers attached", async () => {
     const transports: FakeTransport[] = []
     const gateways = createCodexGateways("/repo", "codex", () => {

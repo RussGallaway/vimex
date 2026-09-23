@@ -920,7 +920,7 @@ export function buildTranscriptTurnActivityBlock(
     key: Object.freeze({ kind: "turn-activity" as const, turnId: turn.id }),
     turn: snapshotTurn(turn),
     contentRevision: turnActivityRevision(turn),
-    estimatedRows: 2,
+    estimatedRows: 3,
   })
 }
 

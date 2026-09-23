@@ -20,6 +20,8 @@ import {
 } from "@vimex/transcript"
 import {
   initialComposer,
+  type ComposerPart,
+  type ImageAttachment,
   type ComposerState,
   type SubmissionIntent,
 } from "@vimex/composer"
@@ -86,12 +88,14 @@ export type WorkbenchEffect =
       type: "conversation.turn.start"
       threadId: ThreadId
       text: string
+      input?: readonly ComposerPart[]
       clientMessageId: string
     }
   | {
       type: "conversation.turn.steer"
       threadId: ThreadId
       text: string
+      input?: readonly ComposerPart[]
       clientMessageId: string
     }
   | { type: "approval.resolve"; approvalId: string; choiceId: string }
@@ -183,6 +187,13 @@ export type WorkbenchCommand =
       text: string
       cursorOffset?: number
     }
+  | {
+      type: "composer.image.attach"
+      threadId?: ThreadId
+      image: ImageAttachment
+      cursorOffset?: number
+    }
+  | { type: "composer.image.remove"; threadId?: ThreadId; imageId: string }
   | {
       type: "composer.submit"
       threadId?: ThreadId

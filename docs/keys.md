@@ -67,6 +67,10 @@ In Insert mode:
 | `Enter`       | Submit by default; inserts a newline when `insertEnter` is `newline`.               |
 | `Shift+Enter` | Insert a newline. This depends on the terminal reporting modified Enter distinctly. |
 | `Ctrl+Enter`  | Steer the active turn, or send when idle.                                           |
+| `Ctrl-v`      | Attach an image from the host clipboard.                                            |
+| `Backspace`   | Remove an inline image when the cursor is just after its marker.                    |
+
+Dropping an image file into the composer pastes its path and inserts an inline `[Image 1]` marker at the cursor. You can type before or after it; Backspace or Delete beside the marker removes the image. PNG, JPEG, GIF, and WebP files are copied into Vimex storage immediately, so temporary source paths can disappear. Images stay in their message position through queued or failed sends and can be sent without text. The host clipboard is read on the machine running Vimex; over SSH, use a dropped path available on that host.
 
 Command entry replaces the bottom status strip while leaving the composer and transcript in place. Enter executes; Escape restores the status strip.
 

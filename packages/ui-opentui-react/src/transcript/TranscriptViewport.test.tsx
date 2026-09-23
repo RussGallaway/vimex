@@ -336,6 +336,11 @@ test("command fragments render one header, unique descendants, and no sibling or
     )!
     expect(activityRoot.y).toBe(roots.at(-1)!.y + roots.at(-1)!.height)
     expect(activityRoot.y).toBe(outputs.at(-1)!.y + outputs.at(-1)!.height + 1)
+    expect(activityRoot.height).toBe(3)
+    expect(activity.estimatedRows).toBe(3)
+    expect(
+      setup.renderer.root.findDescendantById(`decoration:turn:${turn}`)?.y,
+    ).toBe(activityRoot.y + 1)
     const scroll = setup.renderer.root.findDescendantById(
       "transcript",
     ) as ScrollBoxRenderable

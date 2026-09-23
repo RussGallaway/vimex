@@ -101,6 +101,7 @@ export const TranscriptViewport = memo(function TranscriptViewport(
               id={transcriptBlockRenderableId(block)}
               flexShrink={0}
             >
+              <box height={1} flexShrink={0} />
               <TurnActivity turn={block.turn} />
               <box height={1} flexShrink={0} />
             </box>

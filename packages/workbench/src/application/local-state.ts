@@ -5,11 +5,16 @@ import {
   type JumpLocation,
   type TranscriptState,
 } from "@vimex/transcript"
-import type { OutgoingMessage } from "@vimex/composer"
+import {
+  attachImage,
+  type ComposerState,
+  type ImageAttachment,
+  type OutgoingMessage,
+} from "@vimex/composer"
 
 export type SavedOutgoingMessage = Pick<
   OutgoingMessage,
-  "id" | "text" | "intent" | "status" | "reason"
+  "id" | "text" | "images" | "intent" | "status" | "reason"
 >
 export interface SavedTranscriptLocation {
   itemId: string
@@ -19,12 +24,13 @@ export interface SavedTranscriptLocation {
 
 export interface SavedThreadView {
   draft: string
+  images?: readonly ImageAttachment[]
   cursorOffset: number
   folded: ThreadWorkspace["transcript"]["folded"]
   cursor?: ThreadWorkspace["transcript"]["cursor"]
   viewport: ThreadWorkspace["transcript"]["viewport"]
   surface: ThreadWorkspace["interaction"]["surface"]
-  /** Unacknowledged text is recoverable, but is never resent without an explicit retry. */
+  /** Unacknowledged submissions are recoverable, but never resent without an explicit retry. */
   outbox: readonly SavedOutgoingMessage[]
   marks?: Readonly<Record<string, SavedTranscriptLocation>>
   jumps?: {
@@ -66,6 +72,23 @@ const sameArray = <T>(
     right &&
     left.length === right.length &&
     left.every((value, index) => value === right[index]),
+  )
+const sameImages = (
+  left: readonly ImageAttachment[] | undefined,
+  right: readonly ImageAttachment[] | undefined,
+) =>
+  left === right ||
+  Boolean(
+    left &&
+    right &&
+    left.length === right.length &&
+    left.every(
+      (image, index) =>
+        image.id === right[index]?.id &&
+        image.path === right[index]?.path &&
+        image.label === right[index]?.label &&
+        image.marker === right[index]?.marker,
+    ),
   )
 const samePoint = (
   left: { itemId: string; graphemeOffset: number } | undefined,
@@ -159,6 +182,7 @@ function sameWorkspaceView(
           candidate &&
           message.id === candidate.id &&
           message.text === candidate.text &&
+          sameImages(message.images, candidate.images) &&
           message.intent === candidate.intent &&
           message.status === candidate.status &&
           message.reason === candidate.reason
@@ -179,6 +203,7 @@ function sameWorkspaceView(
   return (
     beforeVisited === afterVisited &&
     before.composer.text === after.composer.text &&
+    sameImages(before.composer.images, after.composer.images) &&
     before.composer.cursorOffset === after.composer.cursorOffset &&
     sameOutbox &&
     before.interaction.surface === after.interaction.surface &&
@@ -229,6 +254,18 @@ export function localViewChanged(
 }
 const record = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value)
+const validImages = (value: unknown): value is ImageAttachment[] =>
+  Array.isArray(value) &&
+  value.every(
+    (image) =>
+      record(image) &&
+      typeof image.id === "string" &&
+      image.id.length > 0 &&
+      typeof image.label === "string" &&
+      typeof image.path === "string" &&
+      image.path.length > 0 &&
+      (image.marker === undefined || typeof image.marker === "string"),
+  )
 const integer = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0
 function validPoint(value: unknown): boolean {
@@ -285,6 +322,7 @@ export function parseLocalState(value: unknown): LocalState {
       !id ||
       !record(view) ||
       typeof view.draft !== "string" ||
+      (view.images !== undefined && !validImages(view.images)) ||
       !integer(view.cursorOffset) ||
       !record(view.folded) ||
       Object.values(view.folded).some((v) => typeof v !== "boolean") ||
@@ -331,6 +369,7 @@ export function parseLocalState(value: unknown): LocalState {
           typeof message.id !== "string" ||
           !message.id ||
           typeof message.text !== "string" ||
+          (message.images !== undefined && !validImages(message.images)) ||
           !["next-turn", "steer"].includes(String(message.intent)) ||
           !["queued", "sending", "failed"].includes(String(message.status)) ||
           (message.reason !== undefined && typeof message.reason !== "string"),
@@ -358,6 +397,7 @@ export function captureLocalState(
       continue
     threads[id] = {
       draft: composer.text,
+      ...(composer.images.length ? { images: composer.images } : {}),
       cursorOffset: composer.cursorOffset,
       folded: transcript.folded,
       cursor: transcript.cursor,
@@ -474,16 +514,23 @@ export function restoreThreadView(
         ? message.reason
         : "Delivery was not confirmed before Vimex closed; retry explicitly to resend",
   }))
+  const savedImages = saved.images ?? []
+  let composer: ComposerState = {
+    ...workspace.composer,
+    text: saved.draft,
+    images: savedImages.filter(
+      (image) => image.marker && saved.draft.includes(image.marker),
+    ),
+    cursorOffset: Math.min(saved.cursorOffset, graphemeCount(saved.draft)),
+    revision: workspace.composer.revision + 1,
+    outbox: recoveredOutbox,
+  }
+  for (const image of savedImages.filter((image) => !image.marker))
+    composer = attachImage(composer, image, graphemeCount(composer.text))
   return {
     ...workspace,
     transcript,
-    composer: {
-      ...workspace.composer,
-      text: saved.draft,
-      cursorOffset: Math.min(saved.cursorOffset, graphemeCount(saved.draft)),
-      revision: workspace.composer.revision + 1,
-      outbox: recoveredOutbox,
-    },
+    composer,
     interaction: {
       ...workspace.interaction,
       mode: "normal",

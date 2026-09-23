@@ -145,8 +145,7 @@ export function useSlashCommands(options: {
           codeUnitOffsetToGraphemeOffset(literal, literal.length),
         ),
       )
-      controller.submit(intent)
-      return true
+      return controller.submit(intent) !== false
     }
     if (
       interaction.mode === "insert" &&
@@ -154,8 +153,7 @@ export function useSlashCommands(options: {
       !text.includes("\n")
     )
       return execute()
-    controller.submit(intent)
-    return true
+    return controller.submit(intent) !== false
   }
   const feedback =
     validation.query === options.text ? validation.message : undefined

@@ -4,9 +4,10 @@ import { CliRenderEvents, type TextareaRenderable } from "@opentui/core"
 import type { ComposerState, SubmissionIntent } from "@vimex/composer"
 import type { VimMode } from "@vimex/interaction"
 import {
-  codeUnitOffsetToGraphemeOffset,
-  graphemeOffsetToCodeUnitOffset,
-} from "@vimex/interaction"
+  codeUnitOffsetToNativeOffset,
+  graphemeOffsetToNativeOffset,
+  nativeOffsetToGraphemeOffset,
+} from "./native-cursor"
 import {
   useEffect,
   useRef,
@@ -36,6 +37,8 @@ export function Composer(props: {
   onSubmit(intent: SubmissionIntent): void | boolean
   onEscape?(): void
   onRetry?(id: string): void
+  onImageClipboard?(cursorOffset: number): void
+  onImagePath?(path: string, cursorOffset: number): void
 }) {
   const renderer = useRenderer()
   const [wrappedRows, setWrappedRows] = useState(1)
@@ -43,6 +46,7 @@ export function Composer(props: {
   const committedMode = useRef(props.mode)
   const nativeSubmitIntent = useRef<SubmissionIntent | undefined>(undefined)
   const submittedClearPending = useRef(false)
+  const hasImageMarks = useRef(false)
 
   useEffect(() => {
     committedMode.current = props.mode
@@ -51,6 +55,21 @@ export function Composer(props: {
   useKeyboard((event) => {
     if (props.interactive === false || !props.textareaRef.current?.focused)
       return
+    if (
+      event.ctrl &&
+      event.name.toLowerCase() === "v" &&
+      committedMode.current === "insert"
+    ) {
+      event.preventDefault()
+      publishNativeDraft()
+      props.onImageClipboard?.(
+        nativeOffsetToGraphemeOffset(
+          props.textareaRef.current.plainText,
+          props.textareaRef.current.cursorOffset,
+        ),
+      )
+      return
+    }
     if (
       event.ctrl &&
       (event.name.toLowerCase() === "return" ||
@@ -78,7 +97,42 @@ export function Composer(props: {
     try {
       if (textarea.plainText !== props.state.text)
         textarea.setText(props.state.text)
-      const cursorOffset = graphemeOffsetToCodeUnitOffset(
+      if (props.state.images.length || hasImageMarks.current) {
+        const marks = textarea.extmarks
+        const typeId = marks.registerType("vimex-image")
+        const desired = props.state.images
+          .flatMap((image) => {
+            const start = image.marker
+              ? props.state.text.indexOf(image.marker)
+              : -1
+            if (start < 0) return []
+            const nativeStart = codeUnitOffsetToNativeOffset(
+              props.state.text,
+              start,
+            )
+            return [
+              { start: nativeStart, end: nativeStart + image.marker!.length },
+            ]
+          })
+          .sort((left, right) => left.start - right.start)
+        const current = marks
+          .getAllForTypeId(typeId)
+          .sort((left, right) => left.start - right.start)
+        if (
+          current.length !== desired.length ||
+          current.some(
+            (mark, index) =>
+              mark.start !== desired[index]?.start ||
+              mark.end !== desired[index]?.end,
+          )
+        ) {
+          for (const mark of current) marks.delete(mark.id)
+          for (const mark of desired)
+            marks.create({ ...mark, virtual: true, typeId })
+        }
+        hasImageMarks.current = desired.length > 0
+      }
+      const cursorOffset = graphemeOffsetToNativeOffset(
         props.state.text,
         props.state.cursorOffset,
       )
@@ -90,6 +144,7 @@ export function Composer(props: {
   }, [
     props.state.revision,
     props.state.text,
+    props.state.images,
     props.state.cursorOffset,
     props.textareaRef,
   ])
@@ -98,7 +153,7 @@ export function Composer(props: {
     if (props.interactive === false || synchronizing.current) return
     const textarea = props.textareaRef.current
     if (!textarea) return
-    const cursorOffset = codeUnitOffsetToGraphemeOffset(
+    const cursorOffset = nativeOffsetToGraphemeOffset(
       textarea.plainText,
       textarea.cursorOffset,
     )
@@ -220,8 +275,28 @@ export function Composer(props: {
             event.preventDefault()
         }}
         onPaste={(event) => {
-          if (props.interactive === false || committedMode.current !== "insert")
+          if (
+            props.interactive === false ||
+            committedMode.current !== "insert"
+          ) {
             event.preventDefault()
+            return
+          }
+          const path = imagePathFromPaste(new TextDecoder().decode(event.bytes))
+          if (path) {
+            event.preventDefault()
+            publishNativeDraft()
+            const textarea = props.textareaRef.current
+            props.onImagePath?.(
+              path,
+              textarea
+                ? nativeOffsetToGraphemeOffset(
+                    textarea.plainText,
+                    textarea.cursorOffset,
+                  )
+                : props.state.cursorOffset,
+            )
+          }
         }}
         onContentChange={publishNativeDraft}
         onCursorChange={publishNativeDraft}
@@ -283,11 +358,22 @@ export function Composer(props: {
           paddingX={1}
         >
           <text fg={emberTide.red} wrapMode="word">
-            failed: {message.reason ?? "send failed"} · {message.text}
+            failed: {message.reason ?? "send failed"} ·{" "}
+            {message.text || `[${message.images?.length ?? 0} images]`}
           </text>
           <text fg={emberTide.amber}>R retry</text>
         </box>
       ))}
     </box>
   )
+}
+
+export function imagePathFromPaste(value: string): string | undefined {
+  const path = value.trim()
+  if (path.includes("\n") || path.includes("\r")) return undefined
+  const bare = path.replace(/^['"]|['"]$/g, "")
+  return /^(?:\/|\.\.?\/|~\/|file:\/\/)/.test(bare) &&
+    /\.(?:png|jpe?g|gif|webp)$/i.test(bare)
+    ? path
+    : undefined
 }

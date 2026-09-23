@@ -2,6 +2,10 @@ import { NoticeStrip } from "../statusline/NoticeStrip"
 import { usePaneGeometry } from "../side-chat/pane-geometry"
 import { FlashJump } from "../transcript/FlashJump"
 import {
+  graphemeOffsetToNativeOffset,
+  nativeOffsetToGraphemeOffset,
+} from "../composer/native-cursor"
+import {
   CliRenderEvents,
   type InputRenderable,
   type Renderable,
@@ -13,9 +17,7 @@ import { flushSync, useRenderer } from "@opentui/react"
 import { initialComposer, type SubmissionIntent } from "@vimex/composer"
 import {
   applyComposerVimAction,
-  codeUnitOffsetToGraphemeOffset,
   commandCompletions,
-  graphemeOffsetToCodeUnitOffset,
   initialCommandHistory,
   initialInteraction,
   recallCommand,
@@ -862,7 +864,7 @@ export function VimexApp({
       const result = applyComposerVimAction(
         {
           text: textarea.plainText,
-          cursorOffset: codeUnitOffsetToGraphemeOffset(
+          cursorOffset: nativeOffsetToGraphemeOffset(
             textarea.plainText,
             textarea.cursorOffset,
           ),
@@ -870,13 +872,13 @@ export function VimexApp({
             composerSelectionRef.current ??
             (nativeSelection
               ? {
-                  anchor: codeUnitOffsetToGraphemeOffset(
+                  anchor: nativeOffsetToGraphemeOffset(
                     textarea.plainText,
                     nativeSelection.start,
                   ),
                   head: Math.max(
                     0,
-                    codeUnitOffsetToGraphemeOffset(
+                    nativeOffsetToGraphemeOffset(
                       textarea.plainText,
                       nativeSelection.end,
                     ) - 1,
@@ -893,17 +895,17 @@ export function VimexApp({
       } else {
         if (textarea.plainText !== result.buffer.text)
           textarea.replaceText(result.buffer.text)
-        textarea.cursorOffset = graphemeOffsetToCodeUnitOffset(
+        textarea.cursorOffset = graphemeOffsetToNativeOffset(
           result.buffer.text,
           result.buffer.cursorOffset,
         )
         if (result.buffer.selection)
           textarea.setSelectionInclusive(
-            graphemeOffsetToCodeUnitOffset(
+            graphemeOffsetToNativeOffset(
               result.buffer.text,
               result.buffer.selection.anchor,
             ),
-            graphemeOffsetToCodeUnitOffset(
+            graphemeOffsetToNativeOffset(
               result.buffer.text,
               result.buffer.selection.head,
             ),
@@ -913,10 +915,7 @@ export function VimexApp({
       composerSelectionRef.current = result.buffer.selection
       controller.changeDraft(
         textarea.plainText,
-        codeUnitOffsetToGraphemeOffset(
-          textarea.plainText,
-          textarea.cursorOffset,
-        ),
+        nativeOffsetToGraphemeOffset(textarea.plainText, textarea.cursorOffset),
       )
       const previous = composerInteractionRef.current.unnamedRegister
       if (
@@ -931,9 +930,10 @@ export function VimexApp({
       if (result.effect?.type === "copy")
         controller.copyText(result.effect.text)
       if (result.effect?.type === "submit") {
-        controller.submit(
+        const submitted = controller.submit(
           busy && settings.busySubmit === "steer" ? "steer" : "next-turn",
         )
+        if (submitted === false) return
         // Normal-mode Enter bypasses the textarea's native submit callback. Clear
         // it immediately so bytes already waiting in the terminal start a new
         // draft instead of appending to the submitted buffer.
@@ -1514,6 +1514,8 @@ export function VimexApp({
               controller.dispatchInteraction({ type: "mode.normal" })
           }}
           onRetry={controller.retryOutgoing}
+          onImageClipboard={controller.attachImageFromClipboard}
+          onImagePath={controller.attachImageFromPath}
         />
       }
       statusline={
