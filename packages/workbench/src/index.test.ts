@@ -219,7 +219,7 @@ describe("workbench", () => {
     expect(activeWorkspace(result.state)?.transcript.viewport).toEqual(anchor)
   })
 
-  test("streams without moving pinned views and drains one queued message once", () => {
+  test("sending a queued message follows the tail and drains it once", () => {
     const thread = threadId("a"),
       firstTurn = turnId("t1"),
       firstItem = itemId("i1")
@@ -255,6 +255,7 @@ describe("workbench", () => {
     }).state
     const anchor = activeWorkspace(state)!.transcript.viewport
     state = run(state, { type: "composer.change", text: "next" }).state
+    expect(activeWorkspace(state)?.transcript.viewport).toEqual(anchor)
     let result = run(state, {
       type: "composer.submit",
       intent: "next-turn",
@@ -262,6 +263,9 @@ describe("workbench", () => {
     })
     expect(result.effects).toEqual([])
     state = result.state
+    expect(activeWorkspace(state)?.transcript.viewport).toEqual({
+      kind: "tail",
+    })
     state = run(state, {
       type: "conversation.event",
       event: {
@@ -271,7 +275,9 @@ describe("workbench", () => {
         delta: "bc",
       },
     }).state
-    expect(activeWorkspace(state)?.transcript.viewport).toEqual(anchor)
+    expect(activeWorkspace(state)?.transcript.viewport).toEqual({
+      kind: "tail",
+    })
     result = run(state, {
       type: "conversation.event",
       event: {
@@ -299,6 +305,64 @@ describe("workbench", () => {
       },
     })
     expect(duplicate.effects).toEqual([])
+  })
+
+  test("steering follows the tail, but an empty submission keeps the reading position", () => {
+    const thread = threadId("steering")
+    const turn = turnId("active")
+    const item = itemId("answer")
+    let state = run(initialWorkbench(), {
+      type: "thread.open",
+      summary: summary("steering"),
+    }).state
+    state = run(state, {
+      type: "conversation.event",
+      event: { type: "turn.started", threadId: thread, turnId: turn },
+    }).state
+    state = run(state, {
+      type: "conversation.event",
+      event: {
+        type: "item.started",
+        threadId: thread,
+        item: {
+          id: item,
+          turnId: turn,
+          kind: "assistant",
+          markdown: "An answer",
+          status: "running",
+        },
+      },
+    }).state
+    state = run(state, {
+      type: "transcript.command",
+      command: {
+        type: "cursor.move",
+        point: { itemId: item, graphemeOffset: 0 },
+        preferredScreenRow: 3,
+      },
+    }).state
+    const anchor = activeWorkspace(state)!.transcript.viewport
+    const empty = run(state, {
+      type: "composer.submit",
+      intent: "steer",
+      clientMessageId: "empty",
+    })
+    expect(empty.state).toBe(state)
+    expect(activeWorkspace(empty.state)?.transcript.viewport).toEqual(anchor)
+    state = run(state, { type: "composer.change", text: "Change course" }).state
+    const sent = run(state, {
+      type: "composer.submit",
+      intent: "steer",
+      clientMessageId: "steer",
+    })
+    expect(sent.effects[0]?.type).toBe("conversation.turn.steer")
+    expect(activeWorkspace(sent.state)?.transcript.viewport).toEqual({
+      kind: "tail",
+    })
+    expect(activeWorkspace(sent.state)?.transcript.cursor).toEqual({
+      itemId: item,
+      graphemeOffset: "An answer".length,
+    })
   })
 
   test("keeps protocol telemetry canonical while omitting empty churn from the semantic transcript", () => {

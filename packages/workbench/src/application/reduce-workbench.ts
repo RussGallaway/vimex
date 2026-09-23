@@ -8,7 +8,7 @@ import {
   updateDraft,
 } from "@vimex/composer"
 import { reduceInteraction } from "@vimex/interaction"
-import { clearSelection, reduceTranscript } from "@vimex/transcript"
+import { attachTail, clearSelection, reduceTranscript } from "@vimex/transcript"
 import {
   failApproval,
   receiveApproval,
@@ -367,6 +367,7 @@ export function transitionWorkbench(
       const next = updateWorkspace(state, id, (current) => ({
         ...current,
         composer,
+        transcript: attachTail(current.transcript),
       }))
       if (!outgoing || outgoing.status === "queued") return done(next)
       const effect = submissionEffect(id, composer, outgoing.id, activeTurnId)
