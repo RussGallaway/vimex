@@ -20,6 +20,7 @@ import {
   persistentTranscriptProjections,
   persistentTranscriptUnseenItemIds,
   setTranscriptProjection,
+  singleTranscriptFoldChange,
   transcriptOrderAppend,
   transcriptOrderIndex,
   transcriptTextLengthRange,
@@ -2019,8 +2020,33 @@ export class TranscriptRuntime {
       presentationDamage: frozenDamage(damage),
       reveal: input.reveal,
     })
-    if (damage.kind === "folds") {
-      const changed = damage.itemIds.filter(
+    const singleFold =
+      damage.kind === "layout"
+        ? singleTranscriptFoldChange(
+            this.frame.transcript.folded,
+            raw.transcript.folded,
+          )
+        : undefined
+    const foldDamage: TranscriptDamage = singleFold
+      ? { kind: "folds", itemIds: [singleFold] }
+      : damage
+    // A single persistent fold update can use the targeted path. Bulk folds
+    // can change many fragment spans, so their previous block plan is stale.
+    if (
+      damage.kind === "layout" &&
+      raw.transcript.folded !== this.frame.transcript.folded &&
+      !singleFold
+    )
+      return this.rebuild(
+        presentationInput,
+        damage,
+        true,
+        undefined,
+        this.displayedInput,
+        true,
+      )
+    if (foldDamage.kind === "folds") {
+      const changed = foldDamage.itemIds.filter(
         (itemId) =>
           raw.transcript.folded[itemId] !==
           this.frame.transcript.folded[itemId],
@@ -2121,8 +2147,8 @@ export class TranscriptRuntime {
     }
     const foldsChanged = raw.transcript.folded !== this.frame.transcript.folded
     const targeted =
-      foldsChanged && damage.kind === "folds"
-        ? this.heightIndexForFoldChanges(raw, damage.itemIds)
+      foldsChanged && foldDamage.kind === "folds"
+        ? this.heightIndexForFoldChanges(raw, foldDamage.itemIds)
         : undefined
     const index = this.heightIndexForActivityChanges(
       raw,
@@ -2429,10 +2455,12 @@ export class TranscriptRuntime {
       transcriptTextLengthRange(raw.transcript, 0, 0, this.diagnostics)
     const index = this.heightIndexForActivityChanges(
       raw,
-      incremental?.index ??
-        (this.heightIndex?.supports(raw.blocks)
-          ? this.heightIndex
-          : this.heightIndexForFrame(raw)),
+      raw.transcript.folded !== this.frame.transcript.folded
+        ? this.heightIndexForFrame(raw)
+        : (incremental?.index ??
+            (this.heightIndex?.supports(raw.blocks)
+              ? this.heightIndex
+              : this.heightIndexForFrame(raw))),
     )
     const windowStable = Boolean(
       incremental &&

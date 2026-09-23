@@ -702,6 +702,25 @@ export function isTranscriptFoldAddition(
   )
 }
 
+/** Identify one direct persistent fold update without visiting other items. */
+export function singleTranscriptFoldChange(
+  previous: Readonly<Record<string, boolean>>,
+  next: Readonly<Record<string, boolean>>,
+): ItemId | undefined {
+  const previousData = foldRecordData.get(previous)
+  const data = foldRecordData.get(next)
+  const lineage = data?.lineage
+  return previousData &&
+    lineage &&
+    lineage.previousRoot === previousData.root &&
+    lineage.previousSize === previousData.size &&
+    lineage.previousToken === previousData.token &&
+    data.size ===
+      previousData.size + (lineage.previousValue === undefined ? 1 : 0)
+    ? (lineage.updatedKey as ItemId)
+    : undefined
+}
+
 const ORDER_LEAF_SIZE = 32
 
 interface TranscriptOrderLeaf {

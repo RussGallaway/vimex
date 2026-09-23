@@ -9,7 +9,11 @@ import {
   type ItemId,
 } from "@vimex/conversation"
 import { syncTranscriptItem } from "./application/project-conversation"
-import { attachTail } from "./application/transcript-operations"
+import {
+  attachTail,
+  setAllFolds,
+  setDefaultFolds,
+} from "./application/transcript-operations"
 import {
   appendTranscriptOrder,
   appendTranscriptUnseenItemId,
@@ -1976,6 +1980,169 @@ test("folding a completed command fragment plan splices its item span without re
   expect(diagnostics.completePlanBuilds - baseline.completePlanBuilds).toBe(0)
   expect(diagnostics.heightIndexBuilds - baseline.heightIndexBuilds).toBe(0)
   expect(diagnostics.blockPlanUpdates - baseline.blockPlanUpdates).toBe(2)
+})
+
+test("default and bulk folds remove oversized command output fragments", () => {
+  let source = fixture()
+  const commandTurn = turnId("bulk-command-turn"),
+    commandId = itemId("bulk-command")
+  source = apply(source, {
+    type: "turn.started",
+    threadId: thread,
+    turnId: commandTurn,
+  })
+  source = apply(source, {
+    type: "item.started",
+    threadId: thread,
+    item: {
+      id: commandId,
+      turnId: commandTurn,
+      kind: "command",
+      title: "bun run check",
+      executionCommand: "bun run check",
+      detail: Array.from(
+        { length: 180 },
+        (_, index) => `${index}: ${"(pass) output ".repeat(10)}`,
+      ).join("\n"),
+      status: "complete",
+    },
+  })
+  source = apply(source, {
+    type: "turn.completed",
+    threadId: thread,
+    turnId: commandTurn,
+    outcome: "complete",
+  })
+  for (const mode of ["follow", "detached"] as const) {
+    const point = { itemId: commandId, graphemeOffset: 0 }
+    const viewedSource =
+      mode === "detached"
+        ? {
+            ...source,
+            transcript: {
+              ...source.transcript,
+              cursor: point,
+              viewport: {
+                kind: "point" as const,
+                point,
+                preferredScreenRow: 5,
+              },
+            },
+          }
+        : source
+    const defaultFolded = setDefaultFolds(viewedSource.transcript, {
+      reasoning: false,
+      tools: true,
+    })
+    const runtime = new TranscriptRuntime(input(viewedSource, mode), {
+      windowPolicy: { viewportRows: 12, overscanRows: 12 },
+    })
+    const commandKeys = () =>
+      runtime
+        .getSnapshot()
+        .blocks.filter(
+          (block) =>
+            block.key.kind === "item" && block.key.itemId === commandId,
+        )
+        .map(blockKey)
+    expect(commandKeys().length).toBeGreaterThan(1)
+
+    const collapsed = runtime.update({
+      ...input(viewedSource, mode),
+      transcript: defaultFolded,
+      presentationDamage: { kind: "layout" },
+    })
+    expect(collapsed.transcript.folded[commandId]).toBe(true)
+    expect(commandKeys()).toEqual([`item:${commandId}:root`])
+
+    const bulkExpanded = setAllFolds(defaultFolded, false, "tools")
+    runtime.update({
+      ...input(viewedSource, mode),
+      transcript: bulkExpanded,
+      presentationDamage: { kind: "layout" },
+    })
+    expect(commandKeys().length).toBeGreaterThan(1)
+
+    runtime.update({
+      ...input(viewedSource, mode),
+      transcript: setAllFolds(bulkExpanded, true, "tools"),
+      presentationDamage: { kind: "layout" },
+    })
+    expect(commandKeys()).toEqual([`item:${commandId}:root`])
+  }
+})
+
+test("layout folding replaces a measured command height with its collapsed row", () => {
+  let source = fixture()
+  const commandTurn = turnId("measured-layout-fold-turn"),
+    commandId = itemId("measured-layout-fold-command")
+  source = apply(source, {
+    type: "turn.started",
+    threadId: thread,
+    turnId: commandTurn,
+  })
+  source = apply(source, {
+    type: "item.started",
+    threadId: thread,
+    item: {
+      id: commandId,
+      turnId: commandTurn,
+      kind: "command",
+      title: "bun run check",
+      executionCommand: "bun run check",
+      detail: "first result\nsecond result",
+      status: "complete",
+    },
+  })
+  source = apply(source, {
+    type: "turn.completed",
+    threadId: thread,
+    turnId: commandTurn,
+    outcome: "complete",
+  })
+  const runtime = new TranscriptRuntime(input(source, "follow"), {
+    windowPolicy: { viewportRows: 4, overscanRows: 4 },
+  })
+  const key = `item:${commandId}:root`
+  const expanded = runtime.reportMeasurements(
+    batch(runtime, [{ ...measurement(runtime, key), rows: 20 }]),
+  )
+  expect(expanded.geometry.totalRows).toBeGreaterThan(20)
+
+  const folded = runtime.update({
+    ...input(source, "follow"),
+    transcript: setAllFolds(source.transcript, true, "tools"),
+    presentationDamage: { kind: "layout" },
+  })
+  const reference = new TranscriptRuntime(
+    {
+      ...input(source, "follow"),
+      transcript: folded.transcript,
+    },
+    { windowPolicy: { viewportRows: 4, overscanRows: 4 } },
+  ).getSnapshot()
+  expect(folded.blocks.map(blockKey)).toEqual(expanded.blocks.map(blockKey))
+  expect(folded.geometry.totalRows).toBe(reference.geometry.totalRows)
+  expect(folded.window.topSpacerRows).toBe(reference.window.topSpacerRows)
+  expect(folded.window.bottomSpacerRows).toBe(reference.window.bottomSpacerRows)
+
+  const diagnostics = runtimeDiagnostics()
+  const defaultRuntime = new TranscriptRuntime(input(source, "follow"), {
+    windowPolicy: { viewportRows: 4, overscanRows: 4 },
+    diagnostics,
+  })
+  const baseline = { ...diagnostics }
+  const defaultFolded = defaultRuntime.update({
+    ...input(source, "follow"),
+    transcript: setDefaultFolds(source.transcript, {
+      reasoning: false,
+      tools: true,
+    }),
+    presentationDamage: { kind: "layout" },
+  })
+  expect(defaultFolded.geometry.totalRows).toBe(reference.geometry.totalRows)
+  expect(diagnostics.completePlanBuilds).toBe(baseline.completePlanBuilds)
+  expect(diagnostics.heightIndexBuilds).toBe(baseline.heightIndexBuilds)
 })
 
 test("detached fragment fold fallbacks rebuild only the pinned revision and preserve hidden damage", () => {

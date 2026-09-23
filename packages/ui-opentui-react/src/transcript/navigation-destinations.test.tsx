@@ -21,6 +21,7 @@ async function navigationHarness(
   blockCount: number,
   width: number,
   overscanRows?: number,
+  foldTools = true,
 ) {
   const fixture = buildTranscriptNavigationFixture({ shape, blockCount })
   const summary = {
@@ -83,7 +84,7 @@ async function navigationHarness(
     runtime.setWindowViewport = (rows) => configure(rows, overscanRows)
   }
   const setup = await testRender(
-    <ConnectedVimexRoot controller={controller} />,
+    <ConnectedVimexRoot controller={controller} settings={{ foldTools }} />,
     {
       width,
       height: 24,
@@ -161,6 +162,7 @@ async function navigationHarness(
     frame: () => runtime.getSnapshot(),
     cursor,
     key,
+    painted: () => setup.captureCharFrame(),
     paintedRow: (row: number) =>
       setup.captureCharFrame().split("\n")[scroll.viewport.screenY + row] ?? "",
     close: async () => {
@@ -169,6 +171,27 @@ async function navigationHarness(
     },
   }
 }
+
+test("default folding hides oversized command output in the mounted viewport", async () => {
+  const h = await navigationHarness("command", 2, 80)
+  try {
+    const commandId = h.fixture.before.transcript.order[0]!
+    expect(h.frame().transcript.folded[commandId]).toBe(true)
+    expect(
+      h
+        .frame()
+        .window.blocks.filter(
+          (block) =>
+            block.key.kind === "item" && block.key.itemId === commandId,
+        )
+        .map(blockKey),
+    ).toEqual([`item:${commandId}:root`])
+    expect(h.painted()).toContain("Command output #0")
+    expect(h.painted()).not.toContain("compile output")
+  } finally {
+    await h.close()
+  }
+}, 30000)
 
 test("half-page scroll keeps the native cursor row through a split multi-file diff", async () => {
   const h = await navigationHarness("mixed", 30, 80)
@@ -224,7 +247,7 @@ test("queued half-page keys preserve the native cursor row within an edit", asyn
 }, 30000)
 
 test("previous block reveals an offscreen command header at the upper edge", async () => {
-  const h = await navigationHarness("command", 30, 80)
+  const h = await navigationHarness("command", 30, 80, undefined, false)
   try {
     await h.key("up")
     await h.key("up")
