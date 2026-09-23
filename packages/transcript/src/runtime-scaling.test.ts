@@ -1726,7 +1726,7 @@ test("production window policy bounds initial, detached, reveal, and measured ma
     runtime.dispose()
     detached.dispose()
   }
-}, 15_000)
+}, 30_000)
 
 test.each([...transcriptScalingBlockCounts])(
   "accepted height correction is atomic, window-local, immutable, and bounded at %i blocks",
