@@ -123,5 +123,7 @@ export interface WorkbenchActions {
   ): void
   interrupt(): void
   retryOutgoing(id: string): void
+  unqueueOutgoing(id: string): boolean
+  removeQueuedOutgoing(id: string): boolean
   copyText(text: string): void
 }

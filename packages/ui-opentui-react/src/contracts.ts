@@ -72,5 +72,11 @@ export const inertController: VimexUiController = {
   executeNamedCommand() {},
   interrupt() {},
   retryOutgoing() {},
+  unqueueOutgoing() {
+    return false
+  },
+  removeQueuedOutgoing() {
+    return false
+  },
   copyText() {},
 }

@@ -1,8 +1,12 @@
 import { toggleAllTools, toggleCurrentFold } from "./fold-bindings"
 import type { UiBinding, VimBindingContext } from "./binding-context"
 
-export function commonBindings(ctx: VimBindingContext): UiBinding[] {
-  const focus = (surface: "transcript" | "composer") => {
+export function commonBindings(
+  ctx: VimBindingContext,
+  moveQueueFocus?: (surface: "transcript" | "composer") => boolean,
+): UiBinding[] {
+  const focus = (surface: "transcript" | "composer", throughQueue = true) => {
+    if (throughQueue && moveQueueFocus?.(surface)) return
     if (ctx.interaction.mode === "visual") {
       if (ctx.interaction.surface === "composer") ctx.runComposerKey("escape")
       else {
@@ -61,8 +65,8 @@ export function commonBindings(ctx: VimBindingContext): UiBinding[] {
     { key: "ctrl+k", cmd: () => focus("transcript") },
     { key: "ctrl+j", cmd: () => focus("composer") },
     { key: "linefeed", cmd: () => focus("composer") },
-    { key: "ctrl+wk", cmd: () => focus("transcript") },
-    { key: "ctrl+wj", cmd: () => focus("composer") },
+    { key: "ctrl+wk", cmd: () => focus("transcript", false) },
+    { key: "ctrl+wj", cmd: () => focus("composer", false) },
     { key: "ctrl+c", cmd: () => ctx.controller.interrupt() },
   ]
 }

@@ -8,7 +8,9 @@ import {
   markOutgoingSending,
   retryOutgoing,
   removeImage,
+  removeQueuedOutgoing,
   submitDraft,
+  unqueueOutgoing,
   updateDraft,
 } from "./index"
 
@@ -104,5 +106,44 @@ describe("composer", () => {
       status: "sending",
       reason: undefined,
     })
+  })
+
+  test("unqueues text and images into an empty draft and refuses to overwrite a draft", () => {
+    const image = { id: "image", label: "shot.png", path: "/tmp/shot.png" }
+    let state = attachImage(updateDraft(initialComposer(), "inspect", 7), image)
+    state = submitDraft(state, "next-turn", true, "first")
+    state = submitDraft(
+      updateDraft(state, "later"),
+      "next-turn",
+      true,
+      "second",
+    )
+    const withDraft = updateDraft(state, "new draft")
+    expect(unqueueOutgoing(withDraft, "first")).toBe(withDraft)
+    const restored = unqueueOutgoing(state, "first")
+    expect(restored.text).toBe("inspect [Image 1]")
+    expect(restored.images).toEqual(state.outbox[0]!.images!)
+    expect(restored.outbox.map((message) => message.id)).toEqual(["second"])
+    expect(restored.cursorOffset).toBe(17)
+  })
+
+  test("removes only queued messages; sending messages cannot be taken back", () => {
+    let state = submitDraft(
+      updateDraft(initialComposer(), "queued"),
+      "next-turn",
+      true,
+      "queued",
+    )
+    state = submitDraft(
+      updateDraft(state, "sending"),
+      "steer",
+      false,
+      "sending",
+    )
+    expect(unqueueOutgoing(state, "sending")).toBe(state)
+    expect(removeQueuedOutgoing(state, "sending")).toBe(state)
+    expect(
+      removeQueuedOutgoing(state, "queued").outbox.map((message) => message.id),
+    ).toEqual(["sending"])
   })
 })

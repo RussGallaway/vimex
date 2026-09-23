@@ -215,6 +215,12 @@ export type WorkbenchCommand =
       reason: string
     }
   | { type: "composer.retry"; threadId?: ThreadId; clientMessageId: string }
+  | { type: "composer.unqueue"; threadId?: ThreadId; clientMessageId: string }
+  | {
+      type: "composer.removeQueued"
+      threadId?: ThreadId
+      clientMessageId: string
+    }
   | { type: "approval.received"; approval: Approval }
   | { type: "approval.resolve"; approvalId: string; choiceId: string }
   | { type: "approval.resolved"; approvalId: string }

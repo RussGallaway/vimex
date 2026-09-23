@@ -6,7 +6,9 @@ import {
   failOutgoing,
   retryOutgoing,
   removeImage,
+  removeQueuedOutgoing,
   submitDraft,
+  unqueueOutgoing,
   updateDraft,
 } from "@vimex/composer"
 import { reduceInteraction } from "@vimex/interaction"
@@ -465,6 +467,27 @@ export function transitionWorkbench(
       }))
       const effect = submissionEffect(id, composer, outgoing.id, activeTurnId)
       return effect ? done(next, effect) : done(next)
+    }
+    case "composer.unqueue":
+    case "composer.removeQueued": {
+      const id = targetThread(state, command.threadId)
+      const workspace = id ? state.workspaces[id] : undefined
+      if (!id || !workspace) return done(state)
+      const composer =
+        command.type === "composer.unqueue"
+          ? unqueueOutgoing(workspace.composer, command.clientMessageId)
+          : removeQueuedOutgoing(workspace.composer, command.clientMessageId)
+      if (composer === workspace.composer) return done(state)
+      const scheduled = scheduleQueued(
+        composer,
+        id,
+        workspace.conversation.activeTurnId,
+      )
+      const next = updateWorkspace(state, id, (current) => ({
+        ...current,
+        composer: scheduled.composer,
+      }))
+      return scheduled.effect ? done(next, scheduled.effect) : done(next)
     }
     case "approval.received":
       return done({

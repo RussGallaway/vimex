@@ -307,6 +307,51 @@ describe("workbench", () => {
     expect(duplicate.effects).toEqual([])
   })
 
+  test("unqueue restores the selected message and remove affects only pending work", () => {
+    const thread = threadId("queue-actions")
+    let state = run(initialWorkbench(), {
+      type: "thread.open",
+      summary: summary("queue-actions"),
+    }).state
+    state = run(state, {
+      type: "conversation.event",
+      event: {
+        type: "turn.started",
+        threadId: thread,
+        turnId: turnId("active"),
+      },
+    }).state
+    state = run(state, { type: "composer.change", text: "first" }).state
+    state = run(state, {
+      type: "composer.submit",
+      intent: "next-turn",
+      clientMessageId: "first",
+    }).state
+    state = run(state, { type: "composer.change", text: "second" }).state
+    state = run(state, {
+      type: "composer.submit",
+      intent: "next-turn",
+      clientMessageId: "second",
+    }).state
+    const restored = run(state, {
+      type: "composer.unqueue",
+      clientMessageId: "first",
+    })
+    expect(restored.effects).toEqual([])
+    expect(activeWorkspace(restored.state)?.composer).toMatchObject({
+      text: "first",
+      outbox: [{ id: "second", status: "queued" }],
+    })
+    const removed = run(restored.state, {
+      type: "composer.removeQueued",
+      clientMessageId: "second",
+    })
+    expect(activeWorkspace(removed.state)?.composer).toMatchObject({
+      text: "first",
+      outbox: [],
+    })
+  })
+
   test("steering follows the tail, but an empty submission keeps the reading position", () => {
     const thread = threadId("steering")
     const turn = turnId("active")

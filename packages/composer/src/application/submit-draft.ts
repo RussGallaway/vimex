@@ -140,6 +140,39 @@ export function firstQueuedMessage(
       (intent === undefined || message.intent === intent),
   )
 }
+/** Take back a pending message without replacing an existing draft. */
+export function unqueueOutgoing(
+  state: ComposerState,
+  id: string,
+): ComposerState {
+  const message = state.outbox.find(
+    (candidate) => candidate.id === id && candidate.status === "queued",
+  )
+  if (!message || state.text || state.images.length) return state
+  return {
+    ...state,
+    text: message.text,
+    images: message.images ?? [],
+    cursorOffset: count(message.text),
+    revision: state.revision + 1,
+    outbox: state.outbox.filter((candidate) => candidate.id !== id),
+  }
+}
+export function removeQueuedOutgoing(
+  state: ComposerState,
+  id: string,
+): ComposerState {
+  if (
+    !state.outbox.some(
+      (message) => message.id === id && message.status === "queued",
+    )
+  )
+    return state
+  return {
+    ...state,
+    outbox: state.outbox.filter((message) => message.id !== id),
+  }
+}
 export function retryOutgoing(
   state: ComposerState,
   id: string,

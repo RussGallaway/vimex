@@ -6,13 +6,14 @@ Press `:help` for the compact in-app reference, or `:manual` (`:man`, `/manual`,
 
 ## Focus and global actions
 
-| Key                              | Action                                                                                                                                                                                                        |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `↑` / `Ctrl-k` (also `Ctrl-w k`) | Focus the lowest visible transcript content row when leaving the composer, preserving scroll position. Available in every mode; leaving Insert, Visual, or Command for the transcript returns to Normal mode. |
-| `↓` / `Ctrl-j` (also `Ctrl-w j`) | Focus composer. Available in every mode; leaving Visual or Command returns to Normal mode.                                                                                                                    |
-| `Ctrl-c`                         | Interrupt the active Codex turn.                                                                                                                                                                              |
-| `Esc`                            | Dismiss the active overlay or return to Normal mode; from Normal mode, interrupt the active Codex turn and focus the transcript. Drafts are preserved.                                                        |
-| `:`                              | Enter Command mode.                                                                                                                                                                                           |
+| Key                     | Action                                                                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `↑` / `Ctrl-k`          | Move from composer through queued messages to transcript. Leaving Insert or Visual mode returns to Normal mode.                                        |
+| `↓` / `Ctrl-j`          | Move from transcript through queued messages to composer. Leaving Visual mode returns to Normal mode.                                                  |
+| `Ctrl-w k` / `Ctrl-w j` | Jump directly to transcript or composer.                                                                                                               |
+| `Ctrl-c`                | Interrupt the active Codex turn.                                                                                                                       |
+| `Esc`                   | Dismiss the active overlay or return to Normal mode; from Normal mode, interrupt the active Codex turn and focus the transcript. Drafts are preserved. |
+| `:`                     | Enter Command mode.                                                                                                                                    |
 
 ## Transcript in Normal or Visual mode
 
@@ -42,7 +43,7 @@ With transcript focus, `Ctrl-d/u` and `Ctrl-f/b` move the cursor with the scroll
 
 Typing a numeric prefix repeats supported motions, up to four digits.
 
-The transcript shows a precise text cursor in Normal and Visual modes. Move first in Normal, press `v` to anchor a selection, extend it with motions, then `y` to copy. Up/Down and Ctrl-K/J change focus without scrolling. Menus retain arrow navigation; Command mode uses arrows for completion choices and Ctrl-P/N for history. Global Ctrl-J/K → Down/Up remappings therefore work without application-specific exceptions.
+The transcript shows a precise text cursor in Normal and Visual modes. Move first in Normal, press `v` to anchor a selection, extend it with motions, then `y` to copy. Up/Down and Ctrl-K/J move focus through queued messages between the composer and transcript without scrolling the transcript. Ctrl-W K/J jump directly to the transcript or composer. Menus retain arrow navigation; Command mode uses arrows for completion choices and Ctrl-P/N for history. Global Ctrl-J/K → Down/Up remappings therefore work without application-specific exceptions.
 
 ## Visual mode
 
@@ -71,6 +72,8 @@ In Insert mode:
 | `Backspace`   | Remove an inline image when the cursor is just after its marker.                    |
 
 Dropping an image file into the composer pastes its path and inserts an inline `[Image 1]` marker at the cursor. You can type before or after it; Backspace or Delete beside the marker removes the image. PNG, JPEG, GIF, and WebP files are copied into Vimex storage immediately, so temporary source paths can disappear. Images stay in their message position through queued or failed sends and can be sent without text. The host clipboard is read on the machine running Vimex; over SSH, use a dropped path available on that host.
+
+Queued messages appear above the composer with the latest preview and total count. Focus the queue with Up or `Ctrl-k` to see a short list and the selected message. Up/Down or Ctrl-K/J move between queued messages; `Ctrl-u/d` scroll the selected message. Press `e` to return it to an empty composer draft for editing, or `x` to remove it after confirmation. A message that has started sending cannot be taken back.
 
 Command entry replaces the bottom status strip while leaving the composer and transcript in place. Enter executes; Escape restores the status strip.
 

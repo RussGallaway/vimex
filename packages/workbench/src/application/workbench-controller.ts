@@ -1782,6 +1782,38 @@ export class VimexController
   }
   retryOutgoing = (id: string): void =>
     this.dispatch({ type: "composer.retry", clientMessageId: id })
+  unqueueOutgoing: WorkbenchActions["unqueueOutgoing"] = (id) => {
+    const threadId = this.state.activeThreadId
+    if (!threadId) return false
+    if (
+      !this.state.workspaces[threadId]?.composer.outbox.some(
+        (message) => message.id === id && message.status === "queued",
+      )
+    )
+      return false
+    this.dispatch({ type: "composer.unqueue", threadId, clientMessageId: id })
+    return !this.state.workspaces[threadId]?.composer.outbox.some(
+      (message) => message.id === id,
+    )
+  }
+  removeQueuedOutgoing: WorkbenchActions["removeQueuedOutgoing"] = (id) => {
+    const threadId = this.state.activeThreadId
+    if (!threadId) return false
+    if (
+      !this.state.workspaces[threadId]?.composer.outbox.some(
+        (message) => message.id === id && message.status === "queued",
+      )
+    )
+      return false
+    this.dispatch({
+      type: "composer.removeQueued",
+      threadId,
+      clientMessageId: id,
+    })
+    return !this.state.workspaces[threadId]?.composer.outbox.some(
+      (message) => message.id === id,
+    )
+  }
   copyText = (text: string): void => {
     this.launch(() => this.ports.clipboard.writeText(text))
   }

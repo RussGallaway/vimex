@@ -77,6 +77,7 @@ import { commandBindings } from "../keymap/command-bindings"
 import type { VimBindingContext } from "../keymap/binding-context"
 import { OverlayLayer } from "./OverlayLayer"
 import { FullscreenShell } from "./FullscreenShell"
+import { QueueDock, queueDockHeight } from "./QueueDock"
 import {
   commandBody,
   commandPrompt,
@@ -241,6 +242,7 @@ export function VimexApp({
     [settings.reducedColor, settings.syntaxTheme, settings.theme],
   )
   const scrollRef = useRef<ScrollBoxRenderable>(null)
+  const queueDetailScrollRef = useRef<ScrollBoxRenderable>(null)
   const textareaRef = useRef<TextareaRenderable>(null)
   const composerSubmitRef = useRef<((intent: SubmissionIntent) => void) | null>(
     null,
@@ -284,6 +286,29 @@ export function VimexApp({
   const sessionCwd = allSessions ? undefined : summary?.cwd
   const [composerExpanded, setComposerExpanded] = useState(false)
   const [jumpOpen, setJumpOpen] = useState(false)
+  const [queueFocusId, setQueueFocusId] = useState<string>()
+  const [queueConfirmId, setQueueConfirmId] = useState<string>()
+  const [queueNotice, setQueueNotice] = useState<string>()
+  const queuedMessages = composer.outbox.filter(
+    (message) => message.status === "queued",
+  )
+  const selectedQueued = queuedMessages.find(
+    (message) => message.id === queueFocusId,
+  )
+  const queueFocused = Boolean(selectedQueued)
+  const queueRows = presentationVisible
+    ? queueDockHeight(dimensions.height, queuedMessages.length, queueFocused)
+    : 0
+  useEffect(() => {
+    setQueueFocusId(undefined)
+    setQueueConfirmId(undefined)
+    setQueueNotice(undefined)
+  }, [state.activeThreadId])
+  useEffect(() => {
+    if (!queueFocusId || selectedQueued) return
+    setQueueFocusId(queuedMessages.at(-1)?.id)
+    setQueueConfirmId(undefined)
+  }, [composer.outbox, queueFocusId, selectedQueued])
   const jumpActive = interactive && jumpOpen && !interaction.overlay
   useEffect(() => {
     setJumpOpen(false)
@@ -540,6 +565,12 @@ export function VimexApp({
       scrollRef.current?.blur()
       return
     }
+    if (queueFocused && !interaction.overlay) {
+      textareaRef.current?.blur()
+      commandRef.current?.blur()
+      scrollRef.current?.blur()
+      return
+    }
     if (interaction.overlay) {
       textareaRef.current?.blur()
       commandRef.current?.blur()
@@ -566,6 +597,7 @@ export function VimexApp({
     interaction.overlay,
     interaction.surface,
     jumpActive,
+    queueFocused,
   ])
   useEffect(() => {
     if (
@@ -1222,6 +1254,132 @@ export function VimexApp({
     sessionCwd,
   ])
 
+  const moveQueueFocus = (surface: "transcript" | "composer"): boolean => {
+    if (!queuedMessages.length || interaction.mode === "command") return false
+    if (queueFocused) {
+      const index = queuedMessages.findIndex(
+        (message) => message.id === queueFocusId,
+      )
+      const next = surface === "transcript" ? index - 1 : index + 1
+      if (next < 0 || next >= queuedMessages.length) {
+        setQueueFocusId(undefined)
+        setQueueConfirmId(undefined)
+        setQueueNotice(undefined)
+        return false
+      }
+      setQueueFocusId(queuedMessages[next]!.id)
+      setQueueConfirmId(undefined)
+      setQueueNotice(undefined)
+      return true
+    }
+    if (
+      (surface === "transcript" && interaction.surface !== "composer") ||
+      (surface === "composer" && interaction.surface !== "transcript")
+    )
+      return false
+    if (interaction.mode === "visual") {
+      if (interaction.surface === "composer") runComposerKey("escape")
+      else {
+        controller.transcript({ type: "selection.clear" })
+        controller.dispatchInteraction({ type: "mode.normal" })
+      }
+    } else if (interaction.mode === "insert")
+      controller.dispatchInteraction({ type: "mode.normal" })
+    if (interaction.surface === "transcript")
+      controller.dispatchInteraction({ type: "focus.set", surface: "composer" })
+    setQueueFocusId(
+      surface === "transcript"
+        ? queuedMessages[queuedMessages.length - 1]!.id
+        : queuedMessages[0]!.id,
+    )
+    setQueueNotice(undefined)
+    return true
+  }
+  const leaveQueue = (surface: "transcript" | "composer") => {
+    setQueueFocusId(undefined)
+    setQueueConfirmId(undefined)
+    setQueueNotice(undefined)
+    if (surface === "transcript") enterVisibleTranscript()
+    controller.dispatchInteraction({ type: "focus.set", surface })
+  }
+  const unqueueSelected = () => {
+    if (!selectedQueued) return
+    if (composer.text || composer.images.length) {
+      setQueueNotice("Finish or clear the current draft before editing")
+      return
+    }
+    if (!controller.unqueueOutgoing(selectedQueued.id)) {
+      setQueueNotice("This message is already sending")
+      return
+    }
+    leaveQueue("composer")
+    controller.dispatchInteraction({ type: "mode.insert" })
+  }
+  const removeSelected = () => {
+    if (!queueConfirmId || selectedQueued?.id !== queueConfirmId) {
+      setQueueConfirmId(undefined)
+      return
+    }
+    const index = queuedMessages.findIndex(
+      (message) => message.id === selectedQueued.id,
+    )
+    if (!controller.removeQueuedOutgoing(selectedQueued.id)) {
+      setQueueNotice("This message is already sending")
+      setQueueConfirmId(undefined)
+      return
+    }
+    const remaining = queuedMessages.filter(
+      (message) => message.id !== selectedQueued.id,
+    )
+    setQueueConfirmId(undefined)
+    if (!remaining.length) leaveQueue("composer")
+    else setQueueFocusId(remaining[Math.min(index, remaining.length - 1)]!.id)
+  }
+  const queueBindings = queueConfirmId
+    ? [
+        { key: "y", cmd: removeSelected },
+        { key: "n", cmd: () => setQueueConfirmId(undefined) },
+        { key: "escape", cmd: () => setQueueConfirmId(undefined) },
+        {
+          key: "ctrl+c",
+          cmd: () => {
+            setQueueConfirmId(undefined)
+            controller.interrupt()
+          },
+        },
+      ]
+    : [
+        ...["ctrl+k", "up", "k"].map((key) => ({
+          key,
+          cmd: () => {
+            if (!moveQueueFocus("transcript")) leaveQueue("transcript")
+          },
+        })),
+        ...["ctrl+j", "down", "linefeed", "j"].map((key) => ({
+          key,
+          cmd: () => {
+            if (!moveQueueFocus("composer")) leaveQueue("composer")
+          },
+        })),
+        { key: "ctrl+wk", cmd: () => leaveQueue("transcript") },
+        { key: "ctrl+wj", cmd: () => leaveQueue("composer") },
+        { key: "escape", cmd: () => leaveQueue("composer") },
+        { key: "e", cmd: unqueueSelected },
+        {
+          key: "x",
+          cmd: () => setQueueConfirmId(selectedQueued?.id),
+        },
+        {
+          key: "ctrl+u",
+          cmd: () => queueDetailScrollRef.current?.scrollBy(-0.5, "viewport"),
+        },
+        {
+          key: "ctrl+d",
+          cmd: () => queueDetailScrollRef.current?.scrollBy(0.5, "viewport"),
+        },
+        { key: "ctrl+c", cmd: () => controller.interrupt() },
+      ]
+
   const bindingContext: VimBindingContext = {
     interaction,
     transcript,
@@ -1303,30 +1461,35 @@ export function VimexApp({
       bindings:
         !interactive || interaction.overlay || jumpActive
           ? []
-          : [
-              { key: "ctrl+g", cmd: () => setJumpOpen(true) },
-              ...(interaction.mode === "normal" ||
-              (interaction.surface === "transcript" &&
-                interaction.mode === "visual")
-                ? [{ key: "s", cmd: () => setJumpOpen(true) }]
-                : []),
-              ...commonBindings(bindingContext),
-              ...(interaction.mode === "normal"
-                ? normalBindings(bindingContext)
-                : []),
-              ...(interaction.mode === "visual"
-                ? visualBindings(bindingContext)
-                : []),
-              ...(interaction.mode === "insert"
-                ? insertBindings(bindingContext)
-                : []),
-              ...(interaction.mode === "command"
-                ? commandBindings(bindingContext)
-                : []),
-            ].map((binding) => ({
-              ...binding,
-              cmd: () => flushSync(() => binding.cmd()),
-            })),
+          : queueFocused
+            ? queueBindings.map((binding) => ({
+                ...binding,
+                cmd: () => flushSync(() => binding.cmd()),
+              }))
+            : [
+                { key: "ctrl+g", cmd: () => setJumpOpen(true) },
+                ...(interaction.mode === "normal" ||
+                (interaction.surface === "transcript" &&
+                  interaction.mode === "visual")
+                  ? [{ key: "s", cmd: () => setJumpOpen(true) }]
+                  : []),
+                ...commonBindings(bindingContext, moveQueueFocus),
+                ...(interaction.mode === "normal"
+                  ? normalBindings(bindingContext)
+                  : []),
+                ...(interaction.mode === "visual"
+                  ? visualBindings(bindingContext)
+                  : []),
+                ...(interaction.mode === "insert"
+                  ? insertBindings(bindingContext)
+                  : []),
+                ...(interaction.mode === "command"
+                  ? commandBindings(bindingContext)
+                  : []),
+              ].map((binding) => ({
+                ...binding,
+                cmd: () => flushSync(() => binding.cmd()),
+              })),
     }),
     [interactive, bindingContext, settings.keybindings, jumpActive],
   )
@@ -1548,55 +1711,68 @@ export function VimexApp({
             </text>
           </box>
         ) : (
-          <Composer
-            interactive={interactive}
-            visible={presentationVisible}
-            expanded={composerExpanded}
-            key={state.activeThreadId}
-            state={composer}
-            mode={interaction.mode}
-            activeTurn={busy}
-            model={summary?.model}
-            reasoningEffort={summary?.reasoningEffort}
-            maxHeight={
-              composerExpanded
-                ? Math.max(1, dimensions.height - (parentTitle ? 10 : 9))
-                : Math.max(
-                    3,
-                    Math.floor(
-                      dimensions.height *
-                        Math.max(
-                          0.1,
-                          Math.min(0.6, settings.composerMaxHeight),
-                        ),
-                    ),
-                  )
-            }
-            insertEnter={settings.insertEnter}
-            busySubmit={settings.busySubmit}
-            textareaRef={textareaRef}
-            submitRef={composerSubmitRef}
-            onChange={slashCommands.changeDraft}
-            drawer={
-              slashCommands.active ? (
-                <SlashCommandDrawer
-                  choices={slashCommands.choices}
-                  selected={slashCommands.selected}
-                  hint={slashCommands.feedback}
-                />
-              ) : undefined
-            }
-            onSubmit={slashCommands.submit}
-            onEscape={() => {
-              if (composerInteractionRef.current.mode === "visual")
-                runComposerKey("escape")
-              else if (composerInteractionRef.current.mode === "insert")
-                controller.dispatchInteraction({ type: "mode.normal" })
-            }}
-            onRetry={controller.retryOutgoing}
-            onImageClipboard={controller.attachImageFromClipboard}
-            onImagePath={controller.attachImageFromPath}
-          />
+          <box flexDirection="column" gap={0} flexShrink={0}>
+            <QueueDock
+              messages={queuedMessages}
+              selectedId={queueFocused ? queueFocusId : undefined}
+              confirmRemoveId={queueConfirmId}
+              notice={queueNotice}
+              visible={presentationVisible}
+              detailScrollRef={queueDetailScrollRef}
+            />
+            <Composer
+              interactive={interactive}
+              visible={presentationVisible}
+              expanded={composerExpanded}
+              key={state.activeThreadId}
+              state={composer}
+              mode={interaction.mode}
+              activeTurn={busy}
+              model={summary?.model}
+              reasoningEffort={summary?.reasoningEffort}
+              maxHeight={
+                composerExpanded
+                  ? Math.max(
+                      1,
+                      dimensions.height - (parentTitle ? 10 : 9) - queueRows,
+                    )
+                  : Math.max(
+                      3,
+                      Math.floor(
+                        dimensions.height *
+                          Math.max(
+                            0.1,
+                            Math.min(0.6, settings.composerMaxHeight),
+                          ),
+                      ),
+                    )
+              }
+              insertEnter={settings.insertEnter}
+              busySubmit={settings.busySubmit}
+              textareaRef={textareaRef}
+              submitRef={composerSubmitRef}
+              onChange={slashCommands.changeDraft}
+              drawer={
+                slashCommands.active ? (
+                  <SlashCommandDrawer
+                    choices={slashCommands.choices}
+                    selected={slashCommands.selected}
+                    hint={slashCommands.feedback}
+                  />
+                ) : undefined
+              }
+              onSubmit={slashCommands.submit}
+              onEscape={() => {
+                if (composerInteractionRef.current.mode === "visual")
+                  runComposerKey("escape")
+                else if (composerInteractionRef.current.mode === "insert")
+                  controller.dispatchInteraction({ type: "mode.normal" })
+              }}
+              onRetry={controller.retryOutgoing}
+              onImageClipboard={controller.attachImageFromClipboard}
+              onImagePath={controller.attachImageFromPath}
+            />
+          </box>
         )
       }
       statusline={

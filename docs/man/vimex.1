@@ -72,9 +72,16 @@ when supported by the terminal. Ctrl\-Enter steers an active turn or
 sends when idle. Escape leaves editing or closes an overlay; from
 Normal mode, it interrupts the active turn. Ctrl\-C also interrupts.
 .PP
-Up/Ctrl\-K focuses the lowest visible transcript content row.
-Down/Ctrl\-J focuses the composer. These bindings respect local menu
-and completion navigation.
+Up/Ctrl\-K and Down/Ctrl\-J move between the composer and transcript
+through queued messages. Ctrl\-W K/J jump directly to the transcript or
+composer. These bindings respect local menu and completion navigation.
+.PP
+Queued messages appear above the composer with a preview of the latest
+message and a total count. Focus the queue to see a short list and the
+selected message. Use Ctrl\-K/J to move between messages, Ctrl\-U/D to
+scroll the selected message, e to return it to an empty composer draft
+for editing, or x to remove it after confirmation. Once sending
+starts, the message can no longer be taken back.
 .PP
 Space e expands or collapses the composer. Expanded drafts can scroll
 internally. Space r opens rename with the old name shown as a hint and

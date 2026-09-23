@@ -222,9 +222,6 @@ export function Composer(props: {
       props.expanded ? Math.max(compact ? 2 : 3, wrappedRows) : compact ? 2 : 3,
     ),
   )
-  const queued = props.state.outbox.filter(
-    (message) => message.status === "queued",
-  ).length
   const failed = props.state.outbox.filter(
     (message) => message.status === "failed",
   )
@@ -334,9 +331,6 @@ export function Composer(props: {
           </text>
         </box>
         <box flexDirection="row" gap={1} flexShrink={0}>
-          {queued > 0 ? (
-            <text fg={emberTide.blueBright}>{queued} queued</text>
-          ) : null}
           {props.activeTurn && showSendHint ? (
             <text fg={emberTide.amber}>ctrl↵ steer</text>
           ) : null}

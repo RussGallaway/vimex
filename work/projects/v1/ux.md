@@ -94,6 +94,8 @@ A draft beginning with `!` executes its remaining text through the focused threa
 
 Each thread owns its draft. An active turn does not disable the composer. Submitting during an active turn presents or applies a clear intent: steer the current turn or queue the next turn.
 
+Queued messages remain visible in a one-line strip above the composer showing the latest preview and total count. Focusing the queue expands a short list and shows the selected message in a scrollable detail area. Ctrl-K/Up and Ctrl-J/Down move through queued messages between the composer and transcript. In queue focus, `e` returns the selected message to an empty composer draft for editing; `x` asks for confirmation before removing it. A message that has started sending cannot be edited or removed from the queue.
+
 ### Visual mode and copying
 
 Transcript Visual mode selects logical content rather than screen cells.
@@ -190,7 +192,7 @@ Use OpenCode's density, whitespace, compact tool cards, responsive layout, and r
 
 - The composer is a full-width panel with a left accent and an internal model/effort footer, above a separate status strip.
 - Command entry replaces that strip and preserves transcript/composer geometry.
-- Ctrl-J focuses the composer; Ctrl-K focuses the transcript; Ctrl-W J/K remain aliases.
+- Ctrl-J and Ctrl-K move between the composer and transcript through any queued messages. Ctrl-W J/K jump directly to the composer or transcript.
 - A precise transcript cursor is visible in Normal and Visual modes. Visual selection begins at that cursor and extends with character, word/WORD, and line motions.
 - Submitted text leaves the native composer immediately; outbox entries retain recoverable send failures independently of the next draft.
 - Activity indicators animate locally while connected work is active. One pane-level `Working · elapsed` heartbeat represents the active turn; animation is not evidence of new server progress.
@@ -202,7 +204,7 @@ Use OpenCode's density, whitespace, compact tool cards, responsive layout, and r
 
 Application actions share one command vocabulary across two entry points. Composer `/` offers discoverable slash commands; transcript Normal `/` still searches. Bottom-bar `:` offers direct arguments and completion without changing the composer draft. `/model` and argument-free `:model` open the model picker; `:model <id>` validates and applies the exact model directly. Tab completes commands and model IDs. Command mode remains a typing mode, with arrows selecting suggestions and Ctrl-P/N recalling history.
 
-Up focuses the transcript and Down focuses the composer outside menus and command completion, supporting global Ctrl-K/J-to-arrow mappings. Session menus use j/k in Normal and literal text in Insert search. Escape leaves search before closing the menu.
+Up and Down move between the composer and transcript through any queued messages outside menus and command completion, supporting global Ctrl-K/J-to-arrow mappings. Session menus use j/k in Normal and literal text in Insert search. Escape leaves search before closing the menu.
 
 The composer has no extra bottom padding below its model footer; one blank row separates the composer from the status or command bar.
 
