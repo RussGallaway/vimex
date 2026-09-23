@@ -82,7 +82,7 @@ Ctrl-O moves backward through jumps and session visits; Ctrl-I moves forward. Le
 
 v starts character selection; V starts line selection. Move to extend, o swaps endpoints, y copies rendered text, and Y copies Markdown source. In the composer, p/P paste the register. r from the transcript quotes the selection or current block into the draft. gx opens a URL; [u and ]u navigate URLs.
 
-Enter or za toggles the current fold. zo/zc open/close it. zR/zM open/close all folds. Shift-Tab toggles all folds from either pane. Tool calls start collapsed; file diffs start expanded.
+Enter or za toggles the current fold. zo/zc open/close it. zR/zM open/close all folds, including diffs. Shift-Tab opens or closes all tool blocks from either pane without changing file diffs; its choice also applies to new tools. Tool calls start collapsed; file diffs start expanded.
 
 ## SESSIONS AND AGENTS
 

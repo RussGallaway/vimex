@@ -50,6 +50,8 @@ export interface TranscriptState {
   selection?: TranscriptSelection
   folded: Readonly<Record<string, boolean>>
   foldDefaults: Readonly<{ reasoning: boolean; tools: boolean }>
+  /** Last bulk tool fold choice also applies to tools arriving later. */
+  bulkToolFolded?: boolean
   viewport: ViewportAnchor
   unseenEntries: number
   /** Item ids whose changed output has already contributed to unseenEntries. */
@@ -1557,7 +1559,7 @@ export type TranscriptCommand =
   | { type: "selection.clear" }
   | { type: "fold.set"; itemId: ItemId; folded: boolean }
   | { type: "fold.toggle"; itemId: ItemId }
-  | { type: "fold.all"; folded: boolean }
+  | { type: "fold.all"; folded: boolean; scope?: "all" | "tools" }
   | { type: "fold.defaults"; reasoning: boolean; tools: boolean }
 
 export const initialTranscript = (): TranscriptState => ({

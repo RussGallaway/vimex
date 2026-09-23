@@ -69,7 +69,7 @@ export type TranscriptAction =
   | { type: "viewport.tail" }
   | { type: "viewport.anchor"; point: LogicalPoint; preferredScreenRow: number }
   | { type: "fold.set"; itemId: ItemId; folded: boolean }
-  | { type: "fold.all"; folded: boolean }
+  | { type: "fold.all"; folded: boolean; scope?: "all" | "tools" }
   | { type: "fold.defaults"; reasoning: boolean; tools: boolean }
   | {
       type: "copy"

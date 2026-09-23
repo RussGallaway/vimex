@@ -1,4 +1,4 @@
-import { toggleAllFolds, toggleCurrentFold } from "./fold-bindings"
+import { toggleAllTools, toggleCurrentFold } from "./fold-bindings"
 import type { UiBinding, VimBindingContext } from "./binding-context"
 
 export function commonBindings(ctx: VimBindingContext): UiBinding[] {
@@ -23,7 +23,7 @@ export function commonBindings(ctx: VimBindingContext): UiBinding[] {
   return [
     ...(ctx.interaction.mode !== "command" && !slashEditing
       ? ([
-          { key: "shift+tab", cmd: () => toggleAllFolds(ctx) },
+          { key: "shift+tab", cmd: () => toggleAllTools(ctx) },
           ...(ctx.interaction.surface === "transcript" &&
           ctx.interaction.mode === "normal"
             ? [{ key: "return", cmd: () => toggleCurrentFold(ctx) }]

@@ -33,6 +33,7 @@ Press `:help` for the compact in-app reference, or `:manual` (`:man`, `/manual`,
 | `r`                          | Quote the selected text or current semantic block into the composer.              |
 | `gx`                         | Open the URL at the cursor, or show a URL chooser when needed.                    |
 | `za`, `zo`, `zc`             | Toggle, open, or close the current fold.                                          |
+| `Shift-Tab`                  | Toggle all tool blocks, leaving file diffs as they are.                           |
 | `zR`, `zM`                   | Open or close all folds.                                                          |
 | `v`, `V`                     | Begin character or line Visual selection.                                         |
 | `f`                          | Request a fork through the selected completed turn. A confirmation overlay opens. |
@@ -71,7 +72,7 @@ Command entry replaces the bottom status strip while leaving the composer and tr
 
 { and } treat each collapsed tool card or compact tool group as one stop and keep it collapsed. Expanded tools retain paragraph navigation. Search, marks, and URL jumps can reveal a target inside collapsed output.
 
-In transcript Normal mode, Enter toggles the current foldable block. Shift-Tab toggles all foldable blocks from either transcript or composer without changing focus or the draft: if any block is collapsed it expands all; otherwise it collapses all. Command completion and overlays keep their local Tab behavior. `zR` and `zM` retain their uppercase Vim meanings. Current-block `za`/`zo`/`zc` operate only on foldable transcript blocks, in Normal or Visual mode; they do not change composer text or fold ordinary messages. Visual selections remain intact when toggling folds.
+In transcript Normal mode, Enter toggles the current foldable block. Shift-Tab opens or closes all tool blocks from either transcript or composer without changing focus, the draft, or file diff folds. Its bulk choice also applies to tools arriving later. Command completion and overlays keep their local Tab behavior. `zR` and `zM` retain their uppercase Vim meanings and include diffs. Current-block `za`/`zo`/`zc` operate only on foldable transcript blocks, in Normal or Visual mode; they do not change composer text or fold ordinary messages. Visual selections remain intact when toggling folds.
 
 ## Views and overlays
 
@@ -127,7 +128,7 @@ Mouse-wheel scrolling moves the transcript by precise terminal rows, preserves c
 
 - `s` in either pane’s Normal mode (and transcript Visual mode) opens Flash; `Ctrl-g` opens it from either pane, including composer Insert mode. Type visible text, then a highlighted label. Labels never consume a valid continuation of the query. Enter chooses the first labeled match; Tab cycles label pages. Escape cancels and restores focus/mode without changing drafts. Resize or session changes cancel the prompt.
 - Matching is literal and case-insensitive unless the query contains uppercase. Targets are visible rendered text, excluding hidden folded content. A Visual transcript jump extends selection. Source text is not modified by labels.
-- `Ctrl-o` (letter O) goes backward through significant jumps and session/agent visits; `Ctrl-i` (letter I) goes forward. Each visit restores its cursor and reading viewport without replacing drafts. Cross-session history lasts for the current application run; session-local marks and jumps remain persisted. On terminals advertising Kitty keyboard support they are distinct from Tab. Legacy terminals encode Ctrl-I as Tab, so Tab is accepted as a fallback outside command/slash completion. Enter toggles the current fold; Shift-Tab still toggles all.
+- `Ctrl-o` (letter O) goes backward through significant jumps and session/agent visits; `Ctrl-i` (letter I) goes forward. Each visit restores its cursor and reading viewport without replacing drafts. Cross-session history lasts for the current application run; session-local marks and jumps remain persisted. On terminals advertising Kitty keyboard support they are distinct from Tab. Legacy terminals encode Ctrl-I as Tab, so Tab is accepted as a fallback outside command/slash completion. Enter toggles the current fold; Shift-Tab toggles tools.
 - `ma` through `mz` set session-local named marks at the transcript cursor. Backtick+a or apostrophe+a returns to mark a's exact text position. Both forms currently use exact positions (apostrophe is not linewise). Marks and the bounded jumplist survive session resume; unavailable targets are discarded.
 
 Inspired by [flash.nvim](https://github.com/folke/flash.nvim)'s labeled search. This implements transcript jumps, not Neovim Treesitter selection or operator-pending remote actions.

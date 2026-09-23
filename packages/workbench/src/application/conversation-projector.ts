@@ -149,6 +149,9 @@ export function forkWorkspace(
       ),
     ),
     foldDefaults: source.transcript.foldDefaults,
+    ...(source.transcript.bulkToolFolded === undefined
+      ? {}
+      : { bulkToolFolded: source.transcript.bulkToolFolded }),
     marks: Object.fromEntries(
       Object.entries(source.transcript.marks).filter(([, location]) =>
         retained(location),

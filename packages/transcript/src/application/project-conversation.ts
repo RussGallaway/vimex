@@ -239,7 +239,8 @@ export function syncTranscriptItem(
     isNew &&
     !Object.hasOwn(next.folded, item.id) &&
     ((next.foldDefaults.reasoning && projection.nodeKind === "reasoning") ||
-      (next.foldDefaults.tools && projection.nodeKind === "tool"))
+      ((next.bulkToolFolded ?? next.foldDefaults.tools) &&
+        projection.nodeKind === "tool"))
   ) {
     next = {
       ...next,

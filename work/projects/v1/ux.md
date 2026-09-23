@@ -70,6 +70,7 @@ While detached:
 | `0`, `^`, `$`      | Start, first content, or end of logical line    |
 | `v`, `V`           | Character or line Visual mode                   |
 | `za`, `zo`, `zc`   | Toggle, open, or close fold                     |
+| `Shift-Tab`        | Open or close tool blocks, preserving diffs     |
 | `zM`, `zR`         | Close or open all folds                         |
 | `/`, `?`           | Search forward or backward                      |
 | `n`, `N`           | Next or previous match                          |
@@ -136,7 +137,7 @@ Named commands are the stable interaction API; keybindings invoke commands rathe
 - Agent text renders as streaming Markdown.
 - Reasoning is visually subordinate and collapsible.
 - Tool calls use compact semantic cards with state, duration, and a short preview.
-- File edits use syntax-aware diffs, expanded by default, split on wide terminals and unified on narrow terminals. Tool calls start collapsed. Explicit user fold choices survive streaming updates and view restoration.
+- File edits use syntax-aware diffs, expanded by default, split on wide terminals and unified on narrow terminals. Tool calls start collapsed. Shift-Tab toggles tools only; its bulk choice applies to later tool calls without changing file diff folds. Explicit user fold choices survive streaming updates and view restoration.
 - Running items visibly update without causing completed content to jump unnecessarily.
 - Unknown Codex items remain visible as inspectable diagnostic cards.
 

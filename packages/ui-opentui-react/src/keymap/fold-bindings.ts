@@ -11,15 +11,16 @@ export function setCurrentFold(ctx: VimBindingContext, folded?: boolean): void {
   })
 }
 
-export function toggleAllFolds(ctx: VimBindingContext): void {
+export function toggleAllTools(ctx: VimBindingContext): void {
   const ids = ctx.transcript.order.filter(
-    (id) => ctx.transcript.projectionById[id]?.nodeKind !== "message",
+    (id) => ctx.transcript.projectionById[id]?.nodeKind === "tool",
   )
   if (!ids.length) return
-  // Fold-all remains a complete semantic operation; off-window folds decide
-  // whether the next toggle opens or closes the complete transcript.
-  const anyCollapsed = ids.some((id) => ctx.transcript.folded[id])
-  ctx.controller.transcript({ type: "fold.all", folded: !anyCollapsed })
+  const folded =
+    ctx.transcript.bulkToolFolded === undefined
+      ? !ids.some((id) => ctx.transcript.folded[id])
+      : !ctx.transcript.bulkToolFolded
+  ctx.controller.transcript({ type: "fold.all", scope: "tools", folded })
 }
 
 export function toggleCurrentFold(ctx: VimBindingContext): void {

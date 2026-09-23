@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { DiffRenderable } from "@opentui/core"
 import { testRender } from "@opentui/react/test-utils"
 import { act, useMemo, useState } from "react"
 import { itemId, threadId, turnId } from "@vimex/conversation"
@@ -8,7 +9,8 @@ import { VimexRoot } from "../index"
 import { inertController, type VimexUiController } from "../contracts"
 
 const thread = threadId("folds"),
-  tool = itemId("fold-tool")
+  tool = itemId("fold-tool"),
+  edit = itemId("fold-edit")
 async function harness(
   mode: VimMode = "normal",
   surface: Surface = "transcript",
@@ -42,6 +44,14 @@ async function harness(
       detail: "Tool output",
       status: "complete" as const,
     },
+    {
+      id: edit,
+      turnId: turnId("turn"),
+      kind: "edit" as const,
+      title: "src/example.ts",
+      patch: "@@ -1 +1 @@\n-old\n+new",
+      status: "complete" as const,
+    },
   ])
     initial = transitionWorkbench(initial, {
       type: "conversation.event",
@@ -63,7 +73,7 @@ async function harness(
         },
         transcript: {
           ...workspace.transcript,
-          folded: { [tool]: true },
+          folded: { [tool]: true, [edit]: true },
           cursor: { itemId: cursorId, graphemeOffset: 0 },
           viewport: {
             kind: "point",
@@ -144,8 +154,10 @@ test("typed uppercase zR/zM expand and collapse all without lowercase aliases", 
   try {
     await h.keys("zR")
     expect(h.workspace().transcript.folded).toMatchObject({ [tool]: false })
+    expect(h.workspace().transcript.folded[edit]).toBe(false)
     await h.keys("zM")
     expect(h.workspace().transcript.folded).toMatchObject({ [tool]: true })
+    expect(h.workspace().transcript.folded[edit]).toBe(true)
     await h.keys("zr")
     expect(h.workspace().transcript.folded).toMatchObject({ [tool]: true })
   } finally {
@@ -166,6 +178,48 @@ test("Enter toggles only the current transcript block", async () => {
       await h.flush()
     })
     expect(h.workspace().transcript.folded).toMatchObject({ [tool]: true })
+  } finally {
+    await h.close()
+  }
+})
+
+test("Shift-Tab leaves an open diff in the native diff view", async () => {
+  const h = await harness()
+  try {
+    await h.keys("zR")
+    expect(h.renderer.root.findDescendantById(`diff:${edit}`)).toBeInstanceOf(
+      DiffRenderable,
+    )
+    await act(async () => {
+      h.mockInput.pressKey("TAB", { shift: true })
+      await h.flush()
+      await h.renderOnce()
+    })
+    expect(h.workspace().transcript.folded[tool]).toBe(true)
+    expect(h.workspace().transcript.folded[edit]).toBe(false)
+    expect(h.renderer.root.findDescendantById(`diff:${edit}`)).toBeInstanceOf(
+      DiffRenderable,
+    )
+  } finally {
+    await h.close()
+  }
+})
+
+test("Enter restores an edit to the native diff view after closing it", async () => {
+  const h = await harness("normal", "transcript", null, edit)
+  try {
+    for (const folded of [false, true, false]) {
+      await act(async () => {
+        h.mockInput.pressKey("RETURN")
+        await h.flush()
+        await h.renderOnce()
+      })
+      expect(h.workspace().transcript.folded[edit]).toBe(folded)
+      expect(
+        h.renderer.root.findDescendantById(`diff:${edit}`) instanceof
+          DiffRenderable,
+      ).toBe(!folded)
+    }
   } finally {
     await h.close()
   }
@@ -193,6 +247,8 @@ for (const [mode, surface] of [
         })
         const after = h.workspace()
         expect(after.transcript.folded).toMatchObject({ [tool]: folded })
+        expect(after.transcript.folded[edit]).toBe(true)
+        expect(after.transcript.bulkToolFolded).toBe(folded)
         expect(after.interaction).toEqual(before.interaction)
         expect(after.composer).toEqual(before.composer)
         expect(after.transcript.selection).toEqual(before.transcript.selection)

@@ -284,31 +284,39 @@ export function setFold(
 export function setAllFolds(
   state: TranscriptState,
   folded: boolean,
+  scope: "all" | "tools" = "all",
 ): TranscriptState {
-  const ids = state.order.filter(
-    (id) => state.projectionById[id]?.nodeKind !== "message",
+  const ids = state.order.filter((id) =>
+    scope === "tools"
+      ? state.projectionById[id]?.nodeKind === "tool"
+      : state.projectionById[id]?.nodeKind !== "message",
   )
-  if (
-    Object.keys(state.folded).length === ids.length &&
-    ids.every((id) => state.folded[id] === folded)
+  if (!ids.length) return state
+  const alreadyFolded = ids.every(
+    (id) => Object.hasOwn(state.folded, id) && state.folded[id] === folded,
   )
-    return state
+  if (alreadyFolded && state.bulkToolFolded === folded) return state
   return {
     ...state,
-    folded: persistentTranscriptFolds(
-      Object.fromEntries(ids.map((id) => [id, folded])),
-    ),
+    folded: alreadyFolded
+      ? state.folded
+      : persistentTranscriptFolds({
+          ...(scope === "tools" ? state.folded : {}),
+          ...Object.fromEntries(ids.map((id) => [id, folded])),
+        }),
+    bulkToolFolded: folded,
   }
 }
 export function setDefaultFolds(
   state: TranscriptState,
   defaults: { readonly reasoning: boolean; readonly tools: boolean },
 ): TranscriptState {
+  const toolDefault = state.bulkToolFolded ?? defaults.tools
   const additions = state.order.flatMap((id) => {
     if (Object.hasOwn(state.folded, id)) return []
     const kind = state.projectionById[id]?.nodeKind
     return (defaults.reasoning && kind === "reasoning") ||
-      (defaults.tools && kind === "tool")
+      (toolDefault && kind === "tool")
       ? [[id, true] as const]
       : []
   })
@@ -537,7 +545,7 @@ export function reduceTranscript(
     case "fold.toggle":
       return setFold(state, command.itemId, !state.folded[command.itemId])
     case "fold.all":
-      return setAllFolds(state, command.folded)
+      return setAllFolds(state, command.folded, command.scope)
     case "fold.defaults":
       return setDefaultFolds(state, command)
   }

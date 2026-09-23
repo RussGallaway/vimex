@@ -1220,6 +1220,74 @@ test("all folds affect foldable blocks only and repeated commands preserve ident
   expect(open.viewport).toBe(state.viewport)
 })
 
+test("tool-only bulk folds preserve edits and set the default for arriving tools", () => {
+  const firstTool = itemId("first-tool"),
+    laterTool = itemId("later-tool"),
+    finalTool = itemId("final-tool"),
+    edit = itemId("edit")
+  let state = syncTranscriptItem(initialTranscript(), {
+    id: firstTool,
+    turnId: turnId("turn"),
+    kind: "tool",
+    title: "Read",
+    detail: "output",
+    status: "complete",
+  })
+  state = syncTranscriptItem(state, {
+    id: edit,
+    turnId: turnId("turn"),
+    kind: "edit",
+    title: "file.ts",
+    patch: "@@ -1 +1 @@\n-old\n+new",
+    status: "complete",
+  })
+  state = setFold(state, edit, true)
+  const open = reduceTranscript(state, {
+    type: "fold.all",
+    scope: "tools",
+    folded: false,
+  })
+  expect(open.folded[firstTool]).toBe(false)
+  expect(open.folded[edit]).toBe(true)
+  expect(open.bulkToolFolded).toBe(false)
+  state = syncTranscriptItem(open, {
+    id: laterTool,
+    turnId: turnId("turn"),
+    kind: "tool",
+    title: "Search",
+    detail: "result",
+    status: "complete",
+  })
+  expect(state.folded[laterTool]).toBeUndefined()
+  expect(
+    reduceTranscript(state, {
+      type: "fold.defaults",
+      reasoning: false,
+      tools: true,
+    }).folded[laterTool],
+  ).toBeUndefined()
+  const closed = reduceTranscript(state, {
+    type: "fold.all",
+    scope: "tools",
+    folded: true,
+  })
+  expect(closed.folded).toEqual({
+    [firstTool]: true,
+    [edit]: true,
+    [laterTool]: true,
+  })
+  state = syncTranscriptItem(closed, {
+    id: finalTool,
+    turnId: turnId("turn"),
+    kind: "tool",
+    title: "Run",
+    detail: "result",
+    status: "complete",
+  })
+  expect(state.folded[finalTool]).toBe(true)
+  expect(state.folded[edit]).toBe(true)
+})
+
 test("default folds initialize complete semantic kinds without overriding an explicit choice", () => {
   const reasoning = itemId("default-reasoning"),
     tool = itemId("default-tool"),
