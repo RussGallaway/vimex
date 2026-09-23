@@ -22,6 +22,7 @@
     "test:contract": "bun test tests/contract",
     "test:ui": "bun test packages/ui-opentui-react",
     "test:e2e": "bun test tests/terminal",
+    "test:tmux": "VIMEX_TEST_TMUX=1 bun test tests/terminal/terminal.test.ts --test-name-pattern 'isolated tmux'",
     "benchmark:transcript": "bun scripts/benchmark-transcript-scroll.tsx",
     "benchmark:transcript-windowing": "bun scripts/benchmark-transcript-windowing.tsx",
     "benchmark:transcript-window-planner": "bun scripts/benchmark-transcript-window-planner.ts",

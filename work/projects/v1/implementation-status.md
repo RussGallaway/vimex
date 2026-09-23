@@ -17,7 +17,7 @@ The full check passed **882 tests, with 5 skipped and 0 failures**, including fo
 - Enter sends by default; Shift+Enter inserts a newline. Alt+Enter is not a default shortcut.
 - Application-owned ports and behavior under domain/application owners, feature-owned UI files, and concrete adapters selected in the executable composition root.
 - Herdr pane launch manifest, lifecycle/session/metadata reporting, and configured external URL actions.
-- Unit, integration, adapter contract, renderer, and real-PTY tests. Default terminal tests cover demo navigation, JSONL approvals/streaming, Enter/Shift+Enter submission, SIGTERM, persistence failure restoration, and an isolated tmux session when tmux is available.
+- Unit, integration, adapter contract, renderer, and real-PTY tests. Default terminal tests cover demo navigation, JSONL approvals/streaming, Enter/Shift+Enter submission, SIGTERM, and persistence failure restoration. The isolated tmux smoke test runs separately with `bun run test:tmux` on a host with tmux.
 
 ## Checkpoint validation
 

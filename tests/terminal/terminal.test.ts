@@ -48,7 +48,7 @@ for (const scenario of ["signal", "save-failure"]) {
   }, 30000)
 }
 
-test.skipIf(!Bun.which("tmux"))(
+test.skipIf(process.env.VIMEX_TEST_TMUX !== "1" || !Bun.which("tmux"))(
   "isolated tmux: Markdown, Vim input, draft preservation, and quit",
   async () => {
     const process = Bun.spawn(

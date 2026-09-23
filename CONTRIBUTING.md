@@ -51,9 +51,10 @@ bun run test:integration
 bun run test:contract
 bun run test:ui
 bun run test:e2e
+bun run test:tmux
 ```
 
-The terminal suite needs Python 3 and a Unix PTY. It runs the actual renderer against a deterministic app-server fixture and must remain credential-free and network-free. The opt-in live driver is intentionally excluded from defaults because it touches real Codex threads and the host clipboard; do not run it or claim its acceptance evidence without explicit authorization. See [live validation](work/projects/v1/live-validation.md).
+The default terminal suite needs Python 3 and a Unix PTY. It runs the actual renderer against a deterministic app-server fixture and must remain credential-free and network-free. The tmux smoke test is separate because a managed filesystem sandbox can remove its detached server socket; run `bun run test:tmux` on a host with tmux. The opt-in live driver is intentionally excluded from defaults because it touches real Codex threads and the host clipboard; do not run it or claim its acceptance evidence without explicit authorization. See [live validation](work/projects/v1/live-validation.md).
 
 CI is configured for macOS and Ubuntu with Bun 1.3.6, Python 3.12, and `TERM=xterm-256color`. A configured target is not considered supported until its run has been observed and recorded in the [terminal matrix](docs/terminal-support.md).
 
