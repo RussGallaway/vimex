@@ -146,6 +146,7 @@ Child assignments appear as foldable CHILD rows with a task preview and reported
 | Key or command                            | Action                                                                                                                  |
 | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `Ctrl-h` / `Ctrl-l`                       | Focus main / side directly.                                                                                             |
+| `Left` / `Right` in Normal or Visual mode | Focus main / side directly.                                                                                             |
 | `Ctrl-w h` / `Ctrl-w l`                   | Alternate main / side focus keys.                                                                                       |
 | `Ctrl-w w`                                | Cycle visible panes.                                                                                                    |
 | `Ctrl-w \|`                               | Maximize the focused pane; repeat to restore the split.                                                                 |

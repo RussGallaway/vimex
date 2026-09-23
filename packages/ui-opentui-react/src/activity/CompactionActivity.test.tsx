@@ -170,7 +170,8 @@ test("parent compaction remains visible and animated while side chat is focused"
     await h.update(() => {})
     expect(h.controller.getSnapshot().activeThreadId).toBe(child)
     const frame = h.captureCharFrame()
-    expect(frame).toContain("SIDE · focused")
+    expect(frame).not.toContain("SIDE · focused")
+    expect(frame).toContain("SIDE")
     const main = h.renderer.root.findDescendantById("main-pane")!
     const side = h.renderer.root.findDescendantById("side-pane")!
     expect(main).toBeDefined()

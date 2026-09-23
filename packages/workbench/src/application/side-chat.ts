@@ -15,6 +15,8 @@ export interface SideChat {
   contextLabel?: string
   /** Retained as model context, omitted from the side transcript. */
   inheritedTurnIds?: readonly TurnId[]
+  /** Ephemeral server forks are available only during this app-server lifetime. */
+  ephemeral?: boolean
 }
 export type SideChatAction =
   | "open"
@@ -136,6 +138,7 @@ export class SideChatCoordinator {
         parentId: active,
         visible: true,
         maximized: false,
+        ephemeral: true,
         status: "creating",
         contextLabel: state.summaries[active]?.title ?? active,
       }
@@ -150,15 +153,16 @@ export class SideChatCoordinator {
           const current = this.host.state().sideChats[active]
           if (!current) return
           const inheritedTurnIds = persistentConversationTurnIds([
-            ...new Set(
-              snapshot.events.flatMap((event) =>
+            ...new Set([
+              ...(state.workspaces[active]?.conversation.turnIds ?? []),
+              ...snapshot.events.flatMap((event) =>
                 "turnId" in event
                   ? [event.turnId]
                   : "item" in event
                     ? [event.item.turnId]
                     : [],
               ),
-            ),
+            ]),
           ])
           const ready = {
             ...current,

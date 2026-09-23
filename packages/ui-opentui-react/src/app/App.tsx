@@ -35,6 +35,7 @@ import {
   activeWorkspace,
   liveActivity,
   sideChatForChild,
+  sideChatForThread,
   threadContext,
 } from "@vimex/workbench"
 import {
@@ -169,6 +170,28 @@ export function VimexApp({
   const summary = state.activeThreadId
     ? state.summaries[state.activeThreadId]
     : undefined
+  const sideRelation = sideChatForThread(state, state.activeThreadId)
+  const siblingSummary = sideRelation
+    ? state.summaries[
+        state.activeThreadId === sideRelation.parentId
+          ? (sideRelation.threadId ?? "")
+          : sideRelation.parentId
+      ]
+    : undefined
+  const statusSummary =
+    summary && !summary.gitBranch && siblingSummary?.cwd === summary.cwd
+      ? { ...summary, gitBranch: siblingSummary.gitBranch }
+      : summary
+  const excludedSessionIds = useMemo(
+    () =>
+      new Set([
+        ...state.retiredSideThreadIds,
+        ...Object.values(state.sideChats).flatMap((side) =>
+          side.threadId ? [side.threadId] : [],
+        ),
+      ]),
+    [state.retiredSideThreadIds, state.sideChats],
+  )
   const runtimeInput = useMemo<TranscriptRuntimeInput | undefined>(
     () =>
       workspace && state.activeThreadId
@@ -322,6 +345,7 @@ export function VimexApp({
         sessionQuery,
         state.favoriteThreadIds,
         sessionCwd,
+        excludedSessionIds,
       ),
     [
       sessionQuery,
@@ -329,6 +353,7 @@ export function VimexApp({
       state.threadOrder,
       state.favoriteThreadIds,
       sessionCwd,
+      excludedSessionIds,
     ],
   )
   const agentRows = useMemo(
@@ -1059,6 +1084,7 @@ export function VimexApp({
               liveQuery,
               state.favoriteThreadIds,
               sessionCwd,
+              excludedSessionIds,
             )
       const liveIndex = liveQuery === sessionQuery ? activeIndex : 0
       const id =
@@ -1192,6 +1218,33 @@ export function VimexApp({
     const match = commandCompletions(interaction.commandLine)[0]
     if (match) changeCommandLine(match)
   }, [changeCommandLine, interaction.commandLine])
+  useBindings(
+    () => ({
+      priority: 190,
+      bindings:
+        !interactive ||
+        !paneLabel ||
+        interaction.overlay ||
+        jumpActive ||
+        (interaction.mode !== "normal" && interaction.mode !== "visual")
+          ? []
+          : [
+              { key: "left", cmd: () => controller.sideChat("parent") },
+              { key: "right", cmd: () => controller.sideChat("side") },
+            ].map((binding) => ({
+              ...binding,
+              cmd: () => flushSync(binding.cmd),
+            })),
+    }),
+    [
+      interactive,
+      paneLabel,
+      interaction.mode,
+      interaction.overlay,
+      jumpActive,
+      controller,
+    ],
+  )
   useBindings(
     () => ({
       priority: 100,
@@ -1466,7 +1519,7 @@ export function VimexApp({
       statusline={
         <Statusline
           mode={interaction.mode}
-          summary={summary}
+          summary={statusSummary}
           pendingKeys={interaction.pendingKeys}
           unseenEntries={semanticTranscript.unseenEntries}
           pendingApprovals={state.approvals.order.length}
@@ -1522,6 +1575,7 @@ export function VimexApp({
                   sessionQuery,
                   favorites,
                   sessionCwd,
+                  excludedSessionIds,
                 )
                 const index = Math.max(
                   0,

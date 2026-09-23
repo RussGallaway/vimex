@@ -1761,6 +1761,53 @@ export class VimexController
   restart = (): void => {
     if (this.restartPending || this.closing) return
     this.ingress.flush()
+    const ephemeralSides = Object.values(this.state.sideChats).filter(
+      (side) => side.ephemeral,
+    )
+    if (ephemeralSides.length) {
+      const retired = new Set(
+        ephemeralSides.flatMap((side) =>
+          side.threadId ? [side.threadId] : [],
+        ),
+      )
+      for (const child of retired) {
+        this.navigationHistory.removeThread(child)
+        this.loaded.delete(child)
+        this.buffered.delete(child)
+      }
+      const activeSide = ephemeralSides.find(
+        (side) => side.threadId === this.state.activeThreadId,
+      )
+      this.setState({
+        ...this.state,
+        activeThreadId: activeSide?.parentId ?? this.state.activeThreadId,
+        sideChats: Object.fromEntries(
+          Object.entries(this.state.sideChats).filter(
+            ([, side]) => !side.ephemeral,
+          ),
+        ),
+        summaries: Object.fromEntries(
+          Object.entries(this.state.summaries).filter(
+            ([id]) => !retired.has(threadId(id)),
+          ),
+        ),
+        workspaces: Object.fromEntries(
+          Object.entries(this.state.workspaces).filter(
+            ([id]) => !retired.has(threadId(id)),
+          ),
+        ),
+        threadOrder: this.state.threadOrder.filter((id) => !retired.has(id)),
+        favoriteThreadIds: this.state.favoriteThreadIds.filter(
+          (id) => !retired.has(id),
+        ),
+        agentRelationships: this.state.agentRelationships.filter(
+          (link) => !retired.has(link.childId) && !retired.has(link.parentId),
+        ),
+        retiredSideThreadIds: [
+          ...new Set([...this.state.retiredSideThreadIds, ...retired]),
+        ],
+      })
+    }
     this.restartPending = true
     this.historyNavigation = undefined
     const epoch = ++this.runtimeEpoch

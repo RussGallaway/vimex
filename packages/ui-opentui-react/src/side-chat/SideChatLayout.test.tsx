@@ -33,6 +33,7 @@ async function harness(width = 140, height = 36, initiallyOpen = true) {
         id,
         title: id === parent ? "Parent task" : "Side questions",
         cwd: "/tmp",
+        ...(id === child ? { gitBranch: "main" } : {}),
         model: "test",
         reasoningEffort: "medium",
         status: "working",
@@ -218,9 +219,10 @@ async function harness(width = 140, height = 36, initiallyOpen = true) {
 test("side split shows both transcripts, routes input to focused composer, and maximizes/restores", async () => {
   const h = await harness()
   try {
-    expect(h.captureCharFrame()).toContain("SIDE · focused")
+    expect(h.captureCharFrame()).not.toContain("SIDE · focused")
     expect(h.captureCharFrame()).toContain("PARENT")
     expect(h.captureCharFrame()).toContain("Focus parent")
+    expect(h.captureCharFrame().match(/git:main/g)).toHaveLength(2)
     expect(h.captureCharFrame()).not.toContain("SUBAGENT")
     const main = h.renderer.root.findDescendantById("main-pane")!
     const side = h.renderer.root.findDescendantById("side-pane")!
@@ -250,6 +252,11 @@ test("side split shows both transcripts, routes input to focused composer, and m
     expect(h.state().activeThreadId).toBe(parent)
     await h.key("l", true)
     expect(h.state().activeThreadId).toBe(child)
+    await h.key("ESCAPE")
+    await h.key("ARROW_LEFT")
+    expect(h.state().activeThreadId).toBe(parent)
+    await h.key("ARROW_RIGHT")
+    expect(h.state().activeThreadId).toBe(child)
     await h.windowKey("|")
     expect(h.renderer.root.findDescendantById("main-pane")!.visible).toBe(false)
     expect(h.renderer.root.findDescendantById("side-pane")!.width).toBe(140)
@@ -262,6 +269,38 @@ test("side split shows both transcripts, routes input to focused composer, and m
       h.renderer.root.findDescendantById("side-chat-layout"),
     ).toBeUndefined()
     expect(h.state().workspaces[child]!.composer.text).toContain("X")
+  } finally {
+    await h.close()
+  }
+})
+
+test("arrow pane switching is limited to Normal and Visual without an overlay", async () => {
+  const h = await harness()
+  const interaction = async (
+    command: Extract<
+      WorkbenchCommand,
+      { type: "interaction.command" }
+    >["command"],
+  ) => {
+    await act(async () => {
+      h.update({ type: "interaction.command", command })
+      await h.flush()
+      await h.renderOnce()
+    })
+  }
+  try {
+    await h.key("ARROW_LEFT")
+    expect(h.state().activeThreadId).toBe(parent)
+    await interaction({ type: "mode.visual" })
+    await h.key("ARROW_RIGHT")
+    expect(h.state().activeThreadId).toBe(child)
+    await interaction({ type: "mode.insert" })
+    await h.key("ARROW_LEFT")
+    expect(h.state().activeThreadId).toBe(child)
+    await interaction({ type: "mode.normal" })
+    await interaction({ type: "overlay.open", overlay: "sessions" })
+    await h.key("ARROW_LEFT")
+    expect(h.state().activeThreadId).toBe(child)
   } finally {
     await h.close()
   }

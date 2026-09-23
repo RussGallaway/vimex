@@ -27,6 +27,7 @@ export function createCodexGateways(
   let detachClient = () => {}
   let closed = false
   let restartPromise: Promise<void> | undefined
+  const ephemeralSideThreads = new Set<string>()
   const listeners = new Set<(event: RuntimeEvent) => void>()
   const publish = (event: RuntimeEvent) => {
     for (const listener of listeners) listener(event)
@@ -153,6 +154,7 @@ export function createCodexGateways(
         detachClient()
       }
       client = createClient()
+      ephemeralSideThreads.clear()
       attach()
       await client.connect()
     })()
@@ -222,18 +224,25 @@ export function createCodexGateways(
     async forkSideThread(id) {
       const fork = await client.forkThread(id, undefined, {
         deferGoalContinuation: true,
+        ephemeral: true,
+        excludeTurns: true,
       })
+      ephemeralSideThreads.add(fork.summary.id)
       // Side questions must not inherit the parent's autonomous objective.
       try {
         await client.clearGoal(fork.summary.id)
       } catch (error) {
-        await client.archiveThread(fork.summary.id)
+        await client.unsubscribeThread(fork.summary.id)
+        ephemeralSideThreads.delete(fork.summary.id)
         throw error
       }
       return observeSession(fork)
     },
     async retireThread(id) {
-      await client.archiveThread(id)
+      if (ephemeralSideThreads.has(id)) {
+        await client.unsubscribeThread(id)
+        ephemeralSideThreads.delete(id)
+      } else await client.archiveThread(id)
     },
     async listThreads() {
       const all = []

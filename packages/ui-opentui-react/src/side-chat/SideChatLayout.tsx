@@ -197,18 +197,17 @@ function SideChatFrame(props: {
   const stacked = dimensions.width < 110
   const limitedHeight = dimensions.height < (stacked ? 28 : 14)
   const maximized = side?.maximized || limitedHeight || !side?.visible
-  const headerHeight = side?.visible ? 1 : 0
-  const height = Math.max(1, dimensions.height - headerHeight)
+  const height = Math.max(1, dimensions.height)
   const mainWidth = Math.floor((dimensions.width - 1) * 0.6)
   const mainHeight = Math.max(
     4,
     Math.floor((height - 1) * (active === side?.parentId ? 0.65 : 0.35)),
   )
   const mainGeometry: PaneGeometry = maximized
-    ? { width: dimensions.width, height, x: 0, y: headerHeight }
+    ? { width: dimensions.width, height, x: 0, y: 0 }
     : stacked
-      ? { width: dimensions.width, height: mainHeight, x: 0, y: headerHeight }
-      : { width: mainWidth, height, x: 0, y: headerHeight }
+      ? { width: dimensions.width, height: mainHeight, x: 0, y: 0 }
+      : { width: mainWidth, height, x: 0, y: 0 }
   const sideGeometry: PaneGeometry = maximized
     ? mainGeometry
     : stacked
@@ -216,13 +215,13 @@ function SideChatFrame(props: {
           width: dimensions.width,
           height: Math.max(1, height - mainHeight - 1),
           x: 0,
-          y: mainHeight + headerHeight + 1,
+          y: mainHeight + 1,
         }
       : {
           width: dimensions.width - mainWidth - 1,
           height,
           x: mainWidth + 1,
-          y: headerHeight,
+          y: 0,
         }
   const pane = (
     id: ThreadId | undefined,
@@ -261,7 +260,6 @@ function SideChatFrame(props: {
       </box>
     )
   }
-  const parentActivity = layout.parentActivity
   return (
     <box
       id={side?.visible ? "side-chat-layout" : "side-chat-closed"}
@@ -270,43 +268,6 @@ function SideChatFrame(props: {
       flexDirection="column"
       backgroundColor={emberTide.background}
     >
-      {side?.visible ? (
-        <box
-          height={1}
-          flexShrink={0}
-          backgroundColor={emberTide.backgroundPanel}
-          paddingX={1}
-          flexDirection="row"
-          gap={2}
-        >
-          <text flexShrink={0} fg={emberTide.blueBright}>
-            <b>
-              {active === side.threadId ? "SIDE" : "PARENT"}
-              {maximized ? " · maximized" : " · focused"}
-            </b>
-          </text>
-          <text
-            flexGrow={1}
-            minWidth={0}
-            truncate
-            wrapMode="none"
-            fg={emberTide.textMuted}
-          >
-            {side.status === "creating"
-              ? "Opening side chat…"
-              : side.status === "quitting"
-                ? "Quitting side…"
-                : limitedHeight
-                  ? `Parent: ${parentActivity.label ?? "idle"} · ${side.contextLabel ?? "Side conversation"}`
-                  : (side.contextLabel ?? "Forked side conversation")}
-          </text>
-          {dimensions.width >= 90 ? (
-            <text flexShrink={0} fg={emberTide.textMuted}>
-              ^H/L focus · ^W | maximize · ^W c close · ^W q quit
-            </text>
-          ) : null}
-        </box>
-      ) : null}
       <box
         flexDirection={stacked ? "column" : "row"}
         flexGrow={1}

@@ -119,7 +119,7 @@ function harness(
   }
 }
 
-test("side transcript hides inherited context through streaming, restart, and persisted recovery", async () => {
+test("side transcript hides inherited context and ephemeral restart retires the side", async () => {
   const h = harness()
   await h.controller.initialize("/tmp")
   const side = threadId("side-clean"),
@@ -158,6 +158,15 @@ test("side transcript hides inherited context through streaming, restart, and pe
   })
   h.controller.sideChat("open")
   await h.controller.settle()
+  h.controller.toggleFavorite(side)
+  const { captureLocalState, emptyLocalState, parseLocalState } =
+    await import("@vimex/workbench")
+  const whileLive = parseLocalState(
+    captureLocalState(h.controller.getSnapshot(), emptyLocalState()),
+  )
+  expect(whileLive.sideChats).toEqual({})
+  expect(whileLive.threads[side]).toBeUndefined()
+  expect(whileLive.favoriteThreadIds).not.toContain(side)
   expect(h.controller.getSnapshot().workspaces[side]?.transcript.order).toEqual(
     [],
   )
@@ -183,11 +192,9 @@ test("side transcript hides inherited context through streaming, restart, and pe
   })
   h.controller.restart()
   await h.controller.settle()
-  expect(h.controller.getSnapshot().workspaces[side]?.transcript.order).toEqual(
-    [itemId("new")],
-  )
-  const { captureLocalState, emptyLocalState, parseLocalState } =
-    await import("@vimex/workbench")
+  expect(h.controller.getSnapshot().activeThreadId).toBe(a)
+  expect(h.controller.getSnapshot().sideChats[a]).toBeUndefined()
+  expect(h.controller.getSnapshot().workspaces[side]).toBeUndefined()
   const saved = parseLocalState(
     JSON.parse(
       JSON.stringify(
@@ -195,18 +202,18 @@ test("side transcript hides inherited context through streaming, restart, and pe
       ),
     ),
   )
-  const restored = harness({ localState: saved })
-  restored.backend.resumeThread = h.backend.resumeThread
-  await restored.controller.initialize("/tmp", undefined, side)
-  expect(
-    restored.controller.getSnapshot().workspaces[side]?.transcript.order,
-  ).toEqual([itemId("new")])
-  await restored.controller.close()
+  expect(saved.sideChats).toEqual({})
   const legacy = harness({
     localState: {
       ...saved,
+      retiredSideThreadIds: [],
       sideChats: {
-        [a]: { ...saved.sideChats![a]!, inheritedTurnIds: undefined },
+        [a]: {
+          parentId: a,
+          threadId: side,
+          visible: false,
+          maximized: false,
+        },
       },
     },
   })
@@ -224,6 +231,40 @@ test("side transcript hides inherited context through streaming, restart, and pe
     legacy.controller.getSnapshot().workspaces[side]?.transcript.order,
   ).toEqual([itemId("new")])
   await legacy.controller.close()
+  await h.controller.close()
+})
+
+test("an excluded-turn fork still hides replayed parent turns", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const inherited = turnId("parent-before-fork")
+  h.emit({
+    type: "conversation",
+    event: { type: "turn.started", threadId: a, turnId: inherited },
+  })
+  h.controller.sideChat("open")
+  await h.controller.settle()
+  const side = threadId("side-1")
+  expect(h.controller.getSnapshot().sideChats[a]?.inheritedTurnIds).toContain(
+    inherited,
+  )
+  h.emit({
+    type: "conversation",
+    event: {
+      type: "item.completed",
+      threadId: side,
+      item: {
+        id: itemId("replayed"),
+        turnId: inherited,
+        kind: "assistant",
+        status: "complete",
+        markdown: "Inherited parent answer",
+      },
+    },
+  })
+  expect(h.controller.getSnapshot().workspaces[side]?.transcript.order).toEqual(
+    [],
+  )
   await h.controller.close()
 })
 
@@ -506,7 +547,7 @@ test("retired side tombstones survive local state and ignore late events", async
   await restored.controller.close()
 })
 
-test("side pane focus, maximize, refresh preserve both drafts; restart subscribes hidden side", async () => {
+test("side pane focus, maximize, refresh preserve drafts until restart", async () => {
   const h = harness()
   await h.controller.initialize("/tmp")
   h.controller.sideChat("open")
@@ -540,10 +581,11 @@ test("side pane focus, maximize, refresh preserve both drafts; restart subscribe
   }
   h.controller.restart()
   await h.controller.settle()
-  expect(resumed).toEqual([a, side])
-  expect(h.controller.getSnapshot().sideChats[a]?.visible).toBe(false)
-  expect(h.controller.getSnapshot().workspaces[side]?.composer.text).toBe(
-    "keep this draft",
+  expect(resumed).toEqual([a])
+  expect(h.controller.getSnapshot().sideChats[a]).toBeUndefined()
+  expect(h.controller.getSnapshot().workspaces[side]).toBeUndefined()
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe(
+    "parent draft",
   )
   await h.controller.close()
 })

@@ -81,6 +81,11 @@ for await (const line of createInterface({ input: process.stdin })) {
       })
       break
     case "thread/fork": {
+      if (
+        request.params.ephemeral !== true ||
+        request.params.excludeTurns !== true
+      )
+        throw new Error("side forks must use ephemeral and excludeTurns")
       if (request.params.deferGoalContinuation && !experimentalApi) {
         send({
           id: request.id,
@@ -109,6 +114,10 @@ for await (const line of createInterface({ input: process.stdin })) {
     case "thread/archive":
       threads.delete(request.params.threadId)
       result({})
+      break
+    case "thread/unsubscribe":
+      threads.delete(request.params.threadId)
+      result({ status: "unsubscribed" })
       break
     case "model/list":
       result({ data: [], nextCursor: null })

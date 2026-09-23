@@ -1,24 +1,22 @@
 # Side chats
 
-`/side [question]` and `:side [question]` fork the focused parent context into a separate conversation. The parent keeps running. Ctrl-H focuses main; Ctrl-L focuses side. The side transcript starts empty even though Codex retains the inherited parent context; only messages created in the side conversation are displayed. Reusing the command focuses the existing side conversation. Side questions do not inherit an autonomous parent goal: the adapter defers goal continuation during the fork, then clears the child's copied goal before submitting a question.
+`/side [question]` and `:side [question]` create an ephemeral fork of the focused parent context. The parent keeps running. Ctrl-H and Left focus main; Ctrl-L and Right focus side. Arrow keys switch panes in Normal and Visual modes. The side transcript starts empty even though Codex retains the inherited parent context; only messages created in the side conversation are displayed. Reusing the command focuses the existing side conversation. Side questions do not inherit an autonomous parent goal: the adapter defers goal continuation during the fork, then clears the child's copied goal before submitting a question.
 
 Bare `/side` and `:side` open the pane without submitting a message. An opening placeholder appears while the server creates the fork; failures appear as a notice. Wide terminals use a right sidebar, narrow terminals stack the panes, and very short terminals show one pane at a time.
 
 - `:side close` hides the pane. The child stays subscribed and keeps working. `/side` reopens that same conversation and draft.
-- `:side quit` waits for any in-flight child submission, clears its goal, interrupts its active turn, and archives the child. A persisted retirement record prevents Vimex from reopening that child through sessions, history, or an explicit resume. The next `/side` creates a new child.
+- `:side quit` waits for any in-flight child submission, clears its goal, interrupts its active turn, and unsubscribes the ephemeral child. Vimex retires its ID from local navigation. The next `/side` creates a new child.
 - `:side quote` appends the selected side text (or current semantic block) as a Markdown blockquote to the parent draft, then focuses the parent composer. It never submits the draft.
 - `:side maximize` toggles maximization; `:side reset` restores the default split.
 - `:side refresh` sends a labeled snapshot of recent parent transcript content to the child. It preserves the child's draft. This is explicit context transfer, not automatic live synchronization; the snapshot is bounded to the latest 50 entries and 48,000 characters.
 
-Each conversation retains its own draft, cursor, folds, viewport, and mode. Closing during creation keeps the completed fork hidden; quitting during creation retires it before submitting the pending question. Failed fork creation is retryable. Failed retirement reports the error and leaves the association available for a retry.
+Each conversation retains its own draft, cursor, folds, viewport, and mode while the app server runs. Closing during creation keeps the completed fork hidden; quitting during creation retires it before submitting the pending question. Failed fork creation is retryable. Failed retirement reports the error and leaves the association available for a retry. Ephemeral sides are omitted from saved side associations and the session picker. Restarting the app server drops them and focuses the parent; a later `/side` creates a fresh fork.
 
 ## Server lifetime
 
 Vimex negotiates `experimentalApi: true` when connecting and reconnecting. The pinned server requires this capability for `thread/fork.deferGoalContinuation`; omitting it rejects side creation. The offline side fixture enforces this requirement too.
 
-Vimex uses the pinned Codex 0.154 app-server archive operation, not unsubscribe, for retirement. In the [pinned archive implementation](https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/app-server/src/request_processors/thread_processor.rs#L1572), archiving prepares the target and its spawned descendants for removal. The [removal implementation](https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/app-server/src/request_processors/thread_processor.rs#L989) removes the loaded thread, requests shutdown, and tears down its listeners. The server may proceed with archival after a shutdown timeout; the RPC does not expose a stronger termination acknowledgment. Stored history is archived, not deleted.
-
-Vimex's retirement record prevents reopening in this client; it does not prevent another Codex client from explicitly restoring an archived thread.
+New sides use `thread/fork` with `ephemeral: true` and `excludeTurns: true`, so they have no stored session to list. `thread/unsubscribe` retires a new side after its active turn is interrupted. Previously saved, persistent side chats retain their legacy archive behavior when quit.
 
 ## Offline acceptance
 

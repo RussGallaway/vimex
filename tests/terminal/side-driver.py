@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix='vimex-side-') as temporary:
     def assert_right_pane(title):
         rows=[line for line in screen.display if 'MAIN /' in line and ('SIDE / '+title) in line]
         assert rows and rows[0].index('SIDE /')>screen.columns//2, 'Side is not rendered in a right-hand pane'
-        assert 'SIDE · focused' in view(), 'New side was not focused'
+        assert 'SIDE · focused' not in view(), 'Split-only focus bar is still visible'
     checks=[]
     try:
         wait('fixture-model')
@@ -54,6 +54,8 @@ with tempfile.TemporaryDirectory(prefix='vimex-side-') as temporary:
         send(b'i');send(b'Keep implementing');send(b'\r');wait('Parent progress')
         send(b'/side');send(b'\r');wait('Side chat 1')
         assert len(calls('thread/fork'))==1
+        assert calls('thread/fork')[0]['params']['ephemeral'] is True
+        assert calls('thread/fork')[0]['params']['excludeTurns'] is True
         assert_right_pane('Side chat 1')
         assert 'Start a conversation' in view(), 'Inherited parent transcript leaked into the side pane'
         assert len(calls('turn/start'))==1, 'Bare /side unexpectedly submitted a child turn'
@@ -65,15 +67,15 @@ with tempfile.TemporaryDirectory(prefix='vimex-side-') as temporary:
         send(b'\x1b');command('side maximize');capture('02-side-maximized')
         assert 'Main agent is working.' not in view()
         command('side reset');wait('Parent progress');checks.append('maximize-and-restore')
-        send(b'\x08');wait('MAIN · focused');capture('03-parent-focused')
-        send(b'\x0c');wait('SIDE · focused');checks.append('window-focus-bindings')
+        send(b'\x08');pump();capture('03-parent-focused')
+        send(b'\x0c');pump();checks.append('window-focus-bindings')
         command('side close');pump()
         assert 'Side chat 1' not in view()
         assert not calls('thread/archive')
         command('side');wait('Side chat 1');assert len(calls('thread/fork'))==1
         capture('04-side-reopened');checks.append('close-reopen-same-worker')
         command('side quit');pump(.5)
-        assert calls('thread/archive')[-1]['params']['threadId']=='side-child-1'
+        assert calls('thread/unsubscribe')[-1]['params']['threadId']=='side-child-1'
         assert calls('turn/interrupt')[-1]['params']['threadId']=='side-child-1'
         starts_before=len(calls('turn/start'))
         command('side');wait('Side chat 2');assert len(calls('thread/fork'))==2

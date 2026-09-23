@@ -74,6 +74,18 @@ test("child sessions stay out of the ordinary picker but remain addressable by I
   ).toEqual([{ id: child, summary: summaries[child] }])
 })
 
+test("side IDs stay out of the picker even when listed, favorited, or typed exactly", () => {
+  const parent = threadId("parent")
+  const side = threadId("01a0b1fa-cd31-7f11-b465-275ed3d0c21c")
+  const excluded = new Set([side])
+  expect(
+    searchSessions([parent, side], {}, "", [side], undefined, excluded),
+  ).toEqual([{ id: parent, summary: undefined }])
+  expect(
+    searchSessions([parent, side], {}, side, [side], undefined, excluded),
+  ).toEqual([])
+})
+
 test("favorites sort before recency without bypassing filters or exact IDs", () => {
   const old = threadId("old"),
     recent = threadId("recent")

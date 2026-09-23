@@ -383,14 +383,22 @@ export function captureLocalState(
     }
   }
   for (const id of state.retiredSideThreadIds) delete threads[id]
+  const ephemeralThreadIds = new Set(
+    Object.values(state.sideChats).flatMap((side) =>
+      side.ephemeral && side.threadId ? [side.threadId] : [],
+    ),
+  )
+  for (const id of ephemeralThreadIds) delete threads[id]
   return {
     version: 1,
     threads,
-    favoriteThreadIds: state.favoriteThreadIds,
+    favoriteThreadIds: state.favoriteThreadIds.filter(
+      (id) => !ephemeralThreadIds.has(id),
+    ),
     retiredSideThreadIds: state.retiredSideThreadIds,
     sideChats: Object.fromEntries(
       Object.entries(state.sideChats)
-        .filter(([, side]) => side.threadId)
+        .filter(([, side]) => side.threadId && !side.ephemeral)
         .map(([id, side]) => [id, { ...side, status: undefined }]),
     ),
   }

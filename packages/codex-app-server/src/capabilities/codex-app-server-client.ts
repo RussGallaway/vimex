@@ -348,6 +348,10 @@ export class CodexAppServerClient {
     await this.rpc.request("thread/archive", { threadId: thread })
   }
 
+  async unsubscribeThread(thread: string): Promise<void> {
+    await this.rpc.request("thread/unsubscribe", { threadId: thread })
+  }
+
   startTurn(
     thread: string,
     input: string | readonly UserInput[],

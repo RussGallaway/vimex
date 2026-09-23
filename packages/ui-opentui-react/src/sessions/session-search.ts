@@ -34,14 +34,16 @@ export function searchSessions(
   query: string,
   favorites: readonly ThreadId[] = [],
   cwd?: string,
+  excluded: ReadonlySet<ThreadId> = new Set(),
 ): SessionRow[] {
   const favoriteIds = new Set(favorites)
   const normalize = (path: string) => path.replace(/\/+$/, "") || "/"
   const candidates = [...new Set([...threads, ...favorites])].filter(
     (id) =>
-      cwd === undefined ||
-      (summaries[id]?.cwd !== undefined &&
-        normalize(summaries[id]!.cwd) === normalize(cwd)),
+      !excluded.has(id) &&
+      (cwd === undefined ||
+        (summaries[id]?.cwd !== undefined &&
+          normalize(summaries[id]!.cwd) === normalize(cwd))),
   )
   const exactQuery = query.trim()
   const exact = candidates.find((id) => id === exactQuery)
@@ -60,7 +62,8 @@ export function searchSessions(
     cwd === undefined &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(
       exactQuery,
-    )
+    ) &&
+    !excluded.has(threadId(exactQuery))
   ) {
     return [{ id: threadId(exactQuery) }]
   }
