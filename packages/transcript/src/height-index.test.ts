@@ -10,6 +10,8 @@ import {
   blockKey,
   persistentTranscriptBlockPlan,
   replaceTranscriptBlock,
+  spliceTranscriptItemBlocks,
+  transcriptPointBlockIndex,
   type TranscriptBlock,
   type TranscriptItemBlock,
   type TranscriptTurnActivityBlock,
@@ -30,6 +32,21 @@ function block(
     contentRevision: index + 1,
     estimatedRows: rows,
   })
+}
+
+function itemFragments(
+  root: TranscriptItemBlock,
+): readonly TranscriptItemBlock[] {
+  return Object.freeze(
+    [0, 1, 2].map((part) =>
+      Object.freeze({
+        ...root,
+        key: Object.freeze({ ...root.key, blockId: `part:${part}` }),
+        sourceSpan: Object.freeze({ from: part * 2, to: part * 2 + 2 }),
+        estimatedRows: part + 1,
+      }),
+    ),
+  )
 }
 
 function blocks(count: number): readonly TranscriptBlock[] {
@@ -623,4 +640,400 @@ test("height append extends valid sub-block targets and invalidates ambiguous it
   const stillAmbiguous = ambiguous?.appendBlock?.(recoveryPlan, suffix, 2)
   expect(stillAmbiguous?.itemBlockIndexes(root.key.itemId)).toBeUndefined()
   expect(index.itemBlockIndexes(root.key.itemId)).toEqual([0])
+})
+
+test.each([0, 1, 1000])(
+  "item span splice at ordinal %i preserves exact lookup, rows, and immutable snapshots",
+  (at) => {
+    const root = item(`splice-${at}`, "abcdef")
+    const fragments = itemFragments(root)
+    const prefix = Array.from({ length: at }, (_, index) => block(index, 2))
+    const suffix = [block(at + 1, 0), block(at + 2, 4)]
+    const initialPlan = persistentTranscriptBlockPlan(
+      Object.freeze([...prefix, root, ...suffix]),
+    )
+    const initial = createHeightIndex(initialPlan, [
+      {
+        blockKey: blockKey(suffix[0]!),
+        contentRevision: suffix[0]!.contentRevision,
+        rows: 0,
+      },
+    ])!
+    const counters = {
+      blockPlanUpdates: 0,
+      blockPlanNodeVisits: 0,
+      blockPlanNodesCopied: 0,
+    }
+    const previous = Object.freeze([root])
+    const expandedPlan = spliceTranscriptItemBlocks(
+      initialPlan,
+      at,
+      previous,
+      fragments,
+      counters,
+    )!
+    const expanded = initial.spliceItemBlocks?.(
+      expandedPlan,
+      at,
+      previous,
+      fragments,
+      [2, 0, 4],
+    )!
+    // A different prior-array identity has no lineage proof.
+    expect(
+      initial.spliceItemBlocks?.(
+        expandedPlan,
+        at,
+        [root],
+        fragments,
+        [2, 0, 4],
+      ),
+    ).toBeUndefined()
+    expect(expandedPlan.length).toBe(initialPlan.length + 2)
+    expect(expandedPlan.slice(at, at + 3)).toEqual([...fragments])
+    expect(Object.keys(expandedPlan)).toHaveLength(expandedPlan.length)
+    expect([...expandedPlan]).toEqual([...prefix, ...fragments, ...suffix])
+    expect(expanded.itemBlockIndexes(root.key.itemId)).toEqual([
+      at,
+      at + 1,
+      at + 2,
+    ])
+    expect(expanded.blockIndex(blockKey(suffix[0]!))).toBe(at + 3)
+    expect(expanded.blockIndex(blockKey(suffix[1]!))).toBe(at + 4)
+    expect(expanded.blockIndex(blockKey(root))).toBeUndefined()
+    expect(initial.blockIndex(blockKey(root))).toBe(at)
+    expect(initialPlan[at]).toBe(root)
+    const reference = createHeightIndex(expandedPlan, [
+      { blockKey: blockKey(fragments[0]!), contentRevision: 1, rows: 2 },
+      { blockKey: blockKey(fragments[1]!), contentRevision: 1, rows: 0 },
+      { blockKey: blockKey(fragments[2]!), contentRevision: 1, rows: 4 },
+      {
+        blockKey: blockKey(suffix[0]!),
+        contentRevision: suffix[0]!.contentRevision,
+        rows: 0,
+      },
+    ])!
+    expect(expanded.totalRows).toBe(reference.totalRows)
+    for (let ordinal = 0; ordinal <= expanded.blockCount; ordinal++)
+      expect(expanded.prefixRows(ordinal)).toBe(reference.prefixRows(ordinal))
+    for (let row = 0; row < expanded.totalRows; row++)
+      expect(expanded.blockAtRow(row)).toBe(reference.blockAtRow(row))
+    for (const offset of [0, 1, 2, 3, 4, 5, 6])
+      expect(
+        transcriptPointBlockIndex(
+          expandedPlan,
+          expanded,
+          {
+            itemId: root.key.itemId,
+            graphemeOffset: offset,
+          },
+          undefined,
+        ),
+      ).toBe(
+        transcriptPointBlockIndex(
+          expandedPlan,
+          reference,
+          {
+            itemId: root.key.itemId,
+            graphemeOffset: offset,
+          },
+          undefined,
+        ),
+      )
+    expect(counters.blockPlanNodeVisits).toBeLessThan(200)
+    expect(counters.blockPlanNodesCopied).toBeLessThan(200)
+    const adjusted = expanded.replaceHeight({
+      blockKey: blockKey(suffix[1]!),
+      contentRevision: suffix[1]!.contentRevision,
+      rows: 7,
+    })
+    expect(adjusted.totalRows).toBe(expanded.totalRows + 3)
+    expect(expanded.totalRows).toBe(reference.totalRows)
+    const changedFragment = adjusted.replaceHeight({
+      blockKey: blockKey(fragments[1]!),
+      contentRevision: fragments[1]!.contentRevision,
+      rows: 5,
+    })
+    expect(changedFragment.totalRows).toBe(adjusted.totalRows + 5)
+    expect(adjusted.totalRows).toBe(expanded.totalRows + 3)
+  },
+)
+
+test("repeated span growth and shrink collapses inverse overlays without rebuilding", () => {
+  const root = item("toggle-span", "abcdef")
+  const fragments = itemFragments(root)
+  const head = block(0, 0),
+    tail = block(1, 3)
+  let plan = persistentTranscriptBlockPlan(Object.freeze([head, root, tail]))
+  let index = createHeightIndex(plan, [
+    {
+      blockKey: blockKey(head),
+      contentRevision: head.contentRevision,
+      rows: 0,
+    },
+  ])!
+  for (let cycle = 0; cycle < 300; cycle++) {
+    const previous = Object.freeze(
+      index.itemBlockIndexes(root.key.itemId)!.map((ordinal) => plan[ordinal]!),
+    )
+    const next = previous.length === 1 ? fragments : Object.freeze([root])
+    const rows = previous.length === 1 ? [2, 0, 4] : [1]
+    const spliced = spliceTranscriptItemBlocks(plan, 1, previous, next)!
+    const updated = index.spliceItemBlocks?.(spliced, 1, previous, next, rows)
+    expect(updated).toBeDefined()
+    index = updated!
+    plan = spliced
+    expect(index.blockIndex(blockKey(tail))).toBe(plan.length - 1)
+    expect(index.totalRows).toBe(3 + rows.reduce((sum, row) => sum + row, 0))
+    expect(plan[0]).toBe(head)
+    expect(plan.at(-1)).toBe(tail)
+    expect(index.blockAtRow(0)).toBe(1)
+    expect(index.blockAtRow(index.totalRows - 1)).toBe(plan.length - 1)
+  }
+})
+
+test("post-fold tail admission, streaming revision, and measured rows keep indexed lineage", () => {
+  const root = item("folded-history", "abcdef")
+  const fragments = itemFragments(root)
+  const existing = item("existing-tail")
+  const initialPlan = persistentTranscriptBlockPlan(
+    Object.freeze([root, existing]),
+  )
+  const initial = createHeightIndex(initialPlan)!
+  const previous = Object.freeze([root])
+  const expandedPlan = spliceTranscriptItemBlocks(
+    initialPlan,
+    0,
+    previous,
+    fragments,
+  )!
+  const expanded = initial.spliceItemBlocks?.(
+    expandedPlan,
+    0,
+    previous,
+    fragments,
+    [2, 3, 4],
+  )!
+  const changedExisting = Object.freeze({
+    ...existing,
+    contentRevision: existing.contentRevision + 1,
+    estimatedRows: 6,
+  })
+  const revisedPlan = replaceTranscriptBlock(
+    expandedPlan,
+    3,
+    existing,
+    changedExisting,
+  )!
+  const revised = expanded.replaceBlock(
+    revisedPlan,
+    existing,
+    changedExisting,
+    6,
+  )!
+  expect(revised.blockIndex(blockKey(existing))).toBe(3)
+  expect(revised.rowRange(3, 4)?.rows).toBe(6)
+  expect(expanded.rowRange(3, 4)?.rows).toBe(1)
+  let plan = revisedPlan,
+    index = revised
+  for (let step = 0; step < 100; step++) {
+    const next = item(`admitted-${step}`)
+    const appended = appendTranscriptBlock(plan, next)
+    const updated = index.appendBlock?.(appended, next, step % 7)
+    expect(updated).toBeDefined()
+    plan = appended
+    index = updated!
+    expect(index.blockIndex(blockKey(next))).toBe(plan.length - 1)
+    expect(index.itemBlockIndexes(next.key.itemId)).toEqual([plan.length - 1])
+  }
+  const last = plan.at(-1)! as TranscriptItemBlock
+  const streamed = Object.freeze({
+    ...last,
+    contentRevision: last.contentRevision + 1,
+    estimatedRows: 11,
+  })
+  const streamedPlan = replaceTranscriptBlock(
+    plan,
+    plan.length - 1,
+    last,
+    streamed,
+  )!
+  const streamedIndex = index.replaceBlock(streamedPlan, last, streamed, 11)!
+  expect(streamedIndex.rowRange(plan.length - 1, plan.length)?.rows).toBe(11)
+  expect(streamedIndex.blockAtRow(streamedIndex.totalRows - 1)).toBe(
+    plan.length - 1,
+  )
+  expect(initial.blockCount).toBe(2)
+  expect(expanded.blockCount).toBe(4)
+  expect(revised.blockCount).toBe(4)
+  expect(index.blockCount).toBe(104)
+  expect(streamedIndex.supports(streamedPlan)).toBe(true)
+})
+
+test("fold overlay depth stays bounded after a tail append wraps the index", () => {
+  const roots = Array.from({ length: 130 }, (_, ordinal) =>
+    item(`bounded-span-${ordinal}`, "abcdef"),
+  )
+  let plan = persistentTranscriptBlockPlan(Object.freeze([...roots]))
+  let index = createHeightIndex(plan)!
+  const first = Object.freeze([roots[0]!])
+  const firstFragments = itemFragments(roots[0]!)
+  const expanded = spliceTranscriptItemBlocks(plan, 0, first, firstFragments)!
+  index = index.spliceItemBlocks?.(
+    expanded,
+    0,
+    first,
+    firstFragments,
+    firstFragments.map((fragment) => fragment.estimatedRows),
+  )!
+  plan = expanded
+
+  const admitted = block(999, 2)
+  const appended = appendTranscriptBlock(plan, admitted)
+  index = index.appendBlock?.(appended, admitted, 2)!
+  plan = appended
+  expect(index.supports(plan)).toBe(true)
+
+  for (let ordinal = 1; ordinal < 128; ordinal++) {
+    const root = roots[ordinal]!
+    const prior = Object.freeze([root])
+    const fragments = itemFragments(root)
+    const at = index.itemBlockIndexes(root.key.itemId)![0]!
+    const nextPlan = spliceTranscriptItemBlocks(plan, at, prior, fragments)!
+    const nextIndex = index.spliceItemBlocks?.(
+      nextPlan,
+      at,
+      prior,
+      fragments,
+      fragments.map((fragment) => fragment.estimatedRows),
+    )
+    expect(nextIndex).toBeDefined()
+    plan = nextPlan
+    index = nextIndex!
+  }
+  const last = roots[128]!
+  const lastPrior = Object.freeze([last])
+  const lastFragments = itemFragments(last)
+  const at = index.itemBlockIndexes(last.key.itemId)![0]!
+  const nextPlan = spliceTranscriptItemBlocks(
+    plan,
+    at,
+    lastPrior,
+    lastFragments,
+  )!
+  expect(
+    index.spliceItemBlocks?.(
+      nextPlan,
+      at,
+      lastPrior,
+      lastFragments,
+      lastFragments.map((fragment) => fragment.estimatedRows),
+    ),
+  ).toBeUndefined()
+  expect(index.supports(plan)).toBe(true)
+  expect(index.blockIndex(blockKey(admitted))).toBe(plan.length - 1)
+  expect(index.itemBlockIndexes(last.key.itemId)).toEqual([at])
+})
+
+test("persistent block splices stay balanced across alternating start, middle, and end edits", () => {
+  const roots = Array.from({ length: 12 }, (_, index) =>
+    item(`span-${index}`, "abcdef"),
+  )
+  const reference: TranscriptBlock[] = []
+  for (let index = 0; index < roots.length; index++) {
+    reference.push(roots[index]!)
+    for (let gap = 0; gap < 80; gap++)
+      reference.push(block(index * 80 + gap, 1))
+  }
+  let plan = persistentTranscriptBlockPlan(Object.freeze([...reference]))
+  for (let step = 0; step < 120; step++) {
+    const root = roots[step % roots.length]!
+    const from = reference.findIndex(
+      (candidate) =>
+        candidate.key.kind === "item" &&
+        candidate.key.itemId === root.key.itemId,
+    )
+    const prior = Object.freeze(
+      reference.slice(from, from + (reference[from] === root ? 1 : 3)),
+    )
+    const next =
+      prior.length === 1 ? itemFragments(root) : Object.freeze([root])
+    const counters = {
+      blockPlanUpdates: 0,
+      blockPlanNodeVisits: 0,
+      blockPlanNodesCopied: 0,
+    }
+    const previousPlan = plan
+    plan = spliceTranscriptItemBlocks(plan, from, prior, next, counters)!
+    reference.splice(from, prior.length, ...next)
+    expect([...plan]).toEqual(reference)
+    expect(plan.length).toBe(reference.length)
+    expect(previousPlan[from]).toBe(prior[0])
+    expect(counters.blockPlanUpdates).toBe(1)
+    expect(counters.blockPlanNodeVisits).toBeLessThan(200)
+    expect(counters.blockPlanNodesCopied).toBeLessThan(200)
+  }
+})
+
+test("seeded multi-item fold splices retain exact row and point lookup beyond 32 changes", () => {
+  const roots = Array.from({ length: 48 }, (_, index) =>
+    item(`random-span-${index}`, "abcdef"),
+  )
+  const reference: TranscriptBlock[] = []
+  for (let index = 0; index < roots.length; index++) {
+    reference.push(roots[index]!)
+    for (let gap = 0; gap < 9; gap++)
+      reference.push(block(index * 9 + gap, (gap % 4) + 1))
+  }
+  let plan = persistentTranscriptBlockPlan(Object.freeze([...reference]))
+  let index = createHeightIndex(plan)!
+  let seed = 0x5eed
+  for (let step = 0; step < 75; step++) {
+    seed = (Math.imul(seed, 1_664_525) + 1_013_904_223) >>> 0
+    const root = roots[seed % roots.length]!
+    const at = reference.findIndex(
+      (candidate) =>
+        candidate.key.kind === "item" &&
+        candidate.key.itemId === root.key.itemId,
+    )
+    const prior = Object.freeze(
+      reference.slice(at, at + (reference[at] === root ? 1 : 3)),
+    )
+    const next =
+      prior.length === 1 ? itemFragments(root) : Object.freeze([root])
+    const rows = next.map((candidate) => candidate.estimatedRows)
+    const priorIndex = index,
+      priorTotalRows = index.totalRows
+    const spliced = spliceTranscriptItemBlocks(plan, at, prior, next)!
+    const updated = index.spliceItemBlocks?.(spliced, at, prior, next, rows)
+    expect(updated).toBeDefined()
+    plan = spliced
+    index = updated!
+    reference.splice(at, prior.length, ...next)
+    const oracle = createHeightIndex(Object.freeze([...reference]))!
+    expect([...plan]).toEqual(reference)
+    expect(index.blockCount).toBe(reference.length)
+    expect(index.totalRows).toBe(oracle.totalRows)
+    expect(priorIndex.totalRows).toBe(priorTotalRows)
+    for (const ordinal of [0, at, at + next.length, reference.length])
+      expect(index.prefixRows(ordinal)).toBe(oracle.prefixRows(ordinal))
+    for (const row of [0, index.totalRows >>> 1, index.totalRows - 1])
+      expect(index.blockAtRow(row)).toBe(oracle.blockAtRow(row))
+    for (const offset of [0, 1, 2, 3, 4, 5, 6])
+      expect(
+        transcriptPointBlockIndex(
+          plan,
+          index,
+          { itemId: root.key.itemId, graphemeOffset: offset },
+          undefined,
+        ),
+      ).toBe(
+        transcriptPointBlockIndex(
+          plan,
+          oracle,
+          { itemId: root.key.itemId, graphemeOffset: offset },
+          undefined,
+        ),
+      )
+  }
 })

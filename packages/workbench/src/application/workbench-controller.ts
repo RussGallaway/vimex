@@ -49,6 +49,7 @@ import {
   emptyLocalState,
   localViewChanged,
   restoreThreadView,
+  sameLocalState,
   type LocalState,
   type SavedThreadView,
 } from "./local-state"
@@ -465,7 +466,6 @@ export class VimexController
   private closing = false
   private closePromise?: Promise<void>
   private localStateSnapshot: LocalState
-  private localStateJson: string
   private lifecycleSignature: string
   private signalClosing!: () => void
   private readonly closingSignal = new Promise<void>((resolve) => {
@@ -512,7 +512,6 @@ export class VimexController
       this.state = { ...this.state, preferences: ports.preferences.initial }
     }
     this.localStateSnapshot = ports.localState ?? emptyLocalState()
-    this.localStateJson = JSON.stringify(this.localStateSnapshot)
     this.lifecycleSignature = workbenchLifecycleSignature(
       captureWorkbenchLifecycle(this.state),
     )
@@ -918,10 +917,8 @@ export class VimexController
 
     if (localViewChanged(before, this.state, changedThreadIds)) {
       const next = captureLocalState(this.state, this.localStateSnapshot)
-      const json = JSON.stringify(next)
-      if (json !== this.localStateJson) {
+      if (!sameLocalState(next, this.localStateSnapshot)) {
         this.localStateSnapshot = next
-        this.localStateJson = json
         try {
           this.ports.onLocalState?.(next)
         } catch {

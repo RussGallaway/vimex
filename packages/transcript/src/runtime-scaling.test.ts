@@ -8,6 +8,7 @@ import {
 import {
   appendTranscriptScalingTail,
   buildOversizedTranscriptFixtures,
+  buildTranscriptNavigationFixture,
   buildTranscriptScalingFixture,
   buildTranscriptStructuralScalingFixture,
   transcriptScalingBlockCounts,
@@ -1949,6 +1950,87 @@ test.each([...transcriptScalingBlockCounts])(
   30_000,
 )
 
+test("unchanged detached history returns to the tail without rebuilding at every scale", () => {
+  for (const blockCount of transcriptScalingBlockCounts) {
+    const fixture = buildTranscriptScalingFixture(blockCount)
+    const diagnostics = scalingRuntimeDiagnostics()
+    const runtime = new TranscriptRuntime(
+      runtimeInput(fixture, fixture.before, "follow"),
+      {
+        windowPolicy: { viewportRows: 24, overscanRows: 24 },
+        diagnostics,
+      },
+    )
+    const initial = runtime.getSnapshot()
+    const anchor = Object.freeze({
+      itemId: fixture.targets.quarter,
+      graphemeOffset: 0,
+    })
+    const detachedTranscript = Object.freeze({
+      ...fixture.before.transcript,
+      cursor: anchor,
+      viewport: Object.freeze({
+        kind: "point" as const,
+        point: anchor,
+        preferredScreenRow: 5,
+      }),
+    })
+    const detachedSnapshot = Object.freeze({
+      ...fixture.before,
+      transcript: detachedTranscript,
+    })
+    runtime.update(
+      runtimeInput(fixture, detachedSnapshot, "detached", {
+        presentationDamage: { kind: "view" },
+      }),
+    )
+    const tailTranscript = Object.freeze({
+      ...fixture.before.transcript,
+      cursor: Object.freeze({ itemId: fixture.tailItemId, graphemeOffset: 0 }),
+      viewport: Object.freeze({ kind: "tail" as const }),
+    })
+    const tailSnapshot = Object.freeze({
+      ...fixture.before,
+      transcript: tailTranscript,
+    })
+    const before = { ...diagnostics }
+    let publications = 0
+    const unsubscribe = runtime.subscribe(() => {
+      publications++
+    })
+    const reattached = runtime.update(
+      runtimeInput(fixture, tailSnapshot, "follow", {
+        presentationDamage: { kind: "view" },
+      }),
+    )
+    unsubscribe()
+
+    expect(publications).toBe(1)
+    expect(reattached.mode).toBe("follow")
+    expect(reattached.transcript.cursor).toEqual(tailTranscript.cursor)
+    expect(reattached.transcript.viewport).toEqual(tailTranscript.viewport)
+    expect(reattached.displayedCanonicalRevision).toBe(
+      fixture.before.canonicalRevision,
+    )
+    expect(reattached.blocks).toBe(initial.blocks)
+    expect(reattached.window.bottomSpacerRows).toBe(0)
+    expect(reattached.window.blocks.length).toBeLessThanOrEqual(48)
+    expect(diagnostics.completePlanBuilds - before.completePlanBuilds).toBe(0)
+    expect(
+      diagnostics.completePlanBlockVisits - before.completePlanBlockVisits,
+    ).toBe(0)
+    expect(diagnostics.heightIndexBuilds - before.heightIndexBuilds).toBe(0)
+    expect(diagnostics.heightIndexUpdates - before.heightIndexUpdates).toBe(0)
+    expect(
+      diagnostics.windowGeometryBlockVisits - before.windowGeometryBlockVisits,
+    ).toBeLessThanOrEqual(48)
+    expect(
+      diagnostics.blockPlanWindowSliceItems - before.blockPlanWindowSliceItems,
+    ).toBeLessThanOrEqual(48)
+    runtime.dispose()
+  }
+}, 30_000)
+
 test("hidden same-item output reattaches once with bounded reconciliation at every scale", () => {
   for (const blockCount of transcriptScalingBlockCounts) {
     const fixture = buildTranscriptScalingFixture(blockCount)
@@ -2516,3 +2598,334 @@ test.each([...transcriptScalingBlockCounts])(
   },
   30_000,
 )
+
+test.each([...transcriptScalingBlockCounts])(
+  "fragmented command fold and expansion splice one item at %i exact render blocks",
+  (blockCount) => {
+    const oversized = buildOversizedTranscriptFixtures().find(
+      (candidate) => candidate.shape === "command-output",
+    )!
+    const point = Object.freeze({
+      itemId: oversized.item.id,
+      graphemeOffset: 0,
+    })
+    const withCompletedCommand = (
+      fixture: ReturnType<typeof buildTranscriptStructuralScalingFixture>,
+    ) => {
+      const counters = createConversationReductionDiagnostics()
+      const started = reduceConversationWithDiagnostics(
+        fixture.before.conversation,
+        {
+          type: "turn.started",
+          threadId: fixture.threadId,
+          turnId: oversized.item.turnId,
+        },
+        counters,
+      )
+      const withItem = reduceConversationWithDiagnostics(
+        started,
+        {
+          type: "item.started",
+          threadId: fixture.threadId,
+          item: oversized.item,
+        },
+        counters,
+      )
+      const conversation = reduceConversationWithDiagnostics(
+        withItem,
+        {
+          type: "turn.completed",
+          threadId: fixture.threadId,
+          turnId: oversized.item.turnId,
+          outcome: "complete",
+          durationMs: 1,
+        },
+        counters,
+      )
+      const transcript = Object.freeze({
+        ...syncTranscriptItem(fixture.before.transcript, oversized.item),
+        cursor: point,
+        viewport: Object.freeze({
+          kind: "point" as const,
+          point,
+          preferredScreenRow: 4,
+        }),
+      })
+      return Object.freeze({
+        canonicalRevision: fixture.before.canonicalRevision + 3,
+        conversation,
+        transcript,
+      })
+    }
+    const seedFixture = buildTranscriptStructuralScalingFixture(1)
+    const seed = withCompletedCommand(seedFixture)
+    const appendedBlockCount =
+      createTranscriptFrame(
+        runtimeInput(seedFixture, seed, "detached", {
+          canonicalDamage: { kind: "full" },
+        }),
+      ).blocks.length - 1
+    const fixture = buildTranscriptStructuralScalingFixture(
+      blockCount - appendedBlockCount,
+    )
+    const snapshot = withCompletedCommand(fixture)
+    const transcript = snapshot.transcript
+    const diagnostics = scalingRuntimeDiagnostics()
+    const runtime = new TranscriptRuntime(
+      runtimeInput(fixture, snapshot, "detached", {
+        canonicalDamage: { kind: "full" },
+      }),
+      {
+        windowPolicy: { viewportRows: 24, overscanRows: 24 },
+        diagnostics,
+      },
+    )
+    const expanded = runtime.getSnapshot()
+    expect(expanded.blocks.length).toBe(blockCount)
+    const expandedKeys = expanded.blocks.map(blockKey)
+    const priorCounters = { ...diagnostics }
+    let publications = 0
+    runtime.subscribe(() => publications++)
+    for (const folded of [true, false, true]) {
+      const nextTranscript = Object.freeze({
+        ...transcript,
+        folded: setTranscriptFoldValue(
+          transcript.folded,
+          oversized.item.id,
+          folded,
+        ),
+      })
+      const nextSnapshot = Object.freeze({
+        ...snapshot,
+        transcript: nextTranscript,
+      })
+      const after = runtime.update(
+        runtimeInput(fixture, nextSnapshot, "detached", {
+          presentationDamage: {
+            kind: "folds",
+            itemIds: [oversized.item.id],
+          },
+        }),
+      )
+      const reference = createTranscriptFrame(
+        runtimeInput(fixture, nextSnapshot, "detached", {
+          canonicalDamage: { kind: "full" },
+        }),
+      )
+      expect(after.blocks.map(blockKey)).toEqual(reference.blocks.map(blockKey))
+      expect(after.transcript.folded[oversized.item.id]).toBe(folded)
+      expect(after.window.blocks.length).toBeLessThanOrEqual(48)
+      expect(after.geometry.blockRows.length).toBeLessThanOrEqual(48)
+      expect(pointIsMaterialized(after.window.blocks, point)).toBe(true)
+      if (!folded) expect(after.blocks.map(blockKey)).toEqual(expandedKeys)
+      expect(diagnostics.completePlanBuilds).toBe(
+        priorCounters.completePlanBuilds,
+      )
+      expect(diagnostics.heightIndexBuilds).toBe(
+        priorCounters.heightIndexBuilds,
+      )
+      expect(diagnostics.completeGeometryBlockVisits).toBe(
+        priorCounters.completeGeometryBlockVisits,
+      )
+    }
+    expect(publications).toBe(3)
+    expect(expanded.blocks.map(blockKey)).toEqual(expandedKeys)
+    expect(diagnostics.blockPlanUpdates - priorCounters.blockPlanUpdates).toBe(
+      3,
+    )
+    runtime.dispose()
+  },
+  60_000,
+)
+
+test("mixed command, Markdown, and multi-file edit folds retain exact render plans", () => {
+  const fixture = buildTranscriptNavigationFixture({ blockCount: 100 })
+  const source = fixture.before
+  const expanded = buildTranscriptBlocks(source)
+  const kinds = ["command", "assistant", "edit"] as const
+  for (const kind of kinds) {
+    const target = source.transcript.order.find((itemId) => {
+      if (source.conversation.items[itemId]?.kind !== kind) return false
+      return (
+        expanded.filter(
+          (block) => block.key.kind === "item" && block.key.itemId === itemId,
+        ).length > 1
+      )
+    })!
+    expect(target).toBeDefined()
+    const cursor = Object.freeze({ itemId: target, graphemeOffset: 0 })
+    const transcript = Object.freeze({
+      ...source.transcript,
+      cursor,
+      viewport: Object.freeze({
+        kind: "point" as const,
+        point: cursor,
+        preferredScreenRow: 5,
+      }),
+    })
+    const snapshot = Object.freeze({ ...source, transcript })
+    const diagnostics = scalingRuntimeDiagnostics()
+    const runtime = new TranscriptRuntime(
+      runtimeInput(fixture, snapshot, "detached", {
+        canonicalDamage: { kind: "full" },
+      }),
+      {
+        windowPolicy: { viewportRows: 24, overscanRows: 24 },
+        diagnostics,
+      },
+    )
+    const baseline = { ...diagnostics }
+    for (const folded of [true, false]) {
+      const nextTranscript = Object.freeze({
+        ...transcript,
+        folded: setTranscriptFoldValue(transcript.folded, target, folded),
+      })
+      const nextSnapshot = Object.freeze({
+        ...snapshot,
+        transcript: nextTranscript,
+      })
+      const actual = runtime.update(
+        runtimeInput(fixture, nextSnapshot, "detached", {
+          presentationDamage: { kind: "folds", itemIds: [target] },
+        }),
+      )
+      const reference = createTranscriptFrame(
+        runtimeInput(fixture, nextSnapshot, "detached", {
+          canonicalDamage: { kind: "full" },
+        }),
+      )
+      expect(actual.blocks.map(blockKey)).toEqual(
+        reference.blocks.map(blockKey),
+      )
+      expect(
+        actual.blocks
+          .filter(
+            (block) => block.key.kind === "item" && block.key.itemId === target,
+          )
+          .map((block) =>
+            "projection" in block ? block.sourceSpan : undefined,
+          ),
+      ).toEqual(
+        reference.blocks
+          .filter(
+            (block) => block.key.kind === "item" && block.key.itemId === target,
+          )
+          .map((block) =>
+            "projection" in block ? block.sourceSpan : undefined,
+          ),
+      )
+      expect(pointIsMaterialized(actual.window.blocks, cursor)).toBe(true)
+      expect(diagnostics.completePlanBuilds).toBe(baseline.completePlanBuilds)
+      expect(diagnostics.heightIndexBuilds).toBe(baseline.heightIndexBuilds)
+    }
+    if (kind === "command") {
+      const later = source.transcript.order
+        .slice(source.transcript.order.indexOf(target) + 1)
+        .find(
+          (itemId) =>
+            source.conversation.items[itemId]?.kind === "user" &&
+            expanded.filter(
+              (block) =>
+                block.key.kind === "item" && block.key.itemId === itemId,
+            ).length === 1,
+        )!
+      expect(later).toBeDefined()
+      const laterTranscript = Object.freeze({
+        ...transcript,
+        folded: setTranscriptFoldValue(transcript.folded, later, true),
+      })
+      const laterSnapshot = Object.freeze({
+        ...snapshot,
+        transcript: laterTranscript,
+      })
+      const after = runtime.update(
+        runtimeInput(fixture, laterSnapshot, "detached", {
+          presentationDamage: { kind: "folds", itemIds: [later] },
+        }),
+      )
+      expect(after.blocks.map(blockKey)).toEqual(
+        createTranscriptFrame(
+          runtimeInput(fixture, laterSnapshot, "detached", {
+            canonicalDamage: { kind: "full" },
+          }),
+        ).blocks.map(blockKey),
+      )
+      expect(diagnostics.completePlanBuilds).toBe(baseline.completePlanBuilds)
+      expect(diagnostics.heightIndexBuilds).toBe(baseline.heightIndexBuilds)
+    }
+    runtime.dispose()
+  }
+})
+
+test("a fragmented historical fold keeps following tail stream updates incremental", () => {
+  const fixture = buildTranscriptNavigationFixture({ blockCount: 100 })
+  const snapshot = fixture.before
+  const plan = buildTranscriptBlocks(snapshot)
+  const target = snapshot.transcript.order.find(
+    (itemId) =>
+      snapshot.conversation.items[itemId]?.kind === "command" &&
+      plan.filter(
+        (block) => block.key.kind === "item" && block.key.itemId === itemId,
+      ).length > 1,
+  )!
+  expect(target).toBeDefined()
+  const diagnostics = scalingRuntimeDiagnostics()
+  const runtime = new TranscriptRuntime(
+    runtimeInput(fixture, snapshot, "follow", {
+      canonicalDamage: { kind: "full" },
+    }),
+    {
+      windowPolicy: { viewportRows: 24, overscanRows: 24 },
+      diagnostics,
+    },
+  )
+  const foldedTranscript = Object.freeze({
+    ...snapshot.transcript,
+    folded: setTranscriptFoldValue(snapshot.transcript.folded, target, true),
+  })
+  const folded = Object.freeze({ ...snapshot, transcript: foldedTranscript })
+  const before = runtime.update(
+    runtimeInput(fixture, folded, "follow", {
+      presentationDamage: { kind: "folds", itemIds: [target] },
+    }),
+  )
+  const baseline = { ...diagnostics }
+  const conversation = reduceConversationWithDiagnostics(
+    snapshot.conversation,
+    {
+      type: "item.delta",
+      threadId: fixture.threadId,
+      itemId: fixture.tailItemId,
+      delta: " Additional streamed tail output.",
+    },
+    createConversationReductionDiagnostics(),
+  )
+  const transcript = syncTranscriptItem(
+    foldedTranscript,
+    conversation.items[fixture.tailItemId]!,
+  )
+  const latest = Object.freeze({
+    canonicalRevision: snapshot.canonicalRevision + 1,
+    conversation,
+    transcript,
+  })
+  const after = runtime.update(
+    runtimeInput(fixture, latest, "follow", {
+      canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
+    }),
+  )
+  expect(after.displayedCanonicalRevision).toBe(latest.canonicalRevision)
+  expect(after.blocks.length).toBe(before.blocks.length)
+  expect(after.blocks.at(-1)).not.toBe(before.blocks.at(-1))
+  expect(after.transcript.folded[target]).toBe(true)
+  expect(diagnostics.completePlanBuilds).toBe(baseline.completePlanBuilds)
+  expect(diagnostics.heightIndexBuilds).toBe(baseline.heightIndexBuilds)
+  expect(after.blocks.map(blockKey)).toEqual(
+    createTranscriptFrame(
+      runtimeInput(fixture, latest, "follow", {
+        canonicalDamage: { kind: "full" },
+      }),
+    ).blocks.map(blockKey),
+  )
+  runtime.dispose()
+})

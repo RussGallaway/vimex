@@ -230,6 +230,86 @@ function sameSavedSideChat(
     sameArray(left.inheritedTurnIds, right.inheritedTurnIds)
   )
 }
+const samePersistedSideChat = (
+  left: import("./side-chat").SideChat,
+  right: import("./side-chat").SideChat,
+) =>
+  sameSavedSideChat(left, right) &&
+  left.status === right.status &&
+  left.ephemeral === right.ephemeral
+
+function sameSavedThreadView(
+  left: SavedThreadView,
+  right: SavedThreadView,
+): boolean {
+  const sameViewport =
+    left.viewport === right.viewport ||
+    (left.viewport.kind === "tail" && right.viewport.kind === "tail") ||
+    (left.viewport.kind === "point" &&
+      right.viewport.kind === "point" &&
+      samePoint(left.viewport.point, right.viewport.point) &&
+      left.viewport.preferredScreenRow === right.viewport.preferredScreenRow)
+  const sameOutbox =
+    left.outbox === right.outbox ||
+    (left.outbox.length === right.outbox.length &&
+      left.outbox.every((message, index) => {
+        const candidate = right.outbox[index]
+        return Boolean(
+          candidate &&
+          message.id === candidate.id &&
+          message.text === candidate.text &&
+          sameImages(message.images, candidate.images) &&
+          message.intent === candidate.intent &&
+          message.status === candidate.status &&
+          message.reason === candidate.reason,
+        )
+      }))
+  const sameJumps = (
+    before: readonly SavedTranscriptLocation[],
+    after: readonly SavedTranscriptLocation[],
+  ) =>
+    before === after ||
+    (before.length === after.length &&
+      before.every((location, index) => sameLocation(location, after[index])))
+  return (
+    left.draft === right.draft &&
+    sameImages(left.images, right.images) &&
+    left.cursorOffset === right.cursorOffset &&
+    sameRecord(left.folded, right.folded, (a, b) => a === b) &&
+    samePoint(left.cursor, right.cursor) &&
+    sameViewport &&
+    left.surface === right.surface &&
+    sameOutbox &&
+    (left.marks === right.marks ||
+      (left.marks !== undefined &&
+        right.marks !== undefined &&
+        sameRecord(left.marks, right.marks, sameLocation))) &&
+    (left.jumps === right.jumps ||
+      (left.jumps !== undefined &&
+        right.jumps !== undefined &&
+        sameJumps(left.jumps.back, right.jumps.back) &&
+        sameJumps(left.jumps.forward, right.jumps.forward)))
+  )
+}
+
+/** Compare saved views without serializing a transcript-sized fold map per motion. */
+export function sameLocalState(left: LocalState, right: LocalState): boolean {
+  return (
+    left === right ||
+    (left.version === right.version &&
+      sameArray(left.favoriteThreadIds, right.favoriteThreadIds) &&
+      sameArray(left.retiredSideThreadIds, right.retiredSideThreadIds) &&
+      (left.sideChats === right.sideChats ||
+        (left.sideChats !== undefined &&
+          right.sideChats !== undefined &&
+          sameRecord(
+            left.sideChats,
+            right.sideChats,
+            samePersistedSideChat,
+          ))) &&
+      sameRecord(left.threads, right.threads, sameSavedThreadView))
+  )
+}
 
 /** Fast relevance gate for the serialized local-view read model. */
 export function localViewChanged(

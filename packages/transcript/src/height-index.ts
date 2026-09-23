@@ -5,9 +5,13 @@ import type {
   TranscriptItemBlock,
 } from "./window"
 import {
+  appendTranscriptBlock,
   blockKey,
   isTranscriptBlockAppend,
   isTranscriptBlockReplacement,
+  isTranscriptBlockSplice,
+  persistentTranscriptBlockPlan,
+  replaceTranscriptBlock,
 } from "./window"
 
 /** A measured height is usable only for the exact block revision it describes. */
@@ -73,6 +77,14 @@ export interface TranscriptHeightIndex {
     next: TranscriptBlock,
     rows: number,
     diagnostics?: HeightIndexDiagnostics,
+  ): TranscriptHeightIndex | undefined
+  /** Rebind one exact item span without reindexing unaffected history. */
+  spliceItemBlocks?(
+    blocks: readonly TranscriptBlock[],
+    index: number,
+    previous: readonly TranscriptBlock[],
+    next: readonly TranscriptBlock[],
+    rows: readonly number[],
   ): TranscriptHeightIndex | undefined
   /** O(1) compatibility check for the exact complete-plan snapshot indexed at construction. */
   supports(blocks: readonly TranscriptBlock[]): boolean
@@ -711,9 +723,872 @@ class PersistentTranscriptHeightIndex implements TranscriptHeightIndex {
     )
   }
 
+  spliceItemBlocks(
+    blocks: readonly TranscriptBlock[],
+    index: number,
+    previous: readonly TranscriptBlock[],
+    next: readonly TranscriptBlock[],
+    rows: readonly number[],
+  ): TranscriptHeightIndex | undefined {
+    return spliceItemHeightIndex(
+      this,
+      this.sourceBlocks,
+      blocks,
+      index,
+      previous,
+      next,
+      rows,
+    )
+  }
+
   supports(blocks: readonly TranscriptBlock[]): boolean {
     return blocks === this.sourceBlocks
   }
+}
+
+/**
+ * A fold changes one contiguous item span. Keep the immutable old row tree and
+ * translate unaffected ordinals around that span; measurements still update
+ * the owning persistent tree. The overlay is compacted by a full rebuild after
+ * a bounded number of structural changes.
+ */
+class SplicedTranscriptHeightIndex implements TranscriptHeightIndex {
+  readonly blockCount: number
+  readonly totalRows: number
+  readonly depth: number
+  private readonly beforeRows: number
+  private readonly removedRows: number
+  private readonly insertedPrefix: readonly number[]
+  private readonly insertedByKey: ReadonlyMap<string, number>
+
+  constructor(
+    private readonly previous: TranscriptHeightIndex,
+    private readonly sourceBlocks: readonly TranscriptBlock[],
+    private readonly index: number,
+    private readonly removed: readonly TranscriptBlock[],
+    private readonly inserted: readonly TranscriptBlock[],
+    private readonly rows: readonly number[],
+  ) {
+    this.blockCount = previous.blockCount - removed.length + inserted.length
+    this.beforeRows = previous.prefixRows(index)
+    this.removedRows = previous.rowRange(index, index + removed.length)!.rows
+    const prefix = [0]
+    for (const row of rows) prefix.push(prefix.at(-1)! + row)
+    this.insertedPrefix = Object.freeze(prefix)
+    this.insertedByKey = new Map(
+      inserted.map((block, offset) => [blockKey(block), offset]),
+    )
+    this.totalRows =
+      previous.totalRows - this.removedRows + this.insertedPrefix.at(-1)!
+    this.depth = structuralOverlayDepth(previous) + 1
+    Object.freeze(this)
+  }
+
+  private get removedCount(): number {
+    return this.removed.length
+  }
+
+  prefixRows(blockIndex: number, diagnostics?: HeightIndexDiagnostics): number {
+    if (
+      !Number.isSafeInteger(blockIndex) ||
+      blockIndex < 0 ||
+      blockIndex > this.blockCount
+    )
+      return Number.NaN
+    if (blockIndex <= this.index)
+      return this.previous.prefixRows(blockIndex, diagnostics)
+    const local = blockIndex - this.index
+    if (local <= this.inserted.length)
+      return this.beforeRows + this.insertedPrefix[local]!
+    return (
+      this.previous.prefixRows(
+        blockIndex - this.inserted.length + this.removedCount,
+        diagnostics,
+      ) +
+      this.insertedPrefix.at(-1)! -
+      this.removedRows
+    )
+  }
+
+  blockAtRow(
+    row: number,
+    diagnostics?: HeightIndexDiagnostics,
+  ): number | undefined {
+    if (!Number.isSafeInteger(row) || row < 0 || row >= this.totalRows)
+      return undefined
+    if (row < this.beforeRows) return this.previous.blockAtRow(row, diagnostics)
+    const local = row - this.beforeRows
+    if (local < this.insertedPrefix.at(-1)!) {
+      let low = 0,
+        high = this.inserted.length
+      while (low < high) {
+        const middle = (low + high) >>> 1
+        if (this.insertedPrefix[middle + 1]! > local) high = middle
+        else low = middle + 1
+      }
+      return this.index + low
+    }
+    const oldRow = row - this.insertedPrefix.at(-1)! + this.removedRows
+    const oldIndex = this.previous.blockAtRow(oldRow, diagnostics)
+    return oldIndex === undefined
+      ? undefined
+      : oldIndex - this.removedCount + this.inserted.length
+  }
+
+  rowRange(
+    fromBlockIndex: number,
+    toBlockIndex: number,
+    diagnostics?: HeightIndexDiagnostics,
+  ): HeightRowRange | undefined {
+    if (
+      !Number.isSafeInteger(fromBlockIndex) ||
+      !Number.isSafeInteger(toBlockIndex) ||
+      fromBlockIndex < 0 ||
+      toBlockIndex < fromBlockIndex ||
+      toBlockIndex > this.blockCount
+    )
+      return undefined
+    const start = this.prefixRows(fromBlockIndex, diagnostics)
+    const end = this.prefixRows(toBlockIndex, diagnostics)
+    return Object.freeze({ start, end, rows: end - start })
+  }
+
+  blockIndex(key: string): number | undefined {
+    const inserted = this.insertedByKey.get(key)
+    if (inserted !== undefined) return this.index + inserted
+    const old = this.previous.blockIndex(key)
+    if (
+      old === undefined ||
+      (old >= this.index && old < this.index + this.removedCount)
+    )
+      return undefined
+    return old < this.index
+      ? old
+      : old - this.removedCount + this.inserted.length
+  }
+
+  itemBlockIndexes(itemId: ItemId): readonly number[] | undefined {
+    const first = this.inserted[0]
+    if (first?.key.kind === "item" && first.key.itemId === itemId)
+      return Object.freeze(
+        this.inserted.map((_, offset) => this.index + offset),
+      )
+    const old = this.previous.itemBlockIndexes(itemId)
+    if (!old) return undefined
+    return Object.freeze(
+      old.flatMap((ordinal) =>
+        ordinal >= this.index && ordinal < this.index + this.removedCount
+          ? []
+          : [
+              ordinal < this.index
+                ? ordinal
+                : ordinal - this.removedCount + this.inserted.length,
+            ],
+      ),
+    )
+  }
+
+  replaceHeight(
+    override: BlockHeightOverride,
+    diagnostics?: HeightIndexDiagnostics,
+  ): TranscriptHeightIndex {
+    if (!validRows(override.rows)) return this
+    const local = this.insertedByKey.get(override.blockKey)
+    if (local !== undefined) {
+      if (
+        this.inserted[local]?.contentRevision !== override.contentRevision ||
+        this.rows[local] === override.rows ||
+        !Number.isSafeInteger(
+          this.totalRows - this.rows[local]! + override.rows,
+        )
+      )
+        return this
+      const rows = [...this.rows]
+      rows[local] = override.rows
+      return new SplicedTranscriptHeightIndex(
+        this.previous,
+        this.sourceBlocks,
+        this.index,
+        this.removed,
+        this.inserted,
+        Object.freeze(rows),
+      )
+    }
+    if (this.blockIndex(override.blockKey) === undefined) return this
+    const previous = this.previous.replaceHeight(override, diagnostics)
+    if (
+      !Number.isSafeInteger(
+        previous.totalRows - this.removedRows + this.insertedPrefix.at(-1)!,
+      )
+    )
+      return this
+    return previous === this.previous
+      ? this
+      : new SplicedTranscriptHeightIndex(
+          previous,
+          this.sourceBlocks,
+          this.index,
+          this.removed,
+          this.inserted,
+          this.rows,
+        )
+  }
+
+  replaceBlock(
+    blocks: readonly TranscriptBlock[],
+    previous: TranscriptBlock,
+    next: TranscriptBlock,
+    rows: number,
+  ): TranscriptHeightIndex | undefined {
+    return replaceOneHeightIndex(
+      this,
+      this.sourceBlocks,
+      blocks,
+      previous,
+      next,
+      rows,
+    )
+  }
+
+  appendBlock(
+    blocks: readonly TranscriptBlock[],
+    next: TranscriptBlock,
+    rows: number,
+  ): TranscriptHeightIndex | undefined {
+    return appendOneHeightIndex(this, this.sourceBlocks, blocks, next, rows)
+  }
+
+  spliceItemBlocks(
+    blocks: readonly TranscriptBlock[],
+    index: number,
+    previous: readonly TranscriptBlock[],
+    next: readonly TranscriptBlock[],
+    rows: readonly number[],
+  ): TranscriptHeightIndex | undefined {
+    if (rows.length !== next.length || !rows.every(validRows)) return undefined
+    const oldRows = this.rowRange(index, index + previous.length)
+    if (
+      !oldRows ||
+      !Number.isSafeInteger(
+        this.totalRows - oldRows.rows + rows.reduce((sum, row) => sum + row, 0),
+      )
+    )
+      return undefined
+    if (
+      index === this.index &&
+      previous.length === this.inserted.length &&
+      previous.every((block, offset) => block === this.inserted[offset]) &&
+      next.length === this.removed.length &&
+      next.every((block, offset) => block === this.removed[offset]) &&
+      isTranscriptBlockSplice(this.sourceBlocks, blocks, index, previous, next)
+    ) {
+      let restored = this.previous
+      for (let offset = 0; offset < next.length; offset++)
+        restored = restored.replaceHeight({
+          blockKey: blockKey(next[offset]!),
+          contentRevision: next[offset]!.contentRevision,
+          rows: rows[offset]!,
+        })
+      if (
+        next.every(
+          (_, offset) =>
+            restored.rowRange(index + offset, index + offset + 1)?.rows ===
+            rows[offset],
+        )
+      )
+        return new RetargetedTranscriptHeightIndex(restored, blocks)
+    }
+    return spliceItemHeightIndex(
+      this,
+      this.sourceBlocks,
+      blocks,
+      index,
+      previous,
+      next,
+      rows,
+    )
+  }
+
+  supports(blocks: readonly TranscriptBlock[]): boolean {
+    return blocks === this.sourceBlocks
+  }
+}
+
+/** Rebind an exactly restored block sequence without retaining fold history. */
+class RetargetedTranscriptHeightIndex implements TranscriptHeightIndex {
+  readonly blockCount: number
+  readonly totalRows: number
+  private readonly base: TranscriptHeightIndex
+
+  constructor(
+    prior: TranscriptHeightIndex,
+    private readonly sourceBlocks: readonly TranscriptBlock[],
+  ) {
+    this.base =
+      prior instanceof RetargetedTranscriptHeightIndex ? prior.base : prior
+    this.blockCount = this.base.blockCount
+    this.totalRows = this.base.totalRows
+    Object.freeze(this)
+  }
+
+  get structuralDepth(): number {
+    return structuralOverlayDepth(this.base)
+  }
+
+  prefixRows(index: number, diagnostics?: HeightIndexDiagnostics): number {
+    return this.base.prefixRows(index, diagnostics)
+  }
+  blockAtRow(
+    row: number,
+    diagnostics?: HeightIndexDiagnostics,
+  ): number | undefined {
+    return this.base.blockAtRow(row, diagnostics)
+  }
+  rowRange(
+    from: number,
+    to: number,
+    diagnostics?: HeightIndexDiagnostics,
+  ): HeightRowRange | undefined {
+    return this.base.rowRange(from, to, diagnostics)
+  }
+  blockIndex(key: string): number | undefined {
+    return this.base.blockIndex(key)
+  }
+  itemBlockIndexes(itemId: ItemId): readonly number[] | undefined {
+    return this.base.itemBlockIndexes(itemId)
+  }
+  replaceHeight(
+    override: BlockHeightOverride,
+    diagnostics?: HeightIndexDiagnostics,
+  ): TranscriptHeightIndex {
+    const updated = this.base.replaceHeight(override, diagnostics)
+    return updated === this.base
+      ? this
+      : new RetargetedTranscriptHeightIndex(updated, this.sourceBlocks)
+  }
+  replaceBlock(
+    blocks: readonly TranscriptBlock[],
+    previous: TranscriptBlock,
+    next: TranscriptBlock,
+    rows: number,
+  ): TranscriptHeightIndex | undefined {
+    return replaceOneHeightIndex(
+      this,
+      this.sourceBlocks,
+      blocks,
+      previous,
+      next,
+      rows,
+    )
+  }
+  appendBlock(
+    blocks: readonly TranscriptBlock[],
+    next: TranscriptBlock,
+    rows: number,
+  ): TranscriptHeightIndex | undefined {
+    return appendOneHeightIndex(this, this.sourceBlocks, blocks, next, rows)
+  }
+  spliceItemBlocks(
+    blocks: readonly TranscriptBlock[],
+    index: number,
+    previous: readonly TranscriptBlock[],
+    next: readonly TranscriptBlock[],
+    rows: readonly number[],
+  ): TranscriptHeightIndex | undefined {
+    return spliceItemHeightIndex(
+      this,
+      this.sourceBlocks,
+      blocks,
+      index,
+      previous,
+      next,
+      rows,
+    )
+  }
+  supports(blocks: readonly TranscriptBlock[]): boolean {
+    return blocks === this.sourceBlocks
+  }
+}
+
+/** One stable-key revision over an indexed sequence, collapsed on repeated updates. */
+class ReplacedTranscriptHeightIndex implements TranscriptHeightIndex {
+  readonly blockCount: number
+  readonly totalRows: number
+  private readonly startRows: number
+  private readonly oldRows: number
+
+  constructor(
+    private readonly previous: TranscriptHeightIndex,
+    private readonly sourceBlocks: readonly TranscriptBlock[],
+    private readonly ordinal: number,
+    private readonly block: TranscriptBlock,
+    private readonly rows: number,
+  ) {
+    this.blockCount = previous.blockCount
+    this.startRows = previous.prefixRows(ordinal)
+    this.oldRows = previous.rowRange(ordinal, ordinal + 1)!.rows
+    this.totalRows = previous.totalRows - this.oldRows + rows
+    Object.freeze(this)
+  }
+
+  get structuralDepth(): number {
+    return structuralOverlayDepth(this.previous)
+  }
+
+  prefixRows(index: number, diagnostics?: HeightIndexDiagnostics): number {
+    const rows = this.previous.prefixRows(index, diagnostics)
+    return index > this.ordinal ? rows - this.oldRows + this.rows : rows
+  }
+  blockAtRow(
+    row: number,
+    diagnostics?: HeightIndexDiagnostics,
+  ): number | undefined {
+    if (!Number.isSafeInteger(row) || row < 0 || row >= this.totalRows)
+      return undefined
+    if (row < this.startRows) return this.previous.blockAtRow(row, diagnostics)
+    if (row < this.startRows + this.rows) return this.ordinal
+    return this.previous.blockAtRow(row - this.rows + this.oldRows, diagnostics)
+  }
+  rowRange(
+    from: number,
+    to: number,
+    diagnostics?: HeightIndexDiagnostics,
+  ): HeightRowRange | undefined {
+    if (
+      !Number.isSafeInteger(from) ||
+      !Number.isSafeInteger(to) ||
+      from < 0 ||
+      to < from ||
+      to > this.blockCount
+    )
+      return undefined
+    const start = this.prefixRows(from, diagnostics)
+    const end = this.prefixRows(to, diagnostics)
+    return Object.freeze({ start, end, rows: end - start })
+  }
+  blockIndex(key: string): number | undefined {
+    return this.previous.blockIndex(key)
+  }
+  itemBlockIndexes(itemId: ItemId): readonly number[] | undefined {
+    return this.previous.itemBlockIndexes(itemId)
+  }
+  replaceHeight(
+    override: BlockHeightOverride,
+    diagnostics?: HeightIndexDiagnostics,
+  ): TranscriptHeightIndex {
+    if (blockKey(this.block) === override.blockKey) {
+      if (
+        this.block.contentRevision !== override.contentRevision ||
+        !validRows(override.rows) ||
+        this.rows === override.rows ||
+        !Number.isSafeInteger(this.totalRows - this.rows + override.rows)
+      )
+        return this
+      return new ReplacedTranscriptHeightIndex(
+        this.previous,
+        this.sourceBlocks,
+        this.ordinal,
+        this.block,
+        override.rows,
+      )
+    }
+    const updated = this.previous.replaceHeight(override, diagnostics)
+    if (!Number.isSafeInteger(updated.totalRows - this.oldRows + this.rows))
+      return this
+    return updated === this.previous
+      ? this
+      : new ReplacedTranscriptHeightIndex(
+          updated,
+          this.sourceBlocks,
+          this.ordinal,
+          this.block,
+          this.rows,
+        )
+  }
+  replaceBlock(
+    blocks: readonly TranscriptBlock[],
+    previous: TranscriptBlock,
+    next: TranscriptBlock,
+    rows: number,
+  ): TranscriptHeightIndex | undefined {
+    if (
+      previous === this.block &&
+      isTranscriptBlockReplacement(this.sourceBlocks, blocks, previous, next) &&
+      validRows(rows) &&
+      previous.key.kind === "item" &&
+      next.key.kind === "item" &&
+      previous.key.itemId === next.key.itemId &&
+      previous.key.blockId === "root" &&
+      next.key.blockId === "root" &&
+      "projection" in next &&
+      validInitialItemSpan(itemSpanRef(next, this.ordinal)) &&
+      Number.isSafeInteger(this.previous.totalRows - this.oldRows + rows)
+    )
+      return new ReplacedTranscriptHeightIndex(
+        this.previous,
+        blocks,
+        this.ordinal,
+        next,
+        rows,
+      )
+    return replaceOneHeightIndex(
+      this,
+      this.sourceBlocks,
+      blocks,
+      previous,
+      next,
+      rows,
+    )
+  }
+  appendBlock(
+    blocks: readonly TranscriptBlock[],
+    next: TranscriptBlock,
+    rows: number,
+  ): TranscriptHeightIndex | undefined {
+    return appendOneHeightIndex(this, this.sourceBlocks, blocks, next, rows)
+  }
+  spliceItemBlocks(
+    blocks: readonly TranscriptBlock[],
+    index: number,
+    previous: readonly TranscriptBlock[],
+    next: readonly TranscriptBlock[],
+    rows: readonly number[],
+  ): TranscriptHeightIndex | undefined {
+    return spliceItemHeightIndex(
+      this,
+      this.sourceBlocks,
+      blocks,
+      index,
+      previous,
+      next,
+      rows,
+    )
+  }
+  supports(blocks: readonly TranscriptBlock[]): boolean {
+    return blocks === this.sourceBlocks
+  }
+}
+
+function replaceOneHeightIndex(
+  prior: TranscriptHeightIndex,
+  source: readonly TranscriptBlock[],
+  blocks: readonly TranscriptBlock[],
+  previous: TranscriptBlock,
+  next: TranscriptBlock,
+  rows: number,
+): TranscriptHeightIndex | undefined {
+  if (
+    !validRows(rows) ||
+    !isTranscriptBlockReplacement(source, blocks, previous, next) ||
+    previous.key.kind !== "item" ||
+    next.key.kind !== "item" ||
+    previous.key.blockId !== "root" ||
+    next.key.blockId !== "root" ||
+    previous.key.itemId !== next.key.itemId ||
+    blockKey(previous) !== blockKey(next) ||
+    !("projection" in next)
+  )
+    return undefined
+  const ordinal = prior.blockIndex(blockKey(previous))
+  const itemIndexes = prior.itemBlockIndexes(previous.key.itemId)
+  if (
+    ordinal === undefined ||
+    source[ordinal] !== previous ||
+    itemIndexes?.length !== 1 ||
+    itemIndexes[0] !== ordinal ||
+    !validInitialItemSpan(itemSpanRef(next, ordinal)) ||
+    !Number.isSafeInteger(
+      prior.totalRows - prior.rowRange(ordinal, ordinal + 1)!.rows + rows,
+    )
+  )
+    return undefined
+  return new ReplacedTranscriptHeightIndex(prior, blocks, ordinal, next, rows)
+}
+
+/** A separately indexed persistent tail keeps post-fold admissions logarithmic. */
+class AppendedTranscriptHeightIndex implements TranscriptHeightIndex {
+  readonly blockCount: number
+  readonly totalRows: number
+
+  constructor(
+    private readonly base: TranscriptHeightIndex,
+    private readonly sourceBlocks: readonly TranscriptBlock[],
+    private readonly suffixPlan: readonly TranscriptBlock[],
+    private readonly suffixIndex: TranscriptHeightIndex,
+  ) {
+    this.blockCount = base.blockCount + suffixIndex.blockCount
+    this.totalRows = base.totalRows + suffixIndex.totalRows
+    Object.freeze(this)
+  }
+
+  get structuralDepth(): number {
+    return structuralOverlayDepth(this.base)
+  }
+
+  prefixRows(index: number, diagnostics?: HeightIndexDiagnostics): number {
+    if (!Number.isSafeInteger(index) || index < 0 || index > this.blockCount)
+      return Number.NaN
+    return index <= this.base.blockCount
+      ? this.base.prefixRows(index, diagnostics)
+      : this.base.totalRows +
+          this.suffixIndex.prefixRows(index - this.base.blockCount, diagnostics)
+  }
+  blockAtRow(
+    row: number,
+    diagnostics?: HeightIndexDiagnostics,
+  ): number | undefined {
+    if (!Number.isSafeInteger(row) || row < 0 || row >= this.totalRows)
+      return undefined
+    if (row < this.base.totalRows) return this.base.blockAtRow(row, diagnostics)
+    const suffix = this.suffixIndex.blockAtRow(
+      row - this.base.totalRows,
+      diagnostics,
+    )
+    return suffix === undefined ? undefined : this.base.blockCount + suffix
+  }
+  rowRange(
+    from: number,
+    to: number,
+    diagnostics?: HeightIndexDiagnostics,
+  ): HeightRowRange | undefined {
+    if (
+      !Number.isSafeInteger(from) ||
+      !Number.isSafeInteger(to) ||
+      from < 0 ||
+      to < from ||
+      to > this.blockCount
+    )
+      return undefined
+    const start = this.prefixRows(from, diagnostics)
+    const end = this.prefixRows(to, diagnostics)
+    return Object.freeze({ start, end, rows: end - start })
+  }
+  blockIndex(key: string): number | undefined {
+    const suffix = this.suffixIndex.blockIndex(key)
+    return suffix === undefined
+      ? this.base.blockIndex(key)
+      : this.base.blockCount + suffix
+  }
+  itemBlockIndexes(itemId: ItemId): readonly number[] | undefined {
+    const base = this.base.itemBlockIndexes(itemId)
+    const suffix = this.suffixIndex.itemBlockIndexes(itemId)
+    if (base && suffix) return undefined
+    return suffix
+      ? Object.freeze(suffix.map((ordinal) => this.base.blockCount + ordinal))
+      : base
+  }
+  replaceHeight(
+    override: BlockHeightOverride,
+    diagnostics?: HeightIndexDiagnostics,
+  ): TranscriptHeightIndex {
+    const suffix = this.suffixIndex.blockIndex(override.blockKey)
+    if (suffix !== undefined) {
+      const updated = this.suffixIndex.replaceHeight(override, diagnostics)
+      if (!Number.isSafeInteger(this.base.totalRows + updated.totalRows))
+        return this
+      return updated === this.suffixIndex
+        ? this
+        : new AppendedTranscriptHeightIndex(
+            this.base,
+            this.sourceBlocks,
+            this.suffixPlan,
+            updated,
+          )
+    }
+    const updated = this.base.replaceHeight(override, diagnostics)
+    if (!Number.isSafeInteger(updated.totalRows + this.suffixIndex.totalRows))
+      return this
+    return updated === this.base
+      ? this
+      : new AppendedTranscriptHeightIndex(
+          updated,
+          this.sourceBlocks,
+          this.suffixPlan,
+          this.suffixIndex,
+        )
+  }
+  replaceBlock(
+    blocks: readonly TranscriptBlock[],
+    previous: TranscriptBlock,
+    next: TranscriptBlock,
+    rows: number,
+  ): TranscriptHeightIndex | undefined {
+    if (
+      !isTranscriptBlockReplacement(this.sourceBlocks, blocks, previous, next)
+    )
+      return undefined
+    const suffixOrdinal = this.suffixIndex.blockIndex(blockKey(previous))
+    if (suffixOrdinal !== undefined) {
+      const replaced = replaceTranscriptBlock(
+        this.suffixPlan,
+        suffixOrdinal,
+        previous,
+        next,
+      )
+      const updated = replaced
+        ? this.suffixIndex.replaceBlock(replaced, previous, next, rows)
+        : undefined
+      return replaced &&
+        updated &&
+        Number.isSafeInteger(this.base.totalRows + updated.totalRows)
+        ? new AppendedTranscriptHeightIndex(
+            this.base,
+            blocks,
+            replaced,
+            updated,
+          )
+        : undefined
+    }
+    return replaceOneHeightIndex(
+      this,
+      this.sourceBlocks,
+      blocks,
+      previous,
+      next,
+      rows,
+    )
+  }
+  appendBlock(
+    blocks: readonly TranscriptBlock[],
+    next: TranscriptBlock,
+    rows: number,
+    diagnostics?: HeightIndexDiagnostics,
+  ): TranscriptHeightIndex | undefined {
+    if (
+      !validRows(rows) ||
+      !Number.isSafeInteger(this.totalRows + rows) ||
+      !isTranscriptBlockAppend(this.sourceBlocks, blocks, next) ||
+      this.base.blockIndex(blockKey(next)) !== undefined ||
+      (next.key.kind === "item" && this.base.itemBlockIndexes(next.key.itemId))
+    )
+      return undefined
+    const appended = appendTranscriptBlock(this.suffixPlan, next)
+    const updated = this.suffixIndex.appendBlock?.(
+      appended,
+      next,
+      rows,
+      diagnostics,
+    )
+    return updated
+      ? new AppendedTranscriptHeightIndex(this.base, blocks, appended, updated)
+      : undefined
+  }
+  spliceItemBlocks(
+    blocks: readonly TranscriptBlock[],
+    index: number,
+    previous: readonly TranscriptBlock[],
+    next: readonly TranscriptBlock[],
+    rows: readonly number[],
+  ): TranscriptHeightIndex | undefined {
+    return spliceItemHeightIndex(
+      this,
+      this.sourceBlocks,
+      blocks,
+      index,
+      previous,
+      next,
+      rows,
+    )
+  }
+  supports(blocks: readonly TranscriptBlock[]): boolean {
+    return blocks === this.sourceBlocks
+  }
+}
+
+function appendOneHeightIndex(
+  prior: TranscriptHeightIndex,
+  source: readonly TranscriptBlock[],
+  blocks: readonly TranscriptBlock[],
+  next: TranscriptBlock,
+  rows: number,
+): TranscriptHeightIndex | undefined {
+  if (
+    !validRows(rows) ||
+    !isTranscriptBlockAppend(source, blocks, next) ||
+    prior.blockIndex(blockKey(next)) !== undefined ||
+    !Number.isSafeInteger(prior.totalRows + rows) ||
+    ("projection" in next &&
+      !validInitialItemSpan(itemSpanRef(next, prior.blockCount))) ||
+    (next.key.kind === "item" && prior.itemBlockIndexes(next.key.itemId))
+  )
+    return undefined
+  const suffixPlan = persistentTranscriptBlockPlan(Object.freeze([next]))
+  const suffixIndex = createHeightIndex(suffixPlan, [
+    { blockKey: blockKey(next), contentRevision: next.contentRevision, rows },
+  ])
+  return suffixIndex
+    ? new AppendedTranscriptHeightIndex(prior, blocks, suffixPlan, suffixIndex)
+    : undefined
+}
+
+function structuralOverlayDepth(index: TranscriptHeightIndex): number {
+  return index instanceof SplicedTranscriptHeightIndex
+    ? index.depth
+    : index instanceof RetargetedTranscriptHeightIndex ||
+        index instanceof ReplacedTranscriptHeightIndex ||
+        index instanceof AppendedTranscriptHeightIndex
+      ? index.structuralDepth
+      : 0
+}
+
+function spliceItemHeightIndex(
+  prior: TranscriptHeightIndex,
+  source: readonly TranscriptBlock[],
+  blocks: readonly TranscriptBlock[],
+  index: number,
+  previous: readonly TranscriptBlock[],
+  next: readonly TranscriptBlock[],
+  rows: readonly number[],
+): TranscriptHeightIndex | undefined {
+  if (
+    !isTranscriptBlockSplice(source, blocks, index, previous, next) ||
+    next.length !== rows.length ||
+    next.length === 0 ||
+    previous.length === 0 ||
+    !rows.every(validRows) ||
+    !Number.isSafeInteger(
+      prior.totalRows -
+        prior.rowRange(index, index + previous.length)!.rows +
+        rows.reduce((sum, row) => sum + row, 0),
+    )
+  )
+    return undefined
+  const first = previous[0]
+  if (first?.key.kind !== "item") return undefined
+  const indexes = prior.itemBlockIndexes(first.key.itemId)
+  const spans = next.map((block, offset) =>
+    "projection" in block ? itemSpanRef(block, index + offset) : undefined,
+  )
+  if (
+    !indexes ||
+    indexes.length !== previous.length ||
+    indexes.some((ordinal, offset) => ordinal !== index + offset) ||
+    previous.some((block, offset) => source[index + offset] !== block) ||
+    spans.some(
+      (span, offset) =>
+        !span ||
+        (offset === 0
+          ? !validInitialItemSpan(span)
+          : !validFollowingItemSpan(spans[offset - 1]!, span)),
+    ) ||
+    new Set(next.map(blockKey)).size !== next.length ||
+    next.some((block) => {
+      const old = prior.blockIndex(blockKey(block))
+      return (
+        old !== undefined && (old < index || old >= index + previous.length)
+      )
+    }) ||
+    structuralOverlayDepth(prior) >= 128
+  )
+    return undefined
+  return new SplicedTranscriptHeightIndex(
+    prior,
+    blocks,
+    index,
+    previous,
+    next,
+    Object.freeze([...rows]),
+  )
 }
 
 /**

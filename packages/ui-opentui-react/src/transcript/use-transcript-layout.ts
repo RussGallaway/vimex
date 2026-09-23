@@ -5,6 +5,7 @@ import type { ThreadId } from "@vimex/conversation"
 import {
   blockGraphemeRange,
   blockKey,
+  transcriptOrderIndex,
   type GeometryStyleRevision,
   type LogicalPoint,
   type TranscriptFrame,
@@ -22,6 +23,7 @@ import {
 } from "react"
 import type { VimexUiController } from "../contracts"
 import { buildTranscriptLayout, type TranscriptLayout } from "./layout"
+import { invalidateRenderedBlock } from "./measure-rendered-block"
 import {
   measureRenderedTranscript,
   measuredPoint,
@@ -167,22 +169,134 @@ export function useTranscriptLayout(options: {
     const prior = measuredLayout.current
     if (!scrollbox || !prior) return false
     const deltaY = lastScrollTop.current - scrollbox.scrollTop
-    const translated = translateTranscriptLayout(prior, 0, deltaY)
-    const anchor = topVisiblePoint(translated, scrollbox)
+    let translated = translateTranscriptLayout(prior, 0, deltaY)
+    let anchor = topVisiblePoint(translated, scrollbox)
+    if (current.runtime && current.frame) {
+      const frame = current.frame
+      // A newly visible fragment can retain estimated height or an empty
+      // source map while its Markdown children finish native layout. Refresh
+      // only visible roots before deriving a semantic anchor from the index.
+      const underestimated = frame.window.blocks.flatMap((block) => {
+        const root = scrollbox.getRenderable(transcriptBlockRenderableId(block))
+        if (
+          !root ||
+          root.screenY >=
+            scrollbox.viewport.screenY + scrollbox.viewport.height ||
+          root.screenY + root.height <= scrollbox.viewport.screenY ||
+          (anchor && root.screenY > anchor.screenY)
+        )
+          return []
+        const geometry = frame.geometry.byBlockKey[blockKey(block)]
+        const hasUnmappedSource =
+          "projection" in block &&
+          blockGraphemeRange(block).to > blockGraphemeRange(block).from &&
+          Object.keys(geometry?.pointOffsetsByRow ?? {}).length === 0
+        return geometry?.rows === undefined ||
+          geometry.rows < root.height ||
+          hasUnmappedSource
+          ? [root]
+          : []
+      })
+      if (underestimated.length) {
+        prepareNativeTranscriptLayout(renderer)
+        for (const root of underestimated) invalidateRenderedBlock(root)
+        const measuredFrame = current.runtime.getSnapshot()
+        let recovered = measureRenderedTranscript(renderer, scrollbox, {
+          frame: measuredFrame,
+          runtime: current.runtime,
+          styleRevision: current.styleRevision ?? "default",
+        })
+        // The measurement may publish corrected heights and a new window.
+        // Read its geometry while the overlapping native roots are still here.
+        const correctedFrame = current.runtime.getSnapshot()
+        if (correctedFrame !== measuredFrame)
+          recovered = measureRenderedTranscript(renderer, scrollbox, {
+            frame: correctedFrame,
+            runtime: current.runtime,
+            styleRevision: current.styleRevision ?? "default",
+          })
+        if (recovered) {
+          translated = recovered
+          anchor = topVisiblePoint(recovered, scrollbox)
+        }
+      }
+    }
     let fallback: ReturnType<TranscriptRuntime["scrollAnchorAtRow"]>
     if (!anchor && current.runtime) {
-      // Convert the native viewport into indexed document rows using the last
-      // mounted placement, including its padding and cumulative translation.
-      const entry = Object.entries(translated.placementByBlockKey ?? {}).find(
-        ([key]) => translated.geometry?.rowByBlockKey[key] !== undefined,
-      )
-      const documentRow = entry
-        ? translated.geometry!.rowByBlockKey[entry[0]]! +
-          scrollbox.viewport.screenY -
-          entry[1].screenY -
-          (translated.screenOffset?.y ?? 0)
-        : scrollbox.scrollTop
+      const runtimeFrame = current.runtime.getSnapshot()
+      const viewport = runtimeFrame.transcript.viewport
+      // A height correction can move native spacer coordinates by many rows.
+      // Start from the last semantic anchor in the current height index when
+      // possible, then apply the requested native scroll displacement.
+      let documentRow: number | undefined
+      if (viewport.kind === "point")
+        for (const block of runtimeFrame.window.blocks) {
+          if (
+            !("projection" in block) ||
+            block.key.itemId !== viewport.point.itemId
+          )
+            continue
+          const range = blockGraphemeRange(block)
+          if (
+            viewport.point.graphemeOffset < range.from ||
+            viewport.point.graphemeOffset >= range.to
+          )
+            continue
+          const key = blockKey(block)
+          const start = runtimeFrame.geometry.rowByBlockKey[key]
+          const local =
+            runtimeFrame.geometry.byBlockKey[key]?.points[
+              viewport.point.graphemeOffset
+            ]
+          if (start !== undefined && local) {
+            documentRow =
+              start + local.row - viewport.preferredScreenRow - deltaY
+            break
+          }
+        }
+      if (documentRow === undefined) {
+        const entry = Object.entries(translated.placementByBlockKey ?? {}).find(
+          ([key]) => translated.geometry?.rowByBlockKey[key] !== undefined,
+        )
+        documentRow = entry
+          ? translated.geometry!.rowByBlockKey[entry[0]]! +
+            scrollbox.viewport.screenY -
+            entry[1].screenY -
+            (translated.screenOffset?.y ?? 0)
+          : scrollbox.scrollTop
+      }
       fallback = current.runtime.scrollAnchorAtRow(documentRow)
+      const transcript = current.runtime.getSnapshot().transcript
+      const priorPoint =
+        transcript.viewport.kind === "point"
+          ? transcript.viewport.point
+          : transcript.cursor
+      if (fallback && priorPoint && deltaY !== 0) {
+        const order = transcriptOrderIndex(transcript.order)
+        const priorIndex = order.get(priorPoint.itemId)
+        const fallbackIndex = order.get(fallback.point.itemId)
+        const displacement =
+          priorIndex === undefined || fallbackIndex === undefined
+            ? 0
+            : fallbackIndex - priorIndex ||
+              fallback.point.graphemeOffset - priorPoint.graphemeOffset
+        if (displacement * deltaY > 0) {
+          // Estimated rows can land in an unmounted gap after a window shift.
+          // Never let that approximation reverse the semantic direction of a
+          // manual scroll; retain the last exact point until roots catch up.
+          const priorRow =
+            transcript.viewport.kind === "point"
+              ? transcript.viewport.preferredScreenRow
+              : scrollbox.viewport.height - 1
+          fallback = {
+            point: priorPoint,
+            preferredScreenRow: Math.max(
+              0,
+              Math.min(scrollbox.viewport.height - 1, priorRow + deltaY),
+            ),
+          }
+        }
+      }
     }
     if (!anchor && !fallback) return false
     measuredLayout.current = translated
@@ -206,7 +320,7 @@ export function useTranscriptLayout(options: {
         preferredScreenRow: row,
       })
     return true
-  }, [controller, scrollRef])
+  }, [controller, renderer, scrollRef])
 
   const onManualScroll = useCallback(
     (rows?: number, cursor?: "follow" | "clamp") => {
@@ -431,45 +545,37 @@ export function useTranscriptLayout(options: {
       const advance = () => {
         const prior = measuredLayout.current
         const top = scrollbox.viewport.screenY
-        // Coalesce only consecutive moves in the same direction. A reversal
-        // must be applied after clamping the preceding run at the boundary.
+        // Keep each key's cursor-follow boundary even when input arrives in a
+        // burst; the queued moves are still resolved in this layout pass.
         const intent = pendingScrollRows.current.shift() ?? { rows: 0 }
-        let requested = intent.rows
-        while (
-          pendingScrollRows.current.length &&
-          pendingScrollRows.current[0]!.cursor === intent.cursor &&
-          Math.sign(pendingScrollRows.current[0]!.rows) === Math.sign(requested)
-        )
-          requested += pendingScrollRows.current.shift()!.rows
+        const requested = intent.rows
         const frame = latest.current.frame
         const coherent =
           prior &&
           (!frame ||
             (prior.materializedBlocks === frame.window.blocks &&
               prior.geometry === frame.geometry))
+        const maxStep = Math.min(
+          Math.abs(requested),
+          Math.max(1, Math.floor(scrollbox.viewport.height / 2)),
+        )
         let anchoredStep = 0
         if (coherent) {
           for (const point of visibleMeasuredPoints(prior, {
-            screenY: Math.min(top, top + requested),
-            height: Math.abs(requested) + 1,
+            screenY: Math.min(top, top + Math.sign(requested) * maxStep),
+            height: maxStep + 1,
           })) {
             const delta = point.screenY - top
             if (
               !point.hidden &&
               Math.sign(delta) === Math.sign(requested) &&
-              Math.abs(delta) <= Math.abs(requested) &&
+              Math.abs(delta) <= maxStep &&
               Math.abs(delta) > Math.abs(anchoredStep)
             )
               anchoredStep = delta
           }
         }
-        const step =
-          anchoredStep ||
-          Math.sign(requested) *
-            Math.min(
-              Math.abs(requested),
-              Math.max(1, Math.floor(scrollbox.viewport.height / 2)),
-            )
+        const step = anchoredStep || Math.sign(requested) * maxStep
         const cursor =
           latest.current.runtime?.getSnapshot().transcript.cursor ??
           latest.current.transcript.cursor
@@ -478,11 +584,116 @@ export function useTranscriptLayout(options: {
         scrollbox.stickyScroll = false
         const oldTop = scrollbox.scrollTop
         scrollbox.scrollBy(step, "step")
-        if (oldTop !== scrollbox.scrollTop && requested !== step)
+        const moved = scrollbox.scrollTop - oldTop
+        const remaining = requested - moved
+        if (moved !== 0 && remaining !== 0)
           pendingScrollRows.current.unshift({
             ...intent,
-            rows: requested - step,
+            rows: remaining,
           })
+        if (moved === 0 && requested !== 0 && latest.current.runtime) {
+          const runtime = latest.current.runtime
+          const runtimeFrame = runtime.getSnapshot()
+          const viewport = runtimeFrame.transcript.viewport
+          const viewportPoint =
+            viewport.kind === "point"
+              ? viewport.point
+              : runtimeFrame.transcript.cursor
+          const preferredScreenRow =
+            viewport.kind === "point"
+              ? viewport.preferredScreenRow
+              : scrollbox.viewport.height - 1
+          const hasHistory =
+            requested < 0
+              ? runtimeFrame.window.topSpacerRows > 0
+              : runtimeFrame.window.bottomSpacerRows > 0
+          if (hasHistory && viewportPoint) {
+            const owning = runtimeFrame.window.blocks.find((block) => {
+              if (
+                !("projection" in block) ||
+                block.key.itemId !== viewportPoint.itemId
+              )
+                return false
+              const range = blockGraphemeRange(block)
+              return (
+                viewportPoint.graphemeOffset >= range.from &&
+                (viewportPoint.graphemeOffset < range.to ||
+                  (range.to === block.projection.sourceSpans.length &&
+                    viewportPoint.graphemeOffset === range.to))
+              )
+            })
+            const key = owning ? blockKey(owning) : undefined
+            const start =
+              key === undefined
+                ? undefined
+                : runtimeFrame.geometry.rowByBlockKey[key]
+            const local =
+              key === undefined
+                ? undefined
+                : runtimeFrame.geometry.byBlockKey[key]?.points[
+                    viewportPoint.graphemeOffset
+                  ]?.row
+            const indexedRow =
+              start !== undefined && local !== undefined
+                ? start + local - preferredScreenRow
+                : requested < 0
+                  ? runtimeFrame.window.topSpacerRows
+                  : runtimeFrame.window.topSpacerRows +
+                    runtimeFrame.window.blocks.reduce(
+                      (rows, block) =>
+                        rows +
+                        (runtimeFrame.geometry.byBlockKey[blockKey(block)]
+                          ?.rows ?? 1),
+                      0,
+                    )
+            const destination = runtime.scrollAnchorAtRow(
+              indexedRow + requested,
+            )
+            const order = transcriptOrderIndex(runtimeFrame.transcript.order)
+            const originIndex = order.get(viewportPoint.itemId)
+            const targetIndex =
+              destination && order.get(destination.point.itemId)
+            const semanticMovement =
+              originIndex === undefined || targetIndex === undefined
+                ? 0
+                : targetIndex - originIndex ||
+                  destination!.point.graphemeOffset -
+                    viewportPoint.graphemeOffset
+            const rowMovement = destination
+              ? destination.preferredScreenRow - preferredScreenRow
+              : 0
+            if (
+              destination &&
+              (semanticMovement * requested > 0 ||
+                (semanticMovement === 0 && rowMovement * requested < 0))
+            ) {
+              if (intent.cursor && cursorPoint)
+                pendingCursor.current = {
+                  row: Math.max(
+                    0,
+                    Math.min(
+                      scrollbox.viewport.height - 1,
+                      cursorPoint.screenY - top,
+                    ),
+                  ),
+                  column: cursorPoint.screenX - scrollbox.viewport.screenX,
+                }
+              pendingAnchor.current = false
+              pendingRestore.current = true
+              flushSync(() =>
+                controller.transcript({
+                  type: "viewport.anchor",
+                  ...destination,
+                }),
+              )
+              return
+            }
+          }
+          // A native edge with no earlier or later semantic point consumes this
+          // key. Keeping it queued would prevent the next opposite-direction
+          // key from running when no further native frame is scheduled.
+          return
+        }
         if (intent.cursor && cursorPoint) {
           const translatedRow =
             cursorPoint.screenY -

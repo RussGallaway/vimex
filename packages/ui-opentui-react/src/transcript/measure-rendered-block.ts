@@ -73,6 +73,7 @@ interface RenderedBlockState {
   readonly renderable: Renderable
   readonly observedRenderables: WeakSet<Renderable>
   readonly observedText: WeakSet<TextBufferRenderable>
+  readonly observedMarkdownBlocks: WeakSet<Renderable>
   blockKey?: string
   signalRevision: number
   dirty: boolean
@@ -95,6 +96,7 @@ function stateFor(renderable: Renderable): RenderedBlockState {
     renderable,
     observedRenderables: new WeakSet(),
     observedText: new WeakSet(),
+    observedMarkdownBlocks: new WeakSet(),
     signalRevision: 0,
     dirty: true,
     destroyed: false,
@@ -173,7 +175,16 @@ function observeNativeTree(state: RenderedBlockState, root: Renderable): void {
     observeRenderable(state, current)
     if (current instanceof TextBufferRenderable) observeText(state, current)
     if (current instanceof MarkdownRenderable) {
-      for (const block of markdownBlocks(current)) visit(block.renderable)
+      for (const block of markdownBlocks(current)) {
+        // Markdown roots can have their final height before parsed children
+        // receive native layout. A child's later resize must refresh semantic
+        // points even when the owning root retains the same height.
+        if (!state.observedMarkdownBlocks.has(block.renderable)) {
+          state.observedMarkdownBlocks.add(block.renderable)
+          block.renderable.on("resized", () => markDirty(state))
+        }
+        visit(block.renderable)
+      }
     }
     for (const child of current.getChildren())
       if ("screenX" in child) visit(child as Renderable)

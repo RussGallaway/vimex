@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test"
-import { TextRenderable, type Renderable } from "@opentui/core"
+import {
+  MarkdownRenderable,
+  SyntaxStyle,
+  TextRenderable,
+  type Renderable,
+} from "@opentui/core"
 import { testRender } from "@opentui/react/test-utils"
 import { flushSync } from "@opentui/react"
 import { prepareNativeTranscriptLayout } from "./scroll-preparation"
@@ -156,6 +161,57 @@ test("native line events dirty only their owning block and preserve identity whe
     expect(changed.nativeRevision).toBeGreaterThan(first.nativeRevision)
     expect(changed.points[1]?.row).toBe(1)
     expect(first.points[1]?.row).toBe(0)
+  } finally {
+    await act(async () => setup.renderer.destroy())
+  }
+})
+
+test("a Markdown child resize invalidates its owning block after native layout", async () => {
+  const markdown = "alpha paragraph\n\nbeta paragraph"
+  const block = blockFor(markdown)
+  const setup = await testRender(
+    <box id="block" width={30}>
+      <markdown
+        id="markdown:measure-item"
+        syntaxStyle={SyntaxStyle.create()}
+        content={markdown}
+      />
+    </box>,
+    { width: 40, height: 10 },
+  )
+  try {
+    await act(async () => {
+      await setup.flush()
+      await setup.renderOnce()
+    })
+    const renderable = setup.renderer.root.findDescendantById(
+      "block",
+    ) as Renderable
+    const native = setup.renderer.root.findDescendantById(
+      "markdown:measure-item",
+    ) as MarkdownRenderable
+    const children = (
+      native as unknown as {
+        _blockStates: readonly { renderable: Renderable }[]
+      }
+    )._blockStates
+    expect(children.length).toBeGreaterThan(0)
+    measureRenderedBlock({
+      renderer: setup.renderer,
+      renderable,
+      block,
+      width: 30,
+      styleRevision: 1,
+      folded: false,
+    })
+    expect(takeDirtyRenderedBlocks()).toEqual([])
+    children[0]!.renderable.emit("resized", { width: 30, height: 2 })
+    expect(takeDirtyRenderedBlocks()).toEqual([
+      expect.objectContaining({
+        renderable,
+        blockKey: `item:${block.key.itemId}:root`,
+      }),
+    ])
   } finally {
     await act(async () => setup.renderer.destroy())
   }

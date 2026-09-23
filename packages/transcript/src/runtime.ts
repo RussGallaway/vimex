@@ -62,6 +62,7 @@ import {
   planTranscriptWindow,
   pointIsMaterialized,
   replaceTranscriptBlock,
+  spliceTranscriptItemBlocks,
   transcriptPointBlockIndex,
   type TranscriptActivityPresentation,
   type TranscriptBlock,
@@ -1588,8 +1589,14 @@ export class TranscriptRuntime {
     let materialized = false
     let activityChanged = false
     for (const itemId of itemIds) {
-      const position = this.itemBlockIndexes.get(itemId)
+      const itemIndexes = index?.itemBlockIndexes(itemId)
+      const position = index
+        ? itemIndexes?.length === 1
+          ? itemIndexes[0]
+          : undefined
+        : this.itemBlockIndexes.get(itemId)
       if (position === -1) return undefined
+      if (itemIndexes && itemIndexes.length !== 1) return undefined
       const prior =
         position === undefined || position < 0 ? undefined : blocks[position]
       const next = buildTranscriptItemBlock(input, itemId)
@@ -1740,7 +1747,9 @@ export class TranscriptRuntime {
       let changed = false
 
       if (completion.itemId) {
-        const position = this.itemBlockIndexes.get(completion.itemId)
+        const itemIndexes = index.itemBlockIndexes(completion.itemId)
+        const position = itemIndexes?.length === 1 ? itemIndexes[0] : undefined
+        if (itemIndexes && itemIndexes.length !== 1) return undefined
         const prior =
           position === undefined || position < 0 ? undefined : blocks[position]
         const next = buildTranscriptItemBlock(input, completion.itemId)
@@ -2010,22 +2019,105 @@ export class TranscriptRuntime {
       presentationDamage: frozenDamage(damage),
       reveal: input.reveal,
     })
-    if (
-      damage.kind === "folds" &&
-      damage.itemIds.some(
+    if (damage.kind === "folds") {
+      const changed = damage.itemIds.filter(
         (itemId) =>
-          this.itemBlockIndexes.get(itemId) === -1 ||
-          buildTranscriptItemBlocks(presentationInput, itemId).length > 1,
+          raw.transcript.folded[itemId] !==
+          this.frame.transcript.folded[itemId],
       )
-    ) {
-      return this.rebuild(
-        presentationInput,
-        damage,
-        true,
-        undefined,
-        this.displayedInput,
-        true,
+      if (changed.length === 1) {
+        const itemId = changed[0]!
+        const currentIndex = this.heightIndex?.supports(this.frame.blocks)
+          ? this.heightIndex
+          : undefined
+        const positions = currentIndex?.itemBlockIndexes(itemId)
+        const nextBlocks = buildTranscriptItemBlocks(presentationInput, itemId)
+        if (
+          currentIndex &&
+          positions?.length &&
+          nextBlocks.length &&
+          (positions.length !== 1 || nextBlocks.length !== 1) &&
+          !this.frame.window.activityBatchByItem[itemId]
+        ) {
+          const start = positions[0]!
+          const previous = Object.freeze(
+            positions.map((position) => this.frame.blocks[position]!),
+          )
+          const blocks = spliceTranscriptItemBlocks(
+            this.frame.blocks,
+            start,
+            previous,
+            nextBlocks,
+            this.diagnostics,
+          )
+          const rows = nextBlocks.map((block) => {
+            const geometry = this.frame.geometry.byBlockKey[blockKey(block)]
+            return geometry &&
+              geometryMatchesBlock(
+                geometry,
+                block,
+                Boolean(raw.transcript.folded[itemId]),
+                "item",
+              )
+              ? geometry.rows
+              : raw.transcript.folded[itemId]
+                ? 1
+                : Math.max(1, block.estimatedRows)
+          })
+          const index = blocks
+            ? currentIndex.spliceItemBlocks?.(
+                blocks,
+                start,
+                previous,
+                nextBlocks,
+                rows,
+              )
+            : undefined
+          if (blocks && index) {
+            const removed = new Set(previous.map(blockKey))
+            const geometryByKey = Object.freeze(
+              Object.fromEntries(
+                Object.entries(raw.geometry.byBlockKey).filter(
+                  ([key]) => !removed.has(key),
+                ),
+              ),
+            )
+            const prepared = Object.freeze({ ...raw, blocks })
+            const activityIndex = this.heightIndexForActivityChanges(
+              prepared,
+              index,
+            )
+            const planned = this.withPlannedWindow(
+              prepared,
+              activityIndex,
+              displayedReveal(input, prepared, this.diagnostics),
+              geometryByKey,
+            )
+            this.itemBlockIndexes.set(
+              itemId,
+              nextBlocks.length === 1 ? start : -1,
+            )
+            this.displayedInput = presentationInput
+            this.activityProtectionState = planned.transcript
+            return this.publish(planned, activityIndex)
+          }
+        }
+      }
+      if (
+        changed.some(
+          (itemId) =>
+            this.itemBlockIndexes.get(itemId) === -1 ||
+            buildTranscriptItemBlocks(presentationInput, itemId).length > 1,
+        )
       )
+        return this.rebuild(
+          presentationInput,
+          damage,
+          true,
+          undefined,
+          this.displayedInput,
+          true,
+        )
     }
     const foldsChanged = raw.transcript.folded !== this.frame.transcript.folded
     const targeted =
@@ -2500,6 +2592,22 @@ export class TranscriptRuntime {
     const hiddenDamage = reattaching
       ? this.hiddenDamage.snapshot(this.diagnostics)
       : noneDamage
+    // A detached viewport can return to follow without any canonical change.
+    // Keep the existing block plan and height index in that case: rebuilding
+    // the entire history only to change attachment makes `G` scale with it.
+    if (
+      reattaching &&
+      !revisionChanged &&
+      priorFrame.displayedCanonicalRevision === input.canonicalRevision &&
+      hiddenDamage.kind === "none" &&
+      canonicalDamage.kind === "none" &&
+      (presentationDamage.kind === "none" ||
+        presentationDamage.kind === "view" ||
+        presentationDamage.kind === "folds")
+    ) {
+      this.hiddenDamage.reset()
+      return this.publishPresentation(input, presentationDamage)
+    }
     const damage = reattaching
       ? mergeDamage(
           hiddenDamage,

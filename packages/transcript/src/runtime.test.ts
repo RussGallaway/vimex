@@ -1880,7 +1880,7 @@ test("tail completion requires unexcluded follow presentation and exact persiste
   ).toBe(1)
 })
 
-test("folding a completed command fragment plan takes the exact root rebuild fallback", () => {
+test("folding a completed command fragment plan splices its item span without rebuilding", () => {
   let source = fixture()
   source = apply(source, {
     type: "turn.completed",
@@ -1955,7 +1955,8 @@ test("folding a completed command fragment plan takes the exact root rebuild fal
       )
       .map(blockKey),
   ).toEqual([`item:${commandId}:root`])
-  expect(diagnostics.completePlanBuilds - baseline.completePlanBuilds).toBe(1)
+  expect(diagnostics.completePlanBuilds - baseline.completePlanBuilds).toBe(0)
+  expect(diagnostics.heightIndexBuilds - baseline.heightIndexBuilds).toBe(0)
 
   const restored = runtime.update({
     ...input(source, "follow"),
@@ -1972,7 +1973,9 @@ test("folding a completed command fragment plan takes the exact root rebuild fal
   expect(
     restoredFragments.every((block, index) => block === fragments[index]),
   ).toBe(true)
-  expect(diagnostics.completePlanBuilds - baseline.completePlanBuilds).toBe(2)
+  expect(diagnostics.completePlanBuilds - baseline.completePlanBuilds).toBe(0)
+  expect(diagnostics.heightIndexBuilds - baseline.heightIndexBuilds).toBe(0)
+  expect(diagnostics.blockPlanUpdates - baseline.blockPlanUpdates).toBe(2)
 })
 
 test("detached fragment fold fallbacks rebuild only the pinned revision and preserve hidden damage", () => {

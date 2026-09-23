@@ -126,11 +126,19 @@ interface BlockPlanAppend {
   readonly next: TranscriptBlock
 }
 
+interface BlockPlanSplice {
+  readonly source: readonly TranscriptBlock[]
+  readonly index: number
+  readonly previous: readonly TranscriptBlock[]
+  readonly next: readonly TranscriptBlock[]
+}
+
 interface BlockPlanData {
   readonly root?: BlockPlanNode
   readonly length: number
   readonly replacement?: BlockPlanReplacement
   readonly append?: BlockPlanAppend
+  readonly splice?: BlockPlanSplice
 }
 
 export interface TranscriptBlockPlanDiagnostics {
@@ -187,6 +195,79 @@ function blockPlanBranch(
     left,
     right,
   })
+}
+
+function joinBlockPlanNodes(
+  left: BlockPlanNode | undefined,
+  right: BlockPlanNode | undefined,
+  diagnostics?: TranscriptBlockPlanDiagnostics,
+): BlockPlanNode | undefined {
+  if (!left) return right
+  if (!right) return left
+  if (left.height > right.height + 1 && left.kind === "branch") {
+    const joined = joinBlockPlanNodes(left.right, right, diagnostics)!
+    if (left.left.height >= joined.height - 1)
+      return blockPlanBranch(left.left, joined, diagnostics)
+    if (joined.kind !== "branch")
+      return blockPlanBranch(left.left, joined, diagnostics)
+    if (joined.right.height >= joined.left.height)
+      return blockPlanBranch(
+        blockPlanBranch(left.left, joined.left, diagnostics),
+        joined.right,
+        diagnostics,
+      )
+    if (joined.left.kind !== "branch")
+      return blockPlanBranch(left.left, joined, diagnostics)
+    return blockPlanBranch(
+      blockPlanBranch(left.left, joined.left.left, diagnostics),
+      blockPlanBranch(joined.left.right, joined.right, diagnostics),
+      diagnostics,
+    )
+  }
+  if (right.height > left.height + 1 && right.kind === "branch") {
+    const joined = joinBlockPlanNodes(left, right.left, diagnostics)!
+    if (right.right.height >= joined.height - 1)
+      return blockPlanBranch(joined, right.right, diagnostics)
+    if (joined.kind !== "branch")
+      return blockPlanBranch(joined, right.right, diagnostics)
+    if (joined.left.height >= joined.right.height)
+      return blockPlanBranch(
+        joined.left,
+        blockPlanBranch(joined.right, right.right, diagnostics),
+        diagnostics,
+      )
+    if (joined.right.kind !== "branch")
+      return blockPlanBranch(joined, right.right, diagnostics)
+    return blockPlanBranch(
+      blockPlanBranch(joined.left, joined.right.left, diagnostics),
+      blockPlanBranch(joined.right.right, right.right, diagnostics),
+      diagnostics,
+    )
+  }
+  return blockPlanBranch(left, right, diagnostics)
+}
+
+function splitBlockPlanNode(
+  node: BlockPlanNode | undefined,
+  count: number,
+  diagnostics?: TranscriptBlockPlanDiagnostics,
+): readonly [BlockPlanNode | undefined, BlockPlanNode | undefined] {
+  if (!node) return [undefined, undefined]
+  if (count <= 0) return [undefined, node]
+  if (count >= node.count) return [node, undefined]
+  if (diagnostics) diagnostics.blockPlanNodeVisits += 1
+  if (node.kind === "leaf") return [undefined, node]
+  if (count < node.left.count) {
+    const [left, right] = splitBlockPlanNode(node.left, count, diagnostics)
+    return [left, joinBlockPlanNodes(right, node.right, diagnostics)]
+  }
+  if (count === node.left.count) return [node.left, node.right]
+  const [left, right] = splitBlockPlanNode(
+    node.right,
+    count - node.left.count,
+    diagnostics,
+  )
+  return [joinBlockPlanNodes(node.left, left, diagnostics), right]
 }
 
 function appendBlockPlanNode(
@@ -430,6 +511,74 @@ export function appendTranscriptBlock(
     length: data.length + 1,
     append: Object.freeze({ source: plan, next }),
   })
+}
+
+/** Replace one contiguous logical item's block span while sharing history. */
+export function spliceTranscriptItemBlocks(
+  blocks: readonly TranscriptBlock[],
+  index: number,
+  previous: readonly TranscriptBlock[],
+  next: readonly TranscriptBlock[],
+  diagnostics?: TranscriptBlockPlanDiagnostics,
+): readonly TranscriptBlock[] | undefined {
+  const plan = persistentTranscriptBlockPlan(blocks)
+  const data = blockPlanData.get(plan)!
+  if (
+    !Number.isSafeInteger(index) ||
+    index < 0 ||
+    index + previous.length > data.length ||
+    previous.length === 0 ||
+    next.length === 0 ||
+    previous.some(
+      (block, offset) =>
+        blockPlanValue(data.root, index + offset, diagnostics) !== block,
+    ) ||
+    previous[0]?.key.kind !== "item" ||
+    previous.some(
+      (block) =>
+        block.key.kind !== "item" ||
+        (previous[0]?.key.kind === "item" &&
+          block.key.itemId !== previous[0].key.itemId),
+    ) ||
+    next.some(
+      (block) =>
+        block.key.kind !== "item" ||
+        (previous[0]?.key.kind === "item" &&
+          block.key.itemId !== previous[0].key.itemId),
+    )
+  )
+    return undefined
+  const [before, remaining] = splitBlockPlanNode(data.root, index, diagnostics)
+  const [, after] = splitBlockPlanNode(remaining, previous.length, diagnostics)
+  const inserted = buildBlockPlan(next, 0, next.length)
+  const root = joinBlockPlanNodes(
+    joinBlockPlanNodes(before, inserted, diagnostics),
+    after,
+    diagnostics,
+  )
+  if (diagnostics) diagnostics.blockPlanUpdates += 1
+  return blockPlan({
+    root,
+    length: data.length - previous.length + next.length,
+    splice: Object.freeze({ source: plan, index, previous, next }),
+  })
+}
+
+/** O(1) proof of an exact item-span splice from a prior indexed plan. */
+export function isTranscriptBlockSplice(
+  source: readonly TranscriptBlock[],
+  blocks: readonly TranscriptBlock[],
+  index: number,
+  previous: readonly TranscriptBlock[],
+  next: readonly TranscriptBlock[],
+): boolean {
+  const splice = blockPlanData.get(blocks)?.splice
+  return (
+    splice?.source === source &&
+    splice.index === index &&
+    splice.previous === previous &&
+    splice.next === next
+  )
 }
 
 /** O(1) lineage proof consumed by indexes that retain complete-plan ordinals. */
