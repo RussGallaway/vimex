@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import type { ScrollBoxRenderable } from "@opentui/core"
 import { act } from "react"
-import { blockKey } from "@vimex/transcript"
+import { blockKey, graphemes } from "@vimex/transcript"
 import { transcriptBlockRenderableId } from "./rendered-layout"
 import { itemId, turnId } from "@vimex/conversation"
 import { wheelHarness, thread } from "./scroll-continuity-harness"
@@ -404,4 +404,113 @@ test("odd-height half-page bursts preserve native per-key rounding", async () =>
   const reference = await run(true)
   const actual = await run(false)
   for (const paint of actual) expect(paint).toEqual(reference.at(-1)!)
+}, 30000)
+
+test("expanded multi-file diffs do not spin native layout during Ctrl-U and brace navigation", async () => {
+  const h = await wheelHarness(0)
+  try {
+    const changes = Array.from({ length: 128 }, (_, index) => {
+      const path = `src/file-${index}.ts`
+      return {
+        path,
+        action: "update" as const,
+        patch: `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-old\n+new${index === 0 ? " e\u0301" : ""}`,
+      }
+    })
+    const patch = changes.map((change) => change.patch).join("\n")
+    const lastOffset = graphemes(patch).length - 1
+    const edit = itemId("multi-file-edit")
+    await act(async () => {
+      h.emit({
+        type: "conversation",
+        event: {
+          type: "item.started",
+          threadId: thread,
+          item: {
+            id: edit,
+            turnId: turnId("wheel-turn"),
+            kind: "edit",
+            title: "128 files changed",
+            patch,
+            changes,
+            status: "complete",
+          },
+        },
+      })
+      await h.controller.settle()
+      h.controller.dispatchInteraction({ type: "mode.normal" })
+      h.controller.dispatchInteraction({
+        type: "focus.set",
+        surface: "transcript",
+      })
+      h.controller.transcript({
+        type: "cursor.move",
+        target: { itemId: edit, graphemeOffset: lastOffset },
+        preferredScreenRow: 0,
+        extend: false,
+      })
+    })
+    await settle(h)
+    let layoutPasses = 0
+    const calculateLayout = h.renderer.root.calculateLayout.bind(
+      h.renderer.root,
+    )
+    h.renderer.root.calculateLayout = () => {
+      layoutPasses++
+      return calculateLayout()
+    }
+    const runtime = h.controller.transcriptRuntime("main")!
+    await act(async () => {
+      await h.mockInput.typeText("{")
+      await h.flush()
+      await h.renderOnce()
+    })
+    expect(layoutPasses).toBeLessThan(16)
+    expect(h.workspace().transcript.cursor).toEqual({
+      itemId: edit,
+      graphemeOffset: 0,
+    })
+    expect(h.captureCharFrame()).toContain("e\u0301")
+    const editBlocks = runtime
+      .getSnapshot()
+      .window.blocks.filter(
+        (block) => block.key.kind === "item" && block.key.itemId === edit,
+      )
+    expect(editBlocks.slice(0, 5).map((block) => block.estimatedRows)).toEqual([
+      5, 3, 3, 3, 3,
+    ])
+    await act(async () => {
+      h.controller.transcript({
+        type: "cursor.move",
+        target: { itemId: edit, graphemeOffset: lastOffset },
+        preferredScreenRow: 0,
+        extend: false,
+      })
+    })
+    await settle(h)
+    layoutPasses = 0
+    await act(async () => {
+      for (let index = 0; index < 8; index++)
+        h.mockInput.pressKey("u", { ctrl: true })
+      await h.flush()
+      await h.renderOnce()
+    })
+    expect(layoutPasses).toBeLessThan(40)
+    expect(h.workspace().transcript.cursor?.graphemeOffset).toBeLessThan(
+      lastOffset,
+    )
+    layoutPasses = 0
+    await act(async () => {
+      await h.mockInput.typeText("{")
+      await h.flush()
+      await h.renderOnce()
+    })
+    expect(layoutPasses).toBeLessThan(16)
+    expect(h.workspace().transcript.cursor).toEqual({
+      itemId: edit,
+      graphemeOffset: 0,
+    })
+  } finally {
+    await h.close()
+  }
 }, 30000)

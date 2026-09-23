@@ -42,7 +42,7 @@ export function FileChange(props: {
               movePath: undefined,
             },
           ]
-  const summary = diffSummary(sourceItem.patch)
+  const summary = firstFragment ? diffSummary(sourceItem.patch) : undefined
   return (
     <box
       backgroundColor={emberTide.backgroundRaised}

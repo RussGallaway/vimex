@@ -760,11 +760,22 @@ export function measureRenderedBlock(
   const activityLead = input.presentation === "activity-lead"
   const range =
     "item" in input.block ? blockGraphemeRange(input.block) : { from: 0, to: 0 }
+  // Diff projections retain exact source code-unit spans. Slice the mounted
+  // fragment instead of segmenting the entire multi-file patch for every file.
   const text =
     "item" in input.block
-      ? graphemes(input.block.projection.plain)
-          .slice(range.from, range.to)
-          .join("")
+      ? input.block.projection.plain === input.block.projection.source
+        ? input.block.projection.source.slice(
+            input.block.projection.sourceSpans[range.from]?.from ??
+              input.block.projection.source.length,
+            range.to > range.from
+              ? input.block.projection.sourceSpans[range.to - 1]?.to
+              : (input.block.projection.sourceSpans[range.from]?.from ??
+                  input.block.projection.source.length),
+          )
+        : graphemes(input.block.projection.plain)
+            .slice(range.from, range.to)
+            .join("")
       : ""
   const textLength = range.to - range.from
   let nativePoints =

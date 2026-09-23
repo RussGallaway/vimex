@@ -833,6 +833,28 @@ const markdownFragmentSourceLimit = 4_096
 const markdownFragmentUnitLimit = 12
 const editFragmentFileLimit = 1
 
+function estimatedDiffBodyRows(patch: string): number {
+  // Native diff rows omit Git/file headers and hunk markers.
+  let rows = 0
+  let inHunk = false
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("diff --git ")) {
+      inHunk = false
+      continue
+    }
+    if (line.startsWith("@@")) {
+      inHunk = true
+      continue
+    }
+    if (
+      inHunk &&
+      (line.startsWith("+") || line.startsWith("-") || line.startsWith(" "))
+    )
+      rows++
+  }
+  return rows
+}
+
 function snapshotItem(
   conversation: ConversationState,
   item: ConversationItem,
@@ -1352,8 +1374,8 @@ function editItemBlocks(
         estimatedRows: Math.max(
           1,
           changes.reduce(
-            (rows, change) => rows + change.patch.split("\n").length + 1,
-            index === 0 ? 3 : 1,
+            (rows, change) => rows + estimatedDiffBodyRows(change.patch) + 1,
+            index === 0 ? 2 : 0,
           ),
         ),
         fragment: Object.freeze({
