@@ -326,7 +326,26 @@ export function useTranscriptLayout(options: {
   }, [controller, renderer, scrollRef])
 
   const onManualScroll = useCallback(
-    (rows?: number, cursor?: "follow" | "clamp", direction?: "up" | "down") => {
+    (
+      rows?: number,
+      cursor?: "follow" | "clamp",
+      direction?: "up" | "down",
+      action?:
+        | "line_up"
+        | "line_down"
+        | "half_page_up"
+        | "half_page_down"
+        | "page_up"
+        | "page_down",
+    ) => {
+      controller.performanceNavigationInput?.(
+        action ??
+          (direction === "up"
+            ? "wheel_up"
+            : direction === "down"
+              ? "wheel_down"
+              : "other"),
+      )
       const viewport =
         latest.current.runtime?.getSnapshot().transcript.viewport ??
         latest.current.transcript.viewport
@@ -350,7 +369,7 @@ export function useTranscriptLayout(options: {
       pendingRestore.current = false
       renderer.requestRender()
     },
-    [renderer],
+    [controller, renderer],
   )
 
   const prepositionWindowForPoint = useCallback(

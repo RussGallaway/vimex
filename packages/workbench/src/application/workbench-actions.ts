@@ -85,6 +85,18 @@ export type TranscriptAction =
   | { type: "fork"; itemId?: ItemId }
 
 export interface WorkbenchActions {
+  performanceNavigationInput?(
+    action:
+      | "line_up"
+      | "line_down"
+      | "half_page_up"
+      | "half_page_down"
+      | "page_up"
+      | "page_down"
+      | "wheel_up"
+      | "wheel_down"
+      | "other",
+  ): void
   sideChat(
     action: import("./side-chat").SideChatAction,
     question?: string,

@@ -23,6 +23,35 @@ import { TranscriptViewport } from "./TranscriptViewport"
 import { TurnActivity } from "./TurnActivity"
 import { useTranscriptLayout } from "./use-transcript-layout"
 
+test("manual scroll records input before asking the renderer to prepare it", async () => {
+  const actions: string[] = []
+  let layout: ReturnType<typeof useTranscriptLayout> | undefined
+  function Harness() {
+    const scrollRef = useRef<ScrollBoxRenderable>(null)
+    layout = useTranscriptLayout({
+      transcript: initialTranscript(),
+      width: 40,
+      height: 10,
+      scrollRef,
+      controller: {
+        ...inertController,
+        performanceNavigationInput(action) {
+          actions.push(action)
+        },
+      },
+    })
+    return <scrollbox ref={scrollRef} width={40} height={10} />
+  }
+  const setup = await testRender(<Harness />, { width: 40, height: 10 })
+  try {
+    layout!.onManualScroll(-5, "follow", undefined, "half_page_up")
+    layout!.onManualScroll(undefined, undefined, "down")
+    expect(actions).toEqual(["half_page_up", "wheel_down"])
+  } finally {
+    await act(async () => setup.renderer.destroy())
+  }
+})
+
 test("reapplies a detached anchor when native geometry settles without transcript changes", async () => {
   const id = itemId("answer")
   let transcript = syncTranscriptItem(

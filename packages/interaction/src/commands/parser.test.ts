@@ -12,6 +12,11 @@ test("Ex aliases resolve to typed application commands", () => {
     name: "model",
     argument: "test",
   })
+  expect(parseCommand(":perf export")).toEqual({
+    kind: "command",
+    name: "performance",
+    argument: "export",
+  })
 })
 test("Ex arguments preserve paths and distinguish empty or unknown commands", () => {
   expect(parseCommand(":cwd /tmp/project with  spaces")).toEqual({
@@ -70,6 +75,8 @@ test("validation preserves literal arguments but rejects invalid enumerated argu
     ":submit steer",
     ":syntax theme",
     ":yank markdown",
+    ":performance export",
+    ":perf export",
   ]
   for (const line of valid) {
     const parsed = parseCommand(line)
@@ -85,6 +92,10 @@ test("validation preserves literal arguments but rejects invalid enumerated argu
     ":thinking high extra",
     ":model model high extra",
     ":help nonexistent",
+    ":performance",
+    ":perf",
+    ":performance start",
+    ":perf export extra",
   ]) {
     const parsed = parseCommand(line)
     if (parsed.kind !== "command") throw new Error(line)

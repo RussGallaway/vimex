@@ -129,6 +129,7 @@ Enter `:` to open command completion above the bottom command bar. Up/Down selec
 | `:theme NAME`                                      | Select and persist a UI theme.                                                                                                                                          |
 | `:syntax NAME`                                     | Select and persist a syntax theme; `theme` follows the UI palette.                                                                                                      |
 | `:submit [queue\|steer]`                           | Send the composer draft using the configured default or an explicit queue/steer intent.                                                                                 |
+| `:performance export`, `:perf export`              | Save a local performance trace of recent submit and navigation timing; show the file path.                                                                              |
 | `:insert`, `:normal`, `:visual`                    | Enter a mode; Visual initializes a transcript selection.                                                                                                                |
 
 Mouse-wheel scrolling moves the transcript by precise terminal rows and preserves composer focus and both text cursors. Scrolling upward detaches from the streaming tail; scrolling back to the bottom resumes following automatically. `G`, `t`, `:tail`, and `:follow` also resume following directly.

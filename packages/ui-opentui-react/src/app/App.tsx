@@ -1089,6 +1089,8 @@ export function VimexApp({
             ? "clamp"
             : "follow"
           : undefined,
+        undefined,
+        `${amount === "half-page" ? "half_page" : amount}_${direction}`,
       )
       countRef.current = ""
       if (explicitCount !== undefined)

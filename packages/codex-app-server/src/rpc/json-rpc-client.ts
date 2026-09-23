@@ -54,11 +54,18 @@ export class RpcClient {
     await this.transport.start()
   }
 
-  request<T>(method: string, params: unknown): Promise<T> {
+  request<T>(method: string, params: unknown, onSent?: () => void): Promise<T> {
     const id = this.nextId++
     const promise = this.pending.create<T>(id, method)
     void this.transport
       .send({ method, id, params } as JsonObject)
+      .then(() => {
+        try {
+          onSent?.()
+        } catch {
+          // Observation cannot change the result of a successful RPC send.
+        }
+      })
       .catch((error: unknown) => {
         this.pending.reject(id, asError(error))
       })

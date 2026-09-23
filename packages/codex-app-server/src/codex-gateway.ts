@@ -296,17 +296,18 @@ export function createCodexGateways(
     async forkThread(id, through) {
       return observeSession(await client.forkThread(id, through))
     },
-    async startTurn(id, text, clientMessageId, input) {
+    async startTurn(id, text, clientMessageId, input, onRequestSent) {
       const response = await client.startTurn(
         id,
         normalizeConversationInput(text, input),
         {
           clientUserMessageId: clientMessageId,
         },
+        onRequestSent,
       )
       return hydrateTurns([response.turn], id)
     },
-    async steerTurn(id, turn, text, clientMessageId, input) {
+    async steerTurn(id, turn, text, clientMessageId, input, onRequestSent) {
       await client.steerTurn(
         id,
         turn,
@@ -314,6 +315,7 @@ export function createCodexGateways(
         {
           clientUserMessageId: clientMessageId,
         },
+        onRequestSent,
       )
     },
     async interruptTurn(id, turn) {

@@ -124,6 +124,10 @@ Ctrl-H focuses main; Ctrl-L focuses side. Ctrl-W h/l are alternatives. Ctrl-W w 
 
 :help shows the compact reference. :help COMMAND shows command usage. :manual, :man, :help manual, and /manual open this guide offline. In the manual, j/k scroll, Ctrl-D/U move half a page, gg/G go to the start/end, and Escape closes it without changing the draft.
 
+:performance export (or :perf export) saves a local performance trace from recent Vimex interactions and shows its path. It records timings and workload counts for submission and navigation, without conversation text or tool output. Export does not send the trace anywhere.
+
+Submit timing starts when Workbench dispatches the action, after UI key processing. request_sent means the app-server request was successfully written to stdin. The next thread activity or content is a best-effort observation and may not belong to that submission. Renderer-frame marks identify the next local frame; they do not measure when the terminal physically displays it or prove content is visible.
+
 ## GOALS AND COMPACTION
 
 :goal or /goal shows the current goal. :goal OBJECTIVE sets one; :goal --budget TOKENS OBJECTIVE sets an explicit token budget. pause, resume, complete, and clear manage its lifecycle. Use :goal set pause to set the literal objective 'pause'. Codex owns continuation; pausing a goal does not interrupt an already running turn.

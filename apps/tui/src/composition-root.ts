@@ -1,6 +1,8 @@
 import { join, resolve } from "node:path"
+import { version } from "../../../package.json"
 import { emptyLocalState, parseLocalState } from "@vimex/workbench"
 import {
+  CliRenderEvents,
   createCliRenderer,
   createClipboard,
   createHostClipboard,
@@ -37,9 +39,62 @@ import { createCodexGateways } from "@vimex/codex-app-server"
 import { createDemoGateway } from "./demo-gateway"
 import { VimexController } from "@vimex/workbench"
 import { imageInput } from "./images"
+import { PerformanceProfileRecorder } from "./performance-profile"
 
 export async function runApplication(options: CliOptions) {
   let controller!: VimexController
+  let renderer: Awaited<ReturnType<typeof createCliRenderer>> | undefined
+  const performanceProfile = new PerformanceProfileRecorder({
+    metadata: {
+      vimexVersion: version,
+      bunVersion: process.versions.bun,
+      viewportRows: process.stdout.rows,
+      viewportColumns: process.stdout.columns,
+    },
+  })
+  let pendingNavigationFrame: string | undefined
+  const framedNavigationIds = new Set<string>()
+  const pendingSubmitFrames = new Set<string>()
+  const recordPerformanceMark = (
+    mark: Parameters<typeof performanceProfile.record>[0],
+  ) => {
+    performanceProfile.record({
+      ...mark,
+      detail: {
+        ...mark.detail,
+        viewportRows: renderer?.height ?? process.stdout.rows,
+        viewportColumns: renderer?.width ?? process.stdout.columns,
+      },
+    })
+    if (
+      mark.kind === "navigation" &&
+      mark.operationId &&
+      (mark.phase === "input" || mark.phase === "state_published")
+    ) {
+      if (framedNavigationIds.has(mark.operationId)) return
+      if (
+        pendingNavigationFrame &&
+        pendingNavigationFrame !== mark.operationId
+      ) {
+        performanceProfile.record({
+          kind: "navigation",
+          phase: "superseded",
+          operationId: pendingNavigationFrame,
+          atMs: mark.atMs,
+        })
+      }
+      pendingNavigationFrame = mark.operationId
+    }
+    if (
+      mark.kind === "submit" &&
+      mark.phase === "next_thread_content_committed" &&
+      mark.operationId
+    ) {
+      pendingSubmitFrames.add(mark.operationId)
+      if (pendingSubmitFrames.size > 128)
+        pendingSubmitFrames.delete(pendingSubmitFrames.values().next().value!)
+    }
+  }
   let config = await loadConfig(options.config)
   const configStore = new JsonStore(
     options.config ?? join(configDirectory(), "config.json"),
@@ -86,7 +141,6 @@ export async function runApplication(options: CliOptions) {
   let failure: unknown
   let cleanupFailure: unknown
   let lastHerdrError: string | undefined
-  let renderer: Awaited<ReturnType<typeof createCliRenderer>> | undefined
   let root: ReturnType<typeof createRoot> | undefined
   let detachHandlers = () => {}
   try {
@@ -96,6 +150,42 @@ export async function runApplication(options: CliOptions) {
       exitOnCtrlC: false,
       exitSignals: [],
       targetFps: 60,
+    })
+    const activeRenderer = renderer
+    const onFrame = () => {
+      const atMs = performance.now()
+      if (pendingNavigationFrame) {
+        performanceProfile.record({
+          kind: "navigation",
+          phase: "next_renderer_frame",
+          operationId: pendingNavigationFrame,
+          atMs,
+          detail: {
+            viewportRows: activeRenderer.height,
+            viewportColumns: activeRenderer.width,
+          },
+        })
+        framedNavigationIds.add(pendingNavigationFrame)
+        if (framedNavigationIds.size > 256)
+          framedNavigationIds.delete(framedNavigationIds.values().next().value!)
+        pendingNavigationFrame = undefined
+      }
+      for (const operationId of pendingSubmitFrames)
+        performanceProfile.record({
+          kind: "submit",
+          phase: "next_frame_after_content_commit",
+          operationId,
+          atMs,
+          detail: {
+            viewportRows: activeRenderer.height,
+            viewportColumns: activeRenderer.width,
+          },
+        })
+      pendingSubmitFrames.clear()
+    }
+    activeRenderer.on(CliRenderEvents.FRAME, onFrame)
+    lifecycle.add(() => {
+      activeRenderer.off(CliRenderEvents.FRAME, onFrame)
     })
     const clipboard = createClipboard({
       host: createHostClipboard(),
@@ -130,6 +220,13 @@ export async function runApplication(options: CliOptions) {
       images,
       openUrl: externalActions.openUrl,
       quit: finish,
+      onPerformanceMark: recordPerformanceMark,
+      async exportPerformance() {
+        const filename = `vimex-${new Date().toISOString().replace(/[:.]/g, "-")}-${crypto.randomUUID().slice(0, 8)}.json`
+        const path = join(stateDirectory(), "profiles", filename)
+        await performanceProfile.exportTo(path)
+        return path
+      },
       onLocalState(state: import("@vimex/workbench").LocalState) {
         localState = state
         if (localStore && !saveTimer)

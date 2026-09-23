@@ -35,6 +35,7 @@ export const commandNames = [
   "side",
   "manual",
   "goal",
+  "performance",
 ] as const
 export type CommandName = (typeof commandNames)[number]
 const aliases: Readonly<Record<string, CommandName>> = {
@@ -42,6 +43,7 @@ const aliases: Readonly<Record<string, CommandName>> = {
   models: "model",
   copy: "yank",
   man: "manual",
+  perf: "performance",
 }
 export function resolveCommandName(value: string): CommandName | undefined {
   return (
@@ -88,6 +90,7 @@ export const commandDescriptions: Readonly<Record<CommandName, string>> = {
   manual: "Read the offline Vimex user manual",
   compact: "Compact the active session context",
   side: "Open a forked side chat; close hides it, quit retires it",
+  performance: "Export a local performance trace",
 }
 
 export interface CommandDescriptor {
@@ -121,6 +124,12 @@ const argumentDescriptors: Partial<
       "side [question|close|quit|refresh|quote|maximize|focus parent|focus side]",
     arguments: "literal",
     choices: ["close", "quit", "refresh", "quote", "maximize", "focus"],
+  },
+  performance: {
+    usage: "performance export",
+    arguments: "choice",
+    required: true,
+    choices: ["export"],
   },
   sessions: { usage: "sessions [thread-id]", arguments: "literal" },
   help: {

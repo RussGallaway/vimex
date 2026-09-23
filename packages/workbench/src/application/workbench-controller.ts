@@ -135,11 +135,55 @@ export interface ControllerPorts {
   onState?(state: WorkbenchState): void
   onLocalState?(state: LocalState): void
   onLifecycle?(state: WorkbenchLifecycleSnapshot): void
+  onPerformanceMark?(mark: {
+    kind: "submit" | "navigation"
+    phase:
+      | "accepted"
+      | "attempted"
+      | "input"
+      | "state_published"
+      | "adapter_start"
+      | "request_sent"
+      | "next_thread_activity"
+      | "next_thread_content"
+      | "next_thread_content_committed"
+    operationId?: string
+    atMs: number
+    detail?: {
+      transcriptItems?: number
+      visibleBlocks?: number
+      action?: Parameters<
+        NonNullable<WorkbenchActions["performanceNavigationInput"]>
+      >[0]
+    }
+  }): void
+  exportPerformance?(): Promise<string>
   localState?: LocalState
   preferences?: PreferenceStore
   busySubmit?: "queue" | "steer"
   conversationIngressScheduler?: ConversationIngressScheduler
   conversationIngressCadenceMs?: number
+}
+const profiledNavigationCommands = new Set([
+  "cursor.move",
+  "cursor.reveal",
+  "jump.to",
+  "jump.back",
+  "jump.forward",
+  "mark.jump",
+  "search.jump",
+  "viewport.anchor",
+  "tail.attach",
+])
+function isNonUserContentEvent(
+  event: ConversationEvent,
+  conversation?: ConversationState,
+): boolean {
+  if (event.type === "item.started" || event.type === "item.completed")
+    return event.item.kind !== "user"
+  if (event.type !== "item.delta" || !conversation) return false
+  const kind = conversation.items[event.itemId]?.kind
+  return kind !== undefined && kind !== "user"
 }
 interface TranscriptRuntimeHint {
   canonicalOnly?: boolean
@@ -457,6 +501,17 @@ export class VimexController
   private runtimeEpoch = 0
   private readonly answering = new Map<string, symbol>()
   private readonly pendingImages = new Map<ThreadId, number>()
+  private readonly pendingSubmitActivity = new Map<
+    ThreadId,
+    {
+      operationId: string
+      nextThreadActivity: boolean
+      nextThreadContent: boolean
+      nextThreadContentCommitted: boolean
+    }
+  >()
+  private navigationPerformanceSequence = 0
+  private pendingNavigationInput?: { operationId: string; atMs: number }
   private readonly threadMutations = new Map<ThreadId, Promise<void>>()
   private preferenceTail: Promise<void> = Promise.resolve()
   private preferenceRevision = 0
@@ -529,6 +584,61 @@ export class VimexController
       "side",
       captureWorkbenchPresentation(this.state, "side", this.publicationContext),
     )
+  }
+  private performanceMark(
+    kind: "submit" | "navigation",
+    phase:
+      | "accepted"
+      | "attempted"
+      | "input"
+      | "state_published"
+      | "adapter_start"
+      | "request_sent"
+      | "next_thread_activity"
+      | "next_thread_content"
+      | "next_thread_content_committed",
+    operationId: string,
+    detail?: {
+      transcriptItems?: number
+      visibleBlocks?: number
+      action?: Parameters<
+        NonNullable<WorkbenchActions["performanceNavigationInput"]>
+      >[0]
+    },
+  ): void {
+    if (!this.ports.onPerformanceMark) return
+    const atMs = performance.now()
+    try {
+      this.ports.onPerformanceMark({ kind, phase, operationId, atMs, detail })
+    } catch {
+      // Measurements must never affect an interaction.
+    }
+  }
+  private navigationPerformanceDetail(
+    state: WorkbenchState,
+    thread?: ThreadId,
+  ): { transcriptItems?: number; visibleBlocks?: number } {
+    const target = thread ?? state.activeThreadId
+    const transcriptItems = target
+      ? state.workspaces[target]?.transcript.order.length
+      : undefined
+    const presentation = this.activeTranscriptPresentation()
+    const runtime = presentation
+      ? this.transcriptRuntimes.get(presentation)
+      : undefined
+    const visibleBlocks =
+      runtime && runtime.getThreadId() === target
+        ? runtime.getSnapshot().window.blocks.length
+        : undefined
+    return { transcriptItems, visibleBlocks }
+  }
+  performanceNavigationInput: NonNullable<
+    WorkbenchActions["performanceNavigationInput"]
+  > = (action) => {
+    if (!this.ports.onPerformanceMark || this.closing) return
+    const operationId = `navigation-${++this.navigationPerformanceSequence}`
+    this.pendingNavigationInput = { operationId, atMs: performance.now() }
+    this.performanceMark("navigation", "input", operationId, { action })
   }
   getSnapshot = (): WorkbenchState => this.state
   subscribe = (listener: () => void): (() => void) => {
@@ -995,7 +1105,12 @@ export class VimexController
       state = result.state
       effects.push(...result.effects)
     }
-    if (state === this.state) return
+    if (state === this.state) {
+      for (const event of events)
+        if (event.type === "turn.completed")
+          this.pendingSubmitActivity.delete(event.threadId)
+      return
+    }
     this.navigationHistory.adopt(navigationHistory)
     const canonicalDamageByThread: Record<string, TranscriptDamage> = {}
     for (const id of fullDamage) canonicalDamageByThread[id] = { kind: "full" }
@@ -1020,6 +1135,26 @@ export class VimexController
       this.publishExternalObservers(beforeBatch, [
         ...new Set(events.map((event) => event.threadId)),
       ])
+      for (const event of events) {
+        const pending = this.pendingSubmitActivity.get(event.threadId)
+        if (
+          pending &&
+          !pending.nextThreadContentCommitted &&
+          isNonUserContentEvent(
+            event,
+            state.workspaces[event.threadId]?.conversation,
+          )
+        ) {
+          pending.nextThreadContentCommitted = true
+          this.performanceMark(
+            "submit",
+            "next_thread_content_committed",
+            pending.operationId,
+          )
+        }
+        if (event.type === "turn.completed")
+          this.pendingSubmitActivity.delete(event.threadId)
+      }
     }
     if (this.closing) {
       this.publishExternalObservers(beforeBatch, [
@@ -1059,8 +1194,53 @@ export class VimexController
       this.notice("Side chat is quitting; new work is paused")
       return
     }
+    const performanceKind =
+      command.type === "composer.submit"
+        ? "submit"
+        : (command.type === "transcript.command" ||
+              command.type === "transcript.navigate") &&
+            profiledNavigationCommands.has(command.command.type)
+          ? "navigation"
+          : undefined
+    const performanceOperationId =
+      performanceKind === "submit"
+        ? command.type === "composer.submit"
+          ? command.clientMessageId
+          : undefined
+        : performanceKind === "navigation"
+          ? this.pendingNavigationInput &&
+            performance.now() - this.pendingNavigationInput.atMs < 250
+            ? this.pendingNavigationInput.operationId
+            : `navigation-${++this.navigationPerformanceSequence}`
+          : undefined
+    if (performanceKind === "navigation")
+      this.pendingNavigationInput = undefined
+    if (performanceKind && performanceOperationId)
+      this.performanceMark(
+        performanceKind,
+        performanceKind === "submit" ? "attempted" : "accepted",
+        performanceOperationId,
+        performanceKind === "navigation" &&
+          (command.type === "transcript.command" ||
+            command.type === "transcript.navigate")
+          ? this.navigationPerformanceDetail(this.state, command.threadId)
+          : undefined,
+      )
     const before = this.state
     const result = transitionWorkbench(before, command)
+    const submitAccepted =
+      command.type === "composer.submit" &&
+      recipient !== undefined &&
+      !before.workspaces[recipient]?.composer.outbox.some(
+        (message) => message.id === command.clientMessageId,
+      ) &&
+      Boolean(
+        result.state.workspaces[recipient]?.composer.outbox.some(
+          (message) => message.id === command.clientMessageId,
+        ),
+      )
+    if (submitAccepted && performanceOperationId)
+      this.performanceMark("submit", "accepted", performanceOperationId)
     if (command.type === "conversation.event")
       this.navigationHistory.reproject(
         before,
@@ -1196,6 +1376,21 @@ export class VimexController
         : {}),
     }
     this.setState(result.state, hint)
+    if (
+      performanceKind &&
+      performanceOperationId &&
+      (performanceKind === "submit"
+        ? submitAccepted
+        : priorTranscript !== nextTranscript && result.state !== before)
+    )
+      this.performanceMark(
+        performanceKind,
+        "state_published",
+        performanceOperationId,
+        performanceKind === "navigation" && revealThread
+          ? this.navigationPerformanceDetail(this.state, revealThread)
+          : undefined,
+      )
     for (const effect of result.effects) {
       const pending = this.launch(() => this.effect(effect))
       if (
@@ -1480,6 +1675,33 @@ export class VimexController
       this.state.retiredSideThreadIds.includes(event.request.threadId)
     )
       return
+    if (event.type === "conversation") {
+      const pending = this.pendingSubmitActivity.get(event.event.threadId)
+      if (pending) {
+        if (!pending.nextThreadActivity) {
+          pending.nextThreadActivity = true
+          this.performanceMark(
+            "submit",
+            "next_thread_activity",
+            pending.operationId,
+          )
+        }
+        if (
+          !pending.nextThreadContent &&
+          isNonUserContentEvent(
+            event.event,
+            this.state.workspaces[event.event.threadId]?.conversation,
+          )
+        ) {
+          pending.nextThreadContent = true
+          this.performanceMark(
+            "submit",
+            "next_thread_content",
+            pending.operationId,
+          )
+        }
+      }
+    }
     if (event.type !== "conversation") this.ingress.flush()
     switch (event.type) {
       case "compaction":
@@ -1521,7 +1743,9 @@ export class VimexController
         // Restart already invalidated the old runtime and owns this connecting state.
         if (event.reason === "restart" && this.restartPending) break
         this.historyNavigation = undefined
+        this.pendingNavigationInput = undefined
         this.runtimeEpoch++
+        this.pendingSubmitActivity.clear()
         this.navigationRevision++
         const result = transitionWorkbench(this.state, {
           type: "connection.changed",
@@ -2835,6 +3059,17 @@ export class VimexController
               : "next-turn",
         )
         break
+      case "performance": {
+        if (!this.ports.exportPerformance) {
+          this.notice("Performance export is unavailable")
+          break
+        }
+        this.launch(async () => {
+          const path = await this.ports.exportPerformance!()
+          if (!this.closing) this.notice(`Performance trace saved: ${path}`)
+        })
+        break
+      }
       case "insert":
         this.dispatchInteraction({ type: "mode.insert" })
         break
@@ -3168,6 +3403,15 @@ export class VimexController
       case "conversation.turn.start":
       case "conversation.turn.steer": {
         if (this.retiringThread(effect.threadId)) return
+        this.pendingSubmitActivity.set(effect.threadId, {
+          operationId: effect.clientMessageId,
+          nextThreadActivity: false,
+          nextThreadContent: false,
+          nextThreadContentCommitted: false,
+        })
+        this.performanceMark("submit", "adapter_start", effect.clientMessageId)
+        const onRequestSent = () =>
+          this.performanceMark("submit", "request_sent", effect.clientMessageId)
         try {
           let submittedTurn: TurnId | undefined
           const input = effect.input?.map((part) =>
@@ -3184,6 +3428,7 @@ export class VimexController
               effect.text,
               effect.clientMessageId,
               input,
+              onRequestSent,
             )
           else {
             const events = await this.ports.conversation.startTurn(
@@ -3191,6 +3436,7 @@ export class VimexController
               effect.text,
               effect.clientMessageId,
               input,
+              onRequestSent,
             )
             if (!this.currentRuntime(epoch)) return
             submittedTurn = events.find(
@@ -3216,6 +3462,11 @@ export class VimexController
               turnId: submittedTurn,
             })
         } catch (error) {
+          if (
+            this.pendingSubmitActivity.get(effect.threadId)?.operationId ===
+            effect.clientMessageId
+          )
+            this.pendingSubmitActivity.delete(effect.threadId)
           if (!this.currentRuntime(epoch)) return
           this.dispatch({
             type: "composer.fail",
@@ -3279,6 +3530,8 @@ export class VimexController
   }
   private async runClose(): Promise<void> {
     this.closing = true
+    this.pendingNavigationInput = undefined
+    this.pendingSubmitActivity.clear()
     const errors: unknown[] = []
     try {
       this.ingress.close()

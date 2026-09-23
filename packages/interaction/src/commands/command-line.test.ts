@@ -71,6 +71,8 @@ test("completes thinking from the active model and shared static choices", () =>
     ":favorite on",
     ":favorite off",
   ])
+  expect(commandCompletions(":performance ")).toEqual([":performance export"])
+  expect(commandCompletions(":perf e")).toEqual([":perf export"])
   expect(commandCompletions(":help fol")).toEqual([
     ":help fold",
     ":help follow",
@@ -92,6 +94,7 @@ test("completion does not rewrite literal arguments or silently discard extra to
     ":model fast high extra",
     ":submit queue extra",
     ":follow ",
+    ":perf export extra",
   ])
     expect(commandCompletions(value)).toEqual([])
 })

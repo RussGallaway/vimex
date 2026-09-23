@@ -40,6 +40,7 @@ export interface ConversationGateway {
     text: string,
     clientMessageId: string,
     input?: readonly ConversationInput[],
+    onRequestSent?: () => void,
   ): Promise<readonly ConversationEvent[]>
   steerTurn(
     id: ThreadId,
@@ -47,6 +48,7 @@ export interface ConversationGateway {
     text: string,
     clientMessageId: string,
     input?: readonly ConversationInput[],
+    onRequestSent?: () => void,
   ): Promise<void>
   interruptTurn(id: ThreadId, turn: TurnId): Promise<void>
   renameThread(id: ThreadId, name: string): Promise<void>

@@ -18,4 +18,5 @@ Options:
 
 Normal: i compose · Ctrl-k/j focus · Ctrl-u/d scroll · v select · :help commands
 Insert: Enter send · Shift+Enter newline · Esc Normal
+In Vimex: :performance export (:perf export) saves a local performance trace
 `

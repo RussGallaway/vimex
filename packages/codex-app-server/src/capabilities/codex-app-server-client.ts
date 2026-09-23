@@ -374,12 +374,17 @@ export class CodexAppServerClient {
     thread: string,
     input: string | readonly UserInput[],
     overrides: Omit<TurnStartParams, "threadId" | "input"> = {},
+    onRequestSent?: () => void,
   ): Promise<TurnStartResponse> {
-    return this.rpc.request("turn/start", {
-      threadId: thread,
-      input: normalizeInput(input),
-      ...overrides,
-    } satisfies TurnStartParams)
+    return this.rpc.request(
+      "turn/start",
+      {
+        threadId: thread,
+        input: normalizeInput(input),
+        ...overrides,
+      } satisfies TurnStartParams,
+      onRequestSent,
+    )
   }
 
   steerTurn(
@@ -390,13 +395,18 @@ export class CodexAppServerClient {
       TurnSteerParams,
       "threadId" | "expectedTurnId" | "input"
     > = {},
+    onRequestSent?: () => void,
   ): Promise<TurnSteerResponse> {
-    return this.rpc.request("turn/steer", {
-      threadId: thread,
-      expectedTurnId: activeTurnId,
-      input: normalizeInput(input),
-      ...overrides,
-    } satisfies TurnSteerParams)
+    return this.rpc.request(
+      "turn/steer",
+      {
+        threadId: thread,
+        expectedTurnId: activeTurnId,
+        input: normalizeInput(input),
+        ...overrides,
+      } satisfies TurnSteerParams,
+      onRequestSent,
+    )
   }
 
   async getGoal(thread: string) {
