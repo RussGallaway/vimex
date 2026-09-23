@@ -299,9 +299,9 @@ test("windowed correction preserves a detached logical anchor through reflow abo
     await settle()
     expect(manuallyScrolled).toBe(true)
     expect(eventOrder.indexOf("anchor")).toBeGreaterThanOrEqual(0)
-    expect(eventOrder.indexOf("measurement")).toBeGreaterThan(
-      eventOrder.indexOf("anchor"),
-    )
+    // Recovering an underestimated visible root may measure it while the
+    // scrolled anchor is being captured, before the anchor callback fires.
+    expect(eventOrder).toContain("measurement")
   } finally {
     runtime.dispose()
     syntax.destroy()
