@@ -159,7 +159,6 @@ export function CommandLine(props: {
     <box
       id="command-bar"
       height={1}
-      marginTop={1}
       flexShrink={0}
       flexDirection="row"
       paddingX={2}

@@ -297,6 +297,15 @@ test("one visible pane owns one heartbeat while running rows own none", async ()
     await act(async () => setup.flush())
     expect(setup.captureCharFrame()).toContain("Working")
     expect(setup.captureCharFrame()).not.toContain("UNIQUE PRIVATE THOUGHT")
+    const composer = setup.renderer.root.findDescendantById("composer-shell")!
+    const activityStrip =
+      setup.renderer.root.findDescendantById("activity-strip")!
+    const status = setup.renderer.root.findDescendantById("status-bar")!
+    expect(activityStrip.y).toBe(composer.y + composer.height)
+    expect(status.y).toBe(activityStrip.y + activityStrip.height)
+    expect(setup.captureCharFrame().split("\n")[activityStrip.y]).toContain(
+      "Working",
+    )
     expect(intervals.mock.calls.filter((args) => args[1] === 120)).toHaveLength(
       1,
     )

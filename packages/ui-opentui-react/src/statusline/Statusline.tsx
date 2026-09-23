@@ -51,7 +51,6 @@ export function Statusline(props: {
     <box
       id="status-bar"
       height={1}
-      marginTop={1}
       gap={2}
       flexShrink={0}
       flexDirection="row"

@@ -79,19 +79,6 @@ export function FullscreenShell(props: {
           </text>
         </box>
         <box id="connection-status" flexDirection="row" gap={1} flexShrink={0}>
-          {props.presentationVisible !== false &&
-          (props.working || props.waiting) ? (
-            <ActivityIndicator
-              active={
-                props.working &&
-                !props.waiting &&
-                props.connection === "connected"
-              }
-              label={props.activityLabel ?? "Working"}
-              startedAt={props.activityStartedAt}
-              tone={props.waiting ? "waiting" : "working"}
-            />
-          ) : null}
           <text fg={dot}>● {props.connection}</text>
         </box>
       </box>
@@ -126,6 +113,21 @@ export function FullscreenShell(props: {
       {props.transcript}
       {props.notice}
       {props.composer}
+      <box id="activity-strip" height={1} flexShrink={0} paddingX={2}>
+        {props.presentationVisible !== false &&
+        (props.working || props.waiting) ? (
+          <ActivityIndicator
+            active={
+              props.working &&
+              !props.waiting &&
+              props.connection === "connected"
+            }
+            label={props.activityLabel ?? "Working"}
+            startedAt={props.activityStartedAt}
+            tone={props.waiting ? "waiting" : "working"}
+          />
+        ) : null}
+      </box>
       {props.commandLine ?? props.statusline}
       {props.overlay}
     </box>
