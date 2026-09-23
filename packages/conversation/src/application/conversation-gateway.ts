@@ -25,6 +25,7 @@ export type ConversationInput =
 /** Conversation capabilities required by client use cases, independent of transport. */
 export interface ConversationGateway {
   compactThread?(id: ThreadId): Promise<void>
+  shellCommand?(id: ThreadId, command: string): Promise<void>
   getGoal?(id: ThreadId): Promise<ThreadGoal | null>
   setGoal?(id: ThreadId, update: GoalUpdate): Promise<ThreadGoal>
   clearGoal?(id: ThreadId): Promise<boolean>

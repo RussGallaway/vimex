@@ -305,6 +305,30 @@ test("completed known items use completion status when their payload status is m
   expect(item.status).toBe("complete")
 })
 
+test("user shell command items retain provenance for transcript visibility", () => {
+  const command: Extract<ThreadItem, { type: "commandExecution" }> = {
+    type: "commandExecution",
+    id: "shell",
+    pluginId: null,
+    scriptPath: null,
+    command: "pwd",
+    cwd: "/tmp",
+    processId: null,
+    source: "userShell",
+    status: "completed",
+    commandActions: [],
+    aggregatedOutput: "/tmp\n",
+    exitCode: 0,
+    durationMs: 1,
+  }
+  expect(mapThreadItem(command, "turn", true)).toMatchObject({
+    kind: "command",
+    executionCommand: "pwd",
+    detail: "/tmp\n",
+    userInitiated: true,
+  })
+})
+
 test("malformed agent diagnostics are explicitly non-semantic", () => {
   const mapped = mapNotification({
     method: "item/started",

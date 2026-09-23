@@ -1312,6 +1312,37 @@ test("side fork is ephemeral, clears inherited goal, and retirement unsubscribes
   }
 })
 
+test("thread shell command uses the pinned RPC and leaves streamed output to turn events", async () => {
+  const { client, transport } = await connectedClient()
+  const gateway = createCodexGateways("/repo", "codex", () => client)
+  const events: import("@vimex/workbench").RuntimeEvent[] = []
+  gateway.connection.subscribe((event) => events.push(event))
+  try {
+    const request = gateway.conversation.shellCommand!(
+      threadId("thr-1"),
+      "pwd | cat",
+    )
+    await tick()
+    expect(findSent(transport, "thread/shellCommand").params).toEqual({
+      threadId: "thr-1",
+      command: "pwd | cat",
+    })
+    await respondNext(transport, "thread/shellCommand", {})
+    await request
+    expect(events).toEqual([])
+    transport.receive({
+      method: "turn/started",
+      params: {
+        threadId: "thr-1",
+        turn: { id: "shell-turn", items: [], status: "inProgress" },
+      },
+    })
+    expect(events.some((event) => event.type === "conversation")).toBe(true)
+  } finally {
+    await gateway.connection.close()
+  }
+})
+
 test("compaction sends pinned RPC and observes item lifecycle independently of acknowledgement", async () => {
   const { client, transport } = await connectedClient()
   const gateways = createCodexGateways("/repo", "codex", () => client)

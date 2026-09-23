@@ -961,6 +961,33 @@ test("tool output preserves literal Markdown and retains bare URL navigation", (
   expect(projection.sourceRegions).toEqual([])
 })
 
+test("user shell output opens by default while agent command output follows tool folds", () => {
+  const base = reduceTranscript(initialTranscript(), {
+    type: "fold.defaults",
+    reasoning: false,
+    tools: true,
+  })
+  const user = syncTranscriptItem(base, {
+    id: itemId("user-shell"),
+    turnId: turnId("turn"),
+    kind: "command",
+    title: "Run pwd",
+    detail: "/repo",
+    userInitiated: true,
+    status: "complete",
+  })
+  expect(user.folded[itemId("user-shell")]).toBeUndefined()
+  const agent = syncTranscriptItem(user, {
+    id: itemId("agent-shell"),
+    turnId: turnId("turn"),
+    kind: "command",
+    title: "Run test",
+    detail: "ok",
+    status: "complete",
+  })
+  expect(agent.folded[itemId("agent-shell")]).toBe(true)
+})
+
 test("command projection keeps readable action, exact execution, and literal output independently copyable", () => {
   const executionCommand =
     "/bin/zsh -lc 'find packages -maxdepth 2 -type d | head -12'"

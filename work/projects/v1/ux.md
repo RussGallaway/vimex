@@ -90,6 +90,8 @@ Composer Normal mode supports the familiar editing subset: `h/j/k/l`, `w/b/e`, `
 
 Normal-mode `Enter` submits. Insert-mode submission versus newline is configurable because terminal modifier fidelity differs. Enter submits by default; Shift+Enter inserts a newline. Alt+Enter is not bound because the user’s terminal host opens a new window with that combination.
 
+A draft beginning with `!` executes its remaining text through the focused thread's user shell command capability and displays streamed command output in that thread. It does not send a user prompt to the agent. `!!` escapes the prefix and sends one leading `!` as a prompt. Shell commands are explicit user actions with full host access; they do not inherit the thread sandbox. Empty commands and image-attached drafts remain editable.
+
 Each thread owns its draft. An active turn does not disable the composer. Submitting during an active turn presents or applies a clear intent: steer the current turn or queue the next turn.
 
 ### Visual mode and copying

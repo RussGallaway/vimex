@@ -66,6 +66,7 @@ export function mapThreadItem(
         kind: "command",
         title: commandTitle(item.command, item.commandActions ?? []),
         executionCommand: item.command,
+        ...(item.source === "userShell" ? { userInitiated: true } : {}),
         detail: item.aggregatedOutput ?? "",
         durationMs: durationMs(item.durationMs),
         ...(activity ? { activity } : {}),

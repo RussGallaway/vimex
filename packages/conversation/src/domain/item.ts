@@ -73,6 +73,7 @@ export type ConversationItem = { durationMs?: number } & (
       title: string
       detail: string
       executionCommand?: string
+      userInitiated?: boolean
       activity?: ItemActivity
       status: ItemStatus
     }

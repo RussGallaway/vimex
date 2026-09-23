@@ -224,6 +224,7 @@ export function createCodexGateways(
   }
   const conversation: ConversationGateway = {
     compactThread: (id) => client.compactThread(id),
+    shellCommand: (id, command) => client.shellCommand(id, command),
     async getGoal(id) {
       const goal = await client.getGoal(id)
       publish({ type: "metadata", threadId: id, patch: { goal } })

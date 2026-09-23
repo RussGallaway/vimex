@@ -1648,15 +1648,74 @@ export class VimexController
   removeImage: WorkbenchActions["removeImage"] = (id) =>
     this.dispatch({ type: "composer.image.remove", imageId: id })
   submit: WorkbenchActions["submit"] = (intent) => {
-    if (
-      this.state.activeThreadId &&
-      this.pendingImages.has(this.state.activeThreadId)
-    ) {
+    if (this.closing) return false
+    const thread = this.state.activeThreadId
+    if (thread && this.pendingImages.has(thread)) {
       this.notice("Image is still attaching; send again when its chip appears")
       return false
     }
+    const workspace = thread ? this.state.workspaces[thread] : undefined
+    const draft = workspace?.composer.text ?? ""
+    if (draft.startsWith("!") && !draft.startsWith("!!")) {
+      const command = draft.slice(1)
+      if (!command.trim()) {
+        this.notice("Type a shell command after !")
+        return false
+      }
+      if (workspace?.composer.images.length) {
+        this.notice("Remove image attachments before running a shell command")
+        return false
+      }
+      if (!thread || this.state.connection !== "connected") {
+        this.notice("Open a connected session before running a shell command")
+        return false
+      }
+      if (this.retiringThread(thread) || this.state.compactingThreads[thread]) {
+        this.notice(
+          "Wait for this session to become ready before running a shell command",
+        )
+        return false
+      }
+      const run = this.ports.conversation.shellCommand
+      if (!run) {
+        this.notice("This runtime does not support shell commands")
+        return false
+      }
+      const epoch = this.runtimeEpoch
+      this.dispatch({
+        type: "composer.change",
+        threadId: thread,
+        text: "",
+        cursorOffset: 0,
+      })
+      const pending = this.launch(async () => {
+        try {
+          await run(thread, command)
+        } catch (error) {
+          if (!this.currentRuntime(epoch)) return
+          // Restore the command only when the user has not started another draft.
+          if (this.state.workspaces[thread]?.composer.text === "")
+            this.dispatch({
+              type: "composer.change",
+              threadId: thread,
+              text: draft,
+              cursorOffset: workspace?.composer.cursorOffset ?? 0,
+            })
+          throw error
+        }
+      })
+      this.trackContinuation(thread, pending)
+      return true
+    }
+    const escapedBangDraft = draft.startsWith("!!")
+    if (escapedBangDraft && thread)
+      this.dispatch({
+        type: "composer.change",
+        threadId: thread,
+        text: draft.slice(1),
+        cursorOffset: Math.max(0, workspace!.composer.cursorOffset - 1),
+      })
     const clientMessageId = crypto.randomUUID()
-    const thread = this.state.activeThreadId
     this.dispatch({
       type: "composer.submit",
       intent,
@@ -1667,6 +1726,18 @@ export class VimexController
           (message) => message.id === clientMessageId,
         )
       : undefined
+    if (
+      escapedBangDraft &&
+      !outgoing &&
+      thread &&
+      this.state.workspaces[thread]?.composer.text === draft.slice(1)
+    )
+      this.dispatch({
+        type: "composer.change",
+        threadId: thread,
+        text: draft,
+        cursorOffset: workspace?.composer.cursorOffset ?? 0,
+      })
     const summary = thread ? this.state.summaries[thread] : undefined
     if (summary?.titleSource === "untitled" && outgoing)
       this.dispatch({

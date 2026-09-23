@@ -56,6 +56,7 @@ function harness(
 ) {
   let listener: (event: RuntimeEvent) => void = () => {}
   const starts: string[] = []
+  const shellCommands: Array<{ threadId: string; command: string }> = []
   const copied: string[] = []
   const opened: string[] = []
   const retired: string[] = []
@@ -92,6 +93,9 @@ function harness(
           turnId: turnId(`turn-${++turnCounter}`),
         },
       ]
+    },
+    shellCommand: async (id, command) => {
+      shellCommands.push({ threadId: id, command })
     },
     listModels: async () => [
       { id: "test", label: "Test", efforts: ["low", "high"] },
@@ -130,12 +134,124 @@ function harness(
     controller,
     backend,
     starts,
+    shellCommands,
     copied,
     opened,
     retired,
     emit: (event: RuntimeEvent) => listener(event),
   }
 }
+
+test("leading bang executes in the focused thread without sending an agent message", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  h.controller.changeDraft("!pwd", 4)
+  expect(h.controller.submit("next-turn")).toBe(true)
+  await h.controller.settle()
+  expect(h.shellCommands).toEqual([{ threadId: a, command: "pwd" }])
+  expect(h.starts).toEqual([])
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe("")
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.outbox).toEqual([])
+
+  h.controller.changeDraft("agent task", 10)
+  h.controller.submit("next-turn")
+  await h.controller.settle()
+  h.controller.changeDraft("!echo during turn", 17)
+  expect(h.controller.submit("steer")).toBe(true)
+  await h.controller.settle()
+  expect(h.shellCommands.at(-1)).toEqual({
+    threadId: a,
+    command: "echo during turn",
+  })
+  expect(h.starts).toEqual(["agent task"])
+})
+
+test("double bang sends a literal bang to the agent", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  h.controller.changeDraft("!!important", 11)
+  expect(h.controller.submit("next-turn")).toBe(true)
+  await h.controller.settle()
+  expect(h.starts).toEqual(["!important"])
+  expect(h.shellCommands).toEqual([])
+
+  h.emit({
+    type: "compaction",
+    phase: "started",
+    threadId: a,
+    turnId: turnId("compacting"),
+  })
+  h.controller.changeDraft("!!stay literal", 14)
+  expect(h.controller.submit("next-turn")).toBe(false)
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe(
+    "!!stay literal",
+  )
+})
+
+test("invalid or failed shell commands preserve a recoverable draft", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  h.controller.changeDraft("! ", 2)
+  expect(h.controller.submit("next-turn")).toBe(false)
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe("! ")
+  h.controller.dispatch({
+    type: "composer.image.attach",
+    image: { id: "attached", label: "capture", path: "/owned/capture.png" },
+  })
+  h.controller.changeDraft("!pwd [Image 1]", 14)
+  expect(h.controller.submit("next-turn")).toBe(false)
+  expect(
+    h.controller.getSnapshot().workspaces[a]?.composer.images,
+  ).toHaveLength(1)
+  h.controller.dispatch({ type: "composer.image.remove", imageId: "attached" })
+  h.backend.shellCommand = async () => {
+    throw new Error("shell unavailable")
+  }
+  h.controller.changeDraft("!pwd", 4)
+  expect(h.controller.submit("next-turn")).toBe(true)
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe("!pwd")
+  expect(h.controller.getSnapshot().error).toContain("shell unavailable")
+  expect(h.starts).toEqual([])
+})
+
+test("failed shell acknowledgement leaves a newer draft untouched", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  let rejectShell!: (error: Error) => void
+  h.backend.shellCommand = () =>
+    new Promise<void>((_resolve, reject) => {
+      rejectShell = reject
+    })
+  h.controller.changeDraft("!pwd", 4)
+  expect(h.controller.submit("next-turn")).toBe(true)
+  h.controller.changeDraft("next prompt", 11)
+  rejectShell(new Error("shell unavailable"))
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe(
+    "next prompt",
+  )
+  expect(h.controller.getSnapshot().error).toContain("shell unavailable")
+})
+
+test("shell rejection from an old runtime cannot restore its draft after restart", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  let rejectShell!: (error: Error) => void
+  h.backend.shellCommand = () =>
+    new Promise<void>((_resolve, reject) => {
+      rejectShell = reject
+    })
+  h.controller.changeDraft("!pwd", 4)
+  expect(h.controller.submit("next-turn")).toBe(true)
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe("")
+  h.controller.restart()
+  rejectShell(new Error("old shell connection closed"))
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().connection).toBe("connected")
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe("")
+  expect(h.controller.getSnapshot().error).toBeUndefined()
+})
 
 test("image import blocks premature send, then sends the owned path with the draft", async () => {
   let finishImage!: (image: { label: string; path: string }) => void

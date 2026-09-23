@@ -1,5 +1,7 @@
 import type { ThreadCompactStartParams } from "../generated/v0_154_0/v2/ThreadCompactStartParams"
 import type { ThreadCompactStartResponse } from "../generated/v0_154_0/v2/ThreadCompactStartResponse"
+import type { ThreadShellCommandParams } from "../generated/v0_154_0/v2/ThreadShellCommandParams"
+import type { ThreadShellCommandResponse } from "../generated/v0_154_0/v2/ThreadShellCommandResponse"
 import type { ThreadGoalGetResponse } from "../generated/v0_154_0/v2/ThreadGoalGetResponse"
 import type { ThreadGoalSetParams } from "../generated/v0_154_0/v2/ThreadGoalSetParams"
 import type { ThreadGoalSetResponse } from "../generated/v0_154_0/v2/ThreadGoalSetResponse"
@@ -342,6 +344,13 @@ export class CodexAppServerClient {
       "thread/compact/start",
       params,
     )
+  }
+
+  async shellCommand(thread: string, command: string): Promise<void> {
+    await this.rpc.request<ThreadShellCommandResponse>("thread/shellCommand", {
+      threadId: thread,
+      command,
+    } satisfies ThreadShellCommandParams)
   }
 
   async archiveThread(thread: string): Promise<void> {

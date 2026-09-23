@@ -97,6 +97,8 @@ In menus, use `j/k`, Up/Down, or `Ctrl-p`/`Ctrl-n` to choose, and Enter to activ
 
 Typing `/` at the beginning of an Insert-mode draft opens the command drawer above the composer. Up/Down or `Ctrl-p`/`Ctrl-n` selects, Tab completes, and Enter runs the selected command. `j/k` remain query letters because this is Insert mode. Escape dismisses the drawer into Normal mode. Unknown commands and invalid arguments remain editable with inline feedback. Use `//text` to send a literal slash-leading prompt (`/text`). Model IDs, thinking levels, theme choices, and session IDs complete from the same vocabulary as Ex. Tab adds a trailing space so the next argument can be completed. `submit` is an Ex action because the composer contains the slash command itself.
 
+Start a composer draft with `!` to run the rest as a shell command in the focused Codex thread, for example `!pwd`. Enter submits it in Insert or Normal mode; the command and streamed output appear in the transcript. Shell commands use the thread's configured shell and run with full host access outside the thread sandbox. `!!text` sends a literal `!text` prompt to the agent. A bare `!` or a draft with image attachments stays in the composer until corrected.
+
 ## Command mode
 
 Enter `:` to open command completion above the bottom command bar. Up/Down selects a suggestion, Tab completes names or supported arguments, and Ctrl-P/N recalls command history. Enter executes the typed command or selected completion. Esc cancels and restores the previous focus without changing the composer draft.
