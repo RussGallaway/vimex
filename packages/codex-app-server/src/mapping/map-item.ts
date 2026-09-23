@@ -182,20 +182,35 @@ export function mapThreadItem(
     case "imageGeneration":
       return toolItem(id, owner, "Image generation", item, fallbackStatus)
     case "subAgentActivity":
+      // Codex collaboration spawns can arrive only as this lifecycle item.
       return typeof item.agentThreadId === "string" &&
         typeof item.agentPath === "string" &&
         isAgentActivity(item.kind)
-        ? {
-            id,
-            turnId: owner,
-            kind: "agent",
-            action: "activity",
-            activity: item.kind,
-            detail: "",
-            agentThreadIds: [threadId(item.agentThreadId)],
-            agentPath: item.agentPath,
-            status: fallbackStatus,
-          }
+        ? item.kind === "started"
+          ? {
+              id,
+              turnId: owner,
+              kind: "agent",
+              action: "spawn",
+              detail: "",
+              agentThreadIds: [threadId(item.agentThreadId)],
+              agentStates: [
+                { threadId: threadId(item.agentThreadId), status: "running" },
+              ],
+              agentPath: item.agentPath,
+              status: fallbackStatus,
+            }
+          : {
+              id,
+              turnId: owner,
+              kind: "agent",
+              action: "activity",
+              activity: item.kind,
+              detail: "",
+              agentThreadIds: [threadId(item.agentThreadId)],
+              agentPath: item.agentPath,
+              status: fallbackStatus,
+            }
         : {
             id,
             turnId: owner,

@@ -903,10 +903,18 @@ describe("Codex app-server client", () => {
         ownerThreadId: threadId("thr-1"),
         agentThreadId: threadId("child"),
         itemId: itemId("activity"),
-        relation: "activity",
+        relation: "spawned",
         agentPath: "/root/worker",
       },
     })
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "conversation",
+        event: expect.objectContaining({
+          item: expect.objectContaining({ action: "spawn" }),
+        }),
+      }),
+    )
   })
 
   test("times out unanswered RPC calls and cancels pending approvals on disconnect", async () => {

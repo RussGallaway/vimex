@@ -58,6 +58,7 @@ export function applyConversationEvent(
         childId,
         itemId: event.item.id,
         relation: "spawned",
+        ...(event.item.agentPath ? { agentPath: event.item.agentPath } : {}),
       })
   }
   let transcript = workspace.transcript

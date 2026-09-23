@@ -40,6 +40,7 @@ export function agentRosterRoot(
 
 interface ReportedTask {
   assignment?: string
+  agentPath?: string
   progress?: AgentState
   completedMessage?: string
   hasSpawn?: boolean
@@ -60,6 +61,7 @@ function reportedTasks(
         const report = reports.get(childId) ?? {}
         report.hasSpawn = true
         report.assignment ??= item.detail || undefined
+        report.agentPath ??= item.agentPath
         report.progress =
           (item.childTasks ?? item.agentStates)?.find(
             (task) => task.threadId === childId,
@@ -133,9 +135,10 @@ export function agentRoster(
         parentId,
         name:
           summary?.agentNickname ||
+          task?.agentPath?.split("/").filter(Boolean).at(-1) ||
+          link.agentPath?.split("/").filter(Boolean).at(-1) ||
           summary?.agentRole ||
           (summary?.titleSource === "name" ? summary.title : undefined) ||
-          link.agentPath?.split("/").filter(Boolean).at(-1) ||
           `Agent ${rows.length + 1}`,
         assignment: task?.assignment,
         result:

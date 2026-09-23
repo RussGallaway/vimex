@@ -435,6 +435,9 @@ export function mapNotificationEvents(
             agentThreadId: receiver,
             itemId: normalized.id,
             relation: "spawned",
+            ...(normalized.agentPath
+              ? { agentPath: normalized.agentPath }
+              : {}),
           },
         })
       }

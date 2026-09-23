@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
-import { act } from "react"
+import { act, useState } from "react"
 import type { ScrollBoxRenderable } from "@opentui/core"
 import { itemId, threadId, turnId } from "@vimex/conversation"
 import { initialWorkbench, transitionWorkbench } from "@vimex/workbench"
@@ -196,7 +196,7 @@ test("folds adjacent settled web activity into one navigable runtime batch", asy
   }
 })
 
-test("running transcript rows remain static and create no animation timers", async () => {
+test("running reasoning and tool rows remain static and create no animation timers", async () => {
   const intervals = spyOn(globalThis, "setInterval")
   const syntax = createEmberTideSyntax()
   try {
@@ -712,6 +712,115 @@ for (const width of [44, 100]) {
     }
   })
 }
+
+test("running child rows share one slow pulse and stop when completed", async () => {
+  const intervals = spyOn(globalThis, "setInterval")
+  const cleared = spyOn(globalThis, "clearInterval")
+  let finish!: () => void
+  function Children() {
+    const [running, setRunning] = useState(true)
+    finish = () => setRunning(false)
+    return (
+      <box>
+        {["one", "two"].map((name) => (
+          <AgentActivity
+            key={name}
+            item={{
+              id: itemId(name),
+              turnId: turnId("turn"),
+              kind: "agent",
+              action: "spawn",
+              detail: "",
+              agentPath: `/root/${name}`,
+              agentThreadIds: [threadId(name)],
+              status: "complete",
+              childTasks: [
+                {
+                  threadId: threadId(name),
+                  status: running ? "running" : "complete",
+                },
+              ],
+            }}
+            folded
+          />
+        ))}
+      </box>
+    )
+  }
+  const setup = await testRender(<Children />, { width: 44, height: 6 })
+  try {
+    await act(async () => {
+      await setup.flush()
+      await setup.renderOnce()
+    })
+    expect(setup.captureCharFrame()).toContain("◌ one")
+    expect(setup.captureCharFrame()).toContain("◌ two")
+    const pulseCalls = intervals.mock.calls.filter((args) => args[1] === 450)
+    expect(pulseCalls).toHaveLength(1)
+    expect(Bun.stringWidth("◌")).toBe(Bun.stringWidth("◍"))
+
+    const advancePulse = pulseCalls[0]![0] as () => void
+    await act(async () => {
+      advancePulse()
+      await setup.flush()
+      await setup.renderOnce()
+    })
+    expect(setup.captureCharFrame()).toContain("◍ one")
+    expect(setup.captureCharFrame()).toContain("◍ two")
+
+    const pulseTimer = intervals.mock.results.find(
+      (_, index) => intervals.mock.calls[index]?.[1] === 450,
+    )?.value
+    await act(async () => finish())
+    await act(async () => {
+      await setup.flush()
+      await setup.renderOnce()
+    })
+    expect(setup.captureCharFrame()).toContain("✓ one")
+    expect(setup.captureCharFrame()).toContain("✓ two")
+    expect(cleared.mock.calls.some((args) => args[0] === pulseTimer)).toBe(true)
+  } finally {
+    await act(async () => setup.renderer.destroy())
+    intervals.mockRestore()
+    cleared.mockRestore()
+  }
+})
+
+test("a lifecycle-only spawn shows named working and completed rows without a thread summary", async () => {
+  for (const [status, label] of [
+    ["running", "◌ subagent_check"],
+    ["complete", "✓ subagent_check"],
+  ] as const) {
+    const setup = await testRender(
+      <AgentActivity
+        item={{
+          id: itemId("lifecycle-start"),
+          turnId: turnId("turn"),
+          kind: "agent",
+          action: "spawn",
+          detail: "",
+          agentThreadIds: [threadId("child")],
+          agentPath: "/root/subagent_check",
+          status: "complete",
+          childTasks: [{ threadId: threadId("child"), status }],
+        }}
+        folded
+      />,
+      { width: 44, height: 5 },
+    )
+    try {
+      await act(async () => {
+        await setup.flush()
+        await setup.renderOnce()
+      })
+      const frame = setup.captureCharFrame()
+      expect(frame).toContain(label)
+      expect(frame).not.toContain("Agent 1")
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  }
+})
 
 test("expanded child task shows the assignment, reported result, and open shortcut", async () => {
   const setup = await testRender(

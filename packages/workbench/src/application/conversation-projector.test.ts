@@ -6,8 +6,13 @@ import {
   threadId,
   turnId,
 } from "@vimex/conversation"
-import { initialWorkbench, createWorkspace } from "./workbench-state"
+import {
+  initialWorkbench,
+  createWorkspace,
+  type WorkbenchState,
+} from "./workbench-state"
 import { applyConversationEvent } from "./conversation-projector"
+import { agentRoster } from "./agent-roster"
 
 test("side-child projection misses inherited history through a logarithmic persistent membership index", () => {
   for (const inheritedCount of [100, 1_000, 10_000, 100_000]) {
@@ -165,6 +170,78 @@ test("child task progress updates the assignment without changing tool outcomes 
   expect(
     state.workspaces[parent]!.transcript.projectionById[spawnId]!.source,
   ).toBe(spawn.detail)
+})
+
+test("a Codex lifecycle start stays visible as one child row through interactions, waits, and completion", () => {
+  const parent = threadId("parent-lifecycle"),
+    child = threadId("child-lifecycle"),
+    turn = turnId("turn-lifecycle"),
+    startId = itemId("call-spawn")
+  let state: WorkbenchState = {
+    ...initialWorkbench(),
+    activeThreadId: parent,
+    workspaces: { [parent]: createWorkspace(parent) },
+  }
+  state = applyConversationEvent(state, {
+    type: "item.completed",
+    threadId: parent,
+    item: {
+      id: startId,
+      turnId: turn,
+      kind: "agent",
+      action: "spawn",
+      detail: "",
+      agentThreadIds: [child],
+      agentPath: "/root/subagent_check",
+      agentStates: [{ threadId: child, status: "running" }],
+      status: "complete",
+    },
+  }).state
+  expect(state.workspaces[parent]!.transcript.order).toEqual([startId])
+  expect(agentRoster(state)).toMatchObject([
+    { name: "subagent_check", status: "running", threadId: child },
+  ])
+  for (const [id, activity] of [
+    ["interacted", "interacted"],
+    ["completed", "completed"],
+  ] as const) {
+    state = applyConversationEvent(state, {
+      type: "item.completed",
+      threadId: parent,
+      item: {
+        id: itemId(id),
+        turnId: turn,
+        kind: "agent",
+        action: "activity",
+        activity,
+        detail: "",
+        agentThreadIds: [child],
+        agentPath: "/root/subagent_check",
+        status: "complete",
+      },
+    }).state
+  }
+  state = applyConversationEvent(state, {
+    type: "item.completed",
+    threadId: parent,
+    item: {
+      id: itemId("wait"),
+      turnId: turn,
+      kind: "agent",
+      action: "wait",
+      detail: "",
+      agentThreadIds: [],
+      agentStates: [],
+      status: "complete",
+    },
+  }).state
+  expect(state.workspaces[parent]!.transcript.order).toEqual([startId])
+  expect(state.workspaces[parent]!.conversation.items[startId]).toMatchObject({
+    childTasks: [{ threadId: child, status: "complete" }],
+  })
+  expect(agentRoster(state)).toMatchObject([
+    { name: "subagent_check", status: "complete", threadId: child },
+  ])
 })
 
 test("late spawn completion retains newer lifecycle status and follow-ups remain separate", () => {

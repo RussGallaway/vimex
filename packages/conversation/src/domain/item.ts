@@ -49,7 +49,8 @@ export type AgentItem =
       senderThreadId?: ThreadId
       agentStates?: readonly AgentState[]
       activity?: undefined
-      agentPath?: undefined
+      /** Present when a Codex lifecycle start is the only spawn record. */
+      agentPath?: string
     })
   | (AgentItemBase & {
       action: "activity"

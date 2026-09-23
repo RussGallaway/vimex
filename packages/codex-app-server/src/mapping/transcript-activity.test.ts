@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { threadId, turnId } from "@vimex/conversation"
+import { itemId, threadId, turnId } from "@vimex/conversation"
 import type { ThreadItem } from "../generated/v0_154_0/v2/ThreadItem"
 import { hydrateTurns, mapThreadItem } from "./map-item"
 import { mapNotification, mapNotificationEvents } from "./map-notification"
@@ -83,13 +83,80 @@ test("maps every collaboration action without parsing presentation titles downst
   }
 })
 
-test("maps subagent lifecycle as structured agent activity", () => {
-  for (const activity of [
-    "started",
-    "interacted",
-    "interrupted",
-    "completed",
-  ] as const) {
+test("maps app-server wait start and completion onto one running item", () => {
+  const wait = {
+    type: "collabAgentToolCall",
+    id: "wait-call",
+    tool: "wait",
+    senderThreadId: "parent",
+    receiverThreadIds: [],
+    prompt: null,
+    model: null,
+    reasoningEffort: null,
+    agentsStates: {},
+  }
+  const started = mapNotification({
+    method: "item/started",
+    params: {
+      threadId: "parent",
+      turnId: "turn",
+      item: { ...wait, status: "inProgress" },
+    },
+  })
+  expect(started).toMatchObject({
+    type: "conversation",
+    event: {
+      type: "item.started",
+      item: {
+        id: itemId("wait-call"),
+        kind: "agent",
+        action: "wait",
+        status: "running",
+      },
+    },
+  })
+  const completed = mapNotification({
+    method: "item/completed",
+    params: {
+      threadId: "parent",
+      turnId: "turn",
+      item: { ...wait, status: "completed" },
+    },
+  })
+  expect(completed).toMatchObject({
+    type: "conversation",
+    event: {
+      type: "item.completed",
+      item: {
+        id: itemId("wait-call"),
+        kind: "agent",
+        action: "wait",
+        status: "complete",
+      },
+    },
+  })
+})
+
+test("a subagent start becomes a child row while later lifecycle stays telemetry", () => {
+  const started = mapThreadItem(
+    {
+      type: "subAgentActivity",
+      id: "started",
+      kind: "started",
+      agentThreadId: "child",
+      agentPath: "/root/worker",
+    },
+    "turn",
+    true,
+  )
+  expect(started).toMatchObject({
+    kind: "agent",
+    action: "spawn",
+    agentThreadIds: [threadId("child")],
+    agentPath: "/root/worker",
+    agentStates: [{ threadId: threadId("child"), status: "running" }],
+  })
+  for (const activity of ["interacted", "interrupted", "completed"] as const) {
     const item = mapThreadItem(
       {
         type: "subAgentActivity",
@@ -109,6 +176,41 @@ test("maps subagent lifecycle as structured agent activity", () => {
       agentPath: "/root/worker",
     })
   }
+})
+
+test("a lifecycle start links the child before its thread summary arrives", () => {
+  const events = mapNotificationEvents({
+    method: "item/completed",
+    params: {
+      threadId: "parent",
+      turnId: "turn",
+      item: {
+        type: "subAgentActivity",
+        id: "call-spawn",
+        kind: "started",
+        agentThreadId: "child",
+        agentPath: "/root/worker",
+      },
+    },
+  })
+  expect(events).toEqual([
+    expect.objectContaining({
+      type: "conversation",
+      event: expect.objectContaining({
+        item: expect.objectContaining({ action: "spawn" }),
+      }),
+    }),
+    {
+      type: "subagent.link",
+      link: {
+        ownerThreadId: threadId("parent"),
+        agentThreadId: threadId("child"),
+        itemId: "call-spawn",
+        relation: "spawned",
+        agentPath: "/root/worker",
+      },
+    },
+  ])
 })
 
 test("maps batchable activity from protocol semantics rather than display titles", () => {

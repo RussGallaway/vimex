@@ -1,4 +1,5 @@
 import type { ConversationItem, ThreadSummary } from "@vimex/conversation"
+import { useAgentPulse } from "../activity/agent-pulse"
 import { emberTide } from "../theme"
 import { itemStatusGlyph } from "./item-status"
 
@@ -67,12 +68,18 @@ export function AgentActivity({
   agentSummaries?: Readonly<Record<string, ThreadSummary>>
 }) {
   const tasks = item.childTasks ?? item.agentStates ?? []
+  const spawnStatus =
+    item.action === "spawn" ? childTaskLabel(item, tasks) : undefined
+  const pulse = useAgentPulse(
+    spawnStatus === "Working" || spawnStatus === "Starting",
+  )
   if (item.action === "spawn") {
-    const status = childTaskLabel(item, tasks)
+    const status = spawnStatus!
     const childName = (id: string, index: number) => {
       const summary = agentSummaries?.[id]
       return (
         summary?.agentNickname ||
+        item.agentPath?.split("/").filter(Boolean).at(-1) ||
         summary?.agentRole ||
         (summary?.titleSource === "name" ? summary.title : undefined) ||
         `Agent ${index + 1}`
@@ -85,7 +92,7 @@ export function AgentActivity({
           ? "✕"
           : status === "Interrupted"
             ? "■"
-            : "◌"
+            : pulse
     const label =
       item.agentThreadIds.length === 1
         ? childName(item.agentThreadIds[0]!, 0)

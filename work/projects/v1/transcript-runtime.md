@@ -235,7 +235,7 @@ Move responsibility in tested vertical slices. The legacy hook and the runtime m
 
 - Preserve server-observed turn timing.
 - Preserve agent activity as structured conversation data rather than title conventions.
-- Use one pane heartbeat (`Working · 12s`) instead of timers inside running transcript rows.
+- Use one pane heartbeat (`Working · 12s`). Running child indicators may share one slow pulse clock across mounted rows; never schedule a timer per row.
 - Keep reasoning canonical but outside the primary transcript projection; render agent coordination and tools as compact foldable rows.
 - Render completed observed duration as `Worked for …` without creating synthetic canonical content.
 

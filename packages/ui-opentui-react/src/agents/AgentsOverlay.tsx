@@ -1,6 +1,7 @@
 import type { ScrollBoxRenderable } from "@opentui/core"
 import type { AgentRosterRow } from "@vimex/workbench"
 import { useEffect, useRef } from "react"
+import { useAgentPulse } from "../activity/agent-pulse"
 import { OverlayFrame } from "../app/OverlayFrame"
 import { emberTide } from "../theme"
 
@@ -18,6 +19,9 @@ export function AgentsOverlay(props: {
   scoped: boolean
 }) {
   const listRef = useRef<ScrollBoxRenderable>(null)
+  const pulse = useAgentPulse(
+    props.rows.some((row) => row.status === "running"),
+  )
   const selectedThreadId = props.rows[props.selected]?.threadId
   useEffect(() => {
     const list = listRef.current
@@ -81,7 +85,8 @@ export function AgentsOverlay(props: {
                         : emberTide.text
                     }
                   >
-                    {glyph[row.status]} {row.name}
+                    {row.status === "running" ? pulse : glyph[row.status]}{" "}
+                    {row.name}
                   </text>
                   <text flexShrink={0} fg={emberTide.textMuted}>
                     {row.status === "running"
