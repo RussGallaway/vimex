@@ -21,6 +21,7 @@ This directory is the design authority for v1.
 - [transcript-runtime-implementation.md](./transcript-runtime-implementation.md) tracks implementation order, exit criteria, measurements, and evidence.
 - [transcript-windowing-dogfooding.md](./transcript-windowing-dogfooding.md) maps observed windowing UX symptoms to architectural boundaries and provides the evidence and triage workflow for fix-forward dogfooding.
 - [transcript-navigation-benchmark.md](./transcript-navigation-benchmark.md) defines the dirty mixed-content navigation baseline and separates input latency from scaling-test duration.
+- [transcript-navigation-decoupling.md](./transcript-navigation-decoupling.md) records a deferred proposal for responsive navigation with selectively prepared geometry and rendering.
 
 ## Document ownership
 
