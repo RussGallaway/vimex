@@ -35,8 +35,9 @@ for arguments in [['resume','side-main'],['resume','--last'],['resume']]:
             pump(.3)
             os.write(master,b'\x1b');pump(.2)
             os.write(master,b':quit\r')
-            while child.poll() is None and time.monotonic()<deadline:pump()
-            assert child.poll()==0, 'Resume CLI did not quit cleanly'
+            quit_deadline=time.monotonic()+6
+            while child.poll() is None and time.monotonic()<quit_deadline:pump()
+            assert child.poll()==0, 'Resume CLI did not quit cleanly for '+repr(arguments)+': '+repr(bytes(output[-1600:]))
             calls=[json.loads(line) for line in trace.read_text().splitlines()]
             resumed=[call for call in calls if call.get('method')=='thread/resume']
             assert len(resumed)==1 and resumed[0]['params']['threadId']=='side-main', 'Wrong resume target'

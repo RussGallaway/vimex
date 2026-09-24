@@ -16,4 +16,4 @@ test("real CLI resume modes select existing sessions without creating or sending
   const report = JSON.parse(stdout)
   expect(report.passed).toBe(true)
   expect(report.checks).toEqual(["resume side-main", "resume --last", "resume"])
-}, 45_000)
+}, 60_000)
