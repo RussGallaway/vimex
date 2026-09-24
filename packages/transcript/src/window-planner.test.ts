@@ -260,6 +260,8 @@ test("empty plans are inert and invalid planning facts take the exact pass-throu
     { viewportRows: 1.5, overscanRows: 0 },
     { viewportRows: 1, overscanRows: -1 },
     { viewportRows: 1, overscanRows: Number.NaN },
+    { viewportRows: 1, overscanRows: 0, recentTailBlocks: -1 },
+    { viewportRows: 1, overscanRows: 0, recentTailRows: 0 },
   ]) {
     const window = planTranscriptWindow({
       blocks,
@@ -290,6 +292,83 @@ test("empty plans are inert and invalid planning facts take the exact pass-throu
       attachment: { kind: "tail" },
     }).blocks,
   ).toBe(duplicate)
+})
+
+test("recent tail stays mounted across nearby anchors and releases for older reading", () => {
+  const blocks = Object.freeze(
+    Array.from({ length: 150 }, (_, index) => item(`hot-${index}`)),
+  )
+  const heights = heightIndex(blocks)
+  const plan = (index: number) =>
+    planTranscriptWindow({
+      blocks,
+      heights,
+      viewportRows: 4,
+      overscanRows: 4,
+      recentTailBlocks: 100,
+      attachment: {
+        kind: "point",
+        point: point(blocks[index]!),
+        preferredScreenRow: 0,
+      },
+    })
+
+  expect(keys(plan(149).blocks)).toEqual(keys(blocks.slice(50)))
+  expect(keys(plan(90).blocks)).toEqual(keys(blocks.slice(50)))
+  const older = plan(30)
+  expect(keys(older.blocks)).toEqual(keys(blocks.slice(26, 38)))
+  expect(
+    older.topSpacerRows + older.blocks.length + older.bottomSpacerRows,
+  ).toBe(150)
+  expect(keys(plan(149).blocks)).toEqual(keys(blocks.slice(50)))
+})
+
+test("recent tail limits selection by block count and indexed rows", () => {
+  const blocks = Object.freeze(
+    Array.from({ length: 150 }, (_, index) => item(`bounded-${index}`, 3)),
+  )
+  const heights = heightIndex(blocks)
+  const tail = planTranscriptWindow({
+    blocks,
+    heights,
+    viewportRows: 4,
+    overscanRows: 4,
+    recentTailBlocks: 100,
+    recentTailRows: 240,
+    attachment: { kind: "tail" },
+  })
+  expect(keys(tail.blocks)).toEqual(keys(blocks.slice(70)))
+  expect(tail.topSpacerRows).toBe(210)
+  expect(tail.bottomSpacerRows).toBe(0)
+
+  const giant = Object.freeze([...blocks.slice(0, -1), item("giant", 500)])
+  const giantTail = planTranscriptWindow({
+    blocks: giant,
+    heights: heightIndex(giant),
+    viewportRows: 4,
+    overscanRows: 4,
+    recentTailBlocks: 100,
+    recentTailRows: 240,
+    attachment: { kind: "tail" },
+  })
+  expect(keys(giantTail.blocks)).toEqual(keys(giant.slice(-1)))
+
+  // The row limit uses the height index. Before native measurement, estimates
+  // can admit more roots; corrected heights contract the warm area.
+  const underestimated = planTranscriptWindow({
+    blocks,
+    heights: heightIndex(
+      blocks,
+      blocks.map(() => 1),
+    ),
+    viewportRows: 4,
+    overscanRows: 4,
+    recentTailBlocks: 100,
+    recentTailRows: 240,
+    attachment: { kind: "tail" },
+  })
+  expect(underestimated.blocks).toHaveLength(100)
+  expect(tail.blocks).toHaveLength(80)
 })
 
 test("half-open row boundaries include only intersecting blocks", () => {

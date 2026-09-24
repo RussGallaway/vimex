@@ -86,6 +86,37 @@ function fixture(): Source {
   return source
 }
 
+test("recent tail policy survives viewport size updates", () => {
+  let source = fixture()
+  for (let index = 0; index < 130; index++)
+    source = apply(source, {
+      type: "item.started",
+      threadId: thread,
+      item: {
+        id: itemId(`recent-${index}`),
+        turnId: turn,
+        kind: "assistant",
+        markdown: `Recent item ${index}`,
+        status: "complete",
+      },
+    })
+  const runtime = new TranscriptRuntime(input(source, "follow"), {
+    windowPolicy: {
+      viewportRows: 4,
+      overscanRows: 4,
+      recentTailBlocks: 100,
+      recentTailRows: 240,
+    },
+  })
+  const before = runtime.getSnapshot()
+  expect(before.window.blocks.length).toBeGreaterThan(50)
+  const resized = runtime.setWindowViewport(8)
+  expect(resized.window.blocks.length).toBeGreaterThan(50)
+  expect(resized.window.bottomSpacerRows).toBe(0)
+  expect(resized.window.blocks.at(-1)).toBe(before.window.blocks.at(-1))
+  runtime.dispose()
+})
+
 let revealId = 0
 function input(
   source: Source,

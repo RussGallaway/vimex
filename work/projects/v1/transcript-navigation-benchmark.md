@@ -46,10 +46,12 @@ VIMEX_NAV_SHAPE=edit VIMEX_NAV_ITEMS=100 VIMEX_NAV_WIDTH=132 VIMEX_NAV_REPEATS=1
 VIMEX_NAV_WORKLOAD=capacity VIMEX_NAV_RENDER_BLOCK_TARGET=100000 bun scripts/benchmark-transcript-navigation.tsx
 VIMEX_NAV_ITEMS=10000 VIMEX_NAV_OVERSCAN_ROWS=240 bun scripts/benchmark-transcript-navigation.tsx
 VIMEX_NAV_ITEMS=10000 VIMEX_NAV_OVERSCAN_ROWS=1000 bun scripts/benchmark-transcript-navigation.tsx
+VIMEX_NAV_ITEMS=10000 VIMEX_NAV_REPEATS=2 VIMEX_NAV_RECENT_TAIL_BLOCKS=0 bun scripts/benchmark-transcript-navigation.tsx
+VIMEX_NAV_ITEMS=10000 VIMEX_NAV_REPEATS=2 VIMEX_NAV_RECENT_TAIL_BLOCKS=100 bun scripts/benchmark-transcript-navigation.tsx
 python3 scripts/benchmark-transcript-navigation-pty.py
 ```
 
-The script emits one JSON record with the fixture hash, viewport, machine/runtime versions, actual repeat intervals, grouped timings, and per-action evidence. `VIMEX_NAV_SHAPE` also accepts `tool`, `agent`, and `markdown`. `VIMEX_NAV_OVERSCAN_ROWS` is a benchmark-only policy override, specified in **rows** and capped at 2,000; the capacity workload caps it at one viewport. This is not a proposal to mount that many blocks by default. The standard workload caps its fixture at 10k requested canonical items. The capacity workload constructs enough canonical items to exceed the requested actual render-block target, runs a smaller action set, and has no dense control.
+The script emits one JSON record with the fixture hash, viewport, machine/runtime versions, actual repeat intervals, grouped timings, and per-action evidence. `VIMEX_NAV_SHAPE` also accepts `tool`, `agent`, and `markdown`. `VIMEX_NAV_OVERSCAN_ROWS` is a benchmark-only policy override, specified in **rows** and capped at 2,000; the capacity workload caps it at one viewport. `VIMEX_NAV_RECENT_TAIL_BLOCKS` overrides the production recent-block bound for a comparison, while retaining the production 240-indexed-row bound. This is not a proposal to mount that many blocks by default. The standard workload caps its fixture at 10k requested canonical items. The capacity workload constructs enough canonical items to exceed the requested actual render-block target, runs a smaller action set, and has no dense control.
 
 ## First connected baseline, before fixture correction
 
@@ -93,3 +95,16 @@ The fold height-index overlay has a defensive limit of 128 non-inverse structura
 Follow with repeated trials across dirty mixed and isolated shapes, wide split diffs, larger Markdown fragments, many-distinct-fold transitions, and cold-to-warm revisits. Add connected evidence for zero-movement cold edges and a visible empty Markdown root above a later anchored point. Keep semantic direction, paced-versus-burst cursor equivalence, and native-placement assertions as correctness gates. Directional premeasurement and speculative fold preparation should be evaluated against correct destinations and a bounded preparation budget.
 
 The native test renderer establishes local paint and timing evidence. Real-terminal input-to-pixel and subjective acceptance remain separate evidence.
+
+## Recent mounted tail comparison
+
+The connected harness now seeds its runtime from the same presentation used by the UI, so setup folds and actual connected render blocks agree before timed input. It records mounted roots and materialized blocks after setup. The default runtime retains up to 100 recent render blocks, further limited by 240 indexed rows; zero disables that recent area in the benchmark. These are one-run headless measurements on the same local machine, with two paced repeats. Milliseconds below are rounded. The 10k fixture has 10,000 canonical items, 8,750 navigable items, and 11,435 fixture render blocks; the connected UI can fold an oversized item and report a slightly different render-block count.
+
+| Fixture   | Recent blocks | Connected startup | RSS after harness | Cold first final paint | Paced-up median | Eight-key burst | `G` return |
+| --------- | ------------: | ----------------: | ----------------: | ---------------------: | --------------: | --------------: | ---------: |
+| 1k mixed  |             0 |            220 ms |           307 MiB |                  34 ms |           28 ms |          122 ms |      33 ms |
+| 1k mixed  |           100 |            386 ms |           346 MiB |                  36 ms |           30 ms |           73 ms |     155 ms |
+| 10k mixed |             0 |            884 ms |           690 MiB |                  20 ms |           50 ms |          110 ms |      40 ms |
+| 10k mixed |           100 |          1,048 ms |           714 MiB |                  16 ms |           30 ms |          111 ms |     260 ms |
+
+The recent area improved the sampled 10k paced-up median and 1k burst, while increasing setup cost and far-history `G` return time. The 10k burst was similar. Each row is one process run, so this table does not establish p95 latency or causality for every difference. `firstFinalPaintMs` matches the run's own final state, without an independent 1k/10k destination oracle. Repeat on a real terminal with recorded key timing and exported performance telemetry before tuning the bounds or adding deferred warming.

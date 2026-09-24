@@ -12,7 +12,12 @@ import {
   buildTranscriptNavigationFixture,
   type TranscriptNavigationFixture,
 } from "@vimex/testkit"
-import { blockKey, TranscriptRuntime } from "@vimex/transcript"
+import {
+  blockKey,
+  buildTranscriptBlocks,
+  defaultTranscriptWindowPolicy,
+  TranscriptRuntime,
+} from "@vimex/transcript"
 import {
   VimexController,
   type ModelCatalog,
@@ -101,6 +106,10 @@ assert(
   !capacity || overscanRows === null || overscanRows <= height,
   "Capacity runs may not use overscan larger than the viewport",
 )
+const recentTailBlocks =
+  process.env.VIMEX_NAV_RECENT_TAIL_BLOCKS === undefined
+    ? null
+    : envInt("VIMEX_NAV_RECENT_TAIL_BLOCKS", 100, 0)
 const repeats = envInt("VIMEX_NAV_REPEATS", 6)
 const intervalMs = envInt("VIMEX_NAV_REPEAT_INTERVAL_MS", 33)
 const capacityActions = (
@@ -255,30 +264,44 @@ async function createHarness(
     controller.getPresentationSnapshot("main").workspaces[fixture.threadId],
     seeded,
   )
-  if (dense) {
-    const reference = new TranscriptRuntime({
+  const connected = new TranscriptRuntime(
+    {
       threadId: fixture.threadId,
       canonicalGeneration: seeded.canonicalGeneration,
       canonicalRevision: seeded.canonicalRevision,
       conversation: seeded.conversation,
       transcript: seeded.transcript,
       mode: "follow",
-    })
-    // Diagnostic full mount: the connected UI still drives normal navigation.
-    reference.setWindowViewport = () => reference.getSnapshot()
-    const runtimes = (
-      controller as unknown as {
-        transcriptRuntimes: Map<string, TranscriptRuntime>
-      }
-    ).transcriptRuntimes
-    runtimes.get("main")?.dispose()
-    runtimes.set("main", reference)
-  } else if (overscanRows !== null) {
-    const runtime = controller.transcriptRuntime("main")!
-    const configure = runtime.setWindowViewport.bind(runtime)
-    runtime.setWindowViewport = (viewportRows) =>
+      canonicalDamage: { kind: "full" },
+    },
+    dense
+      ? {}
+      : {
+          windowPolicy: {
+            viewportRows: height,
+            overscanRows: overscanRows ?? height,
+            recentTailBlocks:
+              recentTailBlocks ??
+              defaultTranscriptWindowPolicy.recentTailBlocks,
+            recentTailRows: defaultTranscriptWindowPolicy.recentTailRows,
+          },
+        },
+  )
+  // Setup-only injection keeps the fixture's folds and block plan identical
+  // to the connected runtime before timed input begins.
+  if (dense) connected.setWindowViewport = () => connected.getSnapshot()
+  else if (overscanRows !== null) {
+    const configure = connected.setWindowViewport.bind(connected)
+    connected.setWindowViewport = (viewportRows) =>
       configure(viewportRows, overscanRows)
   }
+  const runtimes = (
+    controller as unknown as {
+      transcriptRuntimes: Map<string, TranscriptRuntime>
+    }
+  ).transcriptRuntimes
+  runtimes.get("main")?.dispose()
+  runtimes.set("main", connected)
   const commits: number[] = []
   function Root() {
     return (
@@ -819,10 +842,17 @@ async function run() {
     measured = await createHarness(fixture, false)
     const connectedStartupMs = round(performance.now() - harnessStarted)
     const memoryAfterHarness = process.memoryUsage()
-    assert.equal(
-      measured.runtime.getSnapshot().blocks.length,
-      fixture.blockCount,
-      "Connected runtime block count does not match fixture",
+    const connectedSetup = measured.capture()
+    const connectedRenderBlocks = measured.runtime.getSnapshot().blocks.length
+    const connectedWorkspace =
+      measured.controller.getSnapshot().workspaces[fixture.threadId]!
+    assert.deepEqual(
+      measured.runtime.getSnapshot().blocks.map(blockKey),
+      buildTranscriptBlocks({
+        conversation: connectedWorkspace.conversation,
+        transcript: connectedWorkspace.transcript,
+      }).map(blockKey),
+      "Connected runtime block plan differs from the connected transcript",
     )
     if (denseOracle) oracle = await createHarness(fixture, true)
     if (oracle) {
@@ -1095,6 +1125,7 @@ async function run() {
           canonicalItems: fixture.requestedBlockCount,
           transcriptItems: fixture.transcriptItemCount,
           actualRenderBlocks: fixture.blockCount,
+          connectedRenderBlocks,
           hash: fixture.contentHash,
           denseOracle,
           renderBlockTarget,
@@ -1102,6 +1133,8 @@ async function run() {
         startup: {
           fixtureBuildMs,
           connectedStartupMs,
+          mountedRootsAfterSetup: connectedSetup.roots,
+          materializedBlocksAfterSetup: connectedSetup.materializedBlocks,
           memoryBytes: {
             beforeFixture: memoryStart,
             afterFixture: memoryAfterFixture,
@@ -1114,7 +1147,10 @@ async function run() {
         viewport: { width, height },
         windowPolicy: {
           overscanRows: overscanRows ?? "viewport-default",
-          overrideIsBenchmarkOnly: overscanRows !== null,
+          recentTailBlocks: recentTailBlocks ?? "production-default",
+          recentTailRows: defaultTranscriptWindowPolicy.recentTailRows,
+          overrideIsBenchmarkOnly:
+            overscanRows !== null || recentTailBlocks !== null,
         },
         repeat: {
           requestedIntervalMs: intervalMs,

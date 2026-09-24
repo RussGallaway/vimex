@@ -644,6 +644,10 @@ export interface PlanTranscriptWindowInput {
   readonly heights: TranscriptHeightIndex
   readonly viewportRows: number
   readonly overscanRows: number
+  /** Recent blocks kept mounted while the viewport intersects the tail. */
+  readonly recentTailBlocks?: number
+  /** Maximum indexed rows retained for that tail; an individual block stays whole. */
+  readonly recentTailRows?: number
   readonly attachment: TranscriptWindowAttachment
   /** A one-shot target takes planning focus when it is outside the ordinary window. */
   readonly reveal?: LogicalPoint
@@ -1744,6 +1748,10 @@ export function planTranscriptWindow(
   if (
     !validPlannerCount(input.viewportRows, true) ||
     !validPlannerCount(input.overscanRows) ||
+    (input.recentTailBlocks !== undefined &&
+      !validPlannerCount(input.recentTailBlocks)) ||
+    (input.recentTailRows !== undefined &&
+      !validPlannerCount(input.recentTailRows, true)) ||
     !heights.supports(blocks) ||
     heights.blockCount !== blocks.length ||
     !validPlannerCount(heights.totalRows, true)
@@ -1839,6 +1847,23 @@ export function planTranscriptWindow(
       )
       plannedFrom = Math.max(0, visibleStart - input.overscanRows)
       plannedTo = Math.min(heights.totalRows, visibleEnd + input.overscanRows)
+    }
+  }
+
+  // Keep the recent tail stable as the reader moves within it. The same
+  // contiguous window remains responsible for older-history navigation.
+  const recentTailBlocks = input.recentTailBlocks ?? 0
+  if (recentTailBlocks > 0) {
+    let tailStart = Math.max(0, blocks.length - recentTailBlocks)
+    if (input.recentTailRows !== undefined) {
+      const earliestRow = Math.max(0, heights.totalRows - input.recentTailRows)
+      const rowBound = heights.blockAtRow(earliestRow)
+      if (rowBound !== undefined) tailStart = Math.max(tailStart, rowBound)
+    }
+    const tailStartRow = heights.prefixRows(tailStart)
+    if (visibleEnd > tailStartRow) {
+      plannedFrom = Math.min(plannedFrom, tailStartRow)
+      plannedTo = heights.totalRows
     }
   }
 

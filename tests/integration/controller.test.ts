@@ -1271,7 +1271,7 @@ test("Workbench owns independent bounded main and side transcript runtime lifeti
     })
   await h.controller.settle()
   const main = h.controller.transcriptRuntime("main")!
-  expect(main.getSnapshot().window.blocks.length).toBe(48)
+  expect(main.getSnapshot().window.blocks.length).toBe(100)
 
   h.controller.sideChat("open")
   await h.controller.settle()
@@ -1293,7 +1293,7 @@ test("Workbench owns independent bounded main and side transcript runtime lifeti
   await h.controller.settle()
   const side = h.controller.transcriptRuntime("side")!
   expect(side).not.toBe(main)
-  expect(side.getSnapshot().window.blocks.length).toBe(48)
+  expect(side.getSnapshot().window.blocks.length).toBe(100)
 
   let mainPublications = 0,
     sidePublications = 0
@@ -1304,13 +1304,13 @@ test("Workbench owns independent bounded main and side transcript runtime lifeti
     sidePublications++
   })
   const sideFrame = side.getSnapshot()
-  main.setWindowViewport(4, 4)
+  main.setWindowViewport(4, 4, 0)
   expect(main.getSnapshot().window.blocks.length).toBe(8)
   expect(side.getSnapshot()).toBe(sideFrame)
   expect([mainPublications, sidePublications]).toEqual([1, 0])
 
   const mainFrame = main.getSnapshot()
-  side.setWindowViewport(6, 6)
+  side.setWindowViewport(6, 6, 0)
   expect(side.getSnapshot().window.blocks.length).toBe(12)
   expect(main.getSnapshot()).toBe(mainFrame)
   expect([mainPublications, sidePublications]).toEqual([1, 1])
@@ -1749,6 +1749,8 @@ test("distant selection swap reveals one bounded endpoint and copy spans unmount
   const h = harness()
   await h.controller.initialize("/tmp")
   const runtime = h.controller.transcriptRuntime("main")!
+  // Exercise the cold-history path independently of the production warm tail.
+  runtime.setWindowViewport(24, 24, 0)
   const ids = Array.from({ length: 100 }, (_, index) =>
     itemId(`selection-${index}`),
   )
@@ -1866,6 +1868,7 @@ test("off-window search adopts hidden content in one bounded coherent publicatio
   const h = harness()
   await h.controller.initialize("/tmp")
   const runtime = h.controller.transcriptRuntime("main")!
+  runtime.setWindowViewport(24, 24, 0)
   const ids = Array.from({ length: 100 }, (_, index) =>
     itemId(`search-window-${index}`),
   )
@@ -1965,6 +1968,7 @@ test("off-window mark and clamped explicit jump each publish one complete target
   const h = harness()
   await h.controller.initialize("/tmp")
   const runtime = h.controller.transcriptRuntime("main")!
+  runtime.setWindowViewport(24, 24, 0)
   const ids = Array.from({ length: 100 }, (_, index) =>
     itemId(`jump-window-${index}`),
   )
@@ -2069,6 +2073,7 @@ test("off-window URL motion unfolds one target and picker ownership settles atom
   const h = harness()
   await h.controller.initialize("/tmp")
   const runtime = h.controller.transcriptRuntime("main")!
+  runtime.setWindowViewport(24, 24, 0)
   const ids = Array.from({ length: 100 }, (_, index) =>
     itemId(`url-window-${index}`),
   )
@@ -2334,6 +2339,7 @@ test("cross-thread history atomically materializes the restored viewport rather 
   const h = harness()
   await h.controller.initialize("/tmp")
   const runtime = h.controller.transcriptRuntime("main")!
+  runtime.setWindowViewport(24, 24, 0)
   const ids = Array.from({ length: 100 }, (_, index) =>
     itemId(`history-window-${index}`),
   )
@@ -2416,6 +2422,7 @@ test("thread navigation closes the source overlay without turning an old follow 
   const h = harness()
   await h.controller.initialize("/tmp")
   const runtime = h.controller.transcriptRuntime("main")!
+  runtime.setWindowViewport(24, 24, 0)
   const first = itemId("thread-tail-first")
   h.emit({
     type: "conversation",

@@ -122,6 +122,10 @@ export interface TranscriptFrame {
 export interface TranscriptWindowPolicy {
   readonly viewportRows: number
   readonly overscanRows: number
+  /** Upper bound for the recent mounted area while reading near the tail. */
+  readonly recentTailBlocks?: number
+  /** Indexed row budget; native measurements may refine earlier estimates. */
+  readonly recentTailRows?: number
 }
 
 export interface TranscriptRuntimeOptions {
@@ -157,7 +161,12 @@ export interface TranscriptRuntimeDiagnostics
 }
 
 export const defaultTranscriptWindowPolicy: TranscriptWindowPolicy =
-  Object.freeze({ viewportRows: 24, overscanRows: 24 })
+  Object.freeze({
+    viewportRows: 24,
+    overscanRows: 24,
+    recentTailBlocks: 100,
+    recentTailRows: 240,
+  })
 
 const noneDamage = Object.freeze({ kind: "none" } as const)
 const fullDamage = Object.freeze({ kind: "full" } as const)
@@ -1442,6 +1451,8 @@ export class TranscriptRuntime {
           heights: index,
           viewportRows: this.windowPolicy.viewportRows,
           overscanRows: this.windowPolicy.overscanRows,
+          recentTailBlocks: this.windowPolicy.recentTailBlocks,
+          recentTailRows: this.windowPolicy.recentTailRows,
           attachment,
           ...(reveal ? { reveal } : {}),
         })
@@ -1499,6 +1510,7 @@ export class TranscriptRuntime {
   setWindowViewport(
     viewportRows: number,
     overscanRows = viewportRows,
+    recentTailBlocks = this.windowPolicy?.recentTailBlocks ?? 0,
   ): TranscriptFrame {
     if (
       this.disposed ||
@@ -1506,15 +1518,23 @@ export class TranscriptRuntime {
       !Number.isSafeInteger(viewportRows) ||
       viewportRows < 1 ||
       !Number.isSafeInteger(overscanRows) ||
-      overscanRows < 0
+      overscanRows < 0 ||
+      !Number.isSafeInteger(recentTailBlocks) ||
+      recentTailBlocks < 0
     )
       return this.frame
     if (
       this.windowPolicy?.viewportRows === viewportRows &&
-      this.windowPolicy.overscanRows === overscanRows
+      this.windowPolicy.overscanRows === overscanRows &&
+      (this.windowPolicy.recentTailBlocks ?? 0) === recentTailBlocks
     )
       return this.frame
-    this.windowPolicy = Object.freeze({ viewportRows, overscanRows })
+    this.windowPolicy = Object.freeze({
+      viewportRows,
+      overscanRows,
+      recentTailBlocks,
+      recentTailRows: this.windowPolicy?.recentTailRows,
+    })
     const index = this.heightIndex?.supports(this.frame.blocks)
       ? this.heightIndex
       : this.heightIndexForFrame(this.frame)
