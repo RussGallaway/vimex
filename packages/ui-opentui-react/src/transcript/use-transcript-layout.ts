@@ -81,8 +81,16 @@ export function useTranscriptLayout(options: {
   const pendingAnchor = useRef(false)
   const pendingRestore = useRef(false)
   const lastScrollTop = useRef(0)
-  const prepositionedBlocks = useRef<
-    TranscriptFrame["window"]["blocks"] | undefined
+  // One native preposition per requested point; the mounted window can stay
+  // identical across distant semantic jumps inside the generous hot tail.
+  const prepositionedTarget = useRef<
+    | {
+        blocks: TranscriptFrame["window"]["blocks"]
+        point: LogicalPoint
+        preferredScreenRow: number
+        intentRevision: number
+      }
+    | undefined
   >(undefined)
   const hasRuntimeGeometry = Boolean(
     options.frame && options.frame.geometry.measuredBlockCount > 0,
@@ -118,7 +126,7 @@ export function useTranscriptLayout(options: {
   useLayoutEffect(() => {
     measuredLayout.current = undefined
     currentMeasuredLayout.current = undefined
-    prepositionedBlocks.current = undefined
+    prepositionedTarget.current = undefined
     pendingScrollRows.current = []
     pendingCursor.current = undefined
     pendingNativeScroll.current = false
@@ -135,7 +143,7 @@ export function useTranscriptLayout(options: {
     // their last placement escape into input handling after a later reveal.
     measuredLayout.current = undefined
     currentMeasuredLayout.current = undefined
-    prepositionedBlocks.current = undefined
+    prepositionedTarget.current = undefined
     pendingScrollRows.current = []
     pendingCursor.current = undefined
     pendingNativeScroll.current = false
@@ -414,6 +422,11 @@ export function useTranscriptLayout(options: {
         scrollbox.scrollTo(
           Math.max(0, blockRow + localRow - preferredScreenRow),
         )
+      if (
+        renderable &&
+        !frame.geometry.byBlockKey[key]?.points[point.graphemeOffset]
+      )
+        invalidateRenderedBlock(renderable)
       lastScrollTop.current = scrollbox.scrollTop
     },
     [scrollRef],
@@ -437,11 +450,30 @@ export function useTranscriptLayout(options: {
         if (
           pendingRestore.current &&
           current.transcript.viewport.kind === "point" &&
-          measuredLayout.current?.materializedBlocks !==
-            current.frame.window.blocks &&
-          prepositionedBlocks.current !== current.frame.window.blocks
+          (measuredLayout.current?.materializedBlocks !==
+            current.frame.window.blocks ||
+            (measuredLayout.current &&
+              !measuredPoint(
+                measuredLayout.current,
+                current.transcript.viewport.point,
+              ))) &&
+          (prepositionedTarget.current?.blocks !==
+            current.frame.window.blocks ||
+            prepositionedTarget.current.point.itemId !==
+              current.transcript.viewport.point.itemId ||
+            prepositionedTarget.current.point.graphemeOffset !==
+              current.transcript.viewport.point.graphemeOffset ||
+            prepositionedTarget.current.preferredScreenRow !==
+              current.transcript.viewport.preferredScreenRow ||
+            prepositionedTarget.current.intentRevision !==
+              current.runtime.getViewportIntentRevision())
         ) {
-          prepositionedBlocks.current = current.frame.window.blocks
+          prepositionedTarget.current = {
+            blocks: current.frame.window.blocks,
+            point: current.transcript.viewport.point,
+            preferredScreenRow: current.transcript.viewport.preferredScreenRow,
+            intentRevision: current.runtime.getViewportIntentRevision(),
+          }
           const beforePreposition = scrollbox.scrollTop
           prepositionWindowForPoint(
             current.frame,

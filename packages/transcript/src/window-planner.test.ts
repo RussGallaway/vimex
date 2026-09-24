@@ -262,6 +262,7 @@ test("empty plans are inert and invalid planning facts take the exact pass-throu
     { viewportRows: 1, overscanRows: Number.NaN },
     { viewportRows: 1, overscanRows: 0, recentTailBlocks: -1 },
     { viewportRows: 1, overscanRows: 0, recentTailRows: 0 },
+    { viewportRows: 1, overscanRows: 0, olderLookAheadRows: -1 },
   ]) {
     const window = planTranscriptWindow({
       blocks,
@@ -296,7 +297,7 @@ test("empty plans are inert and invalid planning facts take the exact pass-throu
 
 test("recent tail stays mounted across nearby anchors and releases for older reading", () => {
   const blocks = Object.freeze(
-    Array.from({ length: 150 }, (_, index) => item(`hot-${index}`)),
+    Array.from({ length: 350 }, (_, index) => item(`hot-${index}`)),
   )
   const heights = heightIndex(blocks)
   const plan = (index: number) =>
@@ -313,14 +314,44 @@ test("recent tail stays mounted across nearby anchors and releases for older rea
       },
     })
 
-  expect(keys(plan(149).blocks)).toEqual(keys(blocks.slice(50)))
-  expect(keys(plan(90).blocks)).toEqual(keys(blocks.slice(50)))
+  expect(keys(plan(349).blocks)).toEqual(keys(blocks.slice(250)))
+  expect(keys(plan(290).blocks)).toEqual(keys(blocks.slice(250)))
   const older = plan(30)
   expect(keys(older.blocks)).toEqual(keys(blocks.slice(26, 38)))
   expect(
     older.topSpacerRows + older.blocks.length + older.bottomSpacerRows,
-  ).toBe(150)
-  expect(keys(plan(149).blocks)).toEqual(keys(blocks.slice(50)))
+  ).toBe(350)
+  expect(keys(plan(349).blocks)).toEqual(keys(blocks.slice(250)))
+})
+
+test("older look-ahead precedes the tail and the newer edge tapers across its boundary", () => {
+  const blocks = Object.freeze(
+    Array.from({ length: 200 }, (_, index) => item(`transition-${index}`)),
+  )
+  const heights = heightIndex(blocks)
+  const plan = (index: number, recentTailBlocks = 50) =>
+    planTranscriptWindow({
+      blocks,
+      heights,
+      viewportRows: 4,
+      overscanRows: 4,
+      recentTailBlocks,
+      recentTailRows: 50,
+      olderLookAheadRows: 10,
+      attachment: {
+        kind: "point",
+        point: point(blocks[index]!),
+        preferredScreenRow: 0,
+      },
+    })
+
+  expect(keys(plan(170).blocks)).toEqual(keys(blocks.slice(140)))
+  expect(keys(plan(149).blocks)).toEqual(keys(blocks.slice(140)))
+  expect(keys(plan(146).blocks)).toEqual(keys(blocks.slice(142)))
+  expect(keys(plan(145).blocks)).toEqual(keys(blocks.slice(141, 198)))
+  expect(keys(plan(140).blocks)).toEqual(keys(blocks.slice(136, 188)))
+  expect(keys(plan(50).blocks)).toEqual(keys(blocks.slice(46, 58)))
+  expect(keys(plan(149, 0).blocks)).toEqual(keys(blocks.slice(145, 157)))
 })
 
 test("recent tail limits selection by block count and indexed rows", () => {
@@ -340,6 +371,20 @@ test("recent tail limits selection by block count and indexed rows", () => {
   expect(keys(tail.blocks)).toEqual(keys(blocks.slice(70)))
   expect(tail.topSpacerRows).toBe(210)
   expect(tail.bottomSpacerRows).toBe(0)
+
+  const withLookAhead = planTranscriptWindow({
+    blocks,
+    heights,
+    viewportRows: 4,
+    overscanRows: 4,
+    recentTailBlocks: 100,
+    recentTailRows: 240,
+    olderLookAheadRows: 10,
+    attachment: { kind: "tail" },
+  })
+  expect(keys(withLookAhead.blocks)).toEqual(keys(blocks.slice(66)))
+  expect(withLookAhead.topSpacerRows).toBe(198)
+  expect(withLookAhead.blocks.length).toBe(84)
 
   const giant = Object.freeze([...blocks.slice(0, -1), item("giant", 500)])
   const giantTail = planTranscriptWindow({

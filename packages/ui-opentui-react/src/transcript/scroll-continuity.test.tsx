@@ -38,8 +38,7 @@ interface Scenario {
   startCommand?: number
   /** Independent native reference for mixed absolute/relative input. */
   referenceRowsFromTail?: number
-  referenceHead?: boolean
-  input(h: Harness): void | Promise<void>
+  input(h: Harness, checkpoint?: () => void): void | Promise<void>
 }
 const scenarios: Scenario[] = [
   {
@@ -116,7 +115,6 @@ const scenarios: Scenario[] = [
     name: "first-tail-first supersession",
     navigation: true,
     startCommand: 50,
-    referenceHead: true,
     async input(h) {
       await h.mockInput.typeText("gg")
       await h.mockInput.typeText("G")
@@ -172,6 +170,12 @@ const scenarios: Scenario[] = [
 async function sample(expanded: boolean, dense: boolean, scenario: Scenario) {
   const h = await wheelHarness(100, expanded, dense)
   const frames: string[][] = []
+  const frameWindows: Array<{ top: number; bottom: number }> = []
+  const checkpoints: Array<{
+    paint: string[]
+    viewport: ReturnType<Harness["workspace"]>["transcript"]["viewport"]
+    window: { top: number; bottom: number }
+  }> = []
   const originalEmit = h.renderer.emit
   try {
     await settle(h)
@@ -194,14 +198,36 @@ async function sample(expanded: boolean, dense: boolean, scenario: Scenario) {
       })
       await settle(h)
     }
+    const initialFrame = h.controller.transcriptRuntime("main")!.getSnapshot()
     h.renderer.emit = function (event: string | symbol, ...args: unknown[]) {
       // FRAME fires after renderNative; listeners can already move the viewport.
       // Capture before listeners so text and position belong to the same paint.
-      if (event === "frame") frames.push(paintedTranscript(h))
+      if (event === "frame") {
+        frames.push(paintedTranscript(h))
+        const window = h.controller
+          .transcriptRuntime("main")!
+          .getSnapshot().window
+        frameWindows.push({
+          top: window.topSpacerRows,
+          bottom: window.bottomSpacerRows,
+        })
+      }
       return originalEmit.call(this, event, ...args)
     }
     await act(async () => {
-      await scenario.input(h)
+      await scenario.input(h, () => {
+        const window = h.controller
+          .transcriptRuntime("main")!
+          .getSnapshot().window
+        checkpoints.push({
+          paint: paintedTranscript(h),
+          viewport: h.workspace().transcript.viewport,
+          window: {
+            top: window.topSpacerRows,
+            bottom: window.bottomSpacerRows,
+          },
+        })
+      })
       await h.flush()
       await h.renderOnce()
     })
@@ -225,8 +251,7 @@ async function sample(expanded: boolean, dense: boolean, scenario: Scenario) {
               scenario.referenceRowsFromTail,
           ),
         )
-      } else if (scenario.referenceHead) scroll.scrollTo(0)
-      else if (viewport.kind === "point") {
+      } else if (viewport.kind === "point") {
         const target = frame.blocks.find(
           (block) =>
             block.key.kind === "item" &&
@@ -251,8 +276,12 @@ async function sample(expanded: boolean, dense: boolean, scenario: Scenario) {
     }
     return {
       frames,
+      frameWindows,
+      checkpoints,
       final: paintedTranscript(h),
       cursor: h.workspace().transcript.cursor,
+      initialWindow: initialFrame.window,
+      finalFrame: h.controller.transcriptRuntime("main")!.getSnapshot(),
     }
   } finally {
     h.renderer.emit = originalEmit
@@ -274,6 +303,48 @@ for (const expanded of [false, true])
           `paint ${index} must already show the requested destination`,
         ).toEqual(reference.final)
     }, 30000)
+
+test("expanded hot-tail boundary paints a continuous destination across upward and reverse scroll", async () => {
+  const scenario: Scenario = {
+    name: "hot-tail boundary reversal",
+    navigation: true,
+    startCommand: 75,
+    async input(h, checkpoint) {
+      for (let i = 0; i < 230; i++) h.mockInput.pressKey("u", { ctrl: true })
+      await h.flush()
+      await h.renderOnce()
+      checkpoint?.()
+      for (let i = 0; i < 8; i++) h.mockInput.pressKey("e", { ctrl: true })
+      await h.flush()
+      await h.renderOnce()
+      checkpoint?.()
+    },
+  }
+  const reference = await sample(true, true, scenario)
+  const windowed = await sample(true, false, scenario)
+  expect(windowed.finalFrame.geometry.totalRows).toBeGreaterThan(900)
+  expect(windowed.initialWindow.topSpacerRows).toBeGreaterThan(0)
+  expect(windowed.initialWindow.bottomSpacerRows).toBe(0)
+  expect(windowed.finalFrame.window.bottomSpacerRows).toBeGreaterThan(0)
+  expect(windowed.frameWindows.some((window) => window.bottom > 0)).toBe(true)
+  expect(windowed.checkpoints).toHaveLength(2)
+  expect(windowed.checkpoints[0]!.window.bottom).toBeGreaterThan(0)
+  expect(windowed.checkpoints[0]!.paint).toEqual(
+    reference.checkpoints[0]!.paint,
+  )
+  expect(windowed.checkpoints[1]!.paint).toEqual(
+    reference.checkpoints[1]!.paint,
+  )
+  expect(windowed.checkpoints[1]!.paint).not.toEqual(
+    windowed.checkpoints[0]!.paint,
+  )
+  expect(windowed.final).toEqual(reference.final)
+  expect(windowed.cursor).toEqual(reference.cursor)
+  for (const [index, paint] of windowed.frames.entries())
+    expect(paint.join(""), `paint ${index} must show mounted content`).toMatch(
+      /OUTPUT|Command|Line \d+ readable output/,
+    )
+}, 30000)
 
 async function recordPaints(h: Harness, input: () => void | Promise<void>) {
   const frames: string[][] = []

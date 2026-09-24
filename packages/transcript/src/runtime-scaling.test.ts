@@ -1551,7 +1551,9 @@ test("production window policy bounds initial, detached, reveal, and measured ma
     expect(initial.blocks).toHaveLength(blockCount)
     expect(initial.window.blocks).toHaveLength(48)
     expect(initial.window.bottomSpacerRows).toBe(0)
-    expect(initial.window.topSpacerRows).toBe(blockCount - 48)
+    expect(initial.window.topSpacerRows).toBe(
+      createHeightIndex(initial.blocks)!.prefixRows(blockCount - 48),
+    )
     expect(
       initial.window.blocks.every(
         (block, index) => block === initial.blocks[blockCount - 48 + index],
@@ -1772,9 +1774,12 @@ test.each([...transcriptScalingBlockCounts])(
 
     expect(publications).toBe(1)
     expect(corrected).not.toBe(before)
-    expect(before.geometry.totalRows).toBe(blockCount)
+    const estimatedRows = createHeightIndex(before.blocks)!.totalRows
+    expect(before.geometry.totalRows).toBe(estimatedRows)
     expect(before.geometry.byBlockKey[key]).toBeUndefined()
-    expect(corrected.geometry.totalRows).toBe(blockCount + 3)
+    expect(corrected.geometry.totalRows).toBe(
+      estimatedRows + 4 - block.estimatedRows,
+    )
     expect(corrected.geometry.blockRows).toHaveLength(
       corrected.window.blocks.length,
     )
@@ -1803,7 +1808,7 @@ test.each([...transcriptScalingBlockCounts])(
     const reset = runtime.resetLayout("width")
     expect(publications).toBe(2)
     expect(reset.geometry.measuredBlockCount).toBe(0)
-    expect(reset.geometry.totalRows).toBe(blockCount)
+    expect(reset.geometry.totalRows).toBe(estimatedRows)
     expect(reset.window.blocks.length).toBe(48)
     runtime.dispose()
   },
@@ -2361,8 +2366,12 @@ test("a mixed invalid windowed batch cannot leak a staged height replacement", (
     ...base,
     measurements: [geometry(first, 2)],
   })
-  expect(accepted.geometry.totalRows).toBe(101)
-  expect(before.geometry.totalRows).toBe(100)
+  expect(accepted.geometry.totalRows).toBe(
+    before.geometry.totalRows + 2 - first!.estimatedRows,
+  )
+  expect(before.geometry.totalRows).toBe(
+    createHeightIndex(before.blocks)!.totalRows,
+  )
   runtime.dispose()
 })
 
@@ -2400,7 +2409,9 @@ test("a fold transition discards the incompatible measured height before replann
       },
     ],
   })
-  expect(measured.geometry.totalRows).toBe(107)
+  expect(measured.geometry.totalRows).toBe(
+    before.geometry.totalRows + 8 - block.estimatedRows,
+  )
 
   const foldedTranscript = Object.freeze({
     ...fixture.before.transcript,
@@ -2418,7 +2429,9 @@ test("a fold transition discards the incompatible measured height before replann
       presentationDamage: { kind: "view" },
     }),
   )
-  expect(folded.geometry.totalRows).toBe(100)
+  expect(folded.geometry.totalRows).toBe(
+    createHeightIndex(folded.blocks)!.totalRows,
+  )
   expect(folded.geometry.byBlockKey[key]).toBeUndefined()
   runtime.dispose()
 })

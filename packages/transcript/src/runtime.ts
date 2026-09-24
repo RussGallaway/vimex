@@ -126,6 +126,8 @@ export interface TranscriptWindowPolicy {
   readonly recentTailBlocks?: number
   /** Indexed row budget; native measurements may refine earlier estimates. */
   readonly recentTailRows?: number
+  /** Indexed rows mounted before the recent tail's older boundary. */
+  readonly olderLookAheadRows?: number
 }
 
 export interface TranscriptRuntimeOptions {
@@ -164,8 +166,9 @@ export const defaultTranscriptWindowPolicy: TranscriptWindowPolicy =
   Object.freeze({
     viewportRows: 24,
     overscanRows: 24,
-    recentTailBlocks: 100,
-    recentTailRows: 240,
+    recentTailBlocks: 300,
+    recentTailRows: 900,
+    olderLookAheadRows: 48,
   })
 
 const noneDamage = Object.freeze({ kind: "none" } as const)
@@ -1453,6 +1456,7 @@ export class TranscriptRuntime {
           overscanRows: this.windowPolicy.overscanRows,
           recentTailBlocks: this.windowPolicy.recentTailBlocks,
           recentTailRows: this.windowPolicy.recentTailRows,
+          olderLookAheadRows: this.windowPolicy.olderLookAheadRows,
           attachment,
           ...(reveal ? { reveal } : {}),
         })
@@ -1534,6 +1538,7 @@ export class TranscriptRuntime {
       overscanRows,
       recentTailBlocks,
       recentTailRows: this.windowPolicy?.recentTailRows,
+      olderLookAheadRows: this.windowPolicy?.olderLookAheadRows,
     })
     const index = this.heightIndex?.supports(this.frame.blocks)
       ? this.heightIndex

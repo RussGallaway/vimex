@@ -110,6 +110,16 @@ const recentTailBlocks =
   process.env.VIMEX_NAV_RECENT_TAIL_BLOCKS === undefined
     ? null
     : envInt("VIMEX_NAV_RECENT_TAIL_BLOCKS", 100, 0)
+const recentTailRows =
+  process.env.VIMEX_NAV_RECENT_TAIL_ROWS === undefined
+    ? null
+    : envInt("VIMEX_NAV_RECENT_TAIL_ROWS", 240)
+const olderLookAheadRows =
+  process.env.VIMEX_NAV_OLDER_LOOK_AHEAD_ROWS === undefined
+    ? null
+    : envInt("VIMEX_NAV_OLDER_LOOK_AHEAD_ROWS", 48, 0)
+const boundaryUpSteps = envInt("VIMEX_NAV_BOUNDARY_UP_STEPS", 0, 0)
+assert(boundaryUpSteps <= 200, "VIMEX_NAV_BOUNDARY_UP_STEPS is capped at 200")
 const repeats = envInt("VIMEX_NAV_REPEATS", 6)
 const intervalMs = envInt("VIMEX_NAV_REPEAT_INTERVAL_MS", 33)
 const capacityActions = (
@@ -283,7 +293,11 @@ async function createHarness(
             recentTailBlocks:
               recentTailBlocks ??
               defaultTranscriptWindowPolicy.recentTailBlocks,
-            recentTailRows: defaultTranscriptWindowPolicy.recentTailRows,
+            recentTailRows:
+              recentTailRows ?? defaultTranscriptWindowPolicy.recentTailRows,
+            olderLookAheadRows:
+              olderLookAheadRows ??
+              defaultTranscriptWindowPolicy.olderLookAheadRows,
           },
         },
   )
@@ -1034,6 +1048,19 @@ async function run() {
           dispatch: (h) => h.setup.mockInput.typeText("G"),
         })
       }
+      if (boundaryUpSteps > 0) {
+        await runAction({
+          name: "boundary-reset-to-tail",
+          group: "setup",
+          dispatch: returnToTail.dispatch,
+        })
+        for (let index = 0; index < boundaryUpSteps; index++)
+          await runAction({
+            name: `boundary-up-${index}`,
+            group: "boundary-up",
+            dispatch: up,
+          })
+      }
     }
     assert(
       results.some((result) => result.after.top !== result.before.top),
@@ -1147,10 +1174,18 @@ async function run() {
         viewport: { width, height },
         windowPolicy: {
           overscanRows: overscanRows ?? "viewport-default",
-          recentTailBlocks: recentTailBlocks ?? "production-default",
-          recentTailRows: defaultTranscriptWindowPolicy.recentTailRows,
+          recentTailBlocks:
+            recentTailBlocks ?? defaultTranscriptWindowPolicy.recentTailBlocks,
+          recentTailRows:
+            recentTailRows ?? defaultTranscriptWindowPolicy.recentTailRows,
+          olderLookAheadRows:
+            olderLookAheadRows ??
+            defaultTranscriptWindowPolicy.olderLookAheadRows,
           overrideIsBenchmarkOnly:
-            overscanRows !== null || recentTailBlocks !== null,
+            overscanRows !== null ||
+            recentTailBlocks !== null ||
+            recentTailRows !== null ||
+            olderLookAheadRows !== null,
         },
         repeat: {
           requestedIntervalMs: intervalMs,
@@ -1161,6 +1196,7 @@ async function run() {
             .map((at, i) => round(at - settledDispatchStarts[i]!)),
           burst: "8 synchronous key events in one React act",
           capacityActions: capacity ? capacityActions : null,
+          boundaryUpSteps: capacity ? null : boundaryUpSteps,
         },
         groups,
         actions: results,

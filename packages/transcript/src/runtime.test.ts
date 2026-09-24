@@ -25,6 +25,7 @@ import {
 } from "./domain/transcript-document"
 import {
   createTranscriptFrame,
+  defaultTranscriptWindowPolicy,
   TranscriptRuntime,
   type TranscriptDamage,
   type TranscriptRuntimeDiagnostics,
@@ -86,6 +87,110 @@ function fixture(): Source {
   return source
 }
 
+test("default window keeps a 300 block, 900 row tail with older look-ahead", () => {
+  expect(defaultTranscriptWindowPolicy).toMatchObject({
+    recentTailBlocks: 300,
+    recentTailRows: 900,
+    olderLookAheadRows: 48,
+  })
+})
+
+test("head navigation publishes viewport intent when the whole hot tail stays mounted", () => {
+  let source = fixture()
+  for (let index = 0; index < 100; index++)
+    source = apply(source, {
+      type: "item.started",
+      threadId: thread,
+      item: {
+        id: itemId(`mounted-${index}`),
+        turnId: turn,
+        kind: "assistant",
+        markdown: `Mounted item ${index}`,
+        status: "complete",
+      },
+    })
+  const runtime = new TranscriptRuntime(input(source, "follow"), {
+    windowPolicy: defaultTranscriptWindowPolicy,
+  })
+  const tail = runtime.getSnapshot()
+  expect(tail.window.topSpacerRows).toBe(0)
+  expect(tail.window.bottomSpacerRows).toBe(0)
+  const intent = runtime.getViewportIntentRevision()
+  const headPoint = { itemId: answer, graphemeOffset: 0 }
+  const head = runtime.update({
+    ...input(source, "detached"),
+    transcript: {
+      ...source.transcript,
+      viewport: { kind: "point", point: headPoint, preferredScreenRow: 0 },
+    },
+    presentationDamage: { kind: "view" },
+  })
+  expect(head).not.toBe(tail)
+  expect(head.window).toBe(tail.window)
+  expect(head.geometry).toBe(tail.geometry)
+  expect(runtime.getViewportIntentRevision()).toBe(intent + 1)
+  expect(pointIsMaterialized(head.window.blocks, headPoint)).toBe(true)
+  runtime.dispose()
+})
+
+test("unmeasured expanded command cards consume their output rows in the hot budget", () => {
+  let source = fixture()
+  const command = itemId("estimated-command")
+  source = apply(source, {
+    type: "item.started",
+    threadId: thread,
+    item: {
+      id: command,
+      turnId: turn,
+      kind: "command",
+      title: "Estimated command",
+      detail: Array.from({ length: 20 }, (_, index) => `output ${index}`).join(
+        "\n",
+      ),
+      status: "complete",
+    },
+  })
+  for (let index = 0; index < 99; index++)
+    source = apply(source, {
+      type: "item.started",
+      threadId: thread,
+      item: {
+        id: itemId(`estimated-command-${index}`),
+        turnId: turn,
+        kind: "command",
+        title: `Estimated command ${index}`,
+        detail: Array.from({ length: 20 }, (_, row) => `output ${row}`).join(
+          "\n",
+        ),
+        status: "complete",
+      },
+    })
+  const expanded = setAllFolds(source.transcript, false, "tools")
+  const runtime = new TranscriptRuntime(
+    { ...input(source, "follow"), transcript: expanded },
+    { windowPolicy: defaultTranscriptWindowPolicy },
+  )
+  const card = runtime
+    .getSnapshot()
+    .blocks.find(
+      (block) => block.key.kind === "item" && block.key.itemId === command,
+    )
+  expect(card?.estimatedRows).toBe(26)
+  expect(runtime.getSnapshot().geometry.totalRows).toBeGreaterThan(900)
+  expect(runtime.getSnapshot().window.blocks.length).toBeLessThan(50)
+  const folded = runtime.update({
+    ...input(source, "follow"),
+    transcript: setAllFolds(expanded, true, "tools"),
+    presentationDamage: { kind: "layout" },
+  })
+  expect(
+    folded.blocks.find(
+      (block) => block.key.kind === "item" && block.key.itemId === command,
+    )?.estimatedRows,
+  ).toBe(1)
+  runtime.dispose()
+})
+
 test("recent tail policy survives viewport size updates", () => {
   let source = fixture()
   for (let index = 0; index < 130; index++)
@@ -106,12 +211,14 @@ test("recent tail policy survives viewport size updates", () => {
       overscanRows: 4,
       recentTailBlocks: 100,
       recentTailRows: 240,
+      olderLookAheadRows: 12,
     },
   })
   const before = runtime.getSnapshot()
   expect(before.window.blocks.length).toBeGreaterThan(50)
   const resized = runtime.setWindowViewport(8)
   expect(resized.window.blocks.length).toBeGreaterThan(50)
+  expect(resized.window.topSpacerRows).toBe(before.window.topSpacerRows)
   expect(resized.window.bottomSpacerRows).toBe(0)
   expect(resized.window.blocks.at(-1)).toBe(before.window.blocks.at(-1))
   runtime.dispose()
@@ -551,7 +658,7 @@ test("activity batching changes disposable rows without replacing semantic items
   expect(expanded.transcript.order).toEqual(compact.transcript.order)
   expect(
     expanded.geometry.blockRows.find((row) => row.itemId === first)?.rows,
-  ).toBe(1)
+  ).toBeGreaterThan(1)
   expect(
     expanded.geometry.blockRows.find((row) => row.itemId === second)?.rows,
   ).toBe(1)

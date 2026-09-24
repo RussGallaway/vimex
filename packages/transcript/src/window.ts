@@ -648,6 +648,8 @@ export interface PlanTranscriptWindowInput {
   readonly recentTailBlocks?: number
   /** Maximum indexed rows retained for that tail; an individual block stays whole. */
   readonly recentTailRows?: number
+  /** Indexed rows mounted before the recent tail's older boundary. */
+  readonly olderLookAheadRows?: number
   readonly attachment: TranscriptWindowAttachment
   /** A one-shot target takes planning focus when it is outside the ordinary window. */
   readonly reveal?: LogicalPoint
@@ -1064,6 +1066,35 @@ function snapshotTurn(turn: Turn): Turn {
   return Object.freeze({ ...turn, itemIds: Object.freeze([...turn.itemIds]) })
 }
 
+function estimatedTextRows(text: string): number {
+  if (!text) return 0
+  // A running command can grow without bound before it is fragmentable. Keep
+  // each publication's estimate independent of its complete output length.
+  const limit = Math.min(text.length, commandFragmentSourceLimit)
+  let rows = 1
+  for (let index = 0; index < limit; index++)
+    if (text.charCodeAt(index) === 10) rows++
+  return rows
+}
+
+function estimatedRootRows(item: ConversationItem, folded: boolean): number {
+  if (
+    item.kind !== "command" &&
+    item.kind !== "tool" &&
+    item.kind !== "unknown"
+  )
+    return 1
+  if (folded) return 1
+  const detailRows = estimatedTextRows(item.detail)
+  const commandRows =
+    item.kind === "command" ? estimatedTextRows(item.executionCommand ?? "") : 0
+  return (
+    4 +
+    (commandRows > 0 ? commandRows + 2 : 0) +
+    (detailRows > 0 ? detailRows + 2 : 0)
+  )
+}
+
 /** Builds the source-less terminal decoration for one canonical turn. */
 export function buildTranscriptTurnActivityBlock(
   turn: Turn,
@@ -1104,7 +1135,10 @@ function rootItemBlock(
       projection,
       followedByActivity,
     ),
-    estimatedRows: 1,
+    estimatedRows: estimatedRootRows(
+      itemSnapshot,
+      Boolean(input.transcript.folded[itemId]),
+    ),
     followedByActivity,
   })
 }
@@ -1752,6 +1786,8 @@ export function planTranscriptWindow(
       !validPlannerCount(input.recentTailBlocks)) ||
     (input.recentTailRows !== undefined &&
       !validPlannerCount(input.recentTailRows, true)) ||
+    (input.olderLookAheadRows !== undefined &&
+      !validPlannerCount(input.olderLookAheadRows)) ||
     !heights.supports(blocks) ||
     heights.blockCount !== blocks.length ||
     !validPlannerCount(heights.totalRows, true)
@@ -1850,8 +1886,10 @@ export function planTranscriptWindow(
     }
   }
 
-  // Keep the recent tail stable as the reader moves within it. The same
-  // contiguous window remains responsible for older-history navigation.
+  // Keep the recent tail stable while reading within it. A bounded older
+  // look-ahead is ready before the reader reaches its top. Beyond that top,
+  // taper the newer edge over the tail span rather than evicting it at once.
+  // The ordinary visible window remains authoritative for far-history jumps.
   const recentTailBlocks = input.recentTailBlocks ?? 0
   if (recentTailBlocks > 0) {
     let tailStart = Math.max(0, blocks.length - recentTailBlocks)
@@ -1862,8 +1900,17 @@ export function planTranscriptWindow(
     }
     const tailStartRow = heights.prefixRows(tailStart)
     if (visibleEnd > tailStartRow) {
-      plannedFrom = Math.min(plannedFrom, tailStartRow)
+      plannedFrom = Math.min(
+        plannedFrom,
+        Math.max(0, tailStartRow - (input.olderLookAheadRows ?? 0)),
+      )
       plannedTo = heights.totalRows
+    } else {
+      const distanceAboveTail = tailStartRow - visibleEnd
+      plannedTo = Math.max(
+        plannedTo,
+        Math.max(0, heights.totalRows - 2 * distanceAboveTail),
+      )
     }
   }
 
