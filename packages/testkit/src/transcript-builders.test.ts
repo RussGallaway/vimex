@@ -16,6 +16,7 @@ import {
   transcriptScalingBlockCounts,
 } from "./transcript-builders"
 
+// The 100k-block case can exceed Bun's default five seconds on Intel runners.
 test("scaling fixtures deterministically produce the exact requested render-block counts", () => {
   for (const blockCount of transcriptScalingBlockCounts) {
     const fixture = buildTranscriptScalingFixture(blockCount)
@@ -76,7 +77,7 @@ test("scaling fixtures deterministically produce the exact requested render-bloc
       fixture.afterTailDelta.transcript.projectionById[fixture.targets.first],
     ).toBe(fixture.before.transcript.projectionById[fixture.targets.first])
   }
-})
+}, 30_000)
 
 // Constructing the 100k-turn fixture can exceed Bun's default five seconds on
 // hosted runners. Validate each size independently with an explicit setup budget.
