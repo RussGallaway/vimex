@@ -52,7 +52,9 @@ export async function runApplication(options: CliOptions) {
       viewportColumns: process.stdout.columns,
     },
   })
-  let pendingNavigationFrame: string | undefined
+  let pendingNavigationFrame:
+    { operationId: string; burstId?: string } | undefined
+  let frameAwaitingCompletion = false
   const framedNavigationIds = new Set<string>()
   const pendingSubmitFrames = new Set<string>()
   const recordPerformanceMark = (
@@ -68,22 +70,41 @@ export async function runApplication(options: CliOptions) {
     })
     if (
       mark.kind === "navigation" &&
+      mark.phase === "state_published" &&
       mark.operationId &&
-      (mark.phase === "input" || mark.phase === "state_published")
+      frameAwaitingCompletion &&
+      renderer?.getSchedulerState().isRendering
+    )
+      performanceProfile.record({
+        kind: "navigation",
+        phase: "frame_already_running_at_publication",
+        operationId: mark.operationId,
+        burstId: mark.burstId,
+        atMs: mark.atMs,
+        detail: { rendererFrameId: renderer.frameId },
+      })
+    if (
+      mark.kind === "navigation" &&
+      mark.operationId &&
+      mark.phase === "state_published"
     ) {
       if (framedNavigationIds.has(mark.operationId)) return
       if (
         pendingNavigationFrame &&
-        pendingNavigationFrame !== mark.operationId
+        pendingNavigationFrame.operationId !== mark.operationId
       ) {
         performanceProfile.record({
           kind: "navigation",
           phase: "superseded",
-          operationId: pendingNavigationFrame,
+          operationId: pendingNavigationFrame.operationId,
+          burstId: pendingNavigationFrame.burstId,
           atMs: mark.atMs,
         })
       }
-      pendingNavigationFrame = mark.operationId
+      pendingNavigationFrame = {
+        operationId: mark.operationId,
+        burstId: mark.burstId,
+      }
     }
     if (
       mark.kind === "submit" &&
@@ -152,20 +173,44 @@ export async function runApplication(options: CliOptions) {
       targetFps: 60,
     })
     const activeRenderer = renderer
+    const onFrameStart = async () => {
+      frameAwaitingCompletion = true
+      const atMs = performance.now()
+      if (pendingNavigationFrame)
+        performanceProfile.record({
+          kind: "navigation",
+          phase: "frame_callback_start",
+          operationId: pendingNavigationFrame.operationId,
+          burstId: pendingNavigationFrame.burstId,
+          atMs,
+          detail: { rendererFrameId: activeRenderer.frameId },
+        })
+      for (const operationId of pendingSubmitFrames)
+        performanceProfile.record({
+          kind: "submit",
+          phase: "frame_callback_start",
+          operationId,
+          atMs,
+          detail: { rendererFrameId: activeRenderer.frameId },
+        })
+    }
     const onFrame = () => {
+      frameAwaitingCompletion = false
       const atMs = performance.now()
       if (pendingNavigationFrame) {
         performanceProfile.record({
           kind: "navigation",
           phase: "next_renderer_frame",
-          operationId: pendingNavigationFrame,
+          operationId: pendingNavigationFrame.operationId,
+          burstId: pendingNavigationFrame.burstId,
           atMs,
           detail: {
+            rendererFrameId: activeRenderer.frameId,
             viewportRows: activeRenderer.height,
             viewportColumns: activeRenderer.width,
           },
         })
-        framedNavigationIds.add(pendingNavigationFrame)
+        framedNavigationIds.add(pendingNavigationFrame.operationId)
         if (framedNavigationIds.size > 256)
           framedNavigationIds.delete(framedNavigationIds.values().next().value!)
         pendingNavigationFrame = undefined
@@ -177,14 +222,17 @@ export async function runApplication(options: CliOptions) {
           operationId,
           atMs,
           detail: {
+            rendererFrameId: activeRenderer.frameId,
             viewportRows: activeRenderer.height,
             viewportColumns: activeRenderer.width,
           },
         })
       pendingSubmitFrames.clear()
     }
+    activeRenderer.setFrameCallback(onFrameStart)
     activeRenderer.on(CliRenderEvents.FRAME, onFrame)
     lifecycle.add(() => {
+      activeRenderer.removeFrameCallback(onFrameStart)
       activeRenderer.off(CliRenderEvents.FRAME, onFrame)
     })
     const clipboard = createClipboard({

@@ -18,6 +18,8 @@ const phases = new Set<string>([
   "next_thread_content",
   "next_thread_content_committed",
   "next_frame_after_content_commit",
+  "frame_callback_start",
+  "frame_already_running_at_publication",
   "superseded",
   "first_activity",
   "first_content",
@@ -44,6 +46,8 @@ export type PerformancePhase =
   | "next_thread_content"
   | "next_thread_content_committed"
   | "next_frame_after_content_commit"
+  | "frame_callback_start"
+  | "frame_already_running_at_publication"
   | "superseded"
   | "first_activity"
   | "first_content"
@@ -88,6 +92,7 @@ export interface PerformanceDetail {
   visibleBlocks?: number
   viewportRows?: number
   viewportColumns?: number
+  rendererFrameId?: number
   action?: PerformanceAction
 }
 
@@ -95,6 +100,7 @@ export interface PerformanceMark {
   kind: "submit" | "navigation"
   phase: string
   operationId?: string
+  burstId?: string
   atMs: number
   detail?: Readonly<Record<string, string | number | boolean>>
 }
@@ -103,22 +109,61 @@ interface StoredMark {
   kind: PerformanceMark["kind"]
   phase: PerformancePhase
   operationId?: string
+  burstId?: string
   atMs: number
   detail?: PerformanceDetail
 }
 
 export interface PerformanceProfileSnapshot {
   format: "vimex-performance-trace"
-  version: 1
+  version: 2
   windowMs: number
+  buffer: {
+    maxRecords: number
+    evictedByAge: number
+    evictedByCapacity: number
+  }
+  audit: {
+    navigation: {
+      inputs: number
+      accepted: number
+      published: number
+      frameCallbacksStarted: number
+      publicationsDuringFrame: number
+      frames: number
+      superseded: number
+      operationsWithInputAndFrame: number
+      operationsWithPublicationAndFrame: number
+      operationsWithCallbackAndFrame: number
+      bursts: number
+      burstsWithPublicationAndFrame: number
+    }
+  }
   metadata?: PerformanceProfileMetadata
+  navigationBursts: PerformanceNavigationBurst[]
   events: Array<{
     kind: PerformanceMark["kind"]
     phase: PerformancePhase
     atMs: number
     operation?: number
+    burst?: number
     detail?: PerformanceDetail
   }>
+}
+
+export interface PerformanceNavigationBurst {
+  burst: number
+  inputCount: number
+  acceptedCount: number
+  publicationCount: number
+  firstInputAtMs?: number
+  lastInputAtMs?: number
+  firstPublicationAtMs?: number
+  lastPublicationAtMs?: number
+  firstFrameAfterPublicationAtMs?: number
+  frameAfterLastPublicationAtMs?: number
+  truncatedAtStart: boolean
+  mayContinueAfterExport: boolean
 }
 
 export interface PerformanceProfileMetadata {
@@ -180,6 +225,7 @@ function safeDetail(
     "visibleBlocks",
     "viewportRows",
     "viewportColumns",
+    "rendererFrameId",
   ] as const) {
     const value = detail[key]
     if (typeof value === "number" && Number.isFinite(value) && value >= 0)
@@ -193,6 +239,51 @@ function safeDetail(
   return Object.keys(safe).length ? safe : undefined
 }
 
+function summarizeNavigationBursts(
+  events: PerformanceProfileSnapshot["events"],
+  truncatedBurstOrdinals: Set<number>,
+  snapshotAtMs: number,
+): PerformanceNavigationBurst[] {
+  const bursts = new Map<number, PerformanceNavigationBurst>()
+  for (const event of events) {
+    if (event.kind !== "navigation" || event.burst === undefined) continue
+    let burst = bursts.get(event.burst)
+    if (!burst) {
+      burst = {
+        burst: event.burst,
+        inputCount: 0,
+        acceptedCount: 0,
+        publicationCount: 0,
+        truncatedAtStart: truncatedBurstOrdinals.has(event.burst),
+        mayContinueAfterExport: false,
+      }
+      bursts.set(event.burst, burst)
+    }
+    if (event.phase === "input") {
+      burst.inputCount++
+      burst.firstInputAtMs ??= event.atMs
+      burst.lastInputAtMs = event.atMs
+    } else if (event.phase === "accepted") burst.acceptedCount++
+    else if (event.phase === "state_published") {
+      burst.publicationCount++
+      burst.firstPublicationAtMs ??= event.atMs
+      burst.lastPublicationAtMs = event.atMs
+      delete burst.frameAfterLastPublicationAtMs
+    } else if (
+      event.phase === "next_renderer_frame" &&
+      burst.lastPublicationAtMs !== undefined &&
+      event.atMs >= burst.lastPublicationAtMs
+    ) {
+      burst.firstFrameAfterPublicationAtMs ??= event.atMs
+      burst.frameAfterLastPublicationAtMs ??= event.atMs
+    }
+  }
+  for (const burst of bursts.values())
+    if (burst.lastInputAtMs !== undefined)
+      burst.mayContinueAfterExport = snapshotAtMs - burst.lastInputAtMs < 250
+  return [...bursts.values()]
+}
+
 export class PerformanceProfileRecorder {
   private readonly maxAgeMs: number
   private readonly maxRecords: number
@@ -201,6 +292,9 @@ export class PerformanceProfileRecorder {
   private readonly marks: Array<StoredMark | undefined>
   private start = 0
   private length = 0
+  private evictedByAge = 0
+  private evictedByCapacity = 0
+  private readonly truncatedBurstIds = new Set<string>()
 
   constructor(
     options: {
@@ -238,47 +332,123 @@ export class PerformanceProfileRecorder {
       atMs: mark.atMs,
     }
     if (mark.operationId) next.operationId = mark.operationId
+    if (mark.burstId && mark.kind === "navigation") next.burstId = mark.burstId
     const detail = safeDetail(mark.detail)
     if (detail) next.detail = detail
 
     const index = (this.start + this.length) % this.maxRecords
+    if (this.length === this.maxRecords) {
+      const evicted = this.marks[index]
+      if (evicted) this.rememberEvictedBurst(evicted)
+    }
     this.marks[index] = next
-    if (this.length === this.maxRecords)
+    if (this.length === this.maxRecords) {
       this.start = (this.start + 1) % this.maxRecords
-    else this.length++
+      this.evictedByCapacity++
+    } else this.length++
   }
 
   snapshot(): PerformanceProfileSnapshot {
-    const cutoff = this.now() - this.maxAgeMs
+    const now = this.now()
+    this.prune(now)
     const retained: StoredMark[] = []
     for (let offset = 0; offset < this.length; offset++) {
       const mark = this.marks[(this.start + offset) % this.maxRecords]
-      if (mark && mark.atMs >= cutoff) retained.push(mark)
+      if (mark) retained.push(mark)
     }
     const firstAtMs = retained[0]?.atMs ?? 0
     const operations = new Map<string, number>()
+    const bursts = new Map<string, number>()
+    const events = retained.map((mark) => {
+      const event: PerformanceProfileSnapshot["events"][number] = {
+        kind: mark.kind,
+        phase: mark.phase,
+        atMs: Math.round((mark.atMs - firstAtMs) * 1000) / 1000,
+      }
+      if (mark.operationId) {
+        let ordinal = operations.get(mark.operationId)
+        if (ordinal === undefined) {
+          ordinal = operations.size + 1
+          operations.set(mark.operationId, ordinal)
+        }
+        event.operation = ordinal
+      }
+      if (mark.burstId) {
+        let ordinal = bursts.get(mark.burstId)
+        if (ordinal === undefined) {
+          ordinal = bursts.size + 1
+          bursts.set(mark.burstId, ordinal)
+        }
+        event.burst = ordinal
+      }
+      if (mark.detail) event.detail = { ...mark.detail }
+      return event
+    })
+    const truncatedBurstOrdinals = new Set<number>()
+    for (const [id, ordinal] of bursts)
+      if (this.truncatedBurstIds.has(id)) truncatedBurstOrdinals.add(ordinal)
+    const navigationBursts = summarizeNavigationBursts(
+      events,
+      truncatedBurstOrdinals,
+      now - firstAtMs,
+    )
+    const operationsById = new Map<number, Set<PerformancePhase>>()
+    for (const event of events) {
+      if (event.kind !== "navigation" || event.operation === undefined) continue
+      const phases = operationsById.get(event.operation) ?? new Set()
+      phases.add(event.phase)
+      operationsById.set(event.operation, phases)
+    }
+    const navigationEvents = events.filter(
+      (event) => event.kind === "navigation",
+    )
+    const count = (phase: PerformancePhase) =>
+      navigationEvents.filter((event) => event.phase === phase).length
     return {
       format: "vimex-performance-trace",
-      version: 1,
+      version: 2,
       windowMs: this.maxAgeMs,
+      buffer: {
+        maxRecords: this.maxRecords,
+        evictedByAge: this.evictedByAge,
+        evictedByCapacity: this.evictedByCapacity,
+      },
+      audit: {
+        navigation: {
+          inputs: count("input"),
+          accepted: count("accepted"),
+          published: count("state_published"),
+          frameCallbacksStarted: count("frame_callback_start"),
+          publicationsDuringFrame: count(
+            "frame_already_running_at_publication",
+          ),
+          frames: count("next_renderer_frame"),
+          superseded: count("superseded"),
+          operationsWithInputAndFrame: [...operationsById.values()].filter(
+            (phases) =>
+              phases.has("input") && phases.has("next_renderer_frame"),
+          ).length,
+          operationsWithPublicationAndFrame: [
+            ...operationsById.values(),
+          ].filter(
+            (phases) =>
+              phases.has("state_published") &&
+              phases.has("next_renderer_frame"),
+          ).length,
+          operationsWithCallbackAndFrame: [...operationsById.values()].filter(
+            (phases) =>
+              phases.has("frame_callback_start") &&
+              phases.has("next_renderer_frame"),
+          ).length,
+          bursts: navigationBursts.length,
+          burstsWithPublicationAndFrame: navigationBursts.filter(
+            (burst) => burst.frameAfterLastPublicationAtMs !== undefined,
+          ).length,
+        },
+      },
       ...(this.metadata ? { metadata: { ...this.metadata } } : {}),
-      events: retained.map((mark) => {
-        const event: PerformanceProfileSnapshot["events"][number] = {
-          kind: mark.kind,
-          phase: mark.phase,
-          atMs: Math.round((mark.atMs - firstAtMs) * 1000) / 1000,
-        }
-        if (mark.operationId) {
-          let ordinal = operations.get(mark.operationId)
-          if (ordinal === undefined) {
-            ordinal = operations.size + 1
-            operations.set(mark.operationId, ordinal)
-          }
-          event.operation = ordinal
-        }
-        if (mark.detail) event.detail = { ...mark.detail }
-        return event
-      }),
+      navigationBursts,
+      events,
     }
   }
 
@@ -308,9 +478,21 @@ export class PerformanceProfileRecorder {
     while (this.length > 0) {
       const mark = this.marks[this.start]
       if (mark && mark.atMs >= cutoff) break
+      if (mark) this.rememberEvictedBurst(mark)
       this.marks[this.start] = undefined
       this.start = (this.start + 1) % this.maxRecords
       this.length--
+      this.evictedByAge++
     }
+  }
+
+  private rememberEvictedBurst(mark: StoredMark): void {
+    if (!mark.burstId) return
+    this.truncatedBurstIds.delete(mark.burstId)
+    this.truncatedBurstIds.add(mark.burstId)
+    if (this.truncatedBurstIds.size > this.maxRecords)
+      this.truncatedBurstIds.delete(
+        this.truncatedBurstIds.values().next().value!,
+      )
   }
 }

@@ -47,6 +47,11 @@ test("keeps a bounded rolling window and remaps operation IDs in snapshots", () 
     },
   ])
   expect(JSON.stringify(recorder.snapshot())).not.toContain("thread-secret")
+  expect(recorder.snapshot().buffer).toEqual({
+    maxRecords: 3,
+    evictedByAge: 0,
+    evictedByCapacity: 1,
+  })
 
   now = 125
   expect(recorder.snapshot().events).toEqual([
@@ -59,6 +64,103 @@ test("keeps a bounded rolling window and remaps operation IDs in snapshots", () 
   ])
   now = 131
   expect(recorder.snapshot().events).toEqual([])
+  expect(recorder.snapshot().buffer).toEqual({
+    maxRecords: 3,
+    evictedByAge: 3,
+    evictedByCapacity: 1,
+  })
+})
+
+test("groups navigation bursts and reports paired frame sample counts", () => {
+  const recorder = new PerformanceProfileRecorder({ now: () => 100 })
+  const add = (
+    phase: string,
+    operationId: string,
+    atMs: number,
+    burstId = "private-burst-id",
+  ) =>
+    recorder.record({
+      kind: "navigation",
+      phase,
+      operationId,
+      burstId,
+      atMs,
+    })
+  add("input", "private-input-1", 0)
+  add("input", "private-input-2", 5)
+  add("accepted", "private-input-2", 6)
+  add("state_published", "private-input-2", 7)
+  add("frame_callback_start", "private-input-2", 10)
+  add("next_renderer_frame", "private-input-2", 15)
+  add("accepted", "private-input-3", 16)
+  add("state_published", "private-input-3", 17)
+  const snapshot = recorder.snapshot()
+  expect(snapshot.navigationBursts).toEqual([
+    {
+      burst: 1,
+      inputCount: 2,
+      acceptedCount: 2,
+      publicationCount: 2,
+      firstInputAtMs: 0,
+      lastInputAtMs: 5,
+      firstPublicationAtMs: 7,
+      lastPublicationAtMs: 17,
+      firstFrameAfterPublicationAtMs: 15,
+      truncatedAtStart: false,
+      mayContinueAfterExport: true,
+    },
+  ])
+  expect(snapshot.audit.navigation).toEqual({
+    inputs: 2,
+    accepted: 2,
+    published: 2,
+    frameCallbacksStarted: 1,
+    publicationsDuringFrame: 0,
+    frames: 1,
+    superseded: 0,
+    operationsWithInputAndFrame: 1,
+    operationsWithPublicationAndFrame: 1,
+    operationsWithCallbackAndFrame: 1,
+    bursts: 1,
+    burstsWithPublicationAndFrame: 0,
+  })
+  expect(JSON.stringify(snapshot)).not.toContain("private")
+})
+
+test("flags a burst when its opening input was evicted", () => {
+  const recorder = new PerformanceProfileRecorder({
+    maxRecords: 3,
+    now: () => 20,
+  })
+  for (const [phase, atMs] of [
+    ["input", 0],
+    ["input", 1],
+    ["state_published", 2],
+    ["next_renderer_frame", 3],
+  ] as const)
+    recorder.record({
+      kind: "navigation",
+      phase,
+      atMs,
+      operationId: "private-operation",
+      burstId: "private-burst",
+    })
+  expect(recorder.snapshot().navigationBursts).toEqual([
+    {
+      burst: 1,
+      inputCount: 1,
+      acceptedCount: 0,
+      publicationCount: 1,
+      firstInputAtMs: 0,
+      lastInputAtMs: 0,
+      firstPublicationAtMs: 1,
+      lastPublicationAtMs: 1,
+      firstFrameAfterPublicationAtMs: 2,
+      frameAfterLastPublicationAtMs: 2,
+      truncatedAtStart: true,
+      mayContinueAfterExport: true,
+    },
+  ])
 })
 
 test("copies only known numeric details and known enum values", () => {
@@ -108,6 +210,7 @@ test("retains submit lifecycle phases and wheel actions without accepting privat
     "next_thread_content",
     "next_thread_content_committed",
     "next_frame_after_content_commit",
+    "frame_already_running_at_publication",
     "superseded",
   ].entries()) {
     recorder.record({
@@ -142,6 +245,7 @@ test("retains submit lifecycle phases and wheel actions without accepting privat
     "next_thread_content",
     "next_thread_content_committed",
     "next_frame_after_content_commit",
+    "frame_already_running_at_publication",
     "superseded",
     "accepted",
     "first_navigation_frame",
@@ -177,8 +281,29 @@ test("exports a private JSON file and leaves no temporary file", async () => {
     const file = await readFile(path, "utf8")
     expect(JSON.parse(file)).toEqual({
       format: "vimex-performance-trace",
-      version: 1,
+      version: 2,
       windowMs: 900000,
+      buffer: {
+        maxRecords: 4096,
+        evictedByAge: 0,
+        evictedByCapacity: 0,
+      },
+      audit: {
+        navigation: {
+          inputs: 0,
+          accepted: 0,
+          published: 0,
+          frameCallbacksStarted: 0,
+          publicationsDuringFrame: 0,
+          frames: 0,
+          superseded: 0,
+          operationsWithInputAndFrame: 0,
+          operationsWithPublicationAndFrame: 0,
+          operationsWithCallbackAndFrame: 0,
+          bursts: 0,
+          burstsWithPublicationAndFrame: 0,
+        },
+      },
       metadata: {
         vimexVersion: "0.1.0",
         bunVersion: "1.3.6",
@@ -187,6 +312,7 @@ test("exports a private JSON file and leaves no temporary file", async () => {
         viewportRows: 40,
         viewportColumns: 120,
       },
+      navigationBursts: [],
       events: [
         {
           kind: "submit",

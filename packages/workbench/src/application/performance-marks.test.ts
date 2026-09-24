@@ -131,7 +131,16 @@ test("navigation marks exclude non-navigation and unchanged transcript commands"
   })
   expect(marks.map((mark) => mark.phase)).toEqual(["input", "accepted"])
   expect(marks[0]?.operationId).toBe(marks[1]?.operationId)
+  expect(marks[0]?.burstId).toBe(marks[1]?.burstId)
+  expect(marks[0]?.burstId).toBeTruthy()
   expect(marks[0]?.detail?.action).toBe("line_up")
+  controller.performanceNavigationInput("line_down")
+  controller.dispatch({
+    type: "transcript.command",
+    command: { type: "tail.attach" },
+  })
+  expect(marks[2]?.burstId).toBe(marks[0]?.burstId)
+  expect(marks[3]?.burstId).toBe(marks[0]?.burstId)
 })
 
 test("rejected submission records an attempt without acceptance or publication", () => {

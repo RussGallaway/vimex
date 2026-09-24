@@ -148,6 +148,7 @@ export interface ControllerPorts {
       | "next_thread_content"
       | "next_thread_content_committed"
     operationId?: string
+    burstId?: string
     atMs: number
     detail?: {
       transcriptItems?: number
@@ -175,6 +176,8 @@ const profiledNavigationCommands = new Set([
   "viewport.anchor",
   "tail.attach",
 ])
+const navigationBurstIdleMs = 120
+const navigationBurstAssociationMs = 250
 function isNonUserContentEvent(
   event: ConversationEvent,
   conversation?: ConversationState,
@@ -511,6 +514,8 @@ export class VimexController
     }
   >()
   private navigationPerformanceSequence = 0
+  private navigationBurstSequence = 0
+  private activeNavigationBurst?: { id: string; lastInputAtMs: number }
   private pendingNavigationInput?: { operationId: string; atMs: number }
   private readonly threadMutations = new Map<ThreadId, Promise<void>>()
   private preferenceTail: Promise<void> = Promise.resolve()
@@ -605,11 +610,19 @@ export class VimexController
         NonNullable<WorkbenchActions["performanceNavigationInput"]>
       >[0]
     },
+    burstId?: string,
   ): void {
     if (!this.ports.onPerformanceMark) return
     const atMs = performance.now()
     try {
-      this.ports.onPerformanceMark({ kind, phase, operationId, atMs, detail })
+      this.ports.onPerformanceMark({
+        kind,
+        phase,
+        operationId,
+        ...(burstId ? { burstId } : {}),
+        atMs,
+        detail,
+      })
     } catch {
       // Measurements must never affect an interaction.
     }
@@ -636,9 +649,25 @@ export class VimexController
     WorkbenchActions["performanceNavigationInput"]
   > = (action) => {
     if (!this.ports.onPerformanceMark || this.closing) return
+    const atMs = performance.now()
+    if (
+      !this.activeNavigationBurst ||
+      atMs - this.activeNavigationBurst.lastInputAtMs > navigationBurstIdleMs
+    )
+      this.activeNavigationBurst = {
+        id: `navigation-burst-${++this.navigationBurstSequence}`,
+        lastInputAtMs: atMs,
+      }
+    else this.activeNavigationBurst.lastInputAtMs = atMs
     const operationId = `navigation-${++this.navigationPerformanceSequence}`
-    this.pendingNavigationInput = { operationId, atMs: performance.now() }
-    this.performanceMark("navigation", "input", operationId, { action })
+    this.pendingNavigationInput = { operationId, atMs }
+    this.performanceMark(
+      "navigation",
+      "input",
+      operationId,
+      { action },
+      this.activeNavigationBurst.id,
+    )
   }
   getSnapshot = (): WorkbenchState => this.state
   subscribe = (listener: () => void): (() => void) => {
@@ -1213,6 +1242,13 @@ export class VimexController
             ? this.pendingNavigationInput.operationId
             : `navigation-${++this.navigationPerformanceSequence}`
           : undefined
+    const performanceBurstId =
+      performanceKind === "navigation" &&
+      this.activeNavigationBurst &&
+      performance.now() - this.activeNavigationBurst.lastInputAtMs <
+        navigationBurstAssociationMs
+        ? this.activeNavigationBurst.id
+        : undefined
     if (performanceKind === "navigation")
       this.pendingNavigationInput = undefined
     if (performanceKind && performanceOperationId)
@@ -1225,6 +1261,7 @@ export class VimexController
             command.type === "transcript.navigate")
           ? this.navigationPerformanceDetail(this.state, command.threadId)
           : undefined,
+        performanceBurstId,
       )
     const before = this.state
     const result = transitionWorkbench(before, command)
@@ -1390,6 +1427,7 @@ export class VimexController
         performanceKind === "navigation" && revealThread
           ? this.navigationPerformanceDetail(this.state, revealThread)
           : undefined,
+        performanceBurstId,
       )
     for (const effect of result.effects) {
       const pending = this.launch(() => this.effect(effect))
@@ -1744,6 +1782,7 @@ export class VimexController
         if (event.reason === "restart" && this.restartPending) break
         this.historyNavigation = undefined
         this.pendingNavigationInput = undefined
+        this.activeNavigationBurst = undefined
         this.runtimeEpoch++
         this.pendingSubmitActivity.clear()
         this.navigationRevision++
@@ -3531,6 +3570,7 @@ export class VimexController
   private async runClose(): Promise<void> {
     this.closing = true
     this.pendingNavigationInput = undefined
+    this.activeNavigationBurst = undefined
     this.pendingSubmitActivity.clear()
     const errors: unknown[] = []
     try {
