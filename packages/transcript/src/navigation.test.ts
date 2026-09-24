@@ -75,6 +75,33 @@ describe("logical transcript navigation", () => {
     expect(moveByMessage(state, "backward")).toBeUndefined()
   })
 
+  test("brace destinations follow a changed projection after its previous boundaries were visited", () => {
+    const id = itemId("streaming-block")
+    let state = syncTranscriptItem(
+      initialTranscript(),
+      message("streaming-block", "first\n\nsecond"),
+    )
+    const origin = { itemId: id, graphemeOffset: 0 }
+    expect(moveBySemanticBlock(state, "forward", origin)).toEqual({
+      itemId: id,
+      graphemeOffset: graphemeCount("first\n\n"),
+    })
+    state = syncTranscriptItem(
+      state,
+      message("streaming-block", "first\n\ninserted\n\nsecond"),
+    )
+    expect(moveBySemanticBlock(state, "forward", origin, 2)).toEqual({
+      itemId: id,
+      graphemeOffset: graphemeCount("first\n\ninserted\n\n"),
+    })
+    expect(
+      moveBySemanticBlock(state, "backward", {
+        itemId: id,
+        graphemeOffset: graphemeCount("first\n\ninserted\n\n"),
+      }),
+    ).toEqual({ itemId: id, graphemeOffset: graphemeCount("first\n\n") })
+  })
+
   test("message motions skip tool nodes while reasoning has no transcript position", () => {
     let state = syncTranscriptItem(
       initialTranscript(),

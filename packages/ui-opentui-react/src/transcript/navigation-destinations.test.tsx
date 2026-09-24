@@ -5,7 +5,7 @@ import type { ApprovalGateway } from "@vimex/approvals"
 import { itemId } from "@vimex/conversation"
 import type { ConversationGateway } from "@vimex/conversation"
 import { buildTranscriptNavigationFixture } from "@vimex/testkit"
-import { blockKey } from "@vimex/transcript"
+import { blockKey, moveBySemanticBlock } from "@vimex/transcript"
 import {
   VimexController,
   type ModelCatalog,
@@ -149,7 +149,10 @@ async function navigationHarness(
           setup.mockInput.pressKey(value === "up" ? "u" : "d", {
             ctrl: true,
           })
-      } else await setup.mockInput.typeText(value)
+      } else
+        await setup.mockInput.typeText(
+          repeat === 1 ? value : `${repeat}${value}`,
+        )
       await setup.flush()
       await setup.renderOnce()
     })
@@ -267,6 +270,41 @@ test("previous block reveals an offscreen command header at the upper edge", asy
   }
 }, 30000)
 
+test("counted braces resolve cold semantic destinations before native geometry is mounted", async () => {
+  const h = await navigationHarness("mixed", 400, 80)
+  try {
+    const before = h.frame().transcript.cursor!
+    const expected = moveBySemanticBlock(
+      h.frame().transcript,
+      "backward",
+      before,
+      1000,
+    )!
+    expect(expected).toBeDefined()
+    expect(
+      h
+        .frame()
+        .window.blocks.some(
+          (block) =>
+            block.key.kind === "item" && block.key.itemId === expected.itemId,
+        ),
+    ).toBe(false)
+    await h.key("{", 1000)
+    expect(h.frame().transcript.cursor).toEqual(expected)
+    const painted = h.cursor()
+    expect(painted.row).toBeGreaterThanOrEqual(0)
+    expect(painted.row).toBeLessThan(h.scroll.viewport.height)
+    expect(h.paintedRow(painted.row).trim()).not.toBe("")
+    await h.key("}", 1000)
+    expect(h.frame().transcript.cursor).toEqual(before)
+    const returned = h.cursor()
+    expect(returned.row).toBeGreaterThanOrEqual(0)
+    expect(returned.row).toBeLessThan(h.scroll.viewport.height)
+  } finally {
+    await h.close()
+  }
+}, 30000)
+
 test("an upward key burst never jumps forward across a split diff", async () => {
   const h = await navigationHarness("mixed", 30, 80)
   try {
@@ -363,6 +401,63 @@ test("a cold native edge does not trap the next opposite scroll key", async () =
     expect(h.scroll.scrollTop).toBe(priorTop)
     await h.key("down")
     expect(h.scroll.scrollTop).toBeGreaterThan(priorTop)
+  } finally {
+    await h.close()
+  }
+}, 30000)
+
+test("an unmeasured row inside the same block still completes the original half-page key", async () => {
+  const h = await navigationHarness("command", 400, 80, undefined, false)
+  try {
+    await h.key("up")
+    const viewport = h.frame().transcript.viewport
+    expect(viewport.kind).toBe("point")
+    if (viewport.kind !== "point") throw new Error("Expected point viewport")
+    const beforeTop = h.scroll.scrollTop
+    const beforeCursor = h.cursor()
+    const scrollBy = h.scroll.scrollBy.bind(h.scroll)
+    const scrollDestinationAtRow = h.runtime.scrollDestinationAtRow.bind(
+      h.runtime,
+    )
+    let clamped = false
+    let coldLookup = false
+    try {
+      // The native window ends before an indexed row in the same oversized
+      // command block. Its local source point is unavailable until reflow.
+      h.scroll.scrollBy = (rows, behavior) => {
+        if (!clamped) {
+          clamped = true
+          return
+        }
+        return scrollBy(rows, behavior)
+      }
+      h.runtime.scrollDestinationAtRow = (row) => {
+        if (!coldLookup) {
+          coldLookup = true
+          return {
+            point: viewport.point,
+            preferredScreenRow: viewport.preferredScreenRow + 1,
+            pointMeasured: false,
+          }
+        }
+        return scrollDestinationAtRow(row)
+      }
+      await h.key("up")
+    } finally {
+      h.scroll.scrollBy = scrollBy
+      h.runtime.scrollDestinationAtRow = scrollDestinationAtRow
+    }
+    expect(clamped).toBe(true)
+    expect(coldLookup).toBe(true)
+    expect(h.scroll.scrollTop).toBeLessThan(beforeTop)
+    const after = h.cursor()
+    expect(after.row).toBeGreaterThanOrEqual(0)
+    expect(after.row).toBeLessThan(h.scroll.viewport.height)
+    expect(
+      after.itemId !== beforeCursor.itemId ||
+        after.graphemeOffset !== beforeCursor.graphemeOffset ||
+        h.scroll.scrollTop < beforeTop,
+    ).toBe(true)
   } finally {
     await h.close()
   }

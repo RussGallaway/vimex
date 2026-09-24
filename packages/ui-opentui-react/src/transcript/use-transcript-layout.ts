@@ -78,6 +78,7 @@ export function useTranscriptLayout(options: {
   )
   const pendingNativeScroll = useRef(false)
   const pendingNativeDirection = useRef<"up" | "down" | undefined>(undefined)
+  const coldContinuation = useRef(false)
   const pendingAnchor = useRef(false)
   const pendingRestore = useRef(false)
   const lastScrollTop = useRef(0)
@@ -131,6 +132,7 @@ export function useTranscriptLayout(options: {
     pendingCursor.current = undefined
     pendingNativeScroll.current = false
     pendingNativeDirection.current = undefined
+    coldContinuation.current = false
     queuedViewport.current = undefined
     queuedIntentRevision.current = undefined
     pendingAnchor.current = false
@@ -148,6 +150,7 @@ export function useTranscriptLayout(options: {
     pendingCursor.current = undefined
     pendingNativeScroll.current = false
     pendingNativeDirection.current = undefined
+    coldContinuation.current = false
     queuedViewport.current = undefined
     queuedIntentRevision.current = undefined
     pendingAnchor.current = false
@@ -367,6 +370,7 @@ export function useTranscriptLayout(options: {
         pendingCursor.current = undefined
         pendingNativeScroll.current = false
         pendingNativeDirection.current = undefined
+        coldContinuation.current = false
       }
       queuedViewport.current = viewport
       queuedIntentRevision.current = intentRevision
@@ -588,6 +592,7 @@ export function useTranscriptLayout(options: {
         pendingCursor.current = undefined
         pendingNativeScroll.current = false
         pendingNativeDirection.current = undefined
+        coldContinuation.current = false
       }
       queuedViewport.current = undefined
       queuedIntentRevision.current = undefined
@@ -605,6 +610,8 @@ export function useTranscriptLayout(options: {
         pendingNativeDirection.current = undefined
         if (!pendingScrollRows.current.length) pendingAnchor.current = true
       }
+      let coldBoundaryCrossed = coldContinuation.current
+      coldContinuation.current = false
       const advance = () => {
         const prior = measuredLayout.current
         const top = scrollbox.viewport.screenY
@@ -689,6 +696,7 @@ export function useTranscriptLayout(options: {
               ? runtimeFrame.window.topSpacerRows > 0
               : runtimeFrame.window.bottomSpacerRows > 0
           if (hasHistory && viewportPoint) {
+            coldBoundaryCrossed = true
             const owning = runtimeFrame.window.blocks.find((block) => {
               if (
                 !("projection" in block) ||
@@ -727,7 +735,7 @@ export function useTranscriptLayout(options: {
                           ?.rows ?? 1),
                       0,
                     )
-            const destination = runtime.scrollAnchorAtRow(
+            const destination = runtime.scrollDestinationAtRow(
               indexedRow + requested,
             )
             const order = transcriptOrderIndex(runtimeFrame.transcript.order)
@@ -743,11 +751,14 @@ export function useTranscriptLayout(options: {
             const rowMovement = destination
               ? destination.preferredScreenRow - preferredScreenRow
               : 0
-            if (
-              destination &&
-              (semanticMovement * requested > 0 ||
-                (semanticMovement === 0 && rowMovement * requested < 0))
-            ) {
+            // A cold block may only have an estimated height and a fallback
+            // point at its beginning. Accept a semantic move or a same-point
+            // screen-row move only when it preserves the requested direction;
+            // native measurement will choose the final visible cursor.
+            const safeDirection =
+              semanticMovement * requested > 0 ||
+              (semanticMovement === 0 && rowMovement * requested < 0)
+            if (destination && safeDirection) {
               if (intent.cursor && cursorPoint)
                 pendingCursor.current = {
                   row: Math.max(
@@ -808,13 +819,78 @@ export function useTranscriptLayout(options: {
         measuredLayout.current
       )
         advance()
+      // Keep the measured hot window's existing single-frame semantics. A
+      // crossing into an unmounted window can require many native layout
+      // passes; prepare a bounded number after that crossing, then paint the
+      // newly mounted neighborhood before continuing on the next frame.
+      let coldPreparationPasses = 0
+      let deferredColdPreparation = false
       for (let pass = 0; pass < 128; pass++) {
+        if (coldBoundaryCrossed && coldPreparationPasses++ >= 32) {
+          const runtimeFrame = latest.current.runtime?.getSnapshot()
+          const layout = measuredLayout.current
+          const coherent =
+            layout?.materializedBlocks === runtimeFrame?.window.blocks &&
+            layout?.geometry === runtimeFrame?.geometry
+          const visiblePoint =
+            layout &&
+            coherent &&
+            visibleMeasuredPoints(layout, scrollbox.viewport).some(
+              (point) => !point.hidden,
+            )
+          const visibleRoot =
+            visiblePoint &&
+            runtimeFrame?.window.blocks.some((block) => {
+              if (!("projection" in block)) return false
+              const root = scrollbox.getRenderable(
+                transcriptBlockRenderableId(block),
+              )
+              return (
+                root &&
+                root.height > 0 &&
+                root.screenY <
+                  scrollbox.viewport.screenY + scrollbox.viewport.height &&
+                root.screenY + root.height > scrollbox.viewport.screenY
+              )
+            })
+          if (
+            coherent &&
+            layout &&
+            pendingRestore.current &&
+            runtimeFrame?.transcript.viewport.kind === "point"
+          ) {
+            const viewport = runtimeFrame.transcript.viewport
+            const anchor = measuredPoint(layout, viewport.point)
+            if (anchor) {
+              const displacement =
+                anchor.screenY -
+                scrollbox.viewport.screenY -
+                viewport.preferredScreenRow
+              if (displacement) scrollbox.scrollBy(displacement, "step")
+              else pendingRestore.current = false
+            }
+          }
+          if (
+            visibleRoot &&
+            !pendingAnchor.current &&
+            !pendingCursor.current &&
+            !pendingRestore.current
+          ) {
+            deferredColdPreparation = true
+            break
+          }
+        }
         const before = latest.current.runtime?.getSnapshot()
         const top = scrollbox.scrollTop
         flushSync(() => {
           prepareNativeTranscriptLayout(renderer)
           measure()
         })
+        if (
+          before?.window.blocks !==
+          latest.current.runtime?.getSnapshot().window.blocks
+        )
+          coldBoundaryCrossed = true
         const settled =
           before === latest.current.runtime?.getSnapshot() &&
           top === scrollbox.scrollTop &&
@@ -873,7 +949,8 @@ export function useTranscriptLayout(options: {
         // Cold remainder is resolved after the next neighborhood is prepared.
         advance()
       }
-      if (pendingScrollRows.current.length) {
+      if (pendingScrollRows.current.length || deferredColdPreparation) {
+        coldContinuation.current = deferredColdPreparation
         queuedViewport.current =
           latest.current.runtime?.getSnapshot().transcript.viewport ??
           latest.current.transcript.viewport

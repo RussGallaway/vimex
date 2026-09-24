@@ -5,6 +5,7 @@ import {
   type LogicalPoint,
   type TranscriptSelection,
   type TranscriptState,
+  type TextProjection,
 } from "../domain/transcript-document"
 import { selectedText } from "./transcript-operations"
 import {
@@ -33,6 +34,14 @@ export interface UrlCandidate extends LogicalRange {
 }
 
 export type UrlCandidateScope = "all" | "current-item" | "selection"
+
+// A projection is immutable for its revision. Repeated brace motions should
+// consult its paragraph boundaries without segmenting the same message again.
+// Weak keys let old streaming revisions leave with the owning transcript.
+const semanticBlockCache = new WeakMap<
+  TextProjection,
+  Map<ItemId, readonly SemanticBlock[]>
+>()
 
 function orderedPoint(
   state: TranscriptState,
@@ -69,18 +78,23 @@ function semanticBlocksForItem(
   state: TranscriptState,
   itemId: ItemId,
 ): readonly SemanticBlock[] {
-  const blocks: SemanticBlock[] = []
   const projection = state.projectionById[itemId]
-  if (!projection) return blocks
+  if (!projection) return []
+  const cached = semanticBlockCache.get(projection)?.get(itemId)
+  if (cached) return cached
+  const blocks: SemanticBlock[] = []
   const parts = graphemes(projection.plain)
   let blockFrom: number | undefined
   let blockTo = 0
   let lineFrom = 0
   for (let cursor = 0; cursor <= parts.length; cursor++) {
     if (cursor < parts.length && parts[cursor] !== "\n") continue
-    const nonBlank = parts
-      .slice(lineFrom, cursor)
-      .some((part) => !/^\s$/u.test(part))
+    let nonBlank = false
+    for (let index = lineFrom; index < cursor; index++) {
+      if (/^\s$/u.test(parts[index]!)) continue
+      nonBlank = true
+      break
+    }
     if (nonBlank) {
       blockFrom ??= lineFrom
       blockTo = cursor
@@ -101,6 +115,12 @@ function semanticBlocksForItem(
       to: { itemId, graphemeOffset: blockTo },
     })
   }
+  let byItem = semanticBlockCache.get(projection)
+  if (!byItem) {
+    byItem = new Map()
+    semanticBlockCache.set(projection, byItem)
+  }
+  byItem.set(itemId, blocks)
   return blocks
 }
 
@@ -215,19 +235,32 @@ export function moveBySemanticBlock(
     blockCache.set(itemId, blocks)
     return blocks
   }
+  const adjacentBlock = (
+    blocks: readonly SemanticBlock[],
+    offset: number,
+  ): SemanticBlock | undefined => {
+    // Blocks are ordered by source offset. Counts over a large tool output
+    // must not rescan its earlier paragraphs for every step.
+    let low = 0
+    let high = blocks.length
+    while (low < high) {
+      const middle = (low + high) >>> 1
+      if (
+        direction === "forward"
+          ? blocks[middle]!.from.graphemeOffset <= offset
+          : blocks[middle]!.from.graphemeOffset < offset
+      )
+        low = middle + 1
+      else high = middle
+    }
+    return direction === "forward" ? blocks[low] : blocks[low - 1]
+  }
   let target: SemanticBlock | undefined
   let origin = point
   const repeat = Number.isFinite(count) ? Math.max(1, Math.trunc(count)) : 1
   for (let step = 0; step < repeat; step++) {
     const local = blocksIn(origin.itemId)
-    target =
-      direction === "forward"
-        ? local.find(
-            (block) => block.from.graphemeOffset > origin.graphemeOffset,
-          )
-        : local.findLast(
-            (block) => block.from.graphemeOffset < origin.graphemeOffset,
-          )
+    target = adjacentBlock(local, origin.graphemeOffset)
     let itemId = origin.itemId
     while (!target) {
       const adjacent = adjacentTranscriptItem(state, itemId, direction)

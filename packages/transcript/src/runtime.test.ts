@@ -3636,6 +3636,8 @@ test("scrolling into cold tool rows materializes the indexed destination without
   const runtime = new TranscriptRuntime(input(source, "follow"), {
     windowPolicy: { viewportRows: 4, overscanRows: 4 },
   })
+  const destination = runtime.scrollDestinationAtRow(21)!
+  expect(destination.pointMeasured).toBe(false)
   const anchor = runtime.scrollAnchorAtRow(21)!
   expect(anchor.point).toEqual({
     itemId: itemId("scroll-tool-20"),
@@ -3657,6 +3659,29 @@ test("scrolling into cold tool rows materializes the indexed destination without
   })
   expect(pointIsMaterialized(frame.window.blocks, anchor.point)).toBe(true)
   expect(source.transcript.folded[anchor.point.itemId]).toBe(true)
+})
+
+test("scroll destinations distinguish indexed estimates from measured local points", () => {
+  const source = fixture()
+  const runtime = new TranscriptRuntime(input(source, "follow"), {
+    windowPolicy: { viewportRows: 4, overscanRows: 0 },
+  })
+  const key = `item:${answer}:root`
+  expect(runtime.scrollDestinationAtRow(0)).toMatchObject({
+    point: { itemId: answer, graphemeOffset: 0 },
+    pointMeasured: false,
+  })
+  expect(runtime.scrollAnchorAtRow(0)).toEqual({
+    point: { itemId: answer, graphemeOffset: 0 },
+    preferredScreenRow: 0,
+  })
+  runtime.reportMeasurements(batch(runtime, [measurement(runtime, key)]))
+  expect(runtime.scrollDestinationAtRow(0)).toMatchObject({
+    point: { itemId: answer, graphemeOffset: 0 },
+    pointMeasured: true,
+  })
+  runtime.resetLayout("width")
+  expect(runtime.scrollDestinationAtRow(0)?.pointMeasured).toBe(false)
 })
 
 test("warm revisits retain bounded exact geometry while evicted blocks retain indexed heights", () => {

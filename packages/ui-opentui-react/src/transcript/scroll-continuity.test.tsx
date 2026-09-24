@@ -346,6 +346,27 @@ test("expanded hot-tail boundary paints a continuous destination across upward a
     )
 }, 30000)
 
+test("cold queued row reversal preserves accepted keys and paints readable content", async () => {
+  const scenario: Scenario = {
+    name: "cold queued row reversal",
+    navigation: true,
+    startCommand: 75,
+    input(h) {
+      for (let i = 0; i < 230; i++) h.mockInput.pressKey("u", { ctrl: true })
+      for (let i = 0; i < 8; i++) h.mockInput.pressKey("d", { ctrl: true })
+    },
+  }
+  const reference = await sample(true, true, scenario)
+  const windowed = await sample(true, false, scenario)
+  expect(windowed.final).toEqual(reference.final)
+  expect(windowed.cursor).toEqual(reference.cursor)
+  expect(windowed.frames.length).toBeGreaterThan(0)
+  for (const [index, paint] of windowed.frames.entries())
+    expect(paint.join(""), `paint ${index} must show mounted content`).toMatch(
+      /OUTPUT|Command|Line \d+ readable output/,
+    )
+}, 30000)
+
 async function recordPaints(h: Harness, input: () => void | Promise<void>) {
   const frames: string[][] = []
   const originalEmit = h.renderer.emit

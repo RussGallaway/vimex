@@ -1,6 +1,13 @@
 # Transcript navigation and rendering decoupling
 
-Status: **proposal for later investigation**, recorded 2026-09-23. This document does not change the v1 interaction contract or claim an implemented feature. The [runtime design](./transcript-runtime.md), [architecture](./architecture.md), and [navigation benchmark](./transcript-navigation-benchmark.md) remain authoritative for current behavior and evidence.
+Status: **partial prototype**, first implemented 2026-09-24. The [runtime design](./transcript-runtime.md), [architecture](./architecture.md), and [navigation benchmark](./transcript-navigation-benchmark.md) remain authoritative for the v1 interaction contract and earlier evidence.
+
+## Implemented slice and limits
+
+- `{` and `}` already resolve semantic destinations before native painting. Paragraph boundaries are now cached by immutable projection identity, and counted motions search those boundaries without rescanning each preceding paragraph. Streaming revisions produce new projections and invalidate the cache naturally.
+- A cold `Ctrl-U`/`Ctrl-D` window transition can carry queued row intent across renderer frames after bounded native preparation. It yields only when the current runtime window, measured layout, and visible native content agree; hot mounted navigation retains its previous same-frame path. Ordered keys, cursor-follow behavior, and anchor restoration still use native measured geometry.
+- The runtime can distinguish a destination's measured local point map from an estimated fallback. This **does not** certify the global document row: earlier historical block heights may still be estimates. A fallback can locate a window for materialization, while the visible native point determines final cursor placement.
+- This is a first useful-paint improvement for cold transitions, not general paint-free navigation. The 400-item connected diagnostic's common eight-key burst was largely inside the hot window and showed no measured improvement. A 200-step boundary run produced readable intermediate frames with no blank frames or semantic reversal, but its first-final boundary paint remained 35.2 ms median and 70.9 ms p95 in that one run. The separate large expanded-history regression reaches the same final native oracle after intermediate paints. Broader latency and memory claims require repeated real-session traces.
 
 ## Goal and expected experience
 

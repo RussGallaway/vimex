@@ -1160,10 +1160,18 @@ export class TranscriptRuntime {
       : Math.max(0, Math.min(lastRow, destination - top))
   }
 
-  /** Resolve scroll destinations even when their native rows are not mounted. */
-  scrollAnchorAtRow(
-    row: number,
-  ): { point: LogicalPoint; preferredScreenRow: number } | undefined {
+  /**
+   * Resolve a scroll destination from the indexed row plan. `pointMeasured`
+   * describes the target block's local point mapping only: earlier indexed
+   * heights may still be estimates until native measurement settles them.
+   */
+  scrollDestinationAtRow(row: number):
+    | {
+        point: LogicalPoint
+        preferredScreenRow: number
+        pointMeasured: boolean
+      }
+    | undefined {
     const index = this.heightIndex
     if (!index || !Number.isFinite(row) || index.totalRows <= 0)
       return undefined
@@ -1183,13 +1191,17 @@ export class TranscriptRuntime {
         const geometry =
           this.frame.geometry.byBlockKey[blockKey(block)] ??
           this.cachedGeometry(this.frame, block)
-        const points = Object.values(geometry?.points ?? {}).filter(
-          (point) => !point.hidden,
-        )
         const localRow = Math.max(0, targetRow - start)
-        const point = points
-          .filter((point) => point.row >= localRow)
-          .sort((a, b) => a.row - b.row || a.column - b.column)[0]
+        let point: BlockGeometry["points"][number] | undefined
+        for (const candidate of Object.values(geometry?.points ?? {})) {
+          if (candidate.hidden || candidate.row < localRow) continue
+          if (
+            !point ||
+            candidate.row < point.row ||
+            (candidate.row === point.row && candidate.column < point.column)
+          )
+            point = candidate
+        }
         return {
           point: {
             itemId: block.key.itemId,
@@ -1200,6 +1212,7 @@ export class TranscriptRuntime {
             0,
             start + (point?.row ?? 0) - targetRow,
           ),
+          pointMeasured: point !== undefined,
         }
       }
       const next = !backward ? index.blockAtRow(end) : undefined
@@ -1213,6 +1226,19 @@ export class TranscriptRuntime {
       }
     }
     return undefined
+  }
+
+  /** Resolve a provisional scroll anchor even outside the mounted window. */
+  scrollAnchorAtRow(
+    row: number,
+  ): { point: LogicalPoint; preferredScreenRow: number } | undefined {
+    const destination = this.scrollDestinationAtRow(row)
+    return destination
+      ? {
+          point: destination.point,
+          preferredScreenRow: destination.preferredScreenRow,
+        }
+      : undefined
   }
   getThreadId = (): ThreadId => this.latestInput.threadId
   measurementBase = (
