@@ -296,9 +296,14 @@ test("wheel and keyboard scrolling to the detached bottom resume following", asy
 
     await wheel("up", 2)
     expect(h.workspace().transcript.viewport.kind).toBe("point")
+    const rowsToBottom =
+      scrollbox.scrollHeight - scrollbox.viewport.height - scrollbox.scrollTop
+    expect(rowsToBottom).toBeGreaterThan(0)
     await act(async () => {
-      h.mockInput.pressKey("e", { ctrl: true })
-      h.mockInput.pressKey("e", { ctrl: true })
+      // Native wheel displacement can differ from the number of wheel events.
+      // Send enough one-row keys to reach the actual bottom on every platform.
+      for (let index = 0; index <= rowsToBottom; index++)
+        h.mockInput.pressKey("e", { ctrl: true })
       await h.flush()
       await h.renderOnce()
     })
@@ -306,6 +311,9 @@ test("wheel and keyboard scrolling to the detached bottom resume following", asy
       await h.flush()
       await h.renderOnce()
     })
+    expect(scrollbox.scrollTop).toBe(
+      Math.max(0, scrollbox.scrollHeight - scrollbox.viewport.height),
+    )
     expect(h.workspace().transcript.viewport.kind).toBe("tail")
   } finally {
     await h.close()
