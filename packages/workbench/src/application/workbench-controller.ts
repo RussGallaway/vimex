@@ -252,6 +252,7 @@ export class VimexController
     WorkbenchPublicationHost
 {
   private state = initialWorkbench()
+  private backgroundTerminalRequest = 0
   private readonly ingress: ConversationIngress
   private readonly transcriptRuntimes = new Map<
     TranscriptPresentationId,
@@ -3001,6 +3002,95 @@ export class VimexController
       }
     })
   }
+  refreshBackgroundTerminals = (): void => {
+    const active = this.state.activeThreadId
+    const list = this.ports.conversation.listBackgroundTerminals
+    if (!active || !list) {
+      this.setState({
+        ...this.state,
+        backgroundTerminals: {
+          loading: false,
+          rows: [],
+          error: active
+            ? "This runtime does not support background terminals"
+            : "Open a session to view background terminals",
+        },
+      })
+      return
+    }
+    const request = ++this.backgroundTerminalRequest
+    const epoch = this.runtimeEpoch
+    let root = active
+    const parents = new Map(
+      this.state.agentRelationships.map((link) => [
+        link.childId,
+        link.parentId,
+      ]),
+    )
+    const seenParents = new Set<string>()
+    while (parents.has(root) && !seenParents.has(root)) {
+      seenParents.add(root)
+      root = parents.get(root)!
+    }
+    const ids = [root]
+    for (let index = 0; index < ids.length; index++)
+      for (const link of this.state.agentRelationships)
+        if (link.parentId === ids[index] && !ids.includes(link.childId))
+          ids.push(link.childId)
+    this.setState({
+      ...this.state,
+      backgroundTerminals: { loading: true, rows: [] },
+    })
+    this.launch(async () => {
+      const results = await Promise.allSettled(
+        ids.map((id) => list.call(this.ports.conversation, id)),
+      )
+      if (
+        !this.currentRuntime(epoch) ||
+        request !== this.backgroundTerminalRequest ||
+        this.state.activeThreadId !== active
+      )
+        return
+      const rows = results.flatMap((result) =>
+        result.status === "fulfilled" ? result.value : [],
+      )
+      const failures = results.filter((result) => result.status === "rejected")
+      this.setState({
+        ...this.state,
+        backgroundTerminals: {
+          loading: false,
+          rows,
+          ...(failures.length
+            ? {
+                error: `Could not inspect ${failures.length} session${failures.length === 1 ? "" : "s"}`,
+              }
+            : {}),
+        },
+      })
+    })
+  }
+  stopBackgroundTerminal = (threadId: ThreadId, processId: string): void => {
+    const terminate = this.ports.conversation.terminateBackgroundTerminal
+    if (!terminate) {
+      this.notice("This runtime does not support stopping background terminals")
+      return
+    }
+    const epoch = this.runtimeEpoch
+    this.launch(async () => {
+      const terminated = await terminate.call(
+        this.ports.conversation,
+        threadId,
+        processId,
+      )
+      if (!this.currentRuntime(epoch)) return
+      this.notice(
+        terminated
+          ? `Stopped background terminal ${processId}`
+          : `Background terminal ${processId} is no longer running`,
+      )
+      this.refreshBackgroundTerminals()
+    })
+  }
   private runCommand(
     parsed: ExCommand,
     presentationId?: TranscriptPresentationId,
@@ -3366,8 +3456,25 @@ export class VimexController
       case "restart":
         this.restart()
         break
+      case "ps":
+        this.dispatchInteraction({ type: "overlay.open", overlay: "processes" })
+        this.refreshBackgroundTerminals()
+        break
       case "stop":
-        this.interrupt()
+        if (!argument) this.interrupt()
+        else {
+          const matches = this.state.backgroundTerminals.rows.filter(
+            (row) => row.processId === argument,
+          )
+          if (matches.length === 1)
+            this.stopBackgroundTerminal(matches[0]!.threadId, argument)
+          else
+            this.notice(
+              matches.length
+                ? `Process ID ${argument} is ambiguous; select it in :ps`
+                : `Process ID ${argument} not found; refresh :ps`,
+            )
+        }
         break
       case "fork":
         this.transcript({ type: "fork" })

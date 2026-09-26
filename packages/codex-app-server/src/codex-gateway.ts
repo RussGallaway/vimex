@@ -221,6 +221,21 @@ export function createCodexGateways(
     return session
   }
   const conversation: ConversationGateway = {
+    async listBackgroundTerminals(id) {
+      const terminals = await client.listBackgroundTerminals(id)
+      return terminals.map((terminal) => ({
+        threadId: id,
+        itemId: itemId(terminal.itemId),
+        processId: terminal.processId,
+        command: terminal.command,
+        cwd: terminal.cwd,
+        osPid: terminal.osPid,
+        cpuPercent: terminal.cpuPercent,
+        rssKb: terminal.rssKb === null ? null : Number(terminal.rssKb),
+      }))
+    },
+    terminateBackgroundTerminal: (id, processId) =>
+      client.terminateBackgroundTerminal(id, processId),
     compactThread: (id) => client.compactThread(id),
     shellCommand: (id, command) => client.shellCommand(id, command),
     async getGoal(id) {

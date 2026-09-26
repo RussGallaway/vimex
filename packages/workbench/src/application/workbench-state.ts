@@ -3,6 +3,7 @@ import type { DisplayPreferences } from "./display-preferences"
 import {
   createConversation,
   type AgentRelationship,
+  type BackgroundTerminal,
   type ConversationEvent,
   type ConversationState,
   type ItemId,
@@ -53,6 +54,11 @@ export interface PendingFork {
   preview: string
 }
 export interface WorkbenchState {
+  backgroundTerminals: {
+    loading: boolean
+    rows: readonly BackgroundTerminal[]
+    error?: string
+  }
   compactingThreads: Readonly<
     Record<string, import("./compaction").CompactionStatus>
   >
@@ -230,6 +236,7 @@ export type WorkbenchCommand =
   | { type: "agent.link"; link: AgentRelationship }
 
 export const initialWorkbench = (): WorkbenchState => ({
+  backgroundTerminals: { loading: false, rows: [] },
   compactingThreads: {},
   sideChats: {},
   retiredSideThreadIds: [],

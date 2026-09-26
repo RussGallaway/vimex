@@ -22,8 +22,24 @@ export interface AgentRelationship {
 export type ConversationInput =
   { type: "text"; text: string } | { type: "image"; path: string }
 
+export interface BackgroundTerminal {
+  threadId: ThreadId
+  itemId: ItemId
+  processId: string
+  command: string
+  cwd: string
+  osPid: number | null
+  cpuPercent: number | null
+  rssKb: number | null
+}
+
 /** Conversation capabilities required by client use cases, independent of transport. */
 export interface ConversationGateway {
+  listBackgroundTerminals?(id: ThreadId): Promise<readonly BackgroundTerminal[]>
+  terminateBackgroundTerminal?(
+    id: ThreadId,
+    processId: string,
+  ): Promise<boolean>
   compactThread?(id: ThreadId): Promise<void>
   shellCommand?(id: ThreadId, command: string): Promise<void>
   getGoal?(id: ThreadId): Promise<ThreadGoal | null>

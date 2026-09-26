@@ -3991,7 +3991,6 @@ test("command validation reports usage without sending or changing preferences",
   for (const command of [
     "submit accidental",
     "favorite maybe",
-    "stop extra",
     "rename",
     "yank html",
     "theme nord extra",
@@ -4002,6 +4001,8 @@ test("command validation reports usage without sending or changing preferences",
       "Unsent draft",
     )
   }
+  h.controller.executeCommand("stop extra")
+  expect(h.controller.getSnapshot().error).toContain("not found; refresh :ps")
   expect(h.starts).toEqual([])
   expect(h.controller.getSnapshot().preferences).toBeUndefined()
   h.controller.executeCommand("help model")

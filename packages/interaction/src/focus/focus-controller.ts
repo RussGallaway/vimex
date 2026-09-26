@@ -5,6 +5,7 @@ export type Overlay =
   | "questions"
   | "fork"
   | "agents"
+  | "processes"
   | "urls"
   | "help"
   | "manual"

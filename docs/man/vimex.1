@@ -208,10 +208,15 @@ ember\-tide, nord, gruvbox\-material, kanagawa, tokyo\-night,
 catppuccin\-mocha, rose\-pine\-dawn, everforest, solarized\-light,
 solarized\-dark, one\-dark, and dracula.
 .PP
-:approvals and :questions open pending agent requests. :stop
-interrupts. :restart reconnects the Codex server and restores sessions
-and drafts; uncertain submissions require explicit retry. It does not
-reload Vimex's own program code. :q exits.
+:approvals and :questions open pending agent requests. /ps or :ps
+lists running background terminals in this conversation, including
+child agents. Each row shows its owning session, app\-server process
+ID, command, directory, and available resource use. Use j/k to select,
+Enter to stop a terminal, and r to refresh. /stop PROCESS_ID or :stop
+PROCESS_ID stops a terminal from the most recent list. Bare :stop or
+/stop interrupts the active turn. :restart reconnects the Codex server
+and restores sessions and drafts; uncertain submissions require
+explicit retry. It does not reload Vimex's own program code. :q exits.
 .PP
 :help shows the compact reference. :help COMMAND shows command usage.
 :manual, :man, :help manual, and /manual open this guide offline. In

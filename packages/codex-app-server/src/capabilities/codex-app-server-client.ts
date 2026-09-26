@@ -2,6 +2,8 @@ import type { ThreadCompactStartParams } from "../generated/v0_154_0/v2/ThreadCo
 import type { ThreadCompactStartResponse } from "../generated/v0_154_0/v2/ThreadCompactStartResponse"
 import type { ThreadShellCommandParams } from "../generated/v0_154_0/v2/ThreadShellCommandParams"
 import type { ThreadShellCommandResponse } from "../generated/v0_154_0/v2/ThreadShellCommandResponse"
+import type { ThreadBackgroundTerminalsListResponse } from "../generated/v0_154_0/v2/ThreadBackgroundTerminalsListResponse"
+import type { ThreadBackgroundTerminalsTerminateResponse } from "../generated/v0_154_0/v2/ThreadBackgroundTerminalsTerminateResponse"
 import type { ThreadGoalGetResponse } from "../generated/v0_154_0/v2/ThreadGoalGetResponse"
 import type { ThreadGoalSetParams } from "../generated/v0_154_0/v2/ThreadGoalSetParams"
 import type { ThreadGoalSetResponse } from "../generated/v0_154_0/v2/ThreadGoalSetResponse"
@@ -360,6 +362,41 @@ export class CodexAppServerClient {
       threadId: thread,
       command,
     } satisfies ThreadShellCommandParams)
+  }
+
+  async listBackgroundTerminals(
+    threadId: string,
+  ): Promise<ThreadBackgroundTerminalsListResponse["data"]> {
+    const terminals: ThreadBackgroundTerminalsListResponse["data"] = []
+    let cursor: string | null = null
+    const visited = new Set<string>()
+    do {
+      const page: ThreadBackgroundTerminalsListResponse =
+        await this.rpc.request<ThreadBackgroundTerminalsListResponse>(
+          "thread/backgroundTerminals/list",
+          { threadId, ...(cursor ? { cursor } : {}) },
+        )
+      terminals.push(...page.data)
+      cursor = page.nextCursor
+      if (cursor) {
+        if (visited.has(cursor))
+          throw new Error("Background terminal list returned a repeated cursor")
+        visited.add(cursor)
+      }
+    } while (cursor)
+    return terminals
+  }
+
+  async terminateBackgroundTerminal(
+    threadId: string,
+    processId: string,
+  ): Promise<boolean> {
+    const response =
+      await this.rpc.request<ThreadBackgroundTerminalsTerminateResponse>(
+        "thread/backgroundTerminals/terminate",
+        { threadId, processId },
+      )
+    return response.terminated
   }
 
   async archiveThread(thread: string): Promise<void> {

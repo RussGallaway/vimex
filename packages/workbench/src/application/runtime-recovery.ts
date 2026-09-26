@@ -7,6 +7,7 @@ const uncertain =
 export function invalidateRuntimeState(state: WorkbenchState): WorkbenchState {
   return {
     ...state,
+    backgroundTerminals: { loading: false, rows: [] },
     compactingThreads: {},
     approvals: { order: [], byId: {} },
     questions: {},

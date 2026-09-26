@@ -85,6 +85,8 @@ export type TranscriptAction =
   | { type: "fork"; itemId?: ItemId }
 
 export interface WorkbenchActions {
+  refreshBackgroundTerminals(): void
+  stopBackgroundTerminal(threadId: ThreadId, processId: string): void
   performanceNavigationInput?(
     action:
       | "line_up"

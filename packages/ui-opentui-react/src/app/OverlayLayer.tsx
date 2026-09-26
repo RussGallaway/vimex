@@ -17,6 +17,7 @@ import type {
 import type { UrlCandidate } from "@vimex/transcript"
 import { useRef, type RefObject } from "react"
 import { AgentsOverlay } from "../agents/AgentsOverlay"
+import { ProcessesOverlay } from "../processes/ProcessesOverlay"
 import { ApprovalOverlay } from "../approvals/ApprovalOverlay"
 import { ForkOverlay } from "../fork/ForkOverlay"
 import { QuestionOverlay } from "../questions/QuestionOverlay"
@@ -146,6 +147,7 @@ export function OverlayLayer(props: {
   onActivate(): void
   pendingFork?: WorkbenchState["pendingFork"]
   agents: readonly AgentRosterRow[]
+  processes: WorkbenchState["backgroundTerminals"]
   hideFinishedAgents?: boolean
   scopedAgents?: boolean
   urls: readonly UrlCandidate[]
@@ -206,6 +208,12 @@ export function OverlayLayer(props: {
           selected={props.selected}
           hideFinished={Boolean(props.hideFinishedAgents)}
           scoped={Boolean(props.scopedAgents)}
+        />
+      ) : props.overlay === "processes" ? (
+        <ProcessesOverlay
+          {...props.processes}
+          summaries={props.summaries}
+          selected={props.selected}
         />
       ) : props.overlay === "urls" ? (
         <UrlsOverlay choices={props.urls} selected={props.selected} />

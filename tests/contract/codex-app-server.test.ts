@@ -1367,6 +1367,72 @@ test("thread shell command uses the pinned RPC and leaves streamed output to tur
   }
 })
 
+test("background terminal RPC paginates and terminates by app-server process ID", async () => {
+  const { client, transport } = await connectedClient()
+  const gateway = createCodexGateways("/repo", "codex", () => client)
+  try {
+    const listing = gateway.conversation.listBackgroundTerminals!(
+      threadId("thr-1"),
+    )
+    await tick()
+    expect(
+      findSent(transport, "thread/backgroundTerminals/list").params,
+    ).toEqual({
+      threadId: "thr-1",
+    })
+    await respondNext(transport, "thread/backgroundTerminals/list", {
+      data: [
+        {
+          itemId: "item-1",
+          processId: "process-1",
+          command: "bun test",
+          cwd: "/repo",
+          osPid: 123,
+          cpuPercent: 2.5,
+          rssKb: 1024,
+        },
+      ],
+      nextCursor: "next",
+    })
+    await tick()
+    expect(
+      transport.sent.filter(
+        (sent) => sent.method === "thread/backgroundTerminals/list",
+      )[1]?.params,
+    ).toEqual({ threadId: "thr-1", cursor: "next" })
+    await respondNext(transport, "thread/backgroundTerminals/list", {
+      data: [],
+      nextCursor: null,
+    })
+    expect(await listing).toEqual([
+      {
+        threadId: threadId("thr-1"),
+        itemId: itemId("item-1"),
+        processId: "process-1",
+        command: "bun test",
+        cwd: "/repo",
+        osPid: 123,
+        cpuPercent: 2.5,
+        rssKb: 1024,
+      },
+    ])
+    const stopping = gateway.conversation.terminateBackgroundTerminal!(
+      threadId("thr-1"),
+      "process-1",
+    )
+    await tick()
+    expect(
+      findSent(transport, "thread/backgroundTerminals/terminate").params,
+    ).toEqual({ threadId: "thr-1", processId: "process-1" })
+    await respondNext(transport, "thread/backgroundTerminals/terminate", {
+      terminated: true,
+    })
+    expect(await stopping).toBe(true)
+  } finally {
+    await gateway.connection.close()
+  }
+})
+
 test("compaction sends pinned RPC and observes item lifecycle independently of acknowledgement", async () => {
   const { client, transport } = await connectedClient()
   const gateways = createCodexGateways("/repo", "codex", () => client)

@@ -427,9 +427,11 @@ export function VimexApp({
             ? (pendingQuestion?.questions[questionIndex]?.options?.length ?? 1)
             : interaction.overlay === "agents"
               ? agentRows.length
-              : interaction.overlay === "urls"
-                ? (urlChoices?.length ?? 0)
-                : 1
+              : interaction.overlay === "processes"
+                ? state.backgroundTerminals.rows.length
+                : interaction.overlay === "urls"
+                  ? (urlChoices?.length ?? 0)
+                  : 1
   const activeQuestion =
     pendingQuestion?.questions[
       Math.min(
@@ -1216,6 +1218,10 @@ export function VimexApp({
       const row =
         agentRows[Math.min(activeIndex, Math.max(0, agentRows.length - 1))]
       if (row) controller.openChildThread(row.threadId)
+    } else if (interaction.overlay === "processes") {
+      const row = state.backgroundTerminals.rows[activeIndex]
+      if (row) controller.stopBackgroundTerminal(row.threadId, row.processId)
+      return
     } else if (interaction.overlay === "urls") {
       const choice =
         urlChoices?.[
@@ -1641,6 +1647,9 @@ export function VimexApp({
                     },
                   ]
                 : []),
+              ...(interaction.overlay === "processes"
+                ? [{ key: "r", cmd: controller.refreshBackgroundTerminals }]
+                : []),
             ],
     }),
     [
@@ -1901,6 +1910,7 @@ export function VimexApp({
               onActivate={activateOverlay}
               pendingFork={state.pendingFork}
               agents={agentRows}
+              processes={state.backgroundTerminals}
               hideFinishedAgents={
                 hideFinishedAgents && !state.agentPickerTargets
               }
