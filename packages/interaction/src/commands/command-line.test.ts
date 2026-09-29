@@ -71,6 +71,16 @@ test("completes thinking from the active model and shared static choices", () =>
     ":favorite on",
     ":favorite off",
   ])
+  expect(commandCompletions(":permission ")).toEqual([
+    ":permission ask",
+    ":permission approve",
+    ":permission full",
+  ])
+  expect(commandCompletions(":permissions a")).toEqual([
+    ":permissions ask",
+    ":permissions approve",
+  ])
+  expect(commandCompletions(":status")).toEqual([":status"])
   expect(commandCompletions(":performance ")).toEqual([":performance export"])
   expect(commandCompletions(":perf e")).toEqual([":perf export"])
   expect(commandCompletions(":help fol")).toEqual([

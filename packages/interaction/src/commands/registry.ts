@@ -4,6 +4,8 @@ export const commandNames = [
   "quit",
   "sessions",
   "approvals",
+  "status",
+  "permission",
   "help",
   "model",
   "thinking",
@@ -45,6 +47,7 @@ const aliases: Readonly<Record<string, CommandName>> = {
   copy: "yank",
   man: "manual",
   perf: "performance",
+  permissions: "permission",
 }
 export function resolveCommandName(value: string): CommandName | undefined {
   return (
@@ -60,6 +63,8 @@ export const commandDescriptions: Readonly<Record<CommandName, string>> = {
   quit: "Quit Vimex",
   sessions: "Switch or create a session",
   approvals: "Review pending approvals",
+  status: "Show account usage and rate limits",
+  permission: "Choose Ask for approval, Approve for me, or Full access",
   help: "Show keyboard help",
   model: "Choose the model",
   thinking: "Set reasoning effort",
@@ -132,6 +137,12 @@ const argumentDescriptors: Partial<
     arguments: "choice",
     required: true,
     choices: ["export"],
+  },
+  permission: {
+    usage: "permission <ask|approve|full>",
+    arguments: "choice",
+    required: true,
+    choices: ["ask", "approve", "full"],
   },
   sessions: { usage: "sessions [thread-id]", arguments: "literal" },
   stop: { usage: "stop [process-id]", arguments: "literal" },

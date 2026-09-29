@@ -36,6 +36,8 @@ import type { ThreadStartResponse } from "../generated/v0_154_0/v2/ThreadStartRe
 import type { ThreadSetNameResponse } from "../generated/v0_154_0/v2/ThreadSetNameResponse"
 import type { ThreadSettingsUpdateParams } from "../generated/v0_154_0/v2/ThreadSettingsUpdateParams"
 import type { ThreadSettingsUpdateResponse } from "../generated/v0_154_0/v2/ThreadSettingsUpdateResponse"
+import type { GetAccountRateLimitsResponse } from "../generated/v0_154_0/v2/GetAccountRateLimitsResponse"
+import type { GetAccountTokenUsageResponse } from "../generated/v0_154_0/v2/GetAccountTokenUsageResponse"
 import type { TurnInterruptResponse } from "../generated/v0_154_0/v2/TurnInterruptResponse"
 import type { TurnStartParams } from "../generated/v0_154_0/v2/TurnStartParams"
 import type { TurnStartResponse } from "../generated/v0_154_0/v2/TurnStartResponse"
@@ -266,6 +268,14 @@ export class CodexAppServerClient {
       threadId: thread,
       ...settings,
     })
+  }
+
+  getAccountRateLimits(): Promise<GetAccountRateLimitsResponse> {
+    return this.rpc.request("account/rateLimits/read", {})
+  }
+
+  getAccountUsage(): Promise<GetAccountTokenUsageResponse> {
+    return this.rpc.request("account/usage/read", {})
   }
 
   setThreadModel(

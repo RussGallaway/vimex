@@ -3955,6 +3955,37 @@ test("model and thinking level apply together only after both arguments validate
   await h.controller.close()
 })
 
+test("permission modes map to Codex approval and permission settings", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const updates: unknown[] = []
+  h.backend.updateSettings = async (_, settings) => {
+    updates.push(settings)
+  }
+  h.controller.executeCommand(":permission ask")
+  h.controller.executeNamedCommand("permissions approve")
+  h.controller.executeCommand(":permission full")
+  await h.controller.settle()
+  expect(updates).toEqual([
+    {
+      permissions: ":workspace",
+      approvalPolicy: "on-request",
+      approvalsReviewer: "user",
+    },
+    {
+      permissions: ":workspace",
+      approvalPolicy: "on-request",
+      approvalsReviewer: "auto_review",
+    },
+    {
+      permissions: ":danger-full-access",
+      approvalPolicy: "never",
+      approvalsReviewer: "user",
+    },
+  ])
+  await h.controller.close()
+})
+
 test("session commands switch exactly, favorite idempotently, and preserve drafts", async () => {
   const h = harness()
   await h.controller.initialize("/tmp")

@@ -159,6 +159,7 @@ export interface ControllerPorts {
     }
   }): void
   exportPerformance?(): Promise<string>
+  accountStatus?(): Promise<string>
   localState?: LocalState
   preferences?: PreferenceStore
   busySubmit?: "queue" | "steer"
@@ -3302,6 +3303,57 @@ export class VimexController
       case "agents":
         this.dispatchInteraction({ type: "overlay.open", overlay: command })
         break
+      case "status":
+        if (!this.ports.accountStatus) {
+          this.notice("Account usage is unavailable")
+          break
+        }
+        this.launch(async () => {
+          try {
+            this.notice(await this.ports.accountStatus!())
+          } catch (error) {
+            this.notice(`Could not load account usage: ${String(error)}`)
+          }
+        })
+        break
+      case "permission": {
+        const id = this.state.activeThreadId
+        if (!id) {
+          this.notice("Open a session before changing permissions")
+          break
+        }
+        const mode = argument.toLowerCase()
+        const settings =
+          mode === "ask"
+            ? {
+                permissions: ":workspace",
+                approvalPolicy: "on-request" as const,
+                approvalsReviewer: "user" as const,
+              }
+            : mode === "approve"
+              ? {
+                  permissions: ":workspace",
+                  approvalPolicy: "on-request" as const,
+                  approvalsReviewer: "auto_review" as const,
+                }
+              : mode === "full"
+                ? {
+                    permissions: ":danger-full-access",
+                    approvalPolicy: "never" as const,
+                    approvalsReviewer: "user" as const,
+                  }
+                : undefined
+        if (!settings) {
+          this.notice("Usage: :permission <ask|approve|full>")
+          break
+        }
+        this.launchThreadMutation(id, async (epoch) => {
+          await this.ports.conversation.updateSettings(id, settings)
+          if (this.currentRuntime(epoch))
+            this.notice(`Permission mode: ${mode}`)
+        })
+        break
+      }
       case "model":
       case "thinking":
       case "cwd": {

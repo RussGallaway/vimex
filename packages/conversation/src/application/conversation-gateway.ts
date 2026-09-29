@@ -11,6 +11,9 @@ export interface ThreadSettingChange {
   model?: string
   effort?: string
   cwd?: string
+  permissions?: string
+  approvalPolicy?: "on-request" | "never"
+  approvalsReviewer?: "user" | "auto_review"
 }
 export interface AgentRelationship {
   parentId: ThreadId

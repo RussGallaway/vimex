@@ -343,6 +343,35 @@ export function createCodexGateways(
       await client.updateThreadSettings(id, settings)
     },
   }
+  const accountStatus = async (): Promise<string> => {
+    const [limits, usage] = await Promise.all([
+      client.getAccountRateLimits(),
+      client.getAccountUsage(),
+    ])
+    const formatWindow = (
+      label: string,
+      window: { usedPercent: number; resetsAt: number | null } | null,
+    ) =>
+      window
+        ? `${label} ${window.usedPercent.toFixed(1)}% used${window.resetsAt ? ` (resets ${new Date(window.resetsAt * 1000).toLocaleString()})` : ""}`
+        : undefined
+    const snapshot = limits.rateLimits
+    const windows = [
+      formatWindow("Primary", snapshot.primary),
+      formatWindow("Secondary", snapshot.secondary),
+    ].filter((value): value is string => Boolean(value))
+    const tokens = usage.summary.lifetimeTokens
+    return (
+      [
+        limits.accountId ? `Account ${limits.accountId}` : undefined,
+        snapshot.planType ? `Plan ${snapshot.planType}` : undefined,
+        ...windows,
+        tokens === null ? undefined : `Lifetime tokens ${tokens.toString()}`,
+      ]
+        .filter((value): value is string => Boolean(value))
+        .join(" · ") || "Account usage unavailable"
+    )
+  }
   const models: ModelCatalog = {
     async listModels() {
       // Keep every page on one connection, even if the runtime restarts mid-list.
@@ -369,5 +398,5 @@ export function createCodexGateways(
       return all
     },
   }
-  return { connection, conversation, approvals, models }
+  return { connection, conversation, approvals, models, accountStatus }
 }
