@@ -36,9 +36,38 @@ A version-tag workflow should validate the source version, run checks, build art
 
 Assemble a draft release with all archives, checksums, third-party notices, and build attestations before publication. Prefer immutable releases. After publication, update Formula/vimex.rb and its checksums on main in the same repository. Keep the application tag immutable; a formula-only follow-up commit must not trigger another release. Use narrowly scoped workflow permissions and respect branch protections. Pin workflow dependencies deliberately and avoid publishing from untrusted pull-request jobs.
 
+## Local release validation
+
+Use the exact Bun version in `packageManager` (currently 1.3.6), Python 3.12, Git, `tar`, and a Unix PTY. Install dependencies and activate an isolated Python environment:
+
+```sh
+bun install --frozen-lockfile
+python3 -m venv /tmp/vimex-release-venv
+source /tmp/vimex-release-venv/bin/activate
+python3 -m pip install -r tests/terminal/requirements-live.txt
+bun run check:release
+```
+
+The command checks prerequisites before the expensive tests, then stops on the first failed stage:
+
+1. Run `bun run check` and `git diff --check` with `HERDR_ENV=0`, `HUSKY=0`, and `TERM=xterm-256color`.
+2. Build the native executable with its OpenTUI libraries, workers, vendored parsers, manual, and dependency notices.
+3. Create the release archive and verify its metadata and SHA-256 against the actual bytes.
+4. Extract the archive outside the checkout, then run headless CLI smoke, compiled offline syntax, real-process visual PTY, and fixture-backed resume probes against the extracted assets.
+
+The default output is an isolated temporary directory. Success removes it; failure retains build and frame artifacts and prints their location. Checks that fail before building report directly in the terminal. For persistent output, use:
+
+```sh
+bun run check:release --outdir dist
+```
+
+This retains the native bundle, archive, per-platform JSON metadata, and `frames/` captures. The PNG, text, and JSON frames reconstruct terminal cells; they are not OS screenshots. The command uses demo and fake app-server fixtures without Codex credentials or real conversations, and performs no publication or Homebrew installation.
+
+The Release workflow calls `bun run check:release --outdir dist` on macOS and glibc Linux, ARM64 and x64, then uploads the validated archives. A successful local run establishes results only for the current host. The full native matrix, publication permissions, attestations, and formula deployment still require GitHub Actions. Real Homebrew installation and previous-release upgrade acceptance remain separate checks.
+
 ## Release procedure
 
-1. Update the root package.json version using SemVer; regenerate docs with `bun run docs:generate` when the manual changes. Run `bun run check`.
+1. Update the root package.json version using SemVer; regenerate docs with `bun run docs:generate` when the manual changes. Run `bun run check:release` using the setup above.
 2. Commit the version update with a Conventional Commit message such as `chore(release): release v0.1.0`, and use the same convention for the PR title. Review and merge the intended source into main before creating and pushing the matching immutable tag, initially `v0.1.0`.
 3. The Release workflow builds natively on macOS/Linux ARM64/x64, runs checks and packaged CLI/PTY/syntax probes, and uploads archives. `release:manifest` verifies all four archive hashes before publication.
 4. Publication assembles a draft with archives, vimex-release.json, SHA256SUMS, install.sh, and provenance. It publishes only after upload succeeds.

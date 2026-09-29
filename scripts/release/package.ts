@@ -7,13 +7,17 @@ const { version } = JSON.parse(
   await readFile(join(root, "package.json"), "utf8"),
 )
 const name = `vimex-v${version}-${process.platform}-${process.arch}`
+const args = process.argv.slice(2)
+if (args.length && (args.length !== 2 || args[0] !== "--outdir" || !args[1]))
+  throw new Error("Usage: package.ts [--outdir PATH]")
+const destination = resolve(args[1] ?? join(root, "dist"))
 const archive = `${name}.tar.gz`
-const bundle = join(root, "dist", name)
+const bundle = join(destination, name)
 const tar = Bun.spawn(
   [
     "tar",
     "-czf",
-    join(root, "dist", archive),
+    join(destination, archive),
     "-C",
     bundle,
     "vimex",
@@ -25,10 +29,10 @@ const tar = Bun.spawn(
 )
 if (await tar.exited) throw new Error("Packaging failed")
 const sha256 = createHash("sha256")
-  .update(await readFile(join(root, "dist", archive)))
+  .update(await readFile(join(destination, archive)))
   .digest("hex")
 await writeFile(
-  join(root, "dist", `${name}.json`),
+  join(destination, `${name}.json`),
   JSON.stringify(
     {
       version,

@@ -102,6 +102,8 @@ The offline demo needs no Codex credentials. Start a live source session with `b
 bun run check
 ```
 
+Before tagging a release, run `bun run check:release` to include native packaging and tests of the extracted executable. See [release validation](docs/releasing.md#local-release-validation) for Python dependencies and setup.
+
 Vimex is a TypeScript monorepo with explicit domain and adapter boundaries. Read [CONTRIBUTING.md](CONTRIBUTING.md) before moving behavior between packages or submitting a pull request. Architecture, topology, release engineering, testing, and project documents are indexed in [docs/README.md](docs/README.md).
 
 ## License

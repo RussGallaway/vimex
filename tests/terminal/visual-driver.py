@@ -8,7 +8,7 @@ root = pathlib.Path(__file__).resolve().parents[2]
 theme = os.environ.get('VIMEX_TEST_THEME', '')
 if theme not in ('', 'ember-tide', 'nord', 'kanagawa', 'gruvbox-material', 'tokyo-night', 'catppuccin-mocha', 'rose-pine-dawn', 'everforest', 'solarized-light', 'solarized-dark', 'one-dark', 'dracula'):
     raise ValueError('Unsupported VIMEX_TEST_THEME')
-artifacts = pathlib.Path('/tmp/vimex-visual-e2e' + ('-' + theme if theme else ''))
+artifacts = pathlib.Path(os.environ.get('VIMEX_TEST_ARTIFACTS_DIR') or ('/tmp/vimex-visual-e2e' + ('-' + theme if theme else '')))
 screen = pyte.Screen(100, 30)
 stream = pyte.Stream(screen)
 decoder = codecs.getincrementaldecoder('utf-8')('replace')

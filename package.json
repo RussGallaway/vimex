@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "check": "bun run format:check && bun run typecheck && bun run boundaries && bun run docs:check && bun scripts/check-tests.ts",
+    "check:release": "bun scripts/release/check.ts",
     "generate:codex": "bun run scripts/generate-codex-types.ts",
     "boundaries": "bun run scripts/verify-boundaries.ts",
     "test:unit": "bun test packages/conversation packages/composer packages/interaction packages/transcript packages/approvals packages/workbench packages/platform-node apps/tui/src/cli-options.test.ts apps/tui/src/lifecycle.test.ts apps/cli packages/distribution",

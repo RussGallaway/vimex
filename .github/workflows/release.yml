@@ -38,23 +38,13 @@ jobs:
           # shellcheck disable=SC2016
           bun -e 'const v = (await Bun.file("package.json").json()).version; if (process.env.GITHUB_REF_NAME !== `v${v}`) throw new Error("Tag must match package version")'
       - run: bun install --frozen-lockfile
-      - run: bun run check
+      - name: Install offline visual probe dependencies
+        run: python3 -m pip install -r tests/terminal/requirements-live.txt
+      - name: Validate native release bundle
+        run: bun run check:release --outdir dist
         env:
           HERDR_ENV: "0"
           TERM: xterm-256color
-      - run: bun run build
-      - name: Test the packaged executable and offline syntax
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          bundle="$PWD/dist/vimex-${GITHUB_REF_NAME}-${TARGET}"
-          bun tests/install/cli-smoke.ts "$bundle/vimex"
-          bun build --compile --target=bun --define VIMEX_COMPILED=true tests/install/syntax-smoke.ts --outfile "$bundle/syntax-smoke"
-          (cd "$RUNNER_TEMP" && "$bundle/syntax-smoke")
-          python -m pip install -r tests/terminal/requirements-live.txt
-          VIMEX_TEST_BINARY="$bundle/vimex" python tests/terminal/visual-driver.py
-          python tests/install/resume-smoke.py "$bundle/vimex"
-      - run: bun run package
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: vimex-${{ matrix.target }}

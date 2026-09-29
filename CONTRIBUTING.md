@@ -58,6 +58,10 @@ The default terminal suite needs Python 3 and a Unix PTY. It runs the actual ren
 
 CI is configured for macOS and Ubuntu with Bun 1.3.6, Python 3.12, and `TERM=xterm-256color`. A configured target is not considered supported until its run has been observed and recorded in the [terminal matrix](docs/terminal-support.md).
 
+Before tagging a release, run `bun run check:release`. It runs the complete `check` gate, builds and archives the native executable, verifies its checksum, and tests the extracted bundle with CLI, offline syntax, visual PTY, and fixture-backed resume probes. Use Bun 1.3.6 and a Python 3.12 virtual environment with `tests/terminal/requirements-live.txt` installed. The Release workflow uses this same command on all four native platforms.
+
+Builds use a temporary directory that is removed after success and retained after failure. To keep archives and reconstructed PTY frames for inspection, use `bun run check:release --outdir dist`. See [local release validation](docs/releasing.md#local-release-validation) for setup and the limits of a single-host check.
+
 ## Formatting and commits
 
 Prettier defines formatting, including two-space indentation, double quotes, and omitted JavaScript/TypeScript semicolons. Run `bun run format` to format the repository or `bun run format:check` to check it without changes. Generated protocol bindings, generated manual output, snapshots, lockfiles, and build artifacts are excluded in `.prettierignore`.

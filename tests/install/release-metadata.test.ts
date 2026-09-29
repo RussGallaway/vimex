@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test"
 import { createHash } from "node:crypto"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { parseRelease } from "@vimex/distribution"
 const repo = resolve(import.meta.dir, "../..")
 const { version } = JSON.parse(
@@ -46,6 +46,55 @@ async function fixture() {
     close: () => rm(directory, { recursive: true, force: true }),
   }
 }
+test("packaging a custom output directory includes runtime assets and records the archive hash", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "vimex-package-"))
+  try {
+    const name = `vimex-v${version}-${process.platform}-${process.arch}`
+    const bundle = join(directory, name)
+    const files = [
+      "vimex",
+      "LICENSE",
+      "assets/opentui/native-library",
+      "assets/parsers/typescript.wasm",
+      "share/man/man1/vimex.1",
+      "share/licenses/NOTICE",
+    ]
+    for (const file of files) {
+      await mkdir(dirname(join(bundle, file)), { recursive: true })
+      await writeFile(join(bundle, file), `fixture ${file}`)
+    }
+    await writeFile(join(bundle, "syntax-smoke"), "probe excluded from archive")
+    const result = await execute("package.ts", "--outdir", directory)
+    expect(result.code).toBe(0)
+    const metadata = JSON.parse(
+      await readFile(join(directory, `${name}.json`), "utf8"),
+    )
+    const archive = join(directory, `${name}.tar.gz`)
+    expect(metadata).toEqual({
+      version,
+      artifacts: [
+        {
+          platform: process.platform,
+          arch: process.arch,
+          name: `${name}.tar.gz`,
+          sha256: createHash("sha256")
+            .update(await readFile(archive))
+            .digest("hex"),
+        },
+      ],
+    })
+    const tar = Bun.spawn(["tar", "-tzf", archive], {
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+    const entries = (await new Response(tar.stdout).text()).trim().split("\n")
+    expect(await tar.exited).toBe(0)
+    for (const file of files) expect(entries).toContain(file)
+    expect(entries).not.toContain("syntax-smoke")
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
 test("release generator verifies four archives and emits matching manifest, sums and Homebrew formula", async () => {
   const f = await fixture()
   try {
