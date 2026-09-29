@@ -43,9 +43,9 @@ export const vimexSyntaxParsers: readonly FiletypeParserOptions[] = [
 
 let registered = false
 
-/** Call once at the composition root, before constructing the OpenTUI renderer. */
+/** Call once at the composition root; it may run after the first frame. */
 export function registerSyntaxParsers(): void {
   if (registered) return
-  registered = true
   addDefaultParsers([...vimexSyntaxParsers])
+  registered = true
 }

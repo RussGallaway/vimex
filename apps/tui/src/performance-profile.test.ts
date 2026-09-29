@@ -329,3 +329,14 @@ test("exports a private JSON file and leaves no temporary file", async () => {
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test("records each startup phase once in export metadata", () => {
+  const recorder = new PerformanceProfileRecorder({ now: () => 10 })
+  recorder.recordStartupPhase("renderer_created", 3)
+  recorder.recordStartupPhase("renderer_created", 9)
+  recorder.recordStartupPhase("first_frame", 7)
+  expect(recorder.snapshot().metadata?.startupPhases).toEqual({
+    renderer_created: 3,
+    first_frame: 7,
+  })
+})

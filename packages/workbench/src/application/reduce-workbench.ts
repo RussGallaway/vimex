@@ -373,8 +373,9 @@ export function transitionWorkbench(
         (message) =>
           message.intent === "next-turn" && message.status === "sending",
       )
-      const queued =
-        command.intent === "next-turn"
+      const queued = state.provisionalThreadIds.includes(id)
+        ? true
+        : command.intent === "next-turn"
           ? Boolean(activeTurnId) || startingTurn
           : !activeTurnId && startingTurn
       const composer = submitDraft(

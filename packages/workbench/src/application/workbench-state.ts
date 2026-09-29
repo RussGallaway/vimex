@@ -208,6 +208,7 @@ export type WorkbenchCommand =
       intent: SubmissionIntent
       clientMessageId: string
     }
+  | { type: "composer.flush"; threadId: ThreadId }
   | {
       type: "composer.ack"
       threadId: ThreadId
@@ -245,6 +246,7 @@ export const initialWorkbench = (): WorkbenchState => ({
   threadOrder: [],
   summaries: {},
   workspaces: {},
+  provisionalThreadIds: [],
   approvals: initialApprovals(),
   questions: {},
   agentRelationships: [],

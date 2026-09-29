@@ -52,6 +52,8 @@ export async function runApplication(options: CliOptions) {
       viewportColumns: process.stdout.columns,
     },
   })
+  const startupPhase = (phase: string, atMs = performance.now()) =>
+    performanceProfile.recordStartupPhase(phase, atMs)
   let pendingNavigationFrame:
     { operationId: string; burstId?: string } | undefined
   let frameAwaitingCompletion = false
@@ -60,6 +62,12 @@ export async function runApplication(options: CliOptions) {
   const recordPerformanceMark = (
     mark: Parameters<typeof performanceProfile.record>[0],
   ) => {
+    if (mark.phase === "input" || mark.phase === "attempted")
+      startupPhase("first_input", mark.atMs)
+    if (mark.kind === "submit" && mark.phase === "next_thread_activity")
+      startupPhase("first_server_activity", mark.atMs)
+    if (mark.kind === "submit" && mark.phase === "next_thread_content")
+      startupPhase("first_assistant_delta", mark.atMs)
     performanceProfile.record({
       ...mark,
       detail: {
@@ -165,13 +173,13 @@ export async function runApplication(options: CliOptions) {
   let root: ReturnType<typeof createRoot> | undefined
   let detachHandlers = () => {}
   try {
-    registerSyntaxParsers()
     renderer = await createCliRenderer({
       screenMode: "alternate-screen",
       exitOnCtrlC: false,
       exitSignals: [],
       targetFps: 60,
     })
+    startupPhase("renderer_created")
     const activeRenderer = renderer
     const onFrameStart = async () => {
       frameAwaitingCompletion = true
@@ -195,6 +203,7 @@ export async function runApplication(options: CliOptions) {
         })
     }
     const onFrame = () => {
+      startupPhase("first_frame")
       frameAwaitingCompletion = false
       const atMs = performance.now()
       if (pendingNavigationFrame) {
@@ -285,6 +294,9 @@ export async function runApplication(options: CliOptions) {
       onLifecycle(
         state: import("@vimex/workbench").WorkbenchLifecycleSnapshot,
       ) {
+        if (state.connection === "connected") startupPhase("connected")
+        if (state.connection === "connected" && state.summary)
+          startupPhase("session_bound")
         void herdr.report(state).catch((error) => {
           const message = `Herdr reporting failed: ${String(error)}`
           if (message !== lastHerdrError) {
@@ -309,6 +321,8 @@ export async function runApplication(options: CliOptions) {
           ...ports,
           resolveDirectory: resolve,
         })
+    if (!options.thread && !options.resumeMode)
+      controller.prepareDraft(options.cwd, options.model)
     lifecycle.add(async () => {
       if (saveTimer) clearTimeout(saveTimer)
       await save()
@@ -339,6 +353,17 @@ export async function runApplication(options: CliOptions) {
         }),
       ),
     )
+    // Syntax parsers are needed for transcript content, not for the first
+    // composer frame. Let the renderer establish the shell before loading
+    // their native resources.
+    const syntaxTimer = setTimeout(() => {
+      try {
+        registerSyntaxParsers()
+      } catch (error) {
+        controller.notice(`Syntax highlighting unavailable: ${String(error)}`)
+      }
+    }, 0)
+    lifecycle.add(() => clearTimeout(syntaxTimer))
     void controller
       .initialize(
         options.cwd,

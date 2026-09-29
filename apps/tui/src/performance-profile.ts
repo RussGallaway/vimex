@@ -173,6 +173,7 @@ export interface PerformanceProfileMetadata {
   arch?: "arm64" | "x64" | "arm" | "ia32" | "riscv64"
   viewportRows?: number
   viewportColumns?: number
+  startupPhases?: Readonly<Record<string, number>>
 }
 
 function safeMetadata(
@@ -212,6 +213,14 @@ function safeMetadata(
     metadata.viewportColumns >= 0
   )
     safe.viewportColumns = metadata.viewportColumns
+  if (metadata.startupPhases) {
+    const phases = Object.fromEntries(
+      Object.entries(metadata.startupPhases).filter(
+        ([, value]) => typeof value === "number" && Number.isFinite(value),
+      ),
+    )
+    if (Object.keys(phases).length) safe.startupPhases = phases
+  }
   return Object.keys(safe).length ? safe : undefined
 }
 
@@ -288,7 +297,7 @@ export class PerformanceProfileRecorder {
   private readonly maxAgeMs: number
   private readonly maxRecords: number
   private readonly now: () => number
-  private readonly metadata?: PerformanceProfileMetadata
+  private metadata?: PerformanceProfileMetadata
   private readonly marks: Array<StoredMark | undefined>
   private start = 0
   private length = 0
@@ -315,6 +324,16 @@ export class PerformanceProfileRecorder {
     this.now = options.now ?? (() => performance.now())
     this.metadata = safeMetadata(options.metadata)
     this.marks = new Array(this.maxRecords)
+  }
+
+  recordStartupPhase(phase: string, atMs = this.now()): void {
+    if (!phase || !Number.isFinite(atMs)) return
+    if (this.metadata?.startupPhases?.[phase] !== undefined) return
+    const startupPhases = {
+      ...(this.metadata?.startupPhases ?? {}),
+      [phase]: atMs,
+    }
+    this.metadata = safeMetadata({ ...this.metadata, startupPhases })
   }
 
   record(mark: PerformanceMark): void {

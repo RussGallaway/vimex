@@ -117,6 +117,11 @@ import {
   type ConversationIngressScheduler,
 } from "./conversation-ingress"
 import type { ConversationState } from "@vimex/conversation"
+import { bindProvisionalWorkspace } from "./session-binding"
+import {
+  captureStartupReadiness,
+  type StartupReadiness,
+} from "./startup-readiness"
 
 export interface ControllerPorts {
   conversation: ConversationGateway
@@ -672,6 +677,37 @@ export class VimexController
     )
   }
   getSnapshot = (): WorkbenchState => this.state
+  getStartupReadiness = (): StartupReadiness =>
+    captureStartupReadiness(this.state)
+
+  /** Creates the local-first workspace that makes the composer usable before Codex is ready. */
+  prepareDraft(cwd: string, model?: string): void {
+    if (this.closing || this.state.provisionalThreadIds.length) return
+    const id = threadId(`local-${crypto.randomUUID()}`)
+    this.setState({
+      ...this.state,
+      activeThreadId: id,
+      provisionalThreadIds: [id],
+      threadOrder: [id, ...this.state.threadOrder],
+      summaries: {
+        ...this.state.summaries,
+        [id]: {
+          id,
+          title: "new session",
+          titleSource: "untitled",
+          model: model ?? "",
+          reasoningEffort: "",
+          cwd,
+          status: "idle",
+          canAcceptDirectInput: true,
+        },
+      },
+      workspaces: {
+        ...this.state.workspaces,
+        [id]: createWorkspace(id),
+      },
+    })
+  }
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
@@ -1543,6 +1579,21 @@ export class VimexController
     this.ingress.flush()
     if (this.state.retiredSideThreadIds.includes(snapshot.summary.id)) return
     this.register(snapshot.summary)
+    const provisionalId = this.state.provisionalThreadIds[0]
+    let boundProvisional = false
+    if (provisionalId && provisionalId !== snapshot.summary.id) {
+      const bound = bindProvisionalWorkspace(
+        this.state,
+        provisionalId,
+        snapshot.summary.id,
+      )
+      if (bound !== this.state) {
+        this.setState({
+          ...bound,
+        })
+        boundProvisional = true
+      }
+    }
     const side = sideChatForChild(this.state, snapshot.summary.id)
     const parentTurns =
       side && this.state.workspaces[side.parentId]?.conversation.turns
@@ -1610,6 +1661,8 @@ export class VimexController
     this.buffered.delete(snapshot.summary.id)
     for (const event of buffered) this.ingress.push(event)
     this.ingress.flush()
+    if (boundProvisional)
+      this.dispatch({ type: "composer.flush", threadId: snapshot.summary.id })
     if (focus)
       this.dispatch({ type: "thread.switch", threadId: snapshot.summary.id })
   }
@@ -1637,6 +1690,12 @@ export class VimexController
     const navigation = this.navigationRevision
     this.initialDirectory = cwd
     this.initialModel = model
+    // Resume and picker flows need to hydrate an existing thread. A local
+    // draft belongs only to the cold-start new-session path; creating one for
+    // resume would let early keystrokes be copied into the resumed thread
+    // during binding.
+    if (!this.state.activeThreadId && !resume && !resumeMode)
+      this.prepareDraft(cwd, model)
     this.unsubscribe = this.ports.connection.subscribe((event) =>
       this.receive(event),
     )
@@ -1647,9 +1706,13 @@ export class VimexController
       )
         return
       this.dispatch({ type: "connection.changed", connection: "connected" })
-      const summaries = await this.unlessClosing(
-        this.ports.conversation.listThreads(),
-      )
+      const summaries =
+        resumeMode || resume
+          ? await this.unlessClosing(this.ports.conversation.listThreads())
+          : {
+              value:
+                [] as readonly import("@vimex/conversation").ThreadSummary[],
+            }
       if (!summaries || !this.currentRuntime(epoch)) return
       this.catalogThreadIds = new Set(
         summaries.value.map((summary) => summary.id),
@@ -2302,7 +2365,9 @@ export class VimexController
         await this.ports.connection.restart()
         if (!this.currentRuntime(epoch)) return
         this.setState({ ...this.state, connection: "connected" })
-        if (id) {
+        // A cold-start draft has no server thread to resume. Recreate a real
+        // thread and let hydrate bind the preserved local composer/outbox.
+        if (id && !this.state.provisionalThreadIds.includes(id)) {
           const snapshot = await this.ports.conversation.resumeThread(id)
           if (this.currentRuntime(epoch))
             this.hydrate(snapshot, revision === this.navigationRevision)
