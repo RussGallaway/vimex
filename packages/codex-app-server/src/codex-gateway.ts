@@ -14,12 +14,35 @@ import {
 } from "@vimex/conversation"
 import type { UserInput } from "./generated/v0_154_0/v2/UserInput"
 import { execFile } from "node:child_process"
-import { open } from "node:fs/promises"
+import { open, readdir, readFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { promisify } from "node:util"
 
 const execFileAsync = promisify(execFile)
 const mentionPreviewLimit = 4096
+const mentionResultLimit = 50
+
+async function workspaceFiles(root: string): Promise<string[]> {
+  const files: string[] = []
+  const visit = async (directory: string): Promise<void> => {
+    let entries
+    try {
+      entries = await readdir(directory, { withFileTypes: true })
+    } catch {
+      return
+    }
+    await Promise.all(
+      entries.map(async (entry) => {
+        if (entry.name === ".git") return
+        const path = resolve(directory, entry.name)
+        if (entry.isDirectory()) await visit(path)
+        else if (entry.isFile()) files.push(path)
+      }),
+    )
+  }
+  await visit(resolve(root))
+  return files
+}
 
 async function readMentionPreview(path: string): Promise<string | undefined> {
   try {
@@ -364,51 +387,38 @@ export function createCodexGateways(
     ): Promise<readonly MentionCandidate[]> {
       if (kind === "grep") {
         if (!query.trim()) return []
+        let matcher: RegExp
         try {
-          const { stdout } = await execFileAsync(
-            "rg",
-            [
-              "--line-number",
-              "--no-heading",
-              "--color",
-              "never",
-              "--max-count",
-              "1",
-              "--hidden",
-              "--glob",
-              "!.git",
-              "--",
-              query,
-              cwd,
-            ],
-            { maxBuffer: 16 * 1024 * 1024 },
-          )
-          const matches = stdout
-            .split("\n")
-            .filter(Boolean)
-            .slice(0, 50)
-            .flatMap((line) => {
-              const match = line.match(/^(.*?):(\d+):(.*)$/u)
-              if (!match) return []
-              const path = resolve(cwd, match[1]!)
-              return [
-                {
-                  kind: "file" as const,
-                  name: match[1]!,
-                  path,
-                  detail: `${match[2]}: ${match[3]!.trim()}`,
-                },
-              ]
-            })
-          return Promise.all(
-            matches.map(async (candidate) => ({
-              ...candidate,
-              preview: await readMentionPreview(candidate.path),
-            })),
-          )
+          matcher = new RegExp(query)
         } catch {
-          return []
+          matcher = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
         }
+        const matches = []
+        for (const path of await workspaceFiles(cwd)) {
+          if (matches.length >= mentionResultLimit) break
+          let contents: string
+          try {
+            contents = await readFile(path, "utf8")
+          } catch {
+            continue
+          }
+          const lines = contents.split("\n")
+          const lineNumber = lines.findIndex((line) => matcher.test(line))
+          if (lineNumber < 0) continue
+          const relativePath = path.slice(resolve(cwd).length + 1)
+          matches.push({
+            kind: "file" as const,
+            name: relativePath,
+            path,
+            detail: `${lineNumber + 1}: ${lines[lineNumber]!.trim()}`,
+          })
+        }
+        return Promise.all(
+          matches.map(async (candidate) => ({
+            ...candidate,
+            preview: await readMentionPreview(candidate.path),
+          })),
+        )
       }
       if (kind === "file") {
         // The app-server fuzzy endpoint is intentionally bounded. An empty
@@ -423,25 +433,14 @@ export function createCodexGateways(
                 cancellationToken: null,
               })
             ).files
-          : await execFileAsync(
-              "rg",
-              ["--files", "--hidden", "--glob", "!.git", "--", cwd],
-              { maxBuffer: 64 * 1024 * 1024 },
-            )
-              .then(({ stdout }) =>
-                stdout
-                  .split("\n")
-                  .filter(Boolean)
-                  .map((file) => ({
-                    root: cwd,
-                    path: file,
-                    match_type: "file" as const,
-                    file_name: file.split(/[\\/]/u).pop() ?? file,
-                    score: 0,
-                    indices: null,
-                  })),
-              )
-              .catch(() => [])
+          : (await workspaceFiles(cwd)).map((path) => ({
+              root: cwd,
+              path,
+              match_type: "file" as const,
+              file_name: path.split(/[\\/]/u).pop() ?? path,
+              score: 0,
+              indices: null,
+            }))
         const candidates = files.filter((file) => file.match_type === "file")
         return mapWithConcurrency(candidates, 32, async (file) => {
           const path = resolve(file.root, file.path)
