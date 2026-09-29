@@ -3798,11 +3798,11 @@ export class VimexController
           this.performanceMark("submit", "request_sent", effect.clientMessageId)
         try {
           let submittedTurn: TurnId | undefined
-          const input = effect.input?.map((part) =>
-            part.type === "text"
-              ? part
-              : { type: "image" as const, path: part.path },
-          )
+          // Composer parts already use the transport-neutral conversation
+          // input shape. Preserve mention and skill parts here; collapsing
+          // every non-text part to an image silently turns picker attachments
+          // into image inputs at the gateway boundary.
+          const input = effect.input
           const turn =
             this.state.workspaces[effect.threadId]?.conversation.activeTurnId
           if (effect.type === "conversation.turn.steer" && turn)

@@ -141,6 +141,51 @@ describe("pure composer Vim buffer", () => {
     const word = applyKeys("say hello world", ["c", "i", "w"])
     expect(word.buffer).toEqual({ text: "say hello ", cursorOffset: 10 })
     expect(word.register).toEqual({ text: "world", shape: "character" })
+    const aWordAtLineEnd = apply(
+      { text: "say hello world", cursorOffset: 10 },
+      {
+        type: "text-object",
+        operator: "delete",
+        object: "a-word",
+        count: 1,
+      },
+    )
+    expect(aWordAtLineEnd.buffer).toEqual({
+      text: "say hello",
+      cursorOffset: 8,
+    })
+    expect(aWordAtLineEnd.register).toEqual({
+      text: " world",
+      shape: "character",
+    })
+    const twoInnerWords = apply(
+      { text: "one two three", cursorOffset: 0 },
+      {
+        type: "text-object",
+        operator: "delete",
+        object: "inner-word",
+        count: 2,
+      },
+    )
+    expect(twoInnerWords.buffer).toEqual({ text: " three", cursorOffset: 0 })
+    expect(twoInnerWords.register).toEqual({
+      text: "one two",
+      shape: "character",
+    })
+    const twoAWords = apply(
+      { text: "one two three", cursorOffset: 0 },
+      {
+        type: "text-object",
+        operator: "delete",
+        object: "a-word",
+        count: 2,
+      },
+    )
+    expect(twoAWords.buffer).toEqual({ text: "three", cursorOffset: 0 })
+    expect(twoAWords.register).toEqual({
+      text: "one two ",
+      shape: "character",
+    })
     const quote = apply(
       { text: 'say "hello" now', cursorOffset: 6 },
       {

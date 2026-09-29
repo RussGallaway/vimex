@@ -301,6 +301,47 @@ test("image import blocks premature send, then sends the owned path with the dra
   expect(h.controller.getSnapshot().workspaces[a]?.composer.images).toEqual([])
 })
 
+test("file and skill mentions keep their input kinds when a turn is sent", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  const sent: Array<{
+    text: string
+    input?: readonly import("@vimex/conversation").ConversationInput[]
+  }> = []
+  h.backend.startTurn = async (_id, text, _messageId, input) => {
+    sent.push({ text, input })
+    return []
+  }
+
+  h.controller.attachMention({
+    kind: "file",
+    name: "README.md",
+    path: "/tmp/README.md",
+  })
+  h.controller.attachMention({
+    kind: "skill",
+    name: "build",
+    path: "/tmp/skills/build/SKILL.md",
+  })
+  expect(h.controller.submit("next-turn")).toBe(true)
+  await h.controller.settle()
+
+  expect(sent).toEqual([
+    {
+      text: "@README.md @build",
+      input: [
+        { type: "mention", name: "README.md", path: "/tmp/README.md" },
+        { type: "text", text: " " },
+        {
+          type: "skill",
+          name: "build",
+          path: "/tmp/skills/build/SKILL.md",
+        },
+      ],
+    },
+  ])
+})
+
 function manualIngressScheduler() {
   const tasks: Array<{ task: () => void; cancelled: boolean }> = []
   const scheduler: ConversationIngressScheduler = {

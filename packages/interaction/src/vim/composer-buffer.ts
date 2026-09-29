@@ -476,6 +476,7 @@ function textObjectRange(
   parts: readonly string[],
   cursor: number,
   object: ComposerTextObject,
+  count: number,
 ): { from: number; to: number } | undefined {
   const inner = object.startsWith("inner-")
   const kind = object.replace(/^(inner|a)-/, "")
@@ -496,9 +497,20 @@ function textObjectRange(
       while (to < parts.length && isWord(parts[to]) === isWord(parts[bounded]))
         to++
     }
-    if (!inner) {
+    const repetitions = Math.max(1, count)
+    for (let repetition = 1; repetition < repetitions; repetition++) {
       while (to < parts.length && isSpace(parts[to])) to++
-      if (from === to) while (from > 0 && isSpace(parts[from - 1])) from--
+      if (to >= parts.length) break
+      const segmentKind = isWord(parts[to])
+      do to++
+      while (to < parts.length && isWord(parts[to]) === segmentKind)
+    }
+    if (!inner) {
+      const wordEnd = to
+      while (to < parts.length && isSpace(parts[to])) to++
+      // Vim's `a-word` consumes the following whitespace when present, or
+      // the preceding whitespace for a word at the end of a line.
+      if (to === wordEnd) while (from > 0 && isSpace(parts[from - 1])) from--
     }
     return { from, to }
   }
@@ -598,7 +610,12 @@ export function applyComposerVimAction(
     return deleteSelection(buffer, register, action.enterInsert ?? false)
   if (action.type === "text-object") {
     const parts = split(buffer.text)
-    const range = textObjectRange(parts, buffer.cursorOffset, action.object)
+    const range = textObjectRange(
+      parts,
+      buffer.cursorOffset,
+      action.object,
+      action.count,
+    )
     if (!range || range.from === range.to) return { buffer, register }
     const text = parts.slice(range.from, range.to).join("")
     const next = replace(parts, range.from, range.to, [])

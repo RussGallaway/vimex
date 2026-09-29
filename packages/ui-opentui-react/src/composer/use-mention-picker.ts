@@ -7,6 +7,7 @@ import type { InteractionState } from "@vimex/interaction"
 import { useEffect, useRef, useState, type RefObject } from "react"
 import type { VimexUiController } from "../contracts"
 import type { MentionAttachment } from "@vimex/composer"
+import { nativeOffsetToGraphemeOffset } from "./native-cursor"
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 const graphemeCount = (text: string) => [...segmenter.segment(text)].length
@@ -25,8 +26,14 @@ export function useMentionPicker(options: {
   mentions?: readonly MentionAttachment[]
 }) {
   const { controller } = options
+  // OpenTUI exposes a visual-cell offset, while the composer state and picker
+  // trigger calculations use grapheme offsets. Converting here keeps wide
+  // characters (and combining sequences) from shifting the active query.
+  const nativeCursor = options.textareaRef.current?.cursorOffset
   const cursor =
-    options.textareaRef.current?.cursorOffset ?? options.text.length
+    nativeCursor === undefined
+      ? graphemeCount(options.text)
+      : nativeOffsetToGraphemeOffset(options.text, nativeCursor)
   const slash = options.text.match(
     /^\/(files|skills|plugins|grep)(?:\s(.*))?$/u,
   )

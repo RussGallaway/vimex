@@ -169,9 +169,12 @@ export function Composer(props: {
           skill: marks.registerType("vimex-mention-skill"),
           plugin: marks.registerType("vimex-mention-plugin"),
         }
-        const current = Object.values(types).flatMap((typeId) =>
-          marks.getAllForTypeId(typeId),
-        )
+        // getAllForTypeId groups marks by syntax kind. Compare in document
+        // order so mixed file/skill/plugin mentions do not look different on
+        // every render and trigger needless delete/recreate churn.
+        const current = Object.values(types)
+          .flatMap((typeId) => marks.getAllForTypeId(typeId))
+          .sort((left, right) => left.start - right.start)
         const desired = [] as Array<{
           start: number
           end: number

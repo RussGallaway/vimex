@@ -18,7 +18,26 @@ if [ -z "$version" ]; then
   version=$(curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 60 "https://api.github.com/repos/$repository/releases/latest" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 fi
 version=${version#v}
-printf '%s\n' "$version" | awk '/^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$/ {ok=1} END {exit !ok}' || fail 'Invalid release version'
+# Keep bootstrap validation in lockstep with the manifest parser: SemVer core
+# components and numeric prerelease identifiers may not contain leading zeroes,
+# prerelease identifiers are dot-separated, and build metadata is unsupported.
+printf '%s\n' "$version" | awk '
+  {
+    separator = index($0, "-")
+    core = separator ? substr($0, 1, separator - 1) : $0
+    prerelease = separator ? substr($0, separator + 1) : ""
+    if (core !~ /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/)
+      next
+    if (separator && prerelease !~ /^[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*$/)
+      next
+    count = split(prerelease, identifiers, ".")
+    for (index_ = 1; index_ <= count; index_++)
+      if (identifiers[index_] ~ /^0[0-9]+$/)
+        next
+    valid = 1
+  }
+  END { exit !valid }
+' || fail 'Invalid release version'
 receipt="$root/.vimex-install.json"
 if [ -L "$root/versions" ]; then fail 'Managed versions directory must not be a symlink'; fi
 if [ -e "$root/versions" ] && [ ! -d "$root/versions" ]; then fail 'Managed versions path is not a directory'; fi

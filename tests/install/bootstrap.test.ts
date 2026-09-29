@@ -121,6 +121,22 @@ test("bootstrap installs verified native bundle into isolated prefix and safely 
     await readFile(join(first.root, previous, "assets/parser"), "utf8"),
   ).toBe("native fixture")
 })
+test("installer rejects versions that are not valid release SemVer", async () => {
+  for (const version of [
+    "01.2.3",
+    "1.02.3",
+    "1.2.03",
+    "1.2.3-01",
+    "1.2.3-alpha..1",
+    "1.2.3+build.1",
+  ]) {
+    const result = await install(`invalid-${version}`, {
+      VIMEX_VERSION: version,
+    })
+    expect(result.code).not.toBe(0)
+    expect(result.err).toContain("Invalid release version")
+  }
+})
 test("checksum failure preserves current version", async () => {
   const first = await install("checksum")
   const current = await readlink(join(first.root, "current"))
