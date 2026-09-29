@@ -73,7 +73,7 @@ export const commandDescriptions: Readonly<Record<CommandName, string>> = {
   new: "Start a new session",
   approve: "Approve the pending request",
   reject: "Reject the pending request",
-  stop: "Interrupt the turn or stop a background terminal by process ID",
+  stop: "Stop all background terminals, or one by process ID",
   ps: "View running background terminals in this conversation",
   fork: "Fork from a previous message",
   fold: "Collapse transcript details",

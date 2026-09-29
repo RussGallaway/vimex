@@ -43,6 +43,7 @@ export const defaultVimexUiSettings: VimexUiSettings = {
 
 export const inertController: VimexUiController = {
   refreshBackgroundTerminals() {},
+  stopAllBackgroundTerminals() {},
   stopBackgroundTerminal() {},
   transcriptRuntime() {
     return undefined

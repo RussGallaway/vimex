@@ -87,6 +87,7 @@ export type TranscriptAction =
 
 export interface WorkbenchActions {
   refreshBackgroundTerminals(): void
+  stopAllBackgroundTerminals(): void
   stopBackgroundTerminal(threadId: ThreadId, processId: string): void
   performanceNavigationInput?(
     action:

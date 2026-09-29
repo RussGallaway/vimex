@@ -3142,17 +3142,58 @@ export class VimexController
       return
     }
     const epoch = this.runtimeEpoch
+    const active = this.state.activeThreadId
     this.launch(async () => {
       const terminated = await terminate.call(
         this.ports.conversation,
         threadId,
         processId,
       )
-      if (!this.currentRuntime(epoch)) return
+      if (!this.currentRuntime(epoch) || this.state.activeThreadId !== active)
+        return
       this.notice(
         terminated
           ? `Stopped background terminal ${processId}`
           : `Background terminal ${processId} is no longer running`,
+      )
+      this.refreshBackgroundTerminals()
+    })
+  }
+  stopAllBackgroundTerminals = (): void => {
+    const terminate = this.ports.conversation.terminateBackgroundTerminal
+    if (!terminate) {
+      this.notice("This runtime does not support stopping background terminals")
+      return
+    }
+    const rows = [
+      ...new Map(
+        this.state.backgroundTerminals.rows.map((row) => [
+          `${row.threadId}:${row.processId}`,
+          row,
+        ]),
+      ).values(),
+    ]
+    if (!rows.length) {
+      this.notice("No running background terminals")
+      return
+    }
+    const epoch = this.runtimeEpoch
+    const active = this.state.activeThreadId
+    this.launch(async () => {
+      const results = await Promise.allSettled(
+        rows.map((row) =>
+          terminate.call(this.ports.conversation, row.threadId, row.processId),
+        ),
+      )
+      if (!this.currentRuntime(epoch) || this.state.activeThreadId !== active)
+        return
+      const stopped = results.filter(
+        (result) => result.status === "fulfilled" && result.value,
+      ).length
+      this.notice(
+        stopped === rows.length
+          ? `Stopped ${stopped} background terminal${stopped === 1 ? "" : "s"}`
+          : `Stopped ${stopped} of ${rows.length} background terminals`,
       )
       this.refreshBackgroundTerminals()
     })
@@ -3612,7 +3653,7 @@ export class VimexController
         this.refreshBackgroundTerminals()
         break
       case "stop":
-        if (!argument) this.interrupt()
+        if (!argument) this.stopAllBackgroundTerminals()
         else {
           const matches = this.state.backgroundTerminals.rows.filter(
             (row) => row.processId === argument,

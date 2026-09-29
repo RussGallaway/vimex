@@ -22,7 +22,7 @@ export function ProcessesOverlay(props: {
   return (
     <OverlayFrame title="Background terminals · this conversation" width={100}>
       <text fg={emberTide.textMuted}>
-        ↑/↓ select · enter stop · r refresh · esc close
+        ↑/↓ select · enter close · x stop · r refresh · esc close
       </text>
       <scrollbox ref={listRef} flexGrow={1} minHeight={4} marginTop={1}>
         {props.rows.map((row, index) => {

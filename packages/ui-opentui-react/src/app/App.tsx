@@ -522,6 +522,16 @@ export function VimexApp({
       setSessionQuery("")
     }
   }, [interaction.overlay])
+  useLayoutEffect(() => {
+    if (interaction.overlay !== "processes") return
+    const next = Math.min(
+      overlayIndexRef.current,
+      Math.max(0, state.backgroundTerminals.rows.length - 1),
+    )
+    if (next === overlayIndexRef.current) return
+    overlayIndexRef.current = next
+    setOverlayIndex(next)
+  }, [interaction.overlay, state.backgroundTerminals.rows.length])
   useEffect(() => {
     setQuestionIndex(0)
     setQuestionAnswers({})
@@ -1237,8 +1247,7 @@ export function VimexApp({
         agentRows[Math.min(activeIndex, Math.max(0, agentRows.length - 1))]
       if (row) controller.openChildThread(row.threadId)
     } else if (interaction.overlay === "processes") {
-      const row = state.backgroundTerminals.rows[activeIndex]
-      if (row) controller.stopBackgroundTerminal(row.threadId, row.processId)
+      closeOverlay()
       return
     } else if (interaction.overlay === "urls") {
       const choice =
@@ -1271,6 +1280,7 @@ export function VimexApp({
     sessionQuery,
     sessionRows,
     state.availableModels,
+    state.backgroundTerminals.rows,
     state.favoriteThreadIds,
     state.pendingFork,
     state.summaries,
@@ -1667,7 +1677,23 @@ export function VimexApp({
                   ]
                 : []),
               ...(interaction.overlay === "processes"
-                ? [{ key: "r", cmd: controller.refreshBackgroundTerminals }]
+                ? [
+                    { key: "r", cmd: controller.refreshBackgroundTerminals },
+                    {
+                      key: "x",
+                      cmd: () => {
+                        const row =
+                          state.backgroundTerminals.rows[
+                            overlayIndexRef.current
+                          ]
+                        if (row)
+                          controller.stopBackgroundTerminal(
+                            row.threadId,
+                            row.processId,
+                          )
+                      },
+                    },
+                  ]
                 : []),
             ],
     }),
@@ -1682,6 +1708,7 @@ export function VimexApp({
       pendingApproval,
       questionOwnsReturn,
       state.availableModels,
+      state.backgroundTerminals.rows,
       state.agentPickerTargets,
     ],
   )

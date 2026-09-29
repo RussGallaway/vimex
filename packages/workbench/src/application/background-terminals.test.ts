@@ -82,3 +82,32 @@ test("ps lists parent and child terminals and stops only the selected owner's pr
     terminal("parent", "p1"),
   ])
 })
+test("bare stop terminates every listed background terminal", async () => {
+  const stopped: string[] = []
+  const rows = [terminal("parent", "p1"), terminal("parent", "p2")]
+  const conversation = {
+    async listBackgroundTerminals() {
+      return rows
+    },
+    async terminateBackgroundTerminal(id: string, processId: string) {
+      stopped.push(`${id}:${processId}`)
+      return true
+    },
+  } as unknown as ConversationGateway
+  const controller = new VimexController({
+    conversation,
+    approvals: {} as never,
+    connection: {} as never,
+    models: {} as never,
+    resolveDirectory: (_, path) => path,
+    clipboard: { writeText: async () => {} },
+    openUrl: async () => {},
+    quit() {},
+  })
+  controller.dispatch({ type: "thread.open", summary: summary("parent") })
+  controller.executeNamedCommand("ps")
+  await controller.settle()
+  controller.executeNamedCommand("stop")
+  await controller.settle()
+  expect(stopped).toEqual(["parent:p1", "parent:p2"])
+})
