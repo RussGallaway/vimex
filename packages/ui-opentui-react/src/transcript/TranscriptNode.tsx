@@ -15,6 +15,7 @@ export function TranscriptNode(props: {
   agentSummaries?: Readonly<Record<string, ThreadSummary>>
   blockId?: string
   fragment?: TranscriptItemFragment
+  diffView?: "stacked" | "side-by-side"
 }) {
   switch (props.item.kind) {
     case "user":
@@ -52,6 +53,7 @@ export function TranscriptNode(props: {
           syntax={props.syntax}
           blockId={props.blockId}
           fragment={props.fragment}
+          diffView={props.diffView}
         />
       )
     case "agent":

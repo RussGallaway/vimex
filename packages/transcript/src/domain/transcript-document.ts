@@ -43,6 +43,8 @@ export interface TranscriptSelection {
   shape: "character" | "line" | "block"
 }
 export interface TranscriptState {
+  /** Explicit diff presentation for this transcript; unset uses the stacked default. */
+  diffView?: "stacked" | "side-by-side"
   search?: { query: string; direction: "forward" | "backward" }
   order: readonly ItemId[]
   projectionById: Readonly<Record<string, TextProjection>>
@@ -1583,6 +1585,7 @@ export type TranscriptCommand =
   | { type: "fold.defaults"; reasoning: boolean; tools: boolean }
 
 export const initialTranscript = (): TranscriptState => ({
+  diffView: "stacked",
   order: persistentTranscriptOrder(),
   projectionById: persistentTranscriptProjections(),
   folded: persistentTranscriptFolds(),

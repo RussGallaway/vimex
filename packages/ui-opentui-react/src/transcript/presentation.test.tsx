@@ -7,16 +7,18 @@ import { FileChange } from "./FileChange"
 import { ToolCall } from "./ToolCall"
 import { createEmberTideSyntax } from "../theme"
 
-test("file edits choose split or unified presentation from real terminal width", async () => {
-  for (const [width, expected] of [
-    [80, "unified"],
-    [140, "split"],
+test("file edits default to stacked and support side-by-side mode", async () => {
+  for (const [width, diffView, expected] of [
+    [80, undefined, "unified"],
+    [140, undefined, "unified"],
+    [80, "side-by-side", "split"],
   ] as const) {
     const syntax = createEmberTideSyntax()
     const setup = await testRender(
       <FileChange
         folded={false}
         syntax={syntax}
+        diffView={diffView}
         item={{
           id: itemId("edit"),
           turnId: turnId("turn"),

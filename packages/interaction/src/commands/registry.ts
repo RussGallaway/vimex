@@ -39,6 +39,7 @@ export const commandNames = [
   "manual",
   "goal",
   "performance",
+  "diff",
 ] as const
 export type CommandName = (typeof commandNames)[number]
 const aliases: Readonly<Record<string, CommandName>> = {
@@ -98,6 +99,7 @@ export const commandDescriptions: Readonly<Record<CommandName, string>> = {
   compact: "Compact the active session context",
   side: "Open a forked side chat; close hides it, quit retires it",
   performance: "Export a local performance trace",
+  diff: "Toggle diff layout between stacked and side by side",
 }
 
 export interface CommandDescriptor {
@@ -137,6 +139,11 @@ const argumentDescriptors: Partial<
     arguments: "choice",
     required: true,
     choices: ["export"],
+  },
+  diff: {
+    usage: "diff [stacked|side-by-side]",
+    arguments: "choice",
+    choices: ["stacked", "side-by-side"],
   },
   permission: {
     usage: "permission <ask|approve|full>",

@@ -1,4 +1,3 @@
-import { usePaneGeometry } from "../side-chat/pane-geometry"
 import type { SyntaxStyle } from "@opentui/core"
 import type { ConversationItem } from "@vimex/conversation"
 import type { TranscriptItemFragment } from "@vimex/transcript"
@@ -13,8 +12,8 @@ export function FileChange(props: {
   syntax: SyntaxStyle
   blockId?: string
   fragment?: TranscriptItemFragment
+  diffView?: "stacked" | "side-by-side"
 }) {
-  const { width } = usePaneGeometry()
   const { item } = props
   const sourceItem = props.sourceItem ?? item
   const suffix =
@@ -127,7 +126,13 @@ export function FileChange(props: {
                         : `diff:${item.id}${suffix}:${index}`
                     }
                     diff={change.patch}
-                    view={width >= 120 ? "split" : "unified"}
+                    view={
+                      props.diffView === "side-by-side"
+                        ? "split"
+                        : props.diffView === "stacked"
+                          ? "unified"
+                          : "unified"
+                    }
                     filetype={diffFiletype(change.movePath ?? change.path)}
                     syntaxStyle={props.syntax}
                     showLineNumbers

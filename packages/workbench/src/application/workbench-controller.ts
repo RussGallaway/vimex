@@ -3265,6 +3265,40 @@ export class VimexController
         })
         break
       }
+      case "diff": {
+        const targetId = this.presentationThread(
+          this.state,
+          transcriptPresentation ?? "main",
+        )
+        const workspace = targetId ? this.state.workspaces[targetId] : undefined
+        if (!targetId || !workspace) {
+          this.notice("Open a session before changing diff layout")
+          break
+        }
+        const current = workspace.transcript.diffView ?? "stacked"
+        const requested = argument.trim()
+        const next = requested
+          ? requested === "side-by-side"
+            ? "side-by-side"
+            : "stacked"
+          : current === "stacked"
+            ? "side-by-side"
+            : "stacked"
+        this.setState({
+          ...this.state,
+          workspaces: {
+            ...this.state.workspaces,
+            [targetId]: {
+              ...workspace,
+              transcript: { ...workspace.transcript, diffView: next },
+            },
+          },
+        })
+        this.notice(
+          `Diff layout: ${next === "stacked" ? "stacked" : "side by side"}`,
+        )
+        break
+      }
       case "insert":
         this.dispatchInteraction({ type: "mode.insert" })
         break

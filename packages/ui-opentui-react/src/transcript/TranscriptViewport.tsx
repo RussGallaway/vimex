@@ -157,6 +157,7 @@ export const TranscriptViewport = memo(function TranscriptViewport(
             current={current}
             selected={selected}
             syntax={props.syntax}
+            diffView={props.state.diffView}
             agentSummaries={
               block.renderItem.kind === "agent"
                 ? props.agentSummaries
@@ -188,6 +189,7 @@ const TranscriptRow = memo(function TranscriptRow(props: {
   current: boolean
   selected: boolean
   syntax: SyntaxStyle
+  diffView?: "stacked" | "side-by-side"
   agentSummaries?: Readonly<Record<string, ThreadSummary>>
 }) {
   const item = props.block.renderItem as ConversationItem
@@ -230,6 +232,7 @@ const TranscriptRow = memo(function TranscriptRow(props: {
           sourceItem={props.block.item as ConversationItem}
           folded={props.folded}
           syntax={props.syntax}
+          diffView={props.diffView}
           agentSummaries={props.agentSummaries}
           blockId={props.block.key.blockId}
           fragment={props.block.fragment}
