@@ -16,6 +16,38 @@ test("real PTY: full screen, Markdown, draft editing, Vim modes, and terminal re
   expect(JSON.parse(stdout).passed).toBe(true)
 }, 30000)
 
+test("real PTY: Telescope picker opens without exhausting native resources", async () => {
+  const process = Bun.spawn(
+    ["python3", join(import.meta.dir, "driver.py"), "picker"],
+    { stdout: "pipe", stderr: "pipe" },
+  )
+  const [stdout, stderr, exit] = await Promise.all([
+    new Response(process.stdout).text(),
+    new Response(process.stderr).text(),
+    process.exited,
+  ])
+  if (exit !== 0)
+    throw new Error(`PTY picker integration failed: ${stderr}\n${stdout}`)
+  expect(JSON.parse(stdout).checks).toContain("telescope-picker")
+}, 30000)
+
+test("real PTY: space-slash grep picker renders a result preview", async () => {
+  const process = Bun.spawn(
+    ["python3", join(import.meta.dir, "driver.py"), "grep"],
+    { stdout: "pipe", stderr: "pipe" },
+  )
+  const [stdout, stderr, exit] = await Promise.all([
+    new Response(process.stdout).text(),
+    new Response(process.stderr).text(),
+    process.exited,
+  ])
+  if (exit !== 0)
+    throw new Error(`PTY grep integration failed: ${stderr}\n${stdout}`)
+  const checks = JSON.parse(stdout).checks
+  expect(checks).toContain("grep-picker")
+  expect(checks).toContain("grep-preview")
+}, 30000)
+
 test("real PTY and JSONL server: submit, approve, stream completion, and quit", async () => {
   const process = Bun.spawn(
     ["python3", join(import.meta.dir, "driver.py"), "server"],

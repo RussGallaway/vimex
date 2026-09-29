@@ -19,6 +19,7 @@ import { formatPickerPath } from "./picker-path"
 export function TelescopeModal(props: {
   title: string
   query: string
+  cwd?: string
   editing?: boolean
   onQuery?(value: string): void
   inputRef?: RefObject<InputRenderable | null>
@@ -39,12 +40,17 @@ export function TelescopeModal(props: {
       `telescope-result-${props.selected}`,
     )
   }, [props.selected, props.choices, dimensions.height])
-  const pickerWidth = Math.max(60, Math.floor(dimensions.width * 0.94))
+  // Keep the measurement used for pane widths in sync with the picker box.
+  // Using a different ratio makes the result/detail columns wider than the
+  // actual bordered surface on smaller terminals, which can clip the footer
+  // and let long rows bleed into the preview divider.
+  const showDetail = props.title === "Grep"
+  const pickerWidth = Math.max(60, Math.floor(dimensions.width * 0.92))
+  const resultsRatio = showDetail ? 0.42 : 0.4
   const resultsWidth =
     props.preview !== undefined
-      ? Math.floor((pickerWidth - 2) * 0.4)
+      ? Math.floor((pickerWidth - 2) * resultsRatio)
       : pickerWidth - 2
-  const showDetail = props.title === "Grep"
   const detailWidth = showDetail ? Math.floor(resultsWidth * 0.35) : 0
   const pathWidth = Math.max(8, resultsWidth - detailWidth - 6)
   return (
@@ -62,9 +68,9 @@ export function TelescopeModal(props: {
     >
       <box
         id="telescope-picker"
-        width="94%"
+        width="92%"
         minWidth={60}
-        height="82%"
+        height="92%"
         minHeight={15}
         border
         borderStyle="single"
@@ -80,13 +86,20 @@ export function TelescopeModal(props: {
         >
           <box
             id="telescope-results-pane"
-            width={props.preview !== undefined ? "40%" : "100%"}
+            width={
+              props.preview !== undefined
+                ? showDetail
+                  ? "42%"
+                  : "40%"
+                : "100%"
+            }
             flexShrink={0}
             minWidth={0}
             flexDirection="column"
-            border={props.preview !== undefined ? ["right"] : undefined}
+            border={props.preview !== undefined ? ["right", "top"] : ["top"]}
             borderColor={emberTide.borderMuted}
             title=" Results "
+            titleColor={emberTide.textMuted}
             titleAlignment="center"
           >
             <scrollbox
@@ -128,7 +141,12 @@ export function TelescopeModal(props: {
                         truncate
                         fg={active ? emberTide.selectionText : emberTide.text}
                       >
-                        {formatPickerPath(choice.name, pathWidth, props.query)}
+                        {formatPickerPath(
+                          choice.name,
+                          pathWidth,
+                          showDetail ? "" : props.query,
+                          props.cwd,
+                        )}
                       </text>
                       {showDetail ? (
                         <text
@@ -142,7 +160,7 @@ export function TelescopeModal(props: {
                               : emberTide.textMuted
                           }
                         >
-                          {choice.detail ?? choice.path}
+                          {choice.detail ? ` ${choice.detail}` : choice.path}
                         </text>
                       ) : null}
                     </box>
@@ -160,6 +178,7 @@ export function TelescopeModal(props: {
               borderColor={emberTide.borderMuted}
               paddingX={1}
               title={` ${props.title} `}
+              titleColor={emberTide.textMuted}
               titleAlignment="center"
             >
               <box height={1} flexDirection="row">
@@ -215,11 +234,14 @@ export function TelescopeModal(props: {
               id="telescope-preview-pane"
               flexGrow={0}
               flexShrink={0}
-              width="60%"
+              width={showDetail ? "58%" : "60%"}
               minWidth={0}
               minHeight={0}
               flexDirection="column"
+              border={["top"]}
+              borderColor={emberTide.border}
               title=" Preview "
+              titleColor={emberTide.blue}
               titleAlignment="center"
             >
               {props.preview ? (
@@ -231,11 +253,9 @@ export function TelescopeModal(props: {
                   marginBottom={1}
                   contentOptions={{ paddingX: 1 }}
                   verticalScrollbarOptions={{
-                    visible: true,
-                    trackOptions: {
-                      foregroundColor: emberTide.border,
-                      backgroundColor: emberTide.backgroundRaised,
-                    },
+                    // The preview is navigated with Ctrl-E/Y and Ctrl-D/U;
+                    // hiding the track keeps the modal surface uncluttered.
+                    visible: false,
                   }}
                 >
                   <code
@@ -261,20 +281,6 @@ export function TelescopeModal(props: {
             </box>
           ) : null}
         </box>
-        <text
-          id="telescope-hint"
-          height={1}
-          flexShrink={0}
-          paddingX={1}
-          fg={emberTide.textMuted}
-          wrapMode="none"
-          truncate
-        >
-          {props.hint ??
-            (props.editing === false
-              ? "NORMAL · j/k move · space mark · i search · enter attach · esc close · ctrl-y/e line · ctrl-u/d page"
-              : "INSERT · type to search · ↑/↓ move · esc select · enter attach · ctrl-c close · ctrl-y/e line · ctrl-u/d page")}
-        </text>
       </box>
     </box>
   )

@@ -21,7 +21,7 @@ trace = os.path.join(temporary.name, "trace.jsonl")
 config = os.path.join(temporary.name, "config.json")
 with open(config, "w") as file:
     json.dump({"codexExecutable": os.path.join(root, "tests/terminal/fixtures/app-server.ts")}, file)
-arguments = ["--demo"] if scenario in ("demo", "signal") else ["--config", config, "--cwd", temporary.name]
+arguments = ["--demo"] if scenario in ("demo", "signal", "picker", "grep") else ["--config", config, "--cwd", temporary.name]
 master, slave = pty.openpty()
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 28, 100, 0, 0))
 process = subprocess.Popen([shutil.which("bun"), "run", "apps/tui/src/main.tsx", *arguments], cwd=root,
@@ -62,7 +62,37 @@ try:
     # The header title is drawn over an earlier title; differential writes may
     # reuse its unchanged cells. The model first appears in a blank field and
     # identifies readiness of the fixture session without assuming a full redraw.
-    wait_for(b"Welcome to Vimex" if scenario in ("demo", "signal") else b"fixture-model")
+    wait_for(b"Welcome to Vimex" if scenario in ("demo", "signal", "picker", "grep") else b"fixture-model")
+    if scenario == "picker":
+        offset = send(b"  ")
+        wait_for(b"Files", offset)
+        wait_for(b"Preview", offset)
+        wait_for(b"local finders = {}", offset)
+        assert process.poll() is None, "Picker opening terminated Vimex"
+        process.send_signal(signal.SIGTERM)
+        end = time.monotonic() + 8
+        while process.poll() is None and time.monotonic() < end:
+            pump()
+        assert process.poll() == 0, f"Picker process exited with {process.returncode}"
+        assert b"\x1b[?1049l" in output, "alternate screen not restored after picker"
+        print(json.dumps({"passed": True, "bytes": len(output), "checks": ["alternate-screen", "telescope-picker", "terminal-restoration"]}))
+        raise SystemExit(0)
+    if scenario == "grep":
+        offset = send(b" /")
+        wait_for(b"Grep", offset)
+        offset = send(b"TODO")
+        wait_for(b"Preview", offset)
+        wait_for(b"local pickers = {}", offset)
+        wait_for(b"function pickers.new", offset)
+        assert process.poll() is None, "Grep picker opening terminated Vimex"
+        process.send_signal(signal.SIGTERM)
+        end = time.monotonic() + 8
+        while process.poll() is None and time.monotonic() < end:
+            pump()
+        assert process.poll() == 0, f"Grep picker exited with {process.returncode}"
+        assert b"\x1b[?1049l" in output, "alternate screen not restored after grep picker"
+        print(json.dumps({"passed": True, "bytes": len(output), "checks": ["alternate-screen", "grep-picker", "grep-preview", "terminal-restoration"]}))
+        raise SystemExit(0)
     if scenario == "save-failure":
         state_path = os.path.join(temporary.name, "vimex")
         if os.path.isdir(state_path):

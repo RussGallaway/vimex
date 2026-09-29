@@ -95,7 +95,7 @@ export function useTelescopeModal(options: {
   }
   const move = (delta: number) =>
     setSelected((value) =>
-      Math.max(0, Math.min(choices.length - 1, value + delta)),
+      Math.max(0, Math.min(Math.max(0, choices.length - 1), value + delta)),
     )
   const toggle = () => {
     const choice = choices[selected]

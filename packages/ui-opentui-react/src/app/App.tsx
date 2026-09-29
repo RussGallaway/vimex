@@ -253,6 +253,7 @@ export function VimexApp({
       ),
     [settings.reducedColor, settings.syntaxTheme, settings.theme],
   )
+  useEffect(() => () => syntax.destroy(), [syntax])
   const scrollRef = useRef<ScrollBoxRenderable>(null)
   const queueDetailScrollRef = useRef<ScrollBoxRenderable>(null)
   const textareaRef = useRef<TextareaRenderable>(null)
@@ -1870,7 +1871,8 @@ export function VimexApp({
         ) : undefined
       }
       composer={
-        summary?.canAcceptDirectInput === false ? (
+        telescopeModal.active ? undefined : summary?.canAcceptDirectInput ===
+          false ? (
           <box paddingX={1} paddingY={1}>
             <text fg={emberTide.textMuted}>
               Child transcript · \\ returns to parent · send instructions from
@@ -1981,6 +1983,7 @@ export function VimexApp({
               <TelescopeModal
                 title={telescopeModal.kind === "grep" ? "Grep" : "Files"}
                 query={telescopeModal.query}
+                cwd={summary?.cwd}
                 editing={telescopeModal.editing}
                 onQuery={telescopeModal.setQuery}
                 inputRef={telescopeModal.inputRef}
@@ -1991,7 +1994,11 @@ export function VimexApp({
                 preview={telescopeModal.preview}
                 previewPath={telescopeModal.previewPath}
                 previewScrollRef={telescopeModal.previewScrollRef}
-                status={`${telescopeModal.choices.length} results`}
+                status={
+                  telescopeModal.choices.length
+                    ? `${telescopeModal.selected + 1} / ${telescopeModal.choices.length}`
+                    : "0 / 0"
+                }
               />
             ) : null}
             {jumpActive ? (

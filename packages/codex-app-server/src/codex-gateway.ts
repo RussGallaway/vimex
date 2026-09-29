@@ -14,16 +14,25 @@ import {
 } from "@vimex/conversation"
 import type { UserInput } from "./generated/v0_154_0/v2/UserInput"
 import { execFile } from "node:child_process"
-import { open, readdir, readFile } from "node:fs/promises"
+import { open, readdir, readFile, stat } from "node:fs/promises"
 import { resolve } from "node:path"
 import { promisify } from "node:util"
 
 const execFileAsync = promisify(execFile)
 const mentionPreviewLimit = 4096
+const mentionSearchFileLimit = 2 * 1024 * 1024
 const mentionResultLimit = 50
 
 async function workspaceFiles(root: string): Promise<string[]> {
   const files: string[] = []
+  const ignoredDirectories = new Set([
+    ".git",
+    "node_modules",
+    ".next",
+    "dist",
+    "build",
+    "coverage",
+  ])
   const visit = async (directory: string): Promise<void> => {
     let entries
     try {
@@ -31,17 +40,15 @@ async function workspaceFiles(root: string): Promise<string[]> {
     } catch {
       return
     }
-    await Promise.all(
-      entries.map(async (entry) => {
-        if (entry.name === ".git") return
-        const path = resolve(directory, entry.name)
-        if (entry.isDirectory()) await visit(path)
-        else if (entry.isFile()) files.push(path)
-      }),
-    )
+    for (const entry of entries) {
+      if (entry.isDirectory() && ignoredDirectories.has(entry.name)) continue
+      const path = resolve(directory, entry.name)
+      if (entry.isDirectory()) await visit(path)
+      else if (entry.isFile()) files.push(path)
+    }
   }
   await visit(resolve(root))
-  return files
+  return files.sort((left, right) => left.localeCompare(right))
 }
 
 async function readMentionPreview(path: string): Promise<string | undefined> {
@@ -398,12 +405,16 @@ export function createCodexGateways(
           if (matches.length >= mentionResultLimit) break
           let contents: string
           try {
+            if ((await stat(path)).size > mentionSearchFileLimit) continue
             contents = await readFile(path, "utf8")
           } catch {
             continue
           }
           const lines = contents.split("\n")
-          const lineNumber = lines.findIndex((line) => matcher.test(line))
+          const lineNumber = lines.findIndex((line) => {
+            matcher.lastIndex = 0
+            return matcher.test(line)
+          })
           if (lineNumber < 0) continue
           const relativePath = path.slice(resolve(cwd).length + 1)
           matches.push({

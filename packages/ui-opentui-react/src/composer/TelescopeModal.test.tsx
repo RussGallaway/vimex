@@ -4,7 +4,6 @@ import {
   type CodeRenderable,
   type InputRenderable,
   type ScrollBoxRenderable,
-  type TextareaRenderable,
 } from "@opentui/core"
 import { act, createRef } from "react"
 import { threadId, type MentionCandidate } from "@vimex/conversation"
@@ -69,6 +68,41 @@ test("Telescope preview uses the transcript syntax palette and preserves literal
   }
 })
 
+test("grep rows keep the relative path head beside the matching line", async () => {
+  const syntax = createEmberTideSyntax("nord")
+  const setup = await testRender(
+    <TelescopeModal
+      title="Grep"
+      query="TODO"
+      cwd="/work"
+      syntax={syntax}
+      choices={[
+        {
+          kind: "file",
+          name: "packages/ui/src/App.tsx",
+          path: "/work/packages/ui/src/App.tsx",
+          detail: "27: TODO remove this fallback",
+        },
+      ]}
+      selected={0}
+      marked={new Set()}
+      previewPath="/work/packages/ui/src/App.tsx"
+      preview="const value = 1\n"
+      status="1 / 1"
+    />,
+    { width: 120, height: 30 },
+  )
+  try {
+    await act(async () => setup.flush())
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("packages/ui/src/App.tsx")
+    expect(frame).toContain("27: T")
+  } finally {
+    await act(async () => setup.renderer.destroy())
+    syntax.destroy()
+  }
+})
+
 for (const [width, height] of [
   [80, 24],
   [200, 60],
@@ -103,29 +137,23 @@ for (const [width, height] of [
       const modal = find("telescope-picker")
       const results = find("telescope-results-pane")
       const pane = find("telescope-preview-pane")
-      const hint = find("telescope-hint")
       expect(pane.width).toBeGreaterThan(results.width)
       expect(pane.width / (pane.width + results.width)).toBeCloseTo(0.6, 1)
       expect(scroll.viewport.height).toBeGreaterThan(5)
       expect(scroll.scrollHeight).toBeGreaterThan(scroll.viewport.height)
-      expect(scroll.screenY + scroll.height).toBeLessThanOrEqual(hint.screenY)
-      expect(hint.screenY + hint.height).toBeLessThan(
-        modal.screenY + modal.height,
+      expect(scroll.screenY + scroll.height).toBeLessThanOrEqual(
+        pane.screenY + pane.height,
       )
       expect(modal.screenY + modal.height).toBeLessThan(height)
       const frame = setup.captureCharFrame().split("\n")
       expect(
         frame.filter((row) => row.includes("const value")).length,
       ).toBeGreaterThan(0)
-      expect(frame.slice(hint.screenY).join("\n")).not.toContain("const value")
       await act(async () => {
         scroll.scrollTo(scroll.scrollHeight)
         await setup.renderOnce()
       })
       expect(setup.captureCharFrame()).toContain("const value119")
-      expect(
-        setup.captureCharFrame().split("\n").slice(hint.screenY).join("\n"),
-      ).not.toContain("const value")
     } finally {
       await act(async () => setup.renderer.destroy())
       syntax.destroy()
@@ -204,7 +232,6 @@ test("leader-space preview scrolls by line and half-page without changing query,
     const find = (id: string) => setup.renderer.root.findDescendantById(id)!
     const scroll = find("telescope-preview") as ScrollBoxRenderable
     const input = find("telescope-query") as InputRenderable
-    const composer = find("composer") as TextareaRenderable
     expect(scroll).toBeDefined()
     expect(scroll.viewport.height).toBeGreaterThan(5)
     expect(scroll.scrollTop).toBe(0)
@@ -252,7 +279,6 @@ test("leader-space preview scrolls by line and half-page without changing query,
     await key("ARROW_DOWN")
     expect(scroll.scrollTop).toBe(0)
     expect(input.value).toBe(queryBeforeScroll)
-    expect(composer.plainText).toBe("Keep this draft")
     expect(draftChanges).toEqual([])
     expect(transcriptCommands).toEqual([])
   } finally {

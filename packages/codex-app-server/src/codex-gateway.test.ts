@@ -74,6 +74,31 @@ test("file mention results are not truncated before the picker ranks them", asyn
   await gateways.connection.close()
 })
 
+test("grep skips oversized files before reading them into memory", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "vimex-large-grep-"))
+  temporaryDirectories.push(cwd)
+  await writeFile(
+    join(cwd, "large.txt"),
+    `needle\n${"x".repeat(2 * 1024 * 1024)}`,
+  )
+  const small = join(cwd, "small.txt")
+  await writeFile(small, "needle\nsmall match\n")
+
+  const client = {
+    onEvent: () => () => {},
+    close: async () => {},
+  } as unknown as CodexAppServerClient
+  const gateways = createCodexGateways(cwd, "codex", () => client)
+  const results = await gateways.conversation.searchMentions!(
+    "needle",
+    "grep",
+    cwd,
+  )
+
+  expect(results.map((entry) => entry.path)).toEqual([small])
+  await gateways.connection.close()
+})
+
 test("thread listing excludes child sessions from relation metadata", async () => {
   const parent = threadId("parent")
   const child = threadId("child")

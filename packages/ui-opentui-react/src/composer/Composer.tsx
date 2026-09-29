@@ -51,7 +51,7 @@ export function Composer(props: {
   const nativeSubmitIntent = useRef<SubmissionIntent | undefined>(undefined)
   const submittedClearPending = useRef(false)
   const hasImageMarks = useRef(false)
-  const mentionSyntax = useRef(
+  const [mentionSyntax] = useState(() =>
     SyntaxStyle.fromStyles({
       default: { fg: emberTide.text },
       "vimex-mention-file": {
@@ -74,9 +74,9 @@ export function Composer(props: {
 
   useEffect(() => {
     const textarea = props.textareaRef.current
-    if (textarea) textarea.syntaxStyle = mentionSyntax.current
-    return () => mentionSyntax.current.destroy()
-  }, [props.textareaRef])
+    if (textarea) textarea.syntaxStyle = mentionSyntax
+    return () => mentionSyntax.destroy()
+  }, [mentionSyntax, props.textareaRef])
 
   useEffect(() => {
     committedMode.current = props.mode
@@ -201,7 +201,7 @@ export function Composer(props: {
             end: nativeEnd,
             virtual: true,
             typeId: types[mention.kind],
-            styleId: mentionSyntax.current.resolveStyleId(
+            styleId: mentionSyntax.resolveStyleId(
               `vimex-mention-${mention.kind}`,
             )!,
           })

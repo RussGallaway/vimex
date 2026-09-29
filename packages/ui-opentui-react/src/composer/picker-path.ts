@@ -48,21 +48,32 @@ export function formatPickerPath(
   path: string,
   maxWidth: number,
   query = "",
+  cwd?: string,
 ): string {
+  const displayPath = cwd ? relativePickerPath(path, cwd) : path
   const width = Number.isFinite(maxWidth)
     ? Math.max(0, Math.floor(maxWidth))
     : 0
   if (width === 0) return ""
-  if (cellWidth(path) <= width) return path
+  if (cellWidth(displayPath) <= width) return displayPath
 
   const ellipsisWidth = cellWidth(ELLIPSIS)
   if (width <= ellipsisWidth) return takePrefix([ELLIPSIS], width)
 
-  const pathGraphemes = graphemes(path)
+  const pathGraphemes = graphemes(displayPath)
   const remainingWidth = width - ellipsisWidth
   const hasQuery = query.trim().length > 0
 
   return hasQuery
     ? `${ELLIPSIS}${takeSuffix(pathGraphemes, remainingWidth)}`
     : `${takePrefix(pathGraphemes, remainingWidth)}${ELLIPSIS}`
+}
+
+function relativePickerPath(path: string, cwd: string): string {
+  const normalizedCwd = cwd.replace(/[\\/]+$/u, "")
+  const prefix = `${normalizedCwd}/`
+  if (path.startsWith(prefix)) return path.slice(prefix.length)
+  const windowsPrefix = `${normalizedCwd}\\`
+  if (path.startsWith(windowsPrefix)) return path.slice(windowsPrefix.length)
+  return path
 }

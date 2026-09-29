@@ -12,6 +12,17 @@ test("keeps the start of an unfiltered path and truncates its tail", () => {
   expect(Bun.stringWidth(result)).toBeLessThanOrEqual(20)
 })
 
+test("shows paths relative to the active workspace", () => {
+  expect(
+    formatPickerPath(
+      "/Users/russgallaway/CodeInbox/vimex/lua/telescope/pickers.lua",
+      80,
+      "",
+      "/Users/russgallaway/CodeInbox/vimex",
+    ),
+  ).toBe("lua/telescope/pickers.lua")
+})
+
 test("keeps the filename side of a filtered path and truncates its head", () => {
   const result = formatPickerPath(
     "/Users/russgallaway/CodeInbox/vimex/packages/ui-opentui-react/src/composer/session.ts",

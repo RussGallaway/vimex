@@ -68,6 +68,44 @@ export function createDemoGateway(): ConversationGateway &
       return () => listeners.delete(listener)
     },
     listThreads: async () => [summary],
+    async searchMentions(query, kind, cwd) {
+      if (kind === "grep") {
+        if (!query.trim()) return []
+        return [
+          {
+            kind: "file" as const,
+            name: "lua/telescope/pickers.lua",
+            path: `${cwd}/lua/telescope/pickers.lua`,
+            detail: "3: function pickers.new(opts)",
+            preview:
+              "local pickers = {}\n\nfunction pickers.new(opts)\n  return opts.finder, opts.sorter\nend\n\nreturn pickers\n",
+          },
+        ]
+      }
+      if (kind !== "file") return []
+      const candidates = [
+        {
+          kind: "file" as const,
+          name: "lua/telescope/pickers.lua",
+          path: `${cwd}/lua/telescope/pickers.lua`,
+          preview:
+            "local pickers = {}\n\nfunction pickers.new(opts)\n  return opts.finder, opts.sorter\nend\n\nreturn pickers\n",
+        },
+        {
+          kind: "file" as const,
+          name: "lua/telescope/finders.lua",
+          path: `${cwd}/lua/telescope/finders.lua`,
+          preview:
+            "local finders = {}\n\nfunction finders.new(source)\n  return source\nend\n\nreturn finders\n",
+        },
+      ]
+      const needle = query.trim().toLowerCase()
+      return needle
+        ? candidates.filter((candidate) =>
+            candidate.name.toLowerCase().includes(needle),
+          )
+        : candidates
+    },
     startThread: async () => snapshot(),
     resumeThread: async () => snapshot(),
     forkThread: async () => {
