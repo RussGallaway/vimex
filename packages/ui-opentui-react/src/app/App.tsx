@@ -1102,12 +1102,30 @@ export function VimexApp({
   )
 
   const beginVisual = useCallback(
-    (shape: "character" | "line") => {
+    (shape: "character" | "line" | "block") => {
       if (!transcript.cursor) dispatchMotion("last")
       controller.transcript({ type: "selection.begin", shape })
       controller.dispatchInteraction({ type: "mode.visual" })
     },
     [controller, dispatchMotion, transcript.cursor],
+  )
+  const positionCursor = useCallback(
+    (position: "top" | "center" | "bottom") => {
+      if (!transcript.cursor || !scrollRef.current) return
+      const height = scrollRef.current.viewport.height
+      const preferredScreenRow =
+        position === "top"
+          ? 0
+          : position === "bottom"
+            ? Math.max(0, height - 1)
+            : Math.max(0, Math.floor((height - 1) / 2))
+      controller.transcript({
+        type: "viewport.anchor",
+        point: transcript.cursor,
+        preferredScreenRow,
+      })
+    },
+    [controller, transcript.cursor],
   )
 
   const closeOverlay = useCallback(
@@ -1405,6 +1423,7 @@ export function VimexApp({
     submitComposer: (intent) => composerSubmitRef.current?.(intent),
     countedMotion,
     dispatchMotion,
+    positionCursor,
     runComposerKey,
     beginVisual,
     openOverlay,

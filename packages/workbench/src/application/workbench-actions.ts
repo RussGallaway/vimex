@@ -59,7 +59,8 @@ export type TranscriptAction =
   | { type: "jump.forward" }
   | { type: "mark.set"; name: string }
   | { type: "mark.jump"; name: string }
-  | { type: "selection.begin"; shape: "character" | "line" }
+  | { type: "selection.begin"; shape: "character" | "line" | "block" }
+  | { type: "selection.shape"; shape: "character" | "line" | "block" }
   | { type: "selection.clear" }
   | {
       type: "viewport.scroll"

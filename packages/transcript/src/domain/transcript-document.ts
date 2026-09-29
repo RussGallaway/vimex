@@ -40,7 +40,7 @@ export type ViewportAnchor =
 export interface TranscriptSelection {
   anchor: LogicalPoint
   head: LogicalPoint
-  shape: "character" | "line"
+  shape: "character" | "line" | "block"
 }
 export interface TranscriptState {
   search?: { query: string; direction: "forward" | "backward" }
@@ -1574,6 +1574,7 @@ export type TranscriptCommand =
   | { type: "viewport.anchor"; point: LogicalPoint; preferredScreenRow: number }
   | { type: "tail.attach" }
   | { type: "selection.begin"; shape: TranscriptSelection["shape"] }
+  | { type: "selection.shape"; shape: TranscriptSelection["shape"] }
   | { type: "selection.swap" }
   | { type: "selection.clear" }
   | { type: "fold.set"; itemId: ItemId; folded: boolean }

@@ -180,7 +180,7 @@ export type WorkbenchCommand =
       type: "transcript.yank"
       threadId: ThreadId
       text: string
-      shape: "character" | "line"
+      shape: "character" | "line" | "block"
     }
   | {
       type: "url.picker"

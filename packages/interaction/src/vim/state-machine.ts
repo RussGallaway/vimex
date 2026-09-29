@@ -2,7 +2,7 @@ import type { Overlay, Surface } from "../focus/focus-controller"
 import type { VimMode } from "./mode"
 export interface VimRegister {
   text: string
-  shape: "character" | "line"
+  shape: "character" | "line" | "block"
 }
 export interface InteractionState {
   mode: VimMode

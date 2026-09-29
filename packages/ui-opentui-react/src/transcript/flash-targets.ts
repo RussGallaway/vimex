@@ -30,7 +30,6 @@ export function flashTargets(
   const visible = (p: MeasuredPoint | undefined): p is MeasuredPoint =>
     Boolean(
       p &&
-      !p.hidden &&
       p.screenX >= viewport.screenX &&
       p.screenX < viewport.screenX + viewport.width &&
       p.screenY >= viewport.screenY &&
@@ -40,14 +39,22 @@ export function flashTargets(
   const continuations = new Set<string>()
   const cells = new Set<string>()
   if (!needle.length) return { matches, labels: matches, pages: 1 }
-  const index = visibleMeasuredPoints(layout, viewport)
-    .filter((point) => !point.hidden)
-    .sort((a, b) => a.screenY - b.screenY || a.screenX - b.screenX)
+  // Keep the folded block's synthetic offset-zero point. It is the jump
+  // target that lets Flash reveal a collapsed block; other hidden fallback
+  // points are rejected below.
+  const index = [...visibleMeasuredPoints(layout, viewport)].sort(
+    (a, b) => a.screenY - b.screenY || a.screenX - b.screenX,
+  )
   for (const raw of index) {
     const point = raw
     if (!visible(point)) continue
     const projection = state.projectionById[raw.itemId]
     if (!projection) continue
+    // Folded tool and activity blocks expose a single hidden logical point at
+    // their visible header. Label that point so Flash can reveal the block on
+    // jump instead of making its output unreachable from the current page.
+    if (point.hidden && (!state.folded[raw.itemId] || raw.graphemeOffset !== 0))
+      continue
     let text = textCache.get(projection)
     if (!text) {
       text = graphemes(projection.plain)

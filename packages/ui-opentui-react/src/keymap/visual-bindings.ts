@@ -15,6 +15,15 @@ export function visualBindings(ctx: VimBindingContext): UiBinding[] {
         ctx.interaction.surface === "transcript" &&
         ctx.controller.transcript({ type: "selection.swap" }),
     },
+    {
+      key: "ctrl+v",
+      cmd: () =>
+        ctx.interaction.surface === "transcript" &&
+        ctx.controller.transcript({
+          type: "selection.shape",
+          shape: "block",
+        }),
+    },
     ...(ctx.interaction.surface === "transcript"
       ? [
           {

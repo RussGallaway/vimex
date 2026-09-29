@@ -25,8 +25,9 @@ export interface VimBindingContext {
   submitComposer(intent: SubmissionIntent): void
   countedMotion(motion: Motion): void
   dispatchMotion(motion: Motion): void
+  positionCursor(position: "top" | "center" | "bottom"): void
   runComposerKey(key: string): void
-  beginVisual(shape: "character" | "line"): void
+  beginVisual(shape: "character" | "line" | "block"): void
   openOverlay(
     overlay:
       | "sessions"

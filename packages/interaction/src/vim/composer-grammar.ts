@@ -37,8 +37,28 @@ export type ComposerVimAction =
   | { type: "clear-selection" }
   | { type: "yank" }
   | { type: "delete-selection"; enterInsert?: boolean }
+  | {
+      type: "text-object"
+      operator: "delete" | "change"
+      object: ComposerTextObject
+      count: number
+    }
   | { type: "submit" }
   | { type: "retry" }
+
+export type ComposerTextObject =
+  | "inner-word"
+  | "a-word"
+  | "inner-WORD"
+  | "a-WORD"
+  | "inner-quote"
+  | "a-quote"
+  | "inner-paren"
+  | "a-paren"
+  | "inner-bracket"
+  | "a-bracket"
+  | "inner-brace"
+  | "a-brace"
 
 export interface ComposerKeyResolution {
   state: InteractionState
@@ -112,7 +132,7 @@ function prefixed(
     }
     return resolved(state, [{ type: "keys.clear" }, { type: "count.clear" }])
   }
-  if (state.pendingKeys === "d") {
+  if (state.pendingKeys === "d" || state.pendingKeys === "c") {
     if (key === "d" && !select) {
       return resolved(
         state,
@@ -124,6 +144,51 @@ function prefixed(
         },
       )
     }
+    if (key === "i" || key === "a")
+      return resolved(state, [
+        { type: "keys.pending", value: `${state.pendingKeys}${key}` },
+      ])
+    return resolved(state, [{ type: "keys.clear" }, { type: "count.clear" }])
+  }
+  if (
+    state.pendingKeys === "di" ||
+    state.pendingKeys === "da" ||
+    state.pendingKeys === "ci" ||
+    state.pendingKeys === "ca"
+  ) {
+    const object = (
+      {
+        w: state.pendingKeys.endsWith("i") ? "inner-word" : "a-word",
+        W: state.pendingKeys.endsWith("i") ? "inner-WORD" : "a-WORD",
+        '"': state.pendingKeys.endsWith("i") ? "inner-quote" : "a-quote",
+        "'": state.pendingKeys.endsWith("i") ? "inner-quote" : "a-quote",
+        b: state.pendingKeys.endsWith("i") ? "inner-paren" : "a-paren",
+        ")": state.pendingKeys.endsWith("i") ? "inner-paren" : "a-paren",
+        "(": state.pendingKeys.endsWith("i") ? "inner-paren" : "a-paren",
+        B: state.pendingKeys.endsWith("i") ? "inner-brace" : "a-brace",
+        "}": state.pendingKeys.endsWith("i") ? "inner-brace" : "a-brace",
+        "{": state.pendingKeys.endsWith("i") ? "inner-brace" : "a-brace",
+        "]": state.pendingKeys.endsWith("i") ? "inner-bracket" : "a-bracket",
+        "[": state.pendingKeys.endsWith("i") ? "inner-bracket" : "a-bracket",
+      } as const
+    )[key]
+    if (object)
+      return resolved(
+        state,
+        [
+          { type: "keys.clear" },
+          { type: "count.clear" },
+          ...(state.pendingKeys.startsWith("c")
+            ? [{ type: "mode.insert" as const }]
+            : []),
+        ],
+        {
+          type: "text-object",
+          operator: state.pendingKeys.startsWith("c") ? "change" : "delete",
+          object,
+          count,
+        },
+      )
     return resolved(state, [{ type: "keys.clear" }, { type: "count.clear" }])
   }
   return undefined
@@ -157,7 +222,7 @@ export function resolveComposerKey(
     if (pending) return pending
     const counted = countCommand(state, key)
     if (counted) return counted
-    if (key === "g" || key === "d")
+    if (key === "g" || key === "d" || key === "c")
       return resolved(state, [{ type: "keys.pending", value: key }])
     const motion = resolveMotion(state, key, false)
     if (motion) return motion

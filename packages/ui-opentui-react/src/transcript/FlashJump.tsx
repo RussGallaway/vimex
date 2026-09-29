@@ -82,7 +82,9 @@ export function FlashJump(props: {
       props.controller.transcript({
         type: "jump",
         target: { itemId: point.itemId, graphemeOffset: point.graphemeOffset },
-        preferredScreenRow: point.screenY - scroll.viewport.screenY,
+        preferredScreenRow: target.hidden
+          ? 0
+          : point.screenY - scroll.viewport.screenY,
         extend: props.extend,
         origin,
         originPreferredScreenRow: origin

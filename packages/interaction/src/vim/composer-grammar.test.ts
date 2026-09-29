@@ -138,6 +138,39 @@ describe("composer Vim grammar", () => {
     })
   })
 
+  test("resolves change and delete text objects", () => {
+    let state = composerNormal()
+    state = resolveComposerKey(state, "c").state
+    state = resolveComposerKey(state, "i").state
+    expect(resolveComposerKey(state, "w")).toMatchObject({
+      action: {
+        type: "text-object",
+        operator: "change",
+        object: "inner-word",
+        count: 1,
+      },
+      state: { mode: "insert", pendingKeys: "" },
+    })
+    state = composerNormal()
+    state = resolveComposerKey(state, "d").state
+    state = resolveComposerKey(state, "i").state
+    expect(resolveComposerKey(state, "b").action).toEqual({
+      type: "text-object",
+      operator: "delete",
+      object: "inner-paren",
+      count: 1,
+    })
+    state = composerNormal()
+    state = resolveComposerKey(state, "c").state
+    state = resolveComposerKey(state, "i").state
+    expect(resolveComposerKey(state, '"').action).toEqual({
+      type: "text-object",
+      operator: "change",
+      object: "inner-quote",
+      count: 1,
+    })
+  })
+
   test("owns visual selection motion, yank, and escape transitions", () => {
     const visual = resolveComposerKey(composerNormal(), "v")
     expect(visual.action).toEqual({ type: "begin-visual" })

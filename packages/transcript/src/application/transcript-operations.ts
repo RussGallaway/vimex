@@ -405,6 +405,12 @@ export function selectedText(
           : Math.max(0, parts.length - 1)
       if (state.selection?.shape === "line")
         [from, to] = lineRange(parts, from, to)
+      if (state.selection?.shape === "block") {
+        const left = Math.min(start.graphemeOffset, end.graphemeOffset)
+        const right = Math.max(start.graphemeOffset, end.graphemeOffset)
+        from = index === 0 ? Math.max(from, left) : left
+        to = index === ids.length - 1 ? Math.min(to, right) : right
+      }
       return projectedSlice(projection, from, to, format)
     })
     .join("\n")
@@ -434,6 +440,18 @@ export function selectedGraphemeCount(
     let to = side === "end" ? point.graphemeOffset : Math.max(0, length - 1)
     if (state.selection?.shape === "line" && projection)
       [from, to] = lineRange(graphemes(projection.plain), from, to)
+    if (state.selection?.shape === "block") {
+      const left = Math.min(
+        state.selection.anchor.graphemeOffset,
+        state.selection.head.graphemeOffset,
+      )
+      const right = Math.max(
+        state.selection.anchor.graphemeOffset,
+        state.selection.head.graphemeOffset,
+      )
+      from = Math.max(from, left)
+      to = Math.min(to, right)
+    }
     const clampedFrom = Math.max(0, Math.min(length, from))
     const clampedTo = Math.max(clampedFrom, Math.min(length, to + 1))
     return [clampedFrom, clampedTo]
@@ -445,6 +463,10 @@ export function selectedGraphemeCount(
     let to = end.graphemeOffset
     if (state.selection.shape === "line" && projection)
       [from, to] = lineRange(graphemes(projection.plain), from, to)
+    if (state.selection.shape === "block") {
+      from = Math.min(start.graphemeOffset, end.graphemeOffset)
+      to = Math.max(start.graphemeOffset, end.graphemeOffset)
+    }
     return Math.max(
       0,
       Math.min(length, to + 1) - Math.max(0, Math.min(length, from)),
@@ -452,6 +474,16 @@ export function selectedGraphemeCount(
   }
   const [startFrom, startTo] = boundary(start, "start")
   const [endFrom, endTo] = boundary(end, "end")
+  if (state.selection.shape === "block") {
+    const left = Math.min(start.graphemeOffset, end.graphemeOffset)
+    const right = Math.max(start.graphemeOffset, end.graphemeOffset)
+    return state.order
+      .slice(startIndex, endIndex + 1)
+      .reduce((total, itemId) => {
+        const length = state.projectionById[itemId]?.sourceSpans.length ?? 0
+        return total + Math.max(0, Math.min(length - 1, right) - left + 1)
+      }, 0)
+  }
   const middle = transcriptTextLengthRange(
     state,
     startIndex + 1,
@@ -536,6 +568,10 @@ export function reduceTranscript(
       return attachTail(state)
     case "selection.begin":
       return beginSelection(state, command.shape)
+    case "selection.shape":
+      return state.selection
+        ? { ...state, selection: { ...state.selection, shape: command.shape } }
+        : state
     case "selection.swap":
       return swapSelection(state)
     case "selection.clear":

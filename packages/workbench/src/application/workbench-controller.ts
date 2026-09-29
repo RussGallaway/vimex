@@ -888,8 +888,7 @@ export class VimexController
     if (command.type === "copy") {
       const text = selectedText(transcript, command.format)
       if (text === undefined) return
-      const shape =
-        transcript.selection?.shape === "line" ? "line" : "character"
+      const shape = transcript.selection?.shape ?? "character"
       this.dispatch({ type: "transcript.yank", threadId, text, shape })
       return
     }
@@ -2895,6 +2894,7 @@ export class VimexController
         break
       }
       case "selection.begin":
+      case "selection.shape":
         this.dispatch({ type: "transcript.command", command })
         break
       case "selection.clear":

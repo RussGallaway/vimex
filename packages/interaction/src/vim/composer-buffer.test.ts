@@ -137,6 +137,33 @@ describe("pure composer Vim buffer", () => {
     expect(c.buffer).toEqual({ text: "one ", cursorOffset: 4 })
   })
 
+  test("changes and deletes inner words and delimiters", () => {
+    const word = applyKeys("say hello world", ["c", "i", "w"])
+    expect(word.buffer).toEqual({ text: "say hello ", cursorOffset: 10 })
+    expect(word.register).toEqual({ text: "world", shape: "character" })
+    const quote = apply(
+      { text: 'say "hello" now', cursorOffset: 6 },
+      {
+        type: "text-object",
+        operator: "change",
+        object: "inner-quote",
+        count: 1,
+      },
+    )
+    expect(quote.buffer).toEqual({ text: 'say "" now', cursorOffset: 5 })
+    const paren = apply(
+      { text: "call(foo) now", cursorOffset: 6 },
+      {
+        type: "text-object",
+        operator: "delete",
+        object: "inner-paren",
+        count: 1,
+      },
+    )
+    expect(paren.buffer.text).toBe("call() now")
+    expect(paren.register.text).toBe("foo")
+  })
+
   test("pastes characterwise and linewise registers with Vim placement", () => {
     const character: VimRegister = { text: "X", shape: "character" }
     expect(

@@ -759,6 +759,19 @@ export function selectedRangeForItem(
       inclusiveEnd += 1
     to = Math.min(parts.length, inclusiveEnd + 1)
   }
+  if (state.selection?.shape === "block") {
+    const left = Math.min(
+      state.selection.anchor.graphemeOffset,
+      state.selection.head.graphemeOffset,
+    )
+    const right = Math.max(
+      state.selection.anchor.graphemeOffset,
+      state.selection.head.graphemeOffset,
+    )
+    from = Math.max(from, left)
+    to = Math.min(to, right + 1)
+    if (to < from) to = from
+  }
   return { from, to }
 }
 

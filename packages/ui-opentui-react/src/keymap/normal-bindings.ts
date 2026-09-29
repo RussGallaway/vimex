@@ -5,6 +5,24 @@ import { transcriptBindings } from "./transcript-bindings"
 
 export function normalBindings(ctx: VimBindingContext): UiBinding[] {
   return [
+    ...(ctx.interaction.surface === "transcript"
+      ? [
+          { key: "zz", cmd: () => ctx.positionCursor("center") },
+          { key: "zt", cmd: () => ctx.positionCursor("top") },
+          { key: "zb", cmd: () => ctx.positionCursor("bottom") },
+          { key: "ctrl+v", cmd: () => ctx.beginVisual("block") },
+          {
+            key: "p",
+            cmd: () => {
+              ctx.controller.dispatchInteraction({
+                type: "focus.set",
+                surface: "composer",
+              })
+              ctx.runComposerKey("p")
+            },
+          },
+        ]
+      : []),
     { key: "<leader>e", cmd: () => ctx.toggleComposer() },
     {
       key: "t",

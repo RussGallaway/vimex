@@ -1,4 +1,8 @@
-import type { ComposerMotion, ComposerVimAction } from "./composer-grammar"
+import type {
+  ComposerMotion,
+  ComposerTextObject,
+  ComposerVimAction,
+} from "./composer-grammar"
 import type { VimRegister } from "./state-machine"
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" })
@@ -382,7 +386,7 @@ function paste(
   if (!register.text) return buffer
   const parts = split(buffer.text)
   const cursor = clamp(buffer.cursorOffset, 0, parts.length)
-  if (register.shape === "character") {
+  if (register.shape === "character" || register.shape === "block") {
     const inserted = split(register.text.repeat(Math.max(1, count)))
     const position =
       placement === "after"
@@ -468,6 +472,90 @@ function deleteSelection(
   }
 }
 
+function textObjectRange(
+  parts: readonly string[],
+  cursor: number,
+  object: ComposerTextObject,
+): { from: number; to: number } | undefined {
+  const inner = object.startsWith("inner-")
+  const kind = object.replace(/^(inner|a)-/, "")
+  const bounded = clamp(cursor, 0, Math.max(0, parts.length - 1))
+  if (kind === "word" || kind === "WORD") {
+    const big = kind === "WORD"
+    const isSpace = (value: string | undefined) => !value || /^\s$/u.test(value)
+    const isWord = (value: string | undefined) =>
+      Boolean(value) && (big || /^[\p{L}\p{M}\p{N}_]$/u.test(value!))
+    let from = bounded
+    let to = bounded + 1
+    if (isSpace(parts[bounded])) {
+      while (from > 0 && isSpace(parts[from - 1])) from--
+      while (to < parts.length && isSpace(parts[to])) to++
+    } else {
+      while (from > 0 && isWord(parts[from - 1]) === isWord(parts[bounded]))
+        from--
+      while (to < parts.length && isWord(parts[to]) === isWord(parts[bounded]))
+        to++
+    }
+    if (!inner) {
+      while (to < parts.length && isSpace(parts[to])) to++
+      if (from === to) while (from > 0 && isSpace(parts[from - 1])) from--
+    }
+    return { from, to }
+  }
+  const pairs: Record<string, [string, string]> = {
+    quote: ['"', '"'],
+    paren: ["(", ")"],
+    bracket: ["[", "]"],
+    brace: ["{", "}"],
+  }
+  const pair = pairs[kind]
+  if (!pair) return undefined
+  let open = -1
+  let close = -1
+  if (pair[0] === pair[1]) {
+    for (let index = bounded; index >= 0; index--)
+      if (
+        parts[index] === pair[0] &&
+        (index === 0 || parts[index - 1] !== "\\")
+      ) {
+        open = index
+        break
+      }
+    if (open < 0) return undefined
+    for (let index = open + 1; index < parts.length; index++)
+      if (parts[index] === pair[1] && parts[index - 1] !== "\\") {
+        close = index
+        break
+      }
+  } else {
+    let depth = 0
+    for (let index = bounded; index >= 0; index--) {
+      if (parts[index] === pair[1]) depth++
+      else if (parts[index] === pair[0]) {
+        if (depth === 0) {
+          open = index
+          break
+        }
+        depth--
+      }
+    }
+    if (open < 0) return undefined
+    depth = 0
+    for (let index = open + 1; index < parts.length; index++) {
+      if (parts[index] === pair[0]) depth++
+      else if (parts[index] === pair[1]) {
+        if (depth === 0) {
+          close = index
+          break
+        }
+        depth--
+      }
+    }
+  }
+  if (close <= open) return undefined
+  return { from: inner ? open + 1 : open, to: inner ? close : close + 1 }
+}
+
 /** Applies semantic Vim behavior to a grapheme-indexed composer buffer. */
 export function applyComposerVimAction(
   buffer: ComposerBuffer,
@@ -508,6 +596,23 @@ export function applyComposerVimAction(
   if (action.type === "yank") return yank(buffer, register)
   if (action.type === "delete-selection")
     return deleteSelection(buffer, register, action.enterInsert ?? false)
+  if (action.type === "text-object") {
+    const parts = split(buffer.text)
+    const range = textObjectRange(parts, buffer.cursorOffset, action.object)
+    if (!range || range.from === range.to) return { buffer, register }
+    const text = parts.slice(range.from, range.to).join("")
+    const next = replace(parts, range.from, range.to, [])
+    return {
+      buffer: {
+        text: next.join(""),
+        cursorOffset:
+          action.operator === "change"
+            ? Math.min(range.from, next.length)
+            : normalCursor(next, range.from),
+      },
+      register: { text, shape: "character" },
+    }
+  }
   if (action.type === "submit")
     return { buffer, register, effect: { type: "submit" } }
   if (action.type === "retry")
