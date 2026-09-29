@@ -253,7 +253,6 @@ export function VimexApp({
       ),
     [settings.reducedColor, settings.syntaxTheme, settings.theme],
   )
-  useEffect(() => () => syntax.destroy(), [syntax])
   const scrollRef = useRef<ScrollBoxRenderable>(null)
   const queueDetailScrollRef = useRef<ScrollBoxRenderable>(null)
   const textareaRef = useRef<TextareaRenderable>(null)

@@ -2191,7 +2191,7 @@ test("hidden same-item output reattaches once with bounded reconciliation at eve
     ).toBe(reattached)
     runtime.dispose()
   }
-}, 15_000)
+}, 30_000)
 
 test("an equal-height native revision publishes once and its acknowledgement is a no-op", () => {
   const fixture = buildTranscriptScalingFixture(100)

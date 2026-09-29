@@ -74,7 +74,7 @@ test("light and dark themes repaint existing user and tool panels on a live swit
       />
     )
   }
-  const h = await testRender(<Harness />, { width: 80, height: 18 })
+  const h = await testRender(<Harness />, { width: 80, height: 20 })
   try {
     const spanOf = (token: string) =>
       h
