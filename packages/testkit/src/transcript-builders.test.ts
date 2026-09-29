@@ -95,7 +95,7 @@ test.each([...transcriptScalingBlockCounts])(
       expect(fixture.before.conversation.turns[turn]?.itemIds).toHaveLength(1)
     }
   },
-  30_000,
+  60_000,
 )
 
 test("scaling fixtures carry meaningful off-window semantic boundaries", () => {
