@@ -2,6 +2,7 @@ import { recordAgentRelationship } from "./agent-relationships"
 import { observeCompaction, observeCompactionTurn } from "./compaction"
 import {
   attachImage,
+  attachMention,
   acknowledgeOutgoing,
   failOutgoing,
   retryOutgoing,
@@ -358,6 +359,21 @@ export function transitionWorkbench(
           )
         : done(state)
     }
+    case "composer.mention.attach": {
+      const id = targetThread(state, command.threadId)
+      return id
+        ? done(
+            updateWorkspace(state, id, (workspace) => ({
+              ...workspace,
+              composer: attachMention(
+                workspace.composer,
+                command.mention,
+                command.cursorOffset,
+              ),
+            })),
+          )
+        : done(state)
+    }
     case "composer.submit": {
       const id = targetThread(state, command.threadId)
       const workspace = id ? state.workspaces[id] : undefined
@@ -396,6 +412,21 @@ export function transitionWorkbench(
       if (!outgoing || outgoing.status === "queued") return done(next)
       const effect = submissionEffect(id, composer, outgoing.id, activeTurnId)
       return effect ? done(next, effect) : done(next)
+    }
+    case "composer.flush": {
+      const workspace = state.workspaces[command.threadId]
+      if (!workspace || state.provisionalThreadIds.includes(command.threadId))
+        return done(state)
+      const scheduled = scheduleQueued(
+        workspace.composer,
+        command.threadId,
+        workspace.conversation.activeTurnId,
+      )
+      const next = updateWorkspace(state, command.threadId, (current) => ({
+        ...current,
+        composer: scheduled.composer,
+      }))
+      return scheduled.effect ? done(next, scheduled.effect) : done(next)
     }
     case "composer.ack":
     case "composer.fail": {

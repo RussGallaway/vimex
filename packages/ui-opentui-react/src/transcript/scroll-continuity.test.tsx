@@ -468,7 +468,7 @@ for (const expanded of [false, true])
     }
   }, 30000)
 
-test("odd-height half-page bursts preserve native per-key rounding", async () => {
+test("half-page bursts preserve native floor-based movement", async () => {
   async function run(dense: boolean) {
     const h = await wheelHarness(100, false, dense)
     try {
@@ -477,10 +477,11 @@ test("odd-height half-page bursts preserve native per-key rounding", async () =>
       })
       await settle(h)
       const scroll = scrollbox(h)
-      expect(scroll.viewport.height % 2).toBe(1)
+      const halfPage = Math.floor(scroll.viewport.height / 2)
+      expect(halfPage).toBeGreaterThan(0)
       let expectedTop = scroll.scrollTop
       for (let i = 0; i < 8; i++)
-        expectedTop = Math.round(expectedTop - scroll.viewport.height / 2)
+        expectedTop = Math.max(0, expectedTop - halfPage)
       const displacement = scroll.scrollTop - expectedTop
       return await recordPaints(h, () => {
         if (dense)

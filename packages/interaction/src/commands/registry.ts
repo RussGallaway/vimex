@@ -40,6 +40,10 @@ export const commandNames = [
   "goal",
   "performance",
   "diff",
+  "files",
+  "skills",
+  "plugins",
+  "grep",
 ] as const
 export type CommandName = (typeof commandNames)[number]
 const aliases: Readonly<Record<string, CommandName>> = {
@@ -100,6 +104,10 @@ export const commandDescriptions: Readonly<Record<CommandName, string>> = {
   side: "Open a forked side chat; close hides it, quit retires it",
   performance: "Export a local performance trace",
   diff: "Toggle diff layout between stacked and side by side",
+  files: "Search files to attach to the composer",
+  skills: "Search skills to attach to the composer",
+  plugins: "Search plugins to attach to the composer",
+  grep: "Search file contents to attach to the composer",
 }
 
 export interface CommandDescriptor {
@@ -185,6 +193,10 @@ const argumentDescriptors: Partial<
     arguments: "choice",
     choices: ["on", "off"],
   },
+  files: { usage: "files [query]", arguments: "literal" },
+  skills: { usage: "skills [query]", arguments: "literal" },
+  plugins: { usage: "plugins [query]", arguments: "literal" },
+  grep: { usage: "grep [query]", arguments: "literal" },
 }
 export const commandDescriptors = Object.fromEntries(
   commandNames.map((name) => [

@@ -25,6 +25,53 @@ export function normalBindings(ctx: VimBindingContext): UiBinding[] {
       : []),
     { key: "<leader>e", cmd: () => ctx.toggleComposer() },
     {
+      key: "<leader><leader>",
+      cmd: () => {
+        if (ctx.openMentionPicker) {
+          ctx.openMentionPicker("file")
+          return
+        }
+        ctx.controller.dispatchInteraction({
+          type: "focus.set",
+          surface: "composer",
+        })
+        const segments = [
+          ...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(
+            ctx.composer.text,
+          ),
+        ]
+        const cursor = Math.max(
+          0,
+          Math.min(ctx.composer.cursorOffset, segments.length),
+        )
+        const before = segments
+          .slice(0, cursor)
+          .map((part) => part.segment)
+          .join("")
+        const after = segments
+          .slice(cursor)
+          .map((part) => part.segment)
+          .join("")
+        ctx.controller.changeDraft(`${before}@${after}`, cursor + 1)
+        ctx.controller.dispatchInteraction({ type: "mode.insert" })
+      },
+    },
+    {
+      key: "<leader>/",
+      cmd: () => {
+        if (ctx.openMentionPicker) {
+          ctx.openMentionPicker("grep")
+          return
+        }
+        ctx.controller.dispatchInteraction({
+          type: "focus.set",
+          surface: "composer",
+        })
+        ctx.controller.changeDraft("/grep ", 6)
+        ctx.controller.dispatchInteraction({ type: "mode.insert" })
+      },
+    },
+    {
       key: "t",
       cmd: () => {
         ctx.scrollRef.current?.scrollTo(Number.MAX_SAFE_INTEGER)

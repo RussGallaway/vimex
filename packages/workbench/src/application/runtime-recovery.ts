@@ -5,6 +5,7 @@ const uncertain =
 
 /** Invalidates transport-scoped state without replaying any uncertain request. */
 export function invalidateRuntimeState(state: WorkbenchState): WorkbenchState {
+  const provisionalIds = new Set(state.provisionalThreadIds.map(String))
   return {
     ...state,
     backgroundTerminals: { loading: false, rows: [] },
@@ -19,7 +20,7 @@ export function invalidateRuntimeState(state: WorkbenchState): WorkbenchState {
           composer: {
             ...workspace.composer,
             outbox: workspace.composer.outbox.map((message) =>
-              message.status === "failed"
+              provisionalIds.has(id) || message.status === "failed"
                 ? message
                 : {
                     ...message,

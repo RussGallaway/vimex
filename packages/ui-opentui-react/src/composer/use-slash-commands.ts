@@ -29,6 +29,7 @@ export function useSlashCommands(options: {
     interaction.surface === "composer" &&
     !interaction.overlay &&
     options.text.startsWith("/") &&
+    !/^\/(?:files|skills|plugins|grep)(?:\s|$)/u.test(options.text) &&
     !options.text.startsWith("//") &&
     !options.text.includes("\n")
   const choices = slashCommandChoices(options.text, options.completionOptions)

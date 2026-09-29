@@ -1,0 +1,281 @@
+import type { MentionCandidate } from "@vimex/conversation"
+import {
+  pathToFiletype,
+  type InputRenderable,
+  type ScrollBoxRenderable,
+  type SyntaxStyle,
+} from "@opentui/core"
+import { useEffect, useRef, type RefObject } from "react"
+import { emberTide } from "../theme"
+import { usePaneGeometry } from "../side-chat/pane-geometry"
+import { formatPickerPath } from "./picker-path"
+
+/** Centered Telescope-style picker surface for file and grep results.
+ *
+ * The existing MentionDrawer remains the lightweight inline `@` experience.
+ * This surface is intended for explicit picker launches (leader mappings) and
+ * keeps the prompt, result list, preview, and action hint visually grouped.
+ */
+export function TelescopeModal(props: {
+  title: string
+  query: string
+  editing?: boolean
+  onQuery?(value: string): void
+  inputRef?: RefObject<InputRenderable | null>
+  syntax: SyntaxStyle
+  previewPath?: string
+  previewScrollRef?: RefObject<ScrollBoxRenderable | null>
+  choices: readonly MentionCandidate[]
+  selected: number
+  marked: ReadonlySet<string>
+  preview?: string
+  status?: string
+  hint?: string
+}) {
+  const resultsScrollRef = useRef<ScrollBoxRenderable>(null)
+  const dimensions = usePaneGeometry()
+  useEffect(() => {
+    resultsScrollRef.current?.scrollChildIntoView(
+      `telescope-result-${props.selected}`,
+    )
+  }, [props.selected, props.choices, dimensions.height])
+  const pickerWidth = Math.max(60, Math.floor(dimensions.width * 0.94))
+  const resultsWidth =
+    props.preview !== undefined
+      ? Math.floor((pickerWidth - 2) * 0.4)
+      : pickerWidth - 2
+  const showDetail = props.title === "Grep"
+  const detailWidth = showDetail ? Math.floor(resultsWidth * 0.35) : 0
+  const pathWidth = Math.max(8, resultsWidth - detailWidth - 6)
+  return (
+    <box
+      id="telescope-modal"
+      position="absolute"
+      top={0}
+      left={0}
+      right={0}
+      bottom={0}
+      alignItems="center"
+      justifyContent="center"
+      zIndex={45}
+      backgroundColor={`${emberTide.background}d8`}
+    >
+      <box
+        id="telescope-picker"
+        width="94%"
+        minWidth={60}
+        height="82%"
+        minHeight={15}
+        border
+        borderStyle="single"
+        borderColor={emberTide.blue}
+        backgroundColor={emberTide.backgroundRaised}
+      >
+        <box
+          flexGrow={1}
+          flexBasis={0}
+          flexDirection="row"
+          minHeight={0}
+          overflow="hidden"
+        >
+          <box
+            id="telescope-results-pane"
+            width={props.preview !== undefined ? "40%" : "100%"}
+            flexShrink={0}
+            minWidth={0}
+            flexDirection="column"
+            border={props.preview !== undefined ? ["right"] : undefined}
+            borderColor={emberTide.borderMuted}
+            title=" Results "
+            titleAlignment="center"
+          >
+            <scrollbox
+              id="telescope-results"
+              ref={resultsScrollRef}
+              flexGrow={1}
+              minHeight={0}
+              contentOptions={{ paddingX: 1 }}
+              verticalScrollbarOptions={{ visible: false }}
+            >
+              {props.choices.length ? (
+                props.choices.map((choice, index) => {
+                  const active = index === props.selected
+                  const marked = props.marked.has(choice.path)
+                  return (
+                    <box
+                      id={`telescope-result-${index}`}
+                      key={`${choice.kind}:${choice.path}:${index}`}
+                      height={1}
+                      flexShrink={0}
+                      flexDirection="row"
+                      gap={1}
+                      backgroundColor={
+                        active
+                          ? emberTide.selection
+                          : emberTide.backgroundRaised
+                      }
+                    >
+                      <text
+                        width={2}
+                        fg={active ? emberTide.selectionText : emberTide.ember}
+                      >
+                        {marked ? "✓" : active ? "▸" : " "}
+                      </text>
+                      <text
+                        flexGrow={1}
+                        minWidth={0}
+                        wrapMode="none"
+                        truncate
+                        fg={active ? emberTide.selectionText : emberTide.text}
+                      >
+                        {formatPickerPath(choice.name, pathWidth, props.query)}
+                      </text>
+                      {showDetail ? (
+                        <text
+                          width="35%"
+                          minWidth={0}
+                          wrapMode="none"
+                          truncate
+                          fg={
+                            active
+                              ? emberTide.selectionText
+                              : emberTide.textMuted
+                          }
+                        >
+                          {choice.detail ?? choice.path}
+                        </text>
+                      ) : null}
+                    </box>
+                  )
+                })
+              ) : (
+                <text fg={emberTide.textMuted}>No matches</text>
+              )}
+            </scrollbox>
+            <box
+              height={3}
+              flexShrink={0}
+              border
+              borderStyle="single"
+              borderColor={emberTide.borderMuted}
+              paddingX={1}
+              title={` ${props.title} `}
+              titleAlignment="center"
+            >
+              <box height={1} flexDirection="row">
+                <text fg={emberTide.blueBright} width={2}>
+                  &gt;
+                </text>
+                {props.onQuery ? (
+                  <input
+                    id="telescope-query"
+                    ref={props.inputRef}
+                    focused={props.editing ?? true}
+                    flexGrow={1}
+                    value={props.query}
+                    onInput={props.onQuery}
+                    onKeyDown={(event) => {
+                      if (!event.ctrl) return
+                      const preview = props.previewScrollRef?.current
+                      if (!preview) return
+                      switch (event.name.toLowerCase()) {
+                        case "e":
+                          preview.scrollBy(1, "step")
+                          event.preventDefault()
+                          break
+                        case "y":
+                          preview.scrollBy(-1, "step")
+                          event.preventDefault()
+                          break
+                        case "d":
+                          preview.scrollBy(0.5, "viewport")
+                          event.preventDefault()
+                          break
+                        case "u":
+                          preview.scrollBy(-0.5, "viewport")
+                          event.preventDefault()
+                          break
+                      }
+                    }}
+                    textColor={emberTide.text}
+                    backgroundColor={emberTide.backgroundRaised}
+                    focusedBackgroundColor={emberTide.backgroundRaised}
+                  />
+                ) : (
+                  <text fg={emberTide.text}>{props.query}</text>
+                )}
+                {props.status ? (
+                  <text fg={emberTide.textMuted}>{props.status}</text>
+                ) : null}
+              </box>
+            </box>
+          </box>
+          {props.preview !== undefined ? (
+            <box
+              id="telescope-preview-pane"
+              flexGrow={0}
+              flexShrink={0}
+              width="60%"
+              minWidth={0}
+              minHeight={0}
+              flexDirection="column"
+              title=" Preview "
+              titleAlignment="center"
+            >
+              {props.preview ? (
+                <scrollbox
+                  id="telescope-preview"
+                  ref={props.previewScrollRef}
+                  flexGrow={1}
+                  minHeight={0}
+                  marginBottom={1}
+                  contentOptions={{ paddingX: 1 }}
+                  verticalScrollbarOptions={{
+                    visible: true,
+                    trackOptions: {
+                      foregroundColor: emberTide.border,
+                      backgroundColor: emberTide.backgroundRaised,
+                    },
+                  }}
+                >
+                  <code
+                    id="telescope-preview-content"
+                    content={props.preview}
+                    filetype={
+                      props.previewPath
+                        ? pathToFiletype(props.previewPath)
+                        : undefined
+                    }
+                    syntaxStyle={props.syntax}
+                    conceal={false}
+                    wrapMode="none"
+                    fg={emberTide.textSoft}
+                    bg={emberTide.backgroundRaised}
+                  />
+                </scrollbox>
+              ) : (
+                <box flexGrow={1} minHeight={0} paddingX={1}>
+                  <text fg={emberTide.textMuted}>No preview</text>
+                </box>
+              )}
+            </box>
+          ) : null}
+        </box>
+        <text
+          id="telescope-hint"
+          height={1}
+          flexShrink={0}
+          paddingX={1}
+          fg={emberTide.textMuted}
+          wrapMode="none"
+          truncate
+        >
+          {props.hint ??
+            (props.editing === false
+              ? "NORMAL · j/k move · space mark · i search · enter attach · esc close · ctrl-y/e line · ctrl-u/d page"
+              : "INSERT · type to search · ↑/↓ move · esc select · enter attach · ctrl-c close · ctrl-y/e line · ctrl-u/d page")}
+        </text>
+      </box>
+    </box>
+  )
+}

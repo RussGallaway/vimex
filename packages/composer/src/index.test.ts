@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   attachImage,
+  attachMention,
   composerParts,
   failOutgoing,
   firstQueuedMessage,
@@ -52,6 +53,18 @@ describe("composer", () => {
     ])
     expect(updateDraft(state, "hello beautiful world").images).toEqual([])
     expect(removeImage(state, image.id).text).toBe("hello beautiful world")
+  })
+
+  test("drops mention attachments when their visible marker is deleted", () => {
+    const mention = {
+      id: "mention-1",
+      kind: "file" as const,
+      name: "src/app.ts",
+      path: "/work/src/app.ts",
+    }
+    const state = attachMention(initialComposer(), mention)
+    expect(state.mentions).toHaveLength(1)
+    expect(updateDraft(state, "hello world").mentions).toEqual([])
   })
   test("uses grapheme cursor offsets and queues next-turn messages", () => {
     let state = updateDraft(initialComposer(), "a👨‍👩‍👧‍👦b", 99)

@@ -44,6 +44,12 @@ import type { TurnStartResponse } from "../generated/v0_154_0/v2/TurnStartRespon
 import type { TurnSteerParams } from "../generated/v0_154_0/v2/TurnSteerParams"
 import type { TurnSteerResponse } from "../generated/v0_154_0/v2/TurnSteerResponse"
 import type { UserInput } from "../generated/v0_154_0/v2/UserInput"
+import type { FuzzyFileSearchParams } from "../generated/v0_154_0/FuzzyFileSearchParams"
+import type { FuzzyFileSearchResponse } from "../generated/v0_154_0/FuzzyFileSearchResponse"
+import type { SkillsListParams } from "../generated/v0_154_0/v2/SkillsListParams"
+import type { SkillsListResponse } from "../generated/v0_154_0/v2/SkillsListResponse"
+import type { PluginListParams } from "../generated/v0_154_0/v2/PluginListParams"
+import type { PluginListResponse } from "../generated/v0_154_0/v2/PluginListResponse"
 import type { ToolRequestUserInputResponse } from "../generated/v0_154_0/v2/ToolRequestUserInputResponse"
 import type { Turn } from "../generated/v0_154_0/v2/Turn"
 import {
@@ -254,6 +260,20 @@ export class CodexAppServerClient {
       nextCursor: raw.nextCursor,
       raw,
     }
+  }
+
+  fuzzyFileSearch(
+    params: FuzzyFileSearchParams,
+  ): Promise<FuzzyFileSearchResponse> {
+    return this.rpc.request("fuzzyFileSearch", params)
+  }
+
+  listSkills(params: SkillsListParams = {}): Promise<SkillsListResponse> {
+    return this.rpc.request("skills/list", params)
+  }
+
+  listPlugins(params: PluginListParams = {}): Promise<PluginListResponse> {
+    return this.rpc.request("plugin/list", params)
   }
 
   renameThread(thread: string, name: string): Promise<ThreadSetNameResponse> {

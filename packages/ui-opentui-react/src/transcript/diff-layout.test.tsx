@@ -30,7 +30,12 @@ test("split diff geometry maps repeated context and header-like code by hunk sid
   const setup = await testRender(
     <scrollbox id="scroll">
       <box id={`transcript-item:${item.id}`}>
-        <FileChange item={item} folded={false} syntax={syntax} />
+        <FileChange
+          item={item}
+          folded={false}
+          syntax={syntax}
+          diffView="side-by-side"
+        />
       </box>
     </scrollbox>,
     { width: 140, height: 20 },
@@ -130,7 +135,12 @@ test("split padding does not capture later blank changed lines", async () => {
   const setup = await testRender(
     <scrollbox id="scroll">
       <box id={`transcript-item:${item.id}`}>
-        <FileChange item={item} folded={false} syntax={syntax} />
+        <FileChange
+          item={item}
+          folded={false}
+          syntax={syntax}
+          diffView="side-by-side"
+        />
       </box>
     </scrollbox>,
     { width: 140, height: 24 },

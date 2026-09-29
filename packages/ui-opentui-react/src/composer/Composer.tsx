@@ -1,6 +1,10 @@
 import { usePaneGeometry } from "../side-chat/pane-geometry"
 import { useKeyboard, useRenderer } from "@opentui/react"
-import { CliRenderEvents, type TextareaRenderable } from "@opentui/core"
+import {
+  CliRenderEvents,
+  SyntaxStyle,
+  type TextareaRenderable,
+} from "@opentui/core"
 import type { ComposerState, SubmissionIntent } from "@vimex/composer"
 import type { VimMode } from "@vimex/interaction"
 import {
@@ -47,6 +51,32 @@ export function Composer(props: {
   const nativeSubmitIntent = useRef<SubmissionIntent | undefined>(undefined)
   const submittedClearPending = useRef(false)
   const hasImageMarks = useRef(false)
+  const mentionSyntax = useRef(
+    SyntaxStyle.fromStyles({
+      default: { fg: emberTide.text },
+      "vimex-mention-file": {
+        fg: emberTide.blueBright,
+        bold: true,
+      },
+      "vimex-mention-skill": {
+        fg: emberTide.background,
+        bg: emberTide.amber,
+        bold: true,
+      },
+      "vimex-mention-plugin": {
+        fg: emberTide.background,
+        bg: emberTide.ember,
+        bold: true,
+      },
+    }),
+  )
+  const hasMentionMarks = useRef(false)
+
+  useEffect(() => {
+    const textarea = props.textareaRef.current
+    if (textarea) textarea.syntaxStyle = mentionSyntax.current
+    return () => mentionSyntax.current.destroy()
+  }, [props.textareaRef])
 
   useEffect(() => {
     committedMode.current = props.mode
@@ -132,6 +162,61 @@ export function Composer(props: {
         }
         hasImageMarks.current = desired.length > 0
       }
+      if (props.state.mentions.length || hasMentionMarks.current) {
+        const marks = textarea.extmarks
+        const types = {
+          file: marks.registerType("vimex-mention-file"),
+          skill: marks.registerType("vimex-mention-skill"),
+          plugin: marks.registerType("vimex-mention-plugin"),
+        }
+        const current = Object.values(types).flatMap((typeId) =>
+          marks.getAllForTypeId(typeId),
+        )
+        const desired = [] as Array<{
+          start: number
+          end: number
+          virtual: true
+          typeId: number
+          styleId: number
+        }>
+        let searchFrom = 0
+        for (const mention of props.state.mentions) {
+          if (!mention.marker) continue
+          const start = props.state.text.indexOf(mention.marker, searchFrom)
+          if (start < 0) continue
+          searchFrom = start + mention.marker.length
+          const nativeStart = codeUnitOffsetToNativeOffset(
+            props.state.text,
+            start,
+          )
+          const nativeEnd = codeUnitOffsetToNativeOffset(
+            props.state.text,
+            start + mention.marker.length,
+          )
+          desired.push({
+            start: nativeStart,
+            end: nativeEnd,
+            virtual: true,
+            typeId: types[mention.kind],
+            styleId: mentionSyntax.current.resolveStyleId(
+              `vimex-mention-${mention.kind}`,
+            )!,
+          })
+        }
+        if (
+          current.length !== desired.length ||
+          current.some(
+            (mark, index) =>
+              mark.start !== desired[index]?.start ||
+              mark.end !== desired[index]?.end ||
+              mark.typeId !== desired[index]?.typeId,
+          )
+        ) {
+          for (const mark of current) marks.delete(mark.id)
+          for (const mark of desired) marks.create(mark)
+        }
+        hasMentionMarks.current = desired.length > 0
+      }
       const cursorOffset = graphemeOffsetToNativeOffset(
         props.state.text,
         props.state.cursorOffset,
@@ -145,6 +230,7 @@ export function Composer(props: {
     props.state.revision,
     props.state.text,
     props.state.images,
+    props.state.mentions,
     props.state.cursorOffset,
     props.textareaRef,
   ])

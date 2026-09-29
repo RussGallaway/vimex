@@ -9,6 +9,7 @@ import type { movePoint } from "../transcript/layout"
 
 export type Motion = Parameters<typeof movePoint>[2]
 export type UiBinding = { key: string; cmd: () => unknown }
+export type MentionPickerKind = "file" | "grep"
 export interface VimBindingContext {
   distinctControlI?: boolean
   interaction: InteractionState
@@ -27,6 +28,7 @@ export interface VimBindingContext {
   dispatchMotion(motion: Motion): void
   positionCursor(position: "top" | "center" | "bottom"): void
   runComposerKey(key: string): void
+  openMentionPicker?(kind: MentionPickerKind): void
   beginVisual(shape: "character" | "line" | "block"): void
   openOverlay(
     overlay:

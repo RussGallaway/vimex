@@ -23,7 +23,21 @@ export interface AgentRelationship {
   agentPath?: string
 }
 export type ConversationInput =
-  { type: "text"; text: string } | { type: "image"; path: string }
+  | { type: "text"; text: string }
+  | { type: "image"; path: string }
+  | { type: "mention"; name: string; path: string }
+  | { type: "skill"; name: string; path: string }
+
+export type MentionKind = "file" | "skill" | "plugin"
+export type MentionSearchKind = MentionKind | "grep"
+export interface MentionCandidate {
+  kind: MentionKind
+  name: string
+  path: string
+  detail?: string
+  /** Bounded text preview for picker surfaces; omitted for non-file entries. */
+  preview?: string
+}
 
 export interface BackgroundTerminal {
   threadId: ThreadId
@@ -38,6 +52,11 @@ export interface BackgroundTerminal {
 
 /** Conversation capabilities required by client use cases, independent of transport. */
 export interface ConversationGateway {
+  searchMentions?(
+    query: string,
+    kind: MentionSearchKind,
+    cwd: string,
+  ): Promise<readonly MentionCandidate[]>
   listBackgroundTerminals?(id: ThreadId): Promise<readonly BackgroundTerminal[]>
   terminateBackgroundTerminal?(
     id: ThreadId,

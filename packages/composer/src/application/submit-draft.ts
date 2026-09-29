@@ -1,6 +1,7 @@
 import type {
   ComposerState,
   ImageAttachment,
+  MentionAttachment,
   OutgoingMessage,
 } from "../domain/composer-state"
 import type { SubmissionIntent } from "../domain/submission-intent"
@@ -17,7 +18,7 @@ export function submitDraft(
 ): ComposerState {
   const text = state.text.trim()
   if (
-    (!text && state.images.length === 0) ||
+    (!text && state.images.length === 0 && state.mentions.length === 0) ||
     state.outbox.some((message) => message.id === id)
   )
     return state
@@ -25,6 +26,7 @@ export function submitDraft(
     ...state,
     text: "",
     images: [],
+    mentions: [],
     cursorOffset: 0,
     revision: state.revision + 1,
     outbox: [
@@ -33,6 +35,7 @@ export function submitDraft(
         id,
         text,
         ...(state.images.length ? { images: state.images } : {}),
+        ...(state.mentions.length ? { mentions: state.mentions } : {}),
         intent,
         status: queued ? "queued" : "sending",
       },
@@ -88,32 +91,92 @@ export function removeImage(state: ComposerState, id: string): ComposerState {
   }
 }
 
+export function attachMention(
+  state: ComposerState,
+  mention: MentionAttachment,
+  cursorOffset = state.cursorOffset,
+): ComposerState {
+  if (
+    state.mentions.some(
+      (existing) =>
+        existing.kind === mention.kind && existing.path === mention.path,
+    )
+  )
+    return state
+  const offset = codeUnitAt(state.text, cursorOffset)
+  const before = state.text.slice(0, offset)
+  const after = state.text.slice(offset)
+  const prefix = before && !/\s$/u.test(before) ? " " : ""
+  const suffix = !after || !/^\s/u.test(after) ? " " : ""
+  const marker = `@${mention.name}`
+  const inserted = `${prefix}${marker}${suffix}`
+  return {
+    ...state,
+    text: before + inserted + after,
+    cursorOffset: count(before + inserted),
+    mentions: [...state.mentions, { ...mention, marker }],
+    revision: state.revision + 1,
+  }
+}
+
 export type ComposerPart =
-  { type: "text"; text: string } | { type: "image"; path: string }
+  | { type: "text"; text: string }
+  | { type: "image"; path: string }
+  | { type: "mention"; name: string; path: string }
+  | { type: "skill"; name: string; path: string }
 export function composerParts(
   text: string,
   images: readonly ImageAttachment[],
+  mentions: readonly MentionAttachment[] = [],
 ): ComposerPart[] {
-  const positions = images
+  const positions = [
+    ...images.map((image) => ({
+      image,
+      index: image.marker ? text.indexOf(image.marker) : -1,
+      kind: "image" as const,
+    })),
+    ...mentions.map((mention) => ({
+      mention,
+      index: mention.marker ? text.indexOf(mention.marker) : -1,
+      kind: mention.kind,
+    })),
+  ]
     .flatMap((image) => {
-      const index = image.marker ? text.indexOf(image.marker) : -1
-      return index < 0 ? [] : [{ image, index }]
+      return image.index < 0 ? [] : [image]
     })
     .sort((left, right) => left.index - right.index)
   const parts: ComposerPart[] = []
   let offset = 0
-  for (const { image, index } of positions) {
+  for (const entry of positions) {
+    const { index } = entry
     if (index < offset) continue
     if (index > offset)
       parts.push({ type: "text", text: text.slice(offset, index) })
-    parts.push({ type: "image", path: image.path })
-    offset = index + image.marker!.length
+    if (entry.kind === "image") {
+      parts.push({ type: "image", path: entry.image.path })
+      offset = index + entry.image.marker!.length
+    } else {
+      parts.push({
+        type: entry.kind === "skill" ? "skill" : "mention",
+        name: entry.mention.name,
+        path: entry.mention.path,
+      })
+      offset = index + entry.mention.marker!.length
+    }
   }
   if (offset < text.length)
     parts.push({ type: "text", text: text.slice(offset) })
   for (const image of images.filter((image) => !image.marker)) {
     if (!parts.length && text) parts.push({ type: "text", text })
     parts.push({ type: "image", path: image.path })
+  }
+  for (const mention of mentions.filter((mention) => !mention.marker)) {
+    if (!parts.length && text) parts.push({ type: "text", text })
+    parts.push({
+      type: mention.kind === "skill" ? "skill" : "mention",
+      name: mention.name,
+      path: mention.path,
+    })
   }
   return parts
 }
@@ -148,11 +211,13 @@ export function unqueueOutgoing(
   const message = state.outbox.find(
     (candidate) => candidate.id === id && candidate.status === "queued",
   )
-  if (!message || state.text || state.images.length) return state
+  if (!message || state.text || state.images.length || state.mentions.length)
+    return state
   return {
     ...state,
     text: message.text,
     images: message.images ?? [],
+    mentions: message.mentions ?? [],
     cursorOffset: count(message.text),
     revision: state.revision + 1,
     outbox: state.outbox.filter((candidate) => candidate.id !== id),

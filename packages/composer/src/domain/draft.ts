@@ -13,10 +13,14 @@ export function updateDraft(
     : state.images.filter(
         (image) => !image.marker || text.includes(image.marker),
       )
+  const mentions = state.mentions.filter(
+    (mention) => !mention.marker || text.includes(mention.marker),
+  )
   return {
     ...state,
     text,
     images,
+    mentions,
     cursorOffset: Math.max(0, Math.min(cursorOffset, graphemeCount(text))),
     revision: state.revision + 1,
   }

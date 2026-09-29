@@ -91,7 +91,12 @@ import {
   type ItemId,
   type ConversationEvent,
 } from "@vimex/conversation"
-import type { ConversationGateway, SessionSnapshot } from "@vimex/conversation"
+import type {
+  ConversationGateway,
+  MentionCandidate,
+  MentionKind,
+  SessionSnapshot,
+} from "@vimex/conversation"
 import type { ApprovalGateway } from "@vimex/approvals"
 import type { RuntimeConnection, RuntimeEvent } from "./runtime-connection"
 import type { AvailableModel, ModelCatalog } from "./model-catalog"
@@ -1545,8 +1550,8 @@ export class VimexController
           ...visibleSummaries.map((summary) => summary.id),
         ]),
       ]
-      const favoriteThreadIds = state.favoriteThreadIds.filter(
-        (id) => !previous.has(id) || current.has(id),
+      const favoriteThreadIds = state.favoriteThreadIds.filter((id) =>
+        current.has(id),
       )
       this.catalogThreadIds = current
       this.setState({ ...state, threadOrder, favoriteThreadIds })
@@ -1690,12 +1695,6 @@ export class VimexController
     const navigation = this.navigationRevision
     this.initialDirectory = cwd
     this.initialModel = model
-    // Resume and picker flows need to hydrate an existing thread. A local
-    // draft belongs only to the cold-start new-session path; creating one for
-    // resume would let early keystrokes be copied into the resumed thread
-    // during binding.
-    if (!this.state.activeThreadId && !resume && !resumeMode)
-      this.prepareDraft(cwd, model)
     this.unsubscribe = this.ports.connection.subscribe((event) =>
       this.receive(event),
     )
@@ -1706,6 +1705,13 @@ export class VimexController
       )
         return
       this.dispatch({ type: "connection.changed", connection: "connected" })
+      // Resume and picker flows hydrate an existing thread. A local draft
+      // belongs only to the cold-start new-session path; creating one for
+      // resume would let early keystrokes be copied into the resumed thread
+      // during binding. Deferring it until connect also lets an immediate
+      // close cancel initialization without publishing a provisional state.
+      if (!this.state.activeThreadId && !resume && !resumeMode)
+        this.prepareDraft(cwd, model)
       const summaries =
         resumeMode || resume
           ? await this.unlessClosing(this.ports.conversation.listThreads())
@@ -1935,6 +1941,12 @@ export class VimexController
         await this.loadModels()
       })
   }
+  searchMentions = async (
+    query: string,
+    kind: MentionKind,
+    cwd: string,
+  ): Promise<readonly MentionCandidate[]> =>
+    (await this.ports.conversation.searchMentions?.(query, kind, cwd)) ?? []
   attachImageFromClipboard: WorkbenchActions["attachImageFromClipboard"] = (
     cursorOffset,
   ) => {
@@ -1972,6 +1984,19 @@ export class VimexController
         image: { ...image, id: crypto.randomUUID() },
         cursorOffset: at,
       })
+    })
+  }
+  attachMention: WorkbenchActions["attachMention"] = (
+    candidate,
+    cursorOffset,
+  ) => {
+    const threadId = this.state.activeThreadId
+    if (!threadId) return
+    this.dispatch({
+      type: "composer.mention.attach",
+      threadId,
+      mention: { ...candidate, id: crypto.randomUUID() },
+      cursorOffset,
     })
   }
   private importImage(
@@ -2417,12 +2442,27 @@ export class VimexController
     }
     this.launchThreadMutation(id, async (epoch) => {
       await this.ports.conversation.renameThread(id, name)
-      if (this.currentRuntime(epoch))
-        this.dispatch({
-          type: "thread.summary.patch",
-          threadId: id,
-          patch: { title: name, titleSource: "name" },
-        })
+      if (this.currentRuntime(epoch)) {
+        if (!this.state.summaries[id])
+          this.dispatch({
+            type: "thread.register",
+            summary: {
+              id,
+              title: name,
+              titleSource: "name",
+              cwd: this.initialDirectory ?? "",
+              model: "",
+              reasoningEffort: "",
+              status: "idle",
+            },
+          })
+        else
+          this.dispatch({
+            type: "thread.summary.patch",
+            threadId: id,
+            patch: { title: name, titleSource: "name" },
+          })
+      }
     })
   }
   openThread = (id: ThreadId): void => {
@@ -3729,6 +3769,12 @@ export class VimexController
         if (id && argument) this.renameThread(id, argument)
         break
       }
+      case "files":
+      case "skills":
+      case "plugins":
+      case "grep":
+        this.notice(`Use /${command} in the composer to open its picker`)
+        break
       default: {
         const unreachable: never = command
         throw new Error(`Unhandled command: ${String(unreachable)}`)

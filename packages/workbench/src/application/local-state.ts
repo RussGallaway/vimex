@@ -9,12 +9,13 @@ import {
   attachImage,
   type ComposerState,
   type ImageAttachment,
+  type MentionAttachment,
   type OutgoingMessage,
 } from "@vimex/composer"
 
 export type SavedOutgoingMessage = Pick<
   OutgoingMessage,
-  "id" | "text" | "images" | "intent" | "status" | "reason"
+  "id" | "text" | "images" | "mentions" | "intent" | "status" | "reason"
 >
 export interface SavedTranscriptLocation {
   itemId: string
@@ -25,6 +26,7 @@ export interface SavedTranscriptLocation {
 export interface SavedThreadView {
   draft: string
   images?: readonly ImageAttachment[]
+  mentions?: readonly MentionAttachment[]
   cursorOffset: number
   folded: ThreadWorkspace["transcript"]["folded"]
   cursor?: ThreadWorkspace["transcript"]["cursor"]
@@ -88,6 +90,24 @@ const sameImages = (
         image.path === right[index]?.path &&
         image.label === right[index]?.label &&
         image.marker === right[index]?.marker,
+    ),
+  )
+const sameMentions = (
+  left: readonly MentionAttachment[] | undefined,
+  right: readonly MentionAttachment[] | undefined,
+) =>
+  left === right ||
+  Boolean(
+    left &&
+    right &&
+    left.length === right.length &&
+    left.every(
+      (mention, index) =>
+        mention.id === right[index]?.id &&
+        mention.kind === right[index]?.kind &&
+        mention.name === right[index]?.name &&
+        mention.path === right[index]?.path &&
+        mention.marker === right[index]?.marker,
     ),
   )
 const samePoint = (
@@ -183,6 +203,7 @@ function sameWorkspaceView(
           message.id === candidate.id &&
           message.text === candidate.text &&
           sameImages(message.images, candidate.images) &&
+          sameMentions(message.mentions, candidate.mentions) &&
           message.intent === candidate.intent &&
           message.status === candidate.status &&
           message.reason === candidate.reason
@@ -204,6 +225,7 @@ function sameWorkspaceView(
     beforeVisited === afterVisited &&
     before.composer.text === after.composer.text &&
     sameImages(before.composer.images, after.composer.images) &&
+    sameMentions(before.composer.mentions, after.composer.mentions) &&
     before.composer.cursorOffset === after.composer.cursorOffset &&
     sameOutbox &&
     before.interaction.surface === after.interaction.surface &&
@@ -274,6 +296,7 @@ function sameSavedThreadView(
   return (
     left.draft === right.draft &&
     sameImages(left.images, right.images) &&
+    sameMentions(left.mentions, right.mentions) &&
     left.cursorOffset === right.cursorOffset &&
     sameRecord(left.folded, right.folded, (a, b) => a === b) &&
     samePoint(left.cursor, right.cursor) &&
@@ -346,6 +369,19 @@ const validImages = (value: unknown): value is ImageAttachment[] =>
       image.path.length > 0 &&
       (image.marker === undefined || typeof image.marker === "string"),
   )
+const validMentions = (value: unknown): value is MentionAttachment[] =>
+  Array.isArray(value) &&
+  value.every(
+    (mention) =>
+      record(mention) &&
+      typeof mention.id === "string" &&
+      mention.id.length > 0 &&
+      ["file", "skill", "plugin"].includes(String(mention.kind)) &&
+      typeof mention.name === "string" &&
+      typeof mention.path === "string" &&
+      mention.path.length > 0 &&
+      (mention.marker === undefined || typeof mention.marker === "string"),
+  )
 const integer = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0
 function validPoint(value: unknown): boolean {
@@ -403,6 +439,7 @@ export function parseLocalState(value: unknown): LocalState {
       !record(view) ||
       typeof view.draft !== "string" ||
       (view.images !== undefined && !validImages(view.images)) ||
+      (view.mentions !== undefined && !validMentions(view.mentions)) ||
       !integer(view.cursorOffset) ||
       !record(view.folded) ||
       Object.values(view.folded).some((v) => typeof v !== "boolean") ||
@@ -450,6 +487,8 @@ export function parseLocalState(value: unknown): LocalState {
           !message.id ||
           typeof message.text !== "string" ||
           (message.images !== undefined && !validImages(message.images)) ||
+          (message.mentions !== undefined &&
+            !validMentions(message.mentions)) ||
           !["next-turn", "steer"].includes(String(message.intent)) ||
           !["queued", "sending", "failed"].includes(String(message.status)) ||
           (message.reason !== undefined && typeof message.reason !== "string"),
@@ -478,6 +517,7 @@ export function captureLocalState(
     threads[id] = {
       draft: composer.text,
       ...(composer.images.length ? { images: composer.images } : {}),
+      ...(composer.mentions.length ? { mentions: composer.mentions } : {}),
       cursorOffset: composer.cursorOffset,
       folded: transcript.folded,
       cursor: transcript.cursor,
@@ -595,11 +635,15 @@ export function restoreThreadView(
         : "Delivery was not confirmed before Vimex closed; retry explicitly to resend",
   }))
   const savedImages = saved.images ?? []
+  const savedMentions = saved.mentions ?? []
   let composer: ComposerState = {
     ...workspace.composer,
     text: saved.draft,
     images: savedImages.filter(
       (image) => image.marker && saved.draft.includes(image.marker),
+    ),
+    mentions: savedMentions.filter(
+      (mention) => mention.marker && saved.draft.includes(mention.marker),
     ),
     cursorOffset: Math.min(saved.cursorOffset, graphemeCount(saved.draft)),
     revision: workspace.composer.revision + 1,

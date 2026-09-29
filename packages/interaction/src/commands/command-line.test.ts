@@ -145,3 +145,16 @@ test("tail command is discoverable alongside follow", () => {
   expect(commandCompletions("ta")).toContain(":tail")
   expect(commandCompletions("fol")).toContain(":follow")
 })
+
+test("mention picker modes are discoverable in command completion", () => {
+  expect(commandCompletions(":f")).toEqual([
+    ":fork",
+    ":fold",
+    ":favorite",
+    ":follow",
+    ":files",
+  ])
+  expect(commandCompletions(":g")).toContain(":grep")
+  expect(commandCompletions(":skills")).toEqual([":skills"])
+  expect(commandCompletions(":plugins")).toEqual([":plugins"])
+})

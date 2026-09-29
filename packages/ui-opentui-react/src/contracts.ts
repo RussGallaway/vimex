@@ -42,6 +42,9 @@ export const defaultVimexUiSettings: VimexUiSettings = {
 }
 
 export const inertController: VimexUiController = {
+  async searchMentions() {
+    return []
+  },
   refreshBackgroundTerminals() {},
   stopAllBackgroundTerminals() {},
   stopBackgroundTerminal() {},
@@ -52,6 +55,7 @@ export const inertController: VimexUiController = {
   changeDraft() {},
   attachImageFromClipboard() {},
   attachImageFromPath() {},
+  attachMention() {},
   removeImage() {},
   submit() {
     return true

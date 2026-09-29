@@ -19,8 +19,14 @@ export function submissionEffect(
         type: "conversation.turn.steer",
         threadId: thread,
         text: outgoing.text,
-        ...(outgoing.images?.length
-          ? { input: composerParts(outgoing.text, outgoing.images) }
+        ...(outgoing.images?.length || outgoing.mentions?.length
+          ? {
+              input: composerParts(
+                outgoing.text,
+                outgoing.images ?? [],
+                outgoing.mentions,
+              ),
+            }
           : {}),
         clientMessageId: outgoing.id,
       }
@@ -28,8 +34,14 @@ export function submissionEffect(
         type: "conversation.turn.start",
         threadId: thread,
         text: outgoing.text,
-        ...(outgoing.images?.length
-          ? { input: composerParts(outgoing.text, outgoing.images) }
+        ...(outgoing.images?.length || outgoing.mentions?.length
+          ? {
+              input: composerParts(
+                outgoing.text,
+                outgoing.images ?? [],
+                outgoing.mentions,
+              ),
+            }
           : {}),
         clientMessageId: outgoing.id,
       }

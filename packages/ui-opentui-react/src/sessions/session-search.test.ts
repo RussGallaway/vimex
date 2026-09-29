@@ -86,6 +86,51 @@ test("side IDs stay out of the picker even when listed, favorited, or typed exac
   ).toEqual([])
 })
 
+test("explicitly excluded agent children stay hidden without parent metadata", () => {
+  const parent = threadId("parent")
+  const child = threadId("child")
+  const summaries: Record<string, ThreadSummary> = {
+    [parent]: {
+      id: parent,
+      title: "Parent session",
+      cwd: "/work",
+      model: "test",
+      reasoningEffort: "high",
+      status: "idle",
+    },
+    // Some server/catalog responses omit parentThreadId even though the
+    // workbench relationship ledger knows this is a spawned child.
+    [child]: {
+      id: child,
+      title: "Child session",
+      cwd: "/work",
+      model: "test",
+      reasoningEffort: "high",
+      status: "idle",
+    },
+  }
+  expect(
+    searchSessions(
+      [parent, child],
+      summaries,
+      "",
+      [],
+      "/work",
+      new Set([child]),
+    ),
+  ).toEqual([{ id: parent, summary: summaries[parent] }])
+  expect(
+    searchSessions(
+      [parent, child],
+      summaries,
+      child,
+      [],
+      "/work",
+      new Set([child]),
+    ),
+  ).toEqual([])
+})
+
 test("favorites sort before recency without bypassing filters or exact IDs", () => {
   const old = threadId("old"),
     recent = threadId("recent")

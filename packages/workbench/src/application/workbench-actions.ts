@@ -1,6 +1,11 @@
 import type { Approval } from "@vimex/approvals"
 import type { SubmissionIntent } from "@vimex/composer"
-import type { ItemId, ThreadId } from "@vimex/conversation"
+import type {
+  ItemId,
+  MentionCandidate,
+  MentionKind,
+  ThreadId,
+} from "@vimex/conversation"
 import type { InteractionCommand } from "@vimex/interaction"
 import type {
   LogicalPoint,
@@ -86,6 +91,11 @@ export type TranscriptAction =
   | { type: "fork"; itemId?: ItemId }
 
 export interface WorkbenchActions {
+  searchMentions(
+    query: string,
+    kind: MentionKind,
+    cwd: string,
+  ): Promise<readonly MentionCandidate[]>
   refreshBackgroundTerminals(): void
   stopAllBackgroundTerminals(): void
   stopBackgroundTerminal(threadId: ThreadId, processId: string): void
@@ -114,6 +124,7 @@ export interface WorkbenchActions {
   changeDraft(text: string, cursorOffset: number): void
   attachImageFromClipboard(cursorOffset?: number): void
   attachImageFromPath(path: string, cursorOffset?: number): void
+  attachMention(candidate: MentionCandidate, cursorOffset?: number): void
   removeImage(id: string): void
   submit(intent: SubmissionIntent): boolean | void
   transcript(command: TranscriptAction): void

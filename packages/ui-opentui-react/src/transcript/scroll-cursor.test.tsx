@@ -78,8 +78,8 @@ test("transcript Ctrl-U/D move cursor with viewport at the same screen row", asy
   try {
     const before = h.position(),
       top = h.scroll.scrollTop,
-      half = h.scroll.viewport.height / 2
-    expect(half % 2).toBe(0) // Paragraph starts remain addressable after the move.
+      half = Math.floor(h.scroll.viewport.height / 2)
+    expect(half).toBeGreaterThan(0)
     await h.key("u")
     expect(h.scroll.scrollTop).toBe(top - half)
     expect(h.position().screenRow).toBe(before.screenRow)
@@ -150,7 +150,7 @@ test("Ctrl-U then brace in one input batch navigates from the scrolled cursor", 
   try {
     const before = h.position(),
       top = h.scroll.scrollTop,
-      half = h.scroll.viewport.height / 2
+      half = Math.floor(h.scroll.viewport.height / 2)
     const painted: ReturnType<typeof h.position>[] = []
     const originalEmit = h.renderer.emit
     h.renderer.emit = function (event: string | symbol, ...args: unknown[]) {

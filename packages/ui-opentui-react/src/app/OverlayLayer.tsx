@@ -101,7 +101,10 @@ function HelpOverlay() {
         <text marginTop={1} marginBottom={1} fg={emberTide.amber}>
           <b>Slash and Ex commands</b>
         </text>
-        {commandNames.map((name) => (
+        {[
+          ...commandNames.filter((name) => name !== "goal"),
+          "goal" as const,
+        ].map((name) => (
           <box key={name} flexDirection="column" marginBottom={1}>
             <text fg={emberTide.blueBright}>
               :{commandDescriptors[name].usage}

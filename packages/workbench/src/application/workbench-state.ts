@@ -23,6 +23,7 @@ import {
   initialComposer,
   type ComposerPart,
   type ImageAttachment,
+  type MentionAttachment,
   type ComposerState,
   type SubmissionIntent,
 } from "@vimex/composer"
@@ -77,6 +78,8 @@ export interface WorkbenchState {
     scope: "selection" | "current-item"
   }>
   activeThreadId?: ThreadId
+  /** Locally-created workspaces waiting to bind to a Codex thread. */
+  provisionalThreadIds: readonly ThreadId[]
   favoriteThreadIds: readonly ThreadId[]
   threadOrder: readonly ThreadId[]
   summaries: Readonly<Record<string, ThreadSummary>>
@@ -202,6 +205,12 @@ export type WorkbenchCommand =
       cursorOffset?: number
     }
   | { type: "composer.image.remove"; threadId?: ThreadId; imageId: string }
+  | {
+      type: "composer.mention.attach"
+      threadId?: ThreadId
+      mention: MentionAttachment
+      cursorOffset?: number
+    }
   | {
       type: "composer.submit"
       threadId?: ThreadId

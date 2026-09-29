@@ -20,6 +20,7 @@ import {
   commandCompletions,
   initialCommandHistory,
   initialInteraction,
+  parseCommand,
   recallCommand,
   recordCommand,
   resolveComposerKey,
@@ -51,8 +52,13 @@ import {
   useSyncExternalStore,
 } from "react"
 import { Composer } from "../composer/Composer"
+import { ActivityIndicator } from "../activity/ActivityIndicator"
 import { SlashCommandDrawer } from "../composer/SlashCommandDrawer"
 import { useSlashCommands } from "../composer/use-slash-commands"
+import { MentionDrawer } from "../composer/MentionDrawer"
+import { useMentionPicker } from "../composer/use-mention-picker"
+import { TelescopeModal } from "../composer/TelescopeModal"
+import { useTelescopeModal } from "../composer/use-telescope-modal"
 import { Statusline } from "../statusline/Statusline"
 import { useTranscriptLayout } from "../transcript/use-transcript-layout"
 import { TranscriptViewport } from "../transcript/TranscriptViewport"
@@ -192,8 +198,14 @@ export function VimexApp({
         ...Object.values(state.sideChats).flatMap((side) =>
           side.threadId ? [side.threadId] : [],
         ),
+        // Agent children have their own Codex sessions, but the sessions
+        // overlay is for user conversations. Keep the relationship ledger as
+        // a fallback when a thread summary does not carry parentThreadId.
+        ...state.agentRelationships
+          .filter((link) => link.relation === "spawned")
+          .map((link) => link.childId),
       ]),
-    [state.retiredSideThreadIds, state.sideChats],
+    [state.agentRelationships, state.retiredSideThreadIds, state.sideChats],
   )
   const runtimeInput = useMemo<TranscriptRuntimeInput | undefined>(
     () =>
@@ -465,6 +477,20 @@ export function VimexApp({
       controller.executeCommand(command, presentationId)
     },
   })
+  const mentionPicker = useMentionPicker({
+    suspended: !interactive || jumpActive,
+    text: composer.text,
+    textareaRef,
+    interaction,
+    controller,
+    cwd: summary?.cwd,
+    mentions: composer.mentions,
+  })
+  const telescopeModal = useTelescopeModal({
+    controller,
+    cwd: summary?.cwd,
+    cursorOffset: composer.cursorOffset,
+  })
 
   useEffect(() => () => syntax.destroy(), [syntax])
   useEffect(() => {
@@ -583,6 +609,14 @@ export function VimexApp({
       scrollRef.current?.blur()
       return
     }
+    if (telescopeModal.active) {
+      textareaRef.current?.blur()
+      commandRef.current?.blur()
+      scrollRef.current?.blur()
+      if (telescopeModal.editing) telescopeModal.inputRef.current?.focus()
+      else telescopeModal.inputRef.current?.blur()
+      return
+    }
     if (interaction.overlay) {
       textareaRef.current?.blur()
       commandRef.current?.blur()
@@ -610,6 +644,8 @@ export function VimexApp({
     interaction.surface,
     jumpActive,
     queueFocused,
+    telescopeModal.active,
+    telescopeModal.editing,
   ])
   useEffect(() => {
     if (
@@ -1440,11 +1476,24 @@ export function VimexApp({
     scroll,
     enterVisibleTranscript,
     flushManualScroll,
+    openMentionPicker: telescopeModal.open,
   }
   const changeCommandLine = useCallback(
     (value: string) => {
       commandRef.current?.setText(commandBody(value))
       controller.dispatchInteraction({ type: "command.change", value })
+    },
+    [controller],
+  )
+  const openMentionCommand = useCallback(
+    (kind: "files" | "skills" | "plugins" | "grep", query: string) => {
+      const text = `/${kind}${query ? ` ${query}` : " "}`
+      controller.changeDraft(text, text.length)
+      controller.dispatchInteraction({
+        type: "focus.set",
+        surface: "composer",
+      })
+      controller.dispatchInteraction({ type: "mode.insert" })
     },
     [controller],
   )
@@ -1473,6 +1522,7 @@ export function VimexApp({
         !paneLabel ||
         interaction.overlay ||
         jumpActive ||
+        telescopeModal.active ||
         (interaction.mode !== "normal" && interaction.mode !== "visual")
           ? []
           : [
@@ -1480,7 +1530,10 @@ export function VimexApp({
               { key: "right", cmd: () => controller.sideChat("side") },
             ].map((binding) => ({
               ...binding,
-              cmd: () => flushSync(binding.cmd),
+              cmd: () => {
+                if (telescopeModal.activeRef.current) return false
+                return flushSync(binding.cmd)
+              },
             })),
     }),
     [
@@ -1489,6 +1542,7 @@ export function VimexApp({
       interaction.mode,
       interaction.overlay,
       jumpActive,
+      telescopeModal.active,
       controller,
     ],
   )
@@ -1496,12 +1550,18 @@ export function VimexApp({
     () => ({
       priority: 100,
       bindings:
-        !interactive || interaction.overlay || jumpActive
+        !interactive ||
+        interaction.overlay ||
+        jumpActive ||
+        telescopeModal.active
           ? []
           : queueFocused
             ? queueBindings.map((binding) => ({
                 ...binding,
-                cmd: () => flushSync(() => binding.cmd()),
+                cmd: () => {
+                  if (telescopeModal.activeRef.current) return false
+                  return flushSync(() => binding.cmd())
+                },
               }))
             : [
                 { key: "ctrl+g", cmd: () => setJumpOpen(true) },
@@ -1525,21 +1585,35 @@ export function VimexApp({
                   : []),
               ].map((binding) => ({
                 ...binding,
-                cmd: () => flushSync(() => binding.cmd()),
+                cmd: () => {
+                  if (telescopeModal.activeRef.current) return false
+                  return flushSync(() => binding.cmd())
+                },
               })),
     }),
-    [interactive, bindingContext, settings.keybindings, jumpActive],
+    [
+      interactive,
+      bindingContext,
+      settings.keybindings,
+      jumpActive,
+      telescopeModal.active,
+    ],
   )
   useBindings(
     () => ({
       priority: 150,
       bindings:
-        !interactive || interaction.overlay || jumpActive
+        !interactive ||
+        interaction.overlay ||
+        jumpActive ||
+        telescopeModal.active
           ? []
           : Object.entries(settings.keybindings).map(([key, command]) => ({
               key,
-              cmd: () =>
-                controller.executeNamedCommand(command, presentationId),
+              cmd: () => {
+                if (telescopeModal.activeRef.current) return false
+                controller.executeNamedCommand(command, presentationId)
+              },
             })),
     }),
     [
@@ -1547,6 +1621,7 @@ export function VimexApp({
       controller,
       interaction.overlay,
       jumpActive,
+      telescopeModal.active,
       presentationId,
       settings.keybindings,
     ],
@@ -1558,6 +1633,7 @@ export function VimexApp({
         !interactive ||
         jumpActive ||
         interaction.overlay ||
+        telescopeModal.active ||
         interaction.mode !== "command"
           ? []
           : [
@@ -1566,7 +1642,13 @@ export function VimexApp({
               { key: "down", cmd: () => recallCommandLine(1) },
               { key: "ctrl+n", cmd: () => recallCommandLine(1) },
               { key: "tab", cmd: completeCommandLine },
-            ],
+            ].map((binding) => ({
+              ...binding,
+              cmd: () => {
+                if (telescopeModal.activeRef.current) return false
+                return binding.cmd()
+              },
+            })),
     }),
     [
       interactive,
@@ -1574,6 +1656,7 @@ export function VimexApp({
       interaction.mode,
       interaction.overlay,
       jumpActive,
+      telescopeModal.active,
       recallCommandLine,
     ],
   )
@@ -1582,7 +1665,7 @@ export function VimexApp({
     () => ({
       priority: 200,
       bindings:
-        !interactive || !interaction.overlay
+        !interactive || !interaction.overlay || telescopeModal.active
           ? []
           : [
               {
@@ -1710,6 +1793,7 @@ export function VimexApp({
       state.availableModels,
       state.backgroundTerminals.rows,
       state.agentPickerTargets,
+      telescopeModal.active,
     ],
   )
 
@@ -1771,7 +1855,16 @@ export function VimexApp({
                 commandHistoryRef.current,
                 line,
               )
-              controller.executeCommand(line, presentationId)
+              const parsed = parseCommand(line)
+              if (
+                parsed.kind === "command" &&
+                (parsed.name === "files" ||
+                  parsed.name === "skills" ||
+                  parsed.name === "plugins" ||
+                  parsed.name === "grep")
+              )
+                openMentionCommand(parsed.name, parsed.argument)
+              else controller.executeCommand(line, presentationId)
             }}
           />
         ) : undefined
@@ -1825,9 +1918,19 @@ export function VimexApp({
               busySubmit={settings.busySubmit}
               textareaRef={textareaRef}
               submitRef={composerSubmitRef}
-              onChange={slashCommands.changeDraft}
+              onChange={(text, cursor) => {
+                slashCommands.changeDraft(text, cursor)
+              }}
               drawer={
-                slashCommands.active ? (
+                mentionPicker.active ? (
+                  <MentionDrawer
+                    kind={mentionPicker.kind}
+                    query={mentionPicker.query}
+                    choices={mentionPicker.choices}
+                    selected={mentionPicker.selected}
+                    marked={mentionPicker.marked}
+                  />
+                ) : slashCommands.active ? (
                   <SlashCommandDrawer
                     choices={slashCommands.choices}
                     selected={slashCommands.selected}
@@ -1874,6 +1977,23 @@ export function VimexApp({
       overlay={
         interactive ? (
           <>
+            {telescopeModal.active ? (
+              <TelescopeModal
+                title={telescopeModal.kind === "grep" ? "Grep" : "Files"}
+                query={telescopeModal.query}
+                editing={telescopeModal.editing}
+                onQuery={telescopeModal.setQuery}
+                inputRef={telescopeModal.inputRef}
+                syntax={syntax}
+                choices={telescopeModal.choices}
+                selected={telescopeModal.selected}
+                marked={telescopeModal.marked}
+                preview={telescopeModal.preview}
+                previewPath={telescopeModal.previewPath}
+                previewScrollRef={telescopeModal.previewScrollRef}
+                status={`${telescopeModal.choices.length} results`}
+              />
+            ) : null}
             {jumpActive ? (
               <FlashJump
                 fromComposer={interaction.surface === "composer"}

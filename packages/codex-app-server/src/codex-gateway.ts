@@ -6,10 +6,58 @@ import { CodexApprovalGateway } from "./codex-approval-gateway"
 import { hydrateTurns } from "./mapping/map-item"
 import {
   itemId,
+  type MentionCandidate,
+  type MentionKind,
+  type MentionSearchKind,
   type ConversationGateway,
   type ConversationInput,
 } from "@vimex/conversation"
 import type { UserInput } from "./generated/v0_154_0/v2/UserInput"
+import { execFile } from "node:child_process"
+import { open } from "node:fs/promises"
+import { resolve } from "node:path"
+import { promisify } from "node:util"
+
+const execFileAsync = promisify(execFile)
+const mentionPreviewLimit = 4096
+
+async function readMentionPreview(path: string): Promise<string | undefined> {
+  try {
+    const file = await open(path, "r")
+    try {
+      const buffer = Buffer.alloc(mentionPreviewLimit)
+      const { bytesRead } = await file.read(buffer, 0, buffer.length, 0)
+      // File pickers can enumerate binary assets too. Avoid sending binary
+      // control data into the terminal preview while keeping their attachment.
+      if (buffer.subarray(0, bytesRead).includes(0)) return undefined
+      return buffer.subarray(0, bytesRead).toString("utf8")
+    } finally {
+      await file.close()
+    }
+  } catch {
+    return undefined
+  }
+}
+
+async function mapWithConcurrency<T, U>(
+  values: readonly T[],
+  limit: number,
+  mapper: (value: T) => Promise<U>,
+): Promise<U[]> {
+  const results = new Array<U>(values.length)
+  let next = 0
+  const worker = async () => {
+    while (true) {
+      const index = next++
+      if (index >= values.length) return
+      results[index] = await mapper(values[index]!)
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, values.length) }, () => worker()),
+  )
+  return results
+}
 
 function normalizeConversationInput(
   text: string,
@@ -20,7 +68,11 @@ function normalizeConversationInput(
     : input.map((part) =>
         part.type === "text"
           ? { type: "text" as const, text: part.text, text_elements: [] }
-          : { type: "localImage" as const, path: part.path },
+          : part.type === "image"
+            ? { type: "localImage" as const, path: part.path }
+            : part.type === "skill"
+              ? { type: "skill" as const, name: part.name, path: part.path }
+              : { type: "mention" as const, name: part.name, path: part.path },
       )
 }
 import type {
@@ -295,10 +347,154 @@ export function createCodexGateways(
       let cursor: string | undefined
       do {
         const page = await client.listThreads({ cursor, limit: 100 })
-        all.push(...page.threads)
+        const childIds = new Set(
+          page.relations
+            .filter((relation) => relation.parentThreadId)
+            .map((relation) => relation.threadId),
+        )
+        all.push(...page.threads.filter((thread) => !childIds.has(thread.id)))
         cursor = page.nextCursor ?? undefined
       } while (cursor)
       return all
+    },
+    async searchMentions(
+      query: string,
+      kind: MentionSearchKind,
+      cwd: string,
+    ): Promise<readonly MentionCandidate[]> {
+      if (kind === "grep") {
+        if (!query.trim()) return []
+        try {
+          const { stdout } = await execFileAsync(
+            "rg",
+            [
+              "--line-number",
+              "--no-heading",
+              "--color",
+              "never",
+              "--max-count",
+              "1",
+              "--hidden",
+              "--glob",
+              "!.git",
+              "--",
+              query,
+              cwd,
+            ],
+            { maxBuffer: 16 * 1024 * 1024 },
+          )
+          const matches = stdout
+            .split("\n")
+            .filter(Boolean)
+            .slice(0, 50)
+            .flatMap((line) => {
+              const match = line.match(/^(.*?):(\d+):(.*)$/u)
+              if (!match) return []
+              const path = resolve(cwd, match[1]!)
+              return [
+                {
+                  kind: "file" as const,
+                  name: match[1]!,
+                  path,
+                  detail: `${match[2]}: ${match[3]!.trim()}`,
+                },
+              ]
+            })
+          return Promise.all(
+            matches.map(async (candidate) => ({
+              ...candidate,
+              preview: await readMentionPreview(candidate.path),
+            })),
+          )
+        } catch {
+          return []
+        }
+      }
+      if (kind === "file") {
+        // The app-server fuzzy endpoint is intentionally bounded. An empty
+        // query is the modal's initial state, so enumerate the workspace
+        // directly to make every file searchable. Non-empty queries can use
+        // the server's indexed search and only need the visible matches.
+        const files = query.trim()
+          ? (
+              await client.fuzzyFileSearch({
+                query,
+                roots: [cwd],
+                cancellationToken: null,
+              })
+            ).files
+          : await execFileAsync(
+              "rg",
+              ["--files", "--hidden", "--glob", "!.git", "--", cwd],
+              { maxBuffer: 64 * 1024 * 1024 },
+            )
+              .then(({ stdout }) =>
+                stdout
+                  .split("\n")
+                  .filter(Boolean)
+                  .map((file) => ({
+                    root: cwd,
+                    path: file,
+                    match_type: "file" as const,
+                    file_name: file.split(/[\\/]/u).pop() ?? file,
+                    score: 0,
+                    indices: null,
+                  })),
+              )
+              .catch(() => [])
+        const candidates = files.filter((file) => file.match_type === "file")
+        return mapWithConcurrency(candidates, 32, async (file) => {
+          const path = resolve(file.root, file.path)
+          const candidate = {
+            kind,
+            name: file.path,
+            path,
+            detail: file.file_name,
+          }
+          return {
+            ...candidate,
+            preview: await readMentionPreview(candidate.path),
+          }
+        })
+      }
+      if (kind === "skill") {
+        const result = await client.listSkills({ cwds: [cwd] })
+        return result.data
+          .flatMap((entry) => entry.skills)
+          .filter(
+            (skill) =>
+              skill.enabled &&
+              (!query ||
+                `${skill.name} ${skill.description}`
+                  .toLowerCase()
+                  .includes(query.toLowerCase())),
+          )
+          .slice(0, 50)
+          .map((skill) => ({
+            kind,
+            name: skill.name,
+            path: skill.path,
+            detail: skill.description,
+          }))
+      }
+      const result = await client.listPlugins({ cwds: [cwd] })
+      return result.marketplaces
+        .flatMap((marketplace) => marketplace.plugins)
+        .filter(
+          (plugin) =>
+            plugin.enabled &&
+            (!query ||
+              `${plugin.name} ${plugin.keywords.join(" ")}`
+                .toLowerCase()
+                .includes(query.toLowerCase())),
+        )
+        .slice(0, 50)
+        .map((plugin) => ({
+          kind,
+          name: plugin.name,
+          path: plugin.id,
+          detail: plugin.interface?.shortDescription ?? undefined,
+        }))
     },
     async startThread(cwd, model) {
       return observeSession(
