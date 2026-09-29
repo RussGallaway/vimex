@@ -1812,8 +1812,18 @@ export function VimexApp({
               onEscape={() => {
                 if (composerInteractionRef.current.mode === "visual")
                   runComposerKey("escape")
-                else if (composerInteractionRef.current.mode === "insert")
-                  controller.dispatchInteraction({ type: "mode.normal" })
+                else if (composerInteractionRef.current.mode === "insert") {
+                  const shellMode =
+                    composer.text.startsWith("!") &&
+                    !composer.text.startsWith("!!")
+                  if (shellMode) {
+                    textareaRef.current?.setText("")
+                    if (textareaRef.current)
+                      textareaRef.current.cursorOffset = 0
+                    controller.changeDraft("", 0)
+                    controller.dispatchInteraction({ type: "mode.insert" })
+                  } else controller.dispatchInteraction({ type: "mode.normal" })
+                }
               }}
               onRetry={controller.retryOutgoing}
               onImageClipboard={controller.attachImageFromClipboard}

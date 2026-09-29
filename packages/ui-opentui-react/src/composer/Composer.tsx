@@ -225,12 +225,15 @@ export function Composer(props: {
   const failed = props.state.outbox.filter(
     (message) => message.status === "failed",
   )
+  const shellMode =
+    props.state.text.startsWith("!") && !props.state.text.startsWith("!!")
+  const accent = shellMode ? emberTide.amber : emberTide.blueBright
   return (
     <box
       id="composer-shell"
       flexShrink={0}
       border={["left"]}
-      borderColor={emberTide.blueBright}
+      borderColor={accent}
       backgroundColor={emberTide.backgroundRaised}
       paddingTop={compact ? 0 : 1}
       paddingX={2}
@@ -243,7 +246,7 @@ export function Composer(props: {
         minHeight={inputHeight}
         maxHeight={inputHeight}
         wrapMode="word"
-        placeholder="Message Codex…"
+        placeholder={shellMode ? "Run a shell command…" : "Message Codex…"}
         placeholderColor={emberTide.textMuted}
         textColor={emberTide.textSoft}
         focusedTextColor={emberTide.text}
@@ -320,7 +323,7 @@ export function Composer(props: {
           minWidth={0}
           overflow="hidden"
         >
-          <text fg={emberTide.blueBright}>Codex</text>
+          <text fg={accent}>{shellMode ? "Shell" : "Codex"}</text>
           <text fg={emberTide.textMuted}>·</text>
           <text fg={emberTide.textSoft} wrapMode="none" truncate>
             {props.model ?? "model —"}
