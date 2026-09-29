@@ -1,4 +1,4 @@
 # Frame capture dependencies for offline release probes and the opt-in live driver.
 pyte==0.8.2
-wcwidth==0.8.4
+wcwidth==0.9.1
 Pillow==12.3.0
