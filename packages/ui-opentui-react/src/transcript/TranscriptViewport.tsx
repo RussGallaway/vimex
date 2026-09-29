@@ -12,7 +12,7 @@ import {
   type TranscriptState,
   type TranscriptWindow,
 } from "@vimex/transcript"
-import { memo, useMemo, type RefObject } from "react"
+import { memo, useMemo, type ReactNode, type RefObject } from "react"
 import { selectedRangeForItem } from "./layout"
 import { emberTide } from "../theme"
 import { TranscriptNode } from "./TranscriptNode"
@@ -27,6 +27,7 @@ export interface TranscriptViewportProps {
   syntax: SyntaxStyle
   themeRevision?: string
   agentSummaries?: Readonly<Record<string, ThreadSummary>>
+  activity?: ReactNode
   scrollRef: RefObject<ScrollBoxRenderable | null>
   onManualScroll?: (
     rows?: number,
@@ -46,6 +47,7 @@ export function sameTranscriptViewportProps(
     before.syntax === after.syntax &&
     before.themeRevision === after.themeRevision &&
     before.agentSummaries === after.agentSummaries &&
+    before.activity === after.activity &&
     before.scrollRef === after.scrollRef &&
     before.onManualScroll === after.onManualScroll
   )
@@ -169,6 +171,11 @@ export const TranscriptViewport = memo(function TranscriptViewport(
         height={Math.max(1, props.window.bottomSpacerRows)}
         flexShrink={0}
       />
+      {props.activity ? (
+        <box id="activity-strip" height={1} flexShrink={0}>
+          {props.activity}
+        </box>
+      ) : null}
     </scrollbox>
   )
 }, sameTranscriptViewportProps)

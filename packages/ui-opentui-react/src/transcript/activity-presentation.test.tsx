@@ -301,8 +301,8 @@ test("one visible pane owns one heartbeat while running rows own none", async ()
     const activityStrip =
       setup.renderer.root.findDescendantById("activity-strip")!
     const status = setup.renderer.root.findDescendantById("status-bar")!
-    expect(activityStrip.y).toBe(composer.y + composer.height)
-    expect(status.y).toBe(activityStrip.y + activityStrip.height)
+    expect(activityStrip.y + activityStrip.height).toBeLessThan(composer.y)
+    expect(status.y).toBe(composer.y + composer.height)
     expect(setup.captureCharFrame().split("\n")[activityStrip.y]).toContain(
       "Working",
     )

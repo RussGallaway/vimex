@@ -148,7 +148,7 @@ describe("terminal frame regressions", () => {
           expect(shell.y + shell.height).toBe(anchoredBottom)
           expect(anchoredBottom).toBeLessThanOrEqual(height)
           const status = setup.renderer.root.findDescendantById("status-bar")!
-          expect(status.y).toBe(anchoredBottom + 1)
+          expect(status.y).toBe(anchoredBottom)
           expect(status.height).toBe(1)
           expect(shell.x).toBe(0)
           expect(shell.width).toBe(width)

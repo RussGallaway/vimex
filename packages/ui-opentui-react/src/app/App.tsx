@@ -1707,6 +1707,23 @@ export function VimexApp({
             syntax={syntax}
             themeRevision={transcriptStyleRevision}
             agentSummaries={state.summaries}
+            activity={
+              activity.working || pendingApproval || pendingQuestion ? (
+                <ActivityIndicator
+                  active={
+                    activity.working &&
+                    state.connection === "connected" &&
+                    !pendingApproval &&
+                    !pendingQuestion
+                  }
+                  label={activityLabel ?? "Working"}
+                  startedAt={activity.startedAt}
+                  tone={
+                    pendingApproval || pendingQuestion ? "waiting" : "working"
+                  }
+                />
+              ) : undefined
+            }
             scrollRef={scrollRef}
             onManualScroll={onManualScroll}
           />

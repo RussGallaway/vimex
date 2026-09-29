@@ -23,13 +23,13 @@ exports[`terminal frame regressions composer stays anchored through tool streami
 
 
 
+
 │
 │  Draft stays here
 │
 │
 │
 │  Codex · gpt-6 · high                                                                    enter send · shift↵ newline
-
  NORMAL   /work/vimex                                                                               git:main  context —"
 `;
 
@@ -52,13 +52,13 @@ exports[`terminal frame regressions composer stays anchored through tool streami
 
 
 
+
 │
 │  Draft stays here
 │
 │
 │
 │  Codex · gpt-6 · high                                            enter send · shift↵ newline
-
  NORMAL   /work/vimex                                                       git:main  context —"
 `;
 
@@ -73,13 +73,13 @@ exports[`terminal frame regressions composer stays anchored through tool streami
 
   │   ▸ ⋯ Calling Read files
 
+
 │
 │  Draft stays here
 │
 │
 │
 │  Codex · gpt-6 · high
-
  NORMAL   /work/vimex       git:main  context —"
 `;
 
