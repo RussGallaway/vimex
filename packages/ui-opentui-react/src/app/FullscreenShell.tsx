@@ -112,6 +112,7 @@ export function FullscreenShell(props: {
       {props.transcript}
       {props.notice}
       {props.composer}
+      <box id="composer-status-gap" height={1} flexShrink={0} />
       {props.commandLine ?? props.statusline}
       {props.overlay}
     </box>

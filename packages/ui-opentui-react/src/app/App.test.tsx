@@ -118,9 +118,13 @@ describe("Vimex OpenTUI shell", () => {
         await wide.renderOnce()
       })
       const composer = wide.renderer.root.findDescendantById("composer-shell")!
+      const gap = wide.renderer.root.findDescendantById("composer-status-gap")!
       const status = wide.renderer.root.findDescendantById("status-bar")!
       expect(composer.x).toBe(0)
       expect(composer.width).toBe(96)
+      expect(gap.y).toBe(composer.y + composer.height)
+      expect(gap.height).toBe(1)
+      expect(status.y).toBe(gap.y + gap.height)
       expect(status.height).toBe(1)
       expect(wide.captureCharFrame()).toContain("Codex · gpt-6 · high")
       expect(wide.captureCharFrame()).toContain("enter send · shift↵ newline")
