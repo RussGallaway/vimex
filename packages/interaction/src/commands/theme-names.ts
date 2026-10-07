@@ -1,6 +1,8 @@
 /** Supported display identifiers shared by commands, configuration, and UI. */
 export const themeNames = [
   "ember-tide",
+  "charcoal",
+  "charcoal-transparent",
   "nord",
   "kanagawa",
   "gruvbox-material",

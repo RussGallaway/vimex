@@ -15,6 +15,7 @@ import {
   oneDark,
   dracula,
 } from "./new-palettes"
+import { charcoal, charcoalTransparent } from "./charcoal"
 export type { VimexTheme } from "./types"
 
 const emberTideBase: VimexTheme = {
@@ -122,6 +123,8 @@ export const kanagawa: VimexTheme = {
 
 const themes = {
   "ember-tide": emberTideBase,
+  charcoal,
+  "charcoal-transparent": charcoalTransparent,
   nord,
   kanagawa,
   "gruvbox-material": gruvboxMaterial,
@@ -150,6 +153,17 @@ function reduced(palette: VimexTheme): VimexTheme {
             property: palette.textSoft,
             heading: palette.text,
             operator: palette.text,
+            variable: palette.textSoft,
+            special: palette.text,
+            module: palette.textSoft,
+            headings: [
+              palette.text,
+              palette.text,
+              palette.text,
+              palette.text,
+              palette.text,
+              palette.text,
+            ],
           },
         }
       : {}),
@@ -192,6 +206,11 @@ export function createEmberTideSyntax(
   const palette = reducedColor ? reduced(base) : base
   return SyntaxStyle.fromStyles({
     default: { fg: palette.text },
+    "keyword.import": {
+      fg:
+        palette.syntax?.module ?? palette.syntax?.keyword ?? palette.blueBright,
+      bold: palette.syntax?.keywordBold ?? true,
+    },
     keyword: {
       fg: palette.syntax?.keyword ?? palette.blueBright,
       bold: palette.syntax?.keywordBold ?? true,
@@ -201,15 +220,17 @@ export function createEmberTideSyntax(
     comment: { fg: palette.textMuted, italic: true },
     function: { fg: palette.syntax?.function ?? palette.blue },
     type: { fg: palette.syntax?.type ?? palette.amber },
-    variable: { fg: palette.textSoft },
-    "variable.builtin": { fg: palette.ember },
-    "variable.parameter": { fg: palette.textSoft },
+    variable: { fg: palette.syntax?.variable ?? palette.textSoft },
+    "variable.builtin": { fg: palette.syntax?.special ?? palette.ember },
+    "variable.parameter": { fg: palette.syntax?.variable ?? palette.textSoft },
     property: { fg: palette.syntax?.property ?? palette.blue },
     "function.call": { fg: palette.syntax?.function ?? palette.blue },
     "function.method": { fg: palette.syntax?.function ?? palette.blue },
     "function.method.call": { fg: palette.syntax?.function ?? palette.blue },
     "function.builtin": { fg: palette.syntax?.function ?? palette.blueBright },
-    constructor: { fg: palette.syntax?.type ?? palette.amber },
+    constructor: {
+      fg: palette.syntax?.special ?? palette.syntax?.type ?? palette.amber,
+    },
     "type.builtin": { fg: palette.syntax?.type ?? palette.amber },
     constant: { fg: palette.syntax?.constant ?? palette.amber },
     "constant.builtin": { fg: palette.syntax?.constant ?? palette.ember },
@@ -221,28 +242,46 @@ export function createEmberTideSyntax(
     "punctuation.delimiter": { fg: palette.textSoft },
     "punctuation.special": { fg: palette.blueBright },
     "string.special": { fg: palette.sage },
-    "string.escape": { fg: palette.ember },
+    "string.escape": { fg: palette.syntax?.special ?? palette.ember },
     "comment.documentation": { fg: palette.textMuted, italic: true },
-    attribute: { fg: palette.amber },
-    module: { fg: palette.blue },
+    attribute: { fg: palette.syntax?.special ?? palette.amber },
+    module: { fg: palette.syntax?.module ?? palette.blue },
     tag: { fg: palette.blueBright },
     "markup.heading": {
       fg: palette.syntax?.heading ?? palette.amber,
       bold: true,
     },
     "markup.heading.1": {
-      fg: palette.syntax?.heading ?? palette.amber,
+      fg:
+        palette.syntax?.headings?.[0] ??
+        palette.syntax?.heading ??
+        palette.amber,
       bold: true,
       underline: true,
     },
     "markup.heading.2": {
-      fg: palette.syntax?.heading ?? palette.amber,
+      fg:
+        palette.syntax?.headings?.[1] ??
+        palette.syntax?.heading ??
+        palette.amber,
       bold: true,
     },
-    "markup.heading.3": { fg: palette.blueBright, bold: true },
-    "markup.heading.4": { fg: palette.blueBright, bold: true },
-    "markup.heading.5": { fg: palette.text, bold: true },
-    "markup.heading.6": { fg: palette.text, bold: true },
+    "markup.heading.3": {
+      fg: palette.syntax?.headings?.[2] ?? palette.blueBright,
+      bold: true,
+    },
+    "markup.heading.4": {
+      fg: palette.syntax?.headings?.[3] ?? palette.blueBright,
+      bold: true,
+    },
+    "markup.heading.5": {
+      fg: palette.syntax?.headings?.[4] ?? palette.text,
+      bold: true,
+    },
+    "markup.heading.6": {
+      fg: palette.syntax?.headings?.[5] ?? palette.text,
+      bold: true,
+    },
     "markup.strong": { fg: palette.text, bold: true },
     "markup.bold": { fg: palette.text, bold: true },
     "markup.italic": { fg: palette.textSoft, italic: true },

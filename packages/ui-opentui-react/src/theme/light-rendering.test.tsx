@@ -57,11 +57,20 @@ test("light and dark themes repaint existing user and tool panels on a live swit
     },
   }).state
   let switchTheme!: (
-    name: "rose-pine-dawn" | "solarized-light" | "solarized-dark",
+    name:
+      | "rose-pine-dawn"
+      | "solarized-light"
+      | "solarized-dark"
+      | "charcoal"
+      | "charcoal-transparent",
   ) => void
   function Harness() {
     const [name, setName] = useState<
-      "rose-pine-dawn" | "solarized-light" | "solarized-dark"
+      | "rose-pine-dawn"
+      | "solarized-light"
+      | "solarized-dark"
+      | "charcoal"
+      | "charcoal-transparent"
     >("rose-pine-dawn")
     switchTheme = setName
     return (
@@ -86,6 +95,10 @@ test("light and dark themes repaint existing user and tool panels on a live swit
       "solarized-light",
       "solarized-dark",
       "solarized-light",
+      "charcoal",
+      "charcoal-transparent",
+      "charcoal",
+      "charcoal-transparent",
     ] as const) {
       if (name !== "rose-pine-dawn") await act(async () => switchTheme(name))
       await waitForRender(

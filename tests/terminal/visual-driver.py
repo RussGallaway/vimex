@@ -6,7 +6,7 @@ from frame_capture import save_frame
 
 root = pathlib.Path(__file__).resolve().parents[2]
 theme = os.environ.get('VIMEX_TEST_THEME', '')
-if theme not in ('', 'ember-tide', 'nord', 'kanagawa', 'gruvbox-material', 'tokyo-night', 'catppuccin-mocha', 'rose-pine-dawn', 'everforest', 'solarized-light', 'solarized-dark', 'one-dark', 'dracula'):
+if theme not in ('', 'ember-tide', 'charcoal', 'charcoal-transparent', 'nord', 'kanagawa', 'gruvbox-material', 'tokyo-night', 'catppuccin-mocha', 'rose-pine-dawn', 'everforest', 'solarized-light', 'solarized-dark', 'one-dark', 'dracula'):
     raise ValueError('Unsupported VIMEX_TEST_THEME')
 artifacts = pathlib.Path(os.environ.get('VIMEX_TEST_ARTIFACTS_DIR') or ('/tmp/vimex-visual-e2e' + ('-' + theme if theme else '')))
 screen = pyte.Screen(100, 30)
@@ -44,6 +44,13 @@ with tempfile.TemporaryDirectory(prefix='vimex-visual-') as temporary:
         wait('NORMAL')
         if theme:
             send(b':theme ' + theme.encode() + b'\r');wait('NORMAL')
+        if theme in ('charcoal', 'charcoal-transparent'):
+            for label, opaque_bg in (('VIMEX', '151515'), ('NORMAL', '1e1e1e')):
+                expected_bg = 'default' if theme == 'charcoal-transparent' else opaque_bg
+                cells = [screen.buffer[y][x] for y in range(screen.lines) for x in range(screen.columns)
+                         if screen.display[y][x:x+len(label)] == label]
+                assert cells and all(cell.bg == expected_bg for cell in cells), f'{label} did not preserve {theme} background'
+            checks.append('charcoal-terminal-background')
         capture('01-demo')
         send(b'\x1b[B');send(b'i');wait('INSERT')
         send(b'Draft stays separate from status');capture('02-draft')

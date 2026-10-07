@@ -16,7 +16,9 @@ export function OverlayFrame(props: {
       border
       borderStyle="single"
       borderColor={emberTide.blue}
-      backgroundColor={emberTide.backgroundRaised}
+      backgroundColor={
+        emberTide.overlayBackground ?? emberTide.backgroundRaised
+      }
       paddingX={2}
       paddingY={1}
       title={` ${props.title} `}

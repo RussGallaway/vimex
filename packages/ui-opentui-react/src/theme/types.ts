@@ -6,6 +6,11 @@ export interface VimexTheme {
   backgroundHover: string
   border: string
   borderMuted: string
+  /** Foreground on colored badges, independent of canvas transparency. */
+  textInverse?: string
+  /** Solid dialog surface and valid alpha backdrop for transparent canvases. */
+  overlayBackground?: string
+  overlayBackdrop?: string
   text: string
   textSoft: string
   textMuted: string
@@ -32,5 +37,9 @@ export interface VimexTheme {
     property: string
     heading: string
     operator: string
+    variable?: string
+    special?: string
+    module?: string
+    headings?: readonly [string, string, string, string, string, string]
   }
 }

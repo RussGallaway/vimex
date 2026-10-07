@@ -59,12 +59,12 @@ export function Composer(props: {
         bold: true,
       },
       "vimex-mention-skill": {
-        fg: emberTide.background,
+        fg: emberTide.textInverse ?? emberTide.background,
         bg: emberTide.amber,
         bold: true,
       },
       "vimex-mention-plugin": {
-        fg: emberTide.background,
+        fg: emberTide.textInverse ?? emberTide.background,
         bg: emberTide.ember,
         bold: true,
       },

@@ -59,7 +59,7 @@ export function FullscreenShell(props: {
             <text
               id="agent-context-badge"
               flexShrink={0}
-              fg={emberTide.background}
+              fg={emberTide.textInverse ?? emberTide.background}
               bg={emberTide.blueBright}
             >
               <b> {props.threadRole} </b>
