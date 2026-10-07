@@ -6,8 +6,19 @@ from frame_capture import save_frame
 
 root = pathlib.Path(__file__).resolve().parents[2]
 theme = os.environ.get('VIMEX_TEST_THEME', '')
-if theme not in ('', 'ember-tide', 'charcoal', 'charcoal-transparent', 'nord', 'kanagawa', 'gruvbox-material', 'tokyo-night', 'catppuccin-mocha', 'rose-pine-dawn', 'everforest', 'solarized-light', 'solarized-dark', 'one-dark', 'dracula'):
+if theme not in ('', 'ember-tide', 'charcoal', 'charcoal-transparent', 'charcoal-ink', 'charcoal-ink-transparent', 'charcoal-copper', 'charcoal-copper-transparent', 'charcoal-signal', 'charcoal-signal-transparent', 'nord', 'kanagawa', 'gruvbox-material', 'tokyo-night', 'catppuccin-mocha', 'rose-pine-dawn', 'everforest', 'solarized-light', 'solarized-dark', 'one-dark', 'dracula'):
     raise ValueError('Unsupported VIMEX_TEST_THEME')
+# Canvas, status bar, composer, and user-message backgrounds.
+charcoal_surfaces = {
+    'charcoal': ['151515', '1e1e1e', '1e1e1e', '252525'],
+    'charcoal-transparent': ['default', 'default', '191919', '202020'],
+    'charcoal-ink': ['161615', '222221', '222221', '262523'],
+    'charcoal-ink-transparent': ['default', 'default', '181818', '262523'],
+    'charcoal-copper': ['191613', '25201c', '25201c', '30261f'],
+    'charcoal-copper-transparent': ['default', 'default', '211c19', '28221e'],
+    'charcoal-signal': ['12171c', '1c242c', '1c242c', '1d2c34'],
+    'charcoal-signal-transparent': ['default', 'default', '171d24', '17242a'],
+}
 artifacts = pathlib.Path(os.environ.get('VIMEX_TEST_ARTIFACTS_DIR') or ('/tmp/vimex-visual-e2e' + ('-' + theme if theme else '')))
 screen = pyte.Screen(100, 30)
 stream = pyte.Stream(screen)
@@ -44,15 +55,28 @@ with tempfile.TemporaryDirectory(prefix='vimex-visual-') as temporary:
         wait('NORMAL')
         if theme:
             send(b':theme ' + theme.encode() + b'\r');wait('NORMAL')
-        if theme in ('charcoal', 'charcoal-transparent'):
-            for label, opaque_bg in (('VIMEX', '151515'), ('NORMAL', '1e1e1e')):
-                expected_bg = 'default' if theme == 'charcoal-transparent' else opaque_bg
+        if theme in charcoal_surfaces:
+            # NORMAL remains visible while :theme schedules its redraw. Await
+            # the new canvas, status and composer colors, not the old label.
+            def surface_cells(label):
+                return [screen.buffer[y][x] for y in range(screen.lines) for x in range(screen.columns)
+                        if screen.display[y][x:x+len(label)] == label]
+            def theme_repainted():
+                for label, expected_bg in zip(('VIMEX', 'NORMAL', 'Message Codex'), charcoal_surfaces[theme][:3]):
+                    cells = surface_cells(label)
+                    if not cells or not all(cell.bg == expected_bg for cell in cells):
+                        return False
+                return True
+            deadline = time.monotonic() + 10
+            while not theme_repainted() and time.monotonic() < deadline:
+                pump()
+            for label, expected_bg in zip(('VIMEX', 'NORMAL'), charcoal_surfaces[theme][:2]):
                 cells = [screen.buffer[y][x] for y in range(screen.lines) for x in range(screen.columns)
                          if screen.display[y][x:x+len(label)] == label]
                 assert cells and all(cell.bg == expected_bg for cell in cells), f'{label} did not preserve {theme} background'
             composers = [screen.buffer[y][x] for y in range(screen.lines) for x in range(screen.columns)
                          if screen.display[y][x:x+len('Message Codex')] == 'Message Codex']
-            assert composers and all(cell.bg == ('191919' if theme == 'charcoal-transparent' else '1e1e1e') for cell in composers), 'Composer is missing its charcoal fill'
+            assert composers and all(cell.bg == charcoal_surfaces[theme][2] for cell in composers), 'Composer is missing its charcoal fill'
             checks.append('charcoal-terminal-background-and-composer')
         capture('01-demo')
         send(b'\x1b[B');send(b'i');wait('INSERT')
@@ -101,9 +125,9 @@ with tempfile.TemporaryDirectory(prefix='vimex-visual-') as temporary:
         assert 'NEXT_DRAFT_AFTER_SEND' in '\n'.join(screen.display[-9:]), 'Next draft missing after submit'
         assert 'statusNEXT_DRAFT_AFTER_SEND' not in '\n'.join(screen.display), 'Submitted native text was resurrected'
         checks.append('submit-clears-before-next-keystroke')
-        if theme in ('charcoal', 'charcoal-transparent'):
+        if theme in charcoal_surfaces:
             user_rows = [y for y in range(screen.lines) if 'Draft stays separate from status' in screen.display[y]]
-            assert any(screen.buffer[y][screen.display[y].index('Draft stays separate from status')].bg == ('202020' if theme == 'charcoal-transparent' else '252525') for y in user_rows), 'User message is missing its distinct charcoal fill'
+            assert any(screen.buffer[y][screen.display[y].index('Draft stays separate from status')].bg == charcoal_surfaces[theme][3] for y in user_rows), 'User message is missing its distinct charcoal fill'
             checks.append('charcoal-user-message-fill')
         capture('08-working-heartbeat-a');pump(0.25);capture('09-working-heartbeat-b')
         panel_rows=[row for row in range(screen.lines) if screen.buffer[row][0].data == '│']

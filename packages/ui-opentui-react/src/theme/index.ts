@@ -16,6 +16,9 @@ import {
   dracula,
 } from "./new-palettes"
 import { charcoal, charcoalTransparent } from "./charcoal"
+import { charcoalInk, charcoalInkTransparent } from "./charcoal-ink"
+import { charcoalCopper, charcoalCopperTransparent } from "./charcoal-copper"
+import { charcoalSignal, charcoalSignalTransparent } from "./charcoal-signal"
 export type { VimexTheme } from "./types"
 
 const emberTideBase: VimexTheme = {
@@ -125,6 +128,12 @@ const themes = {
   "ember-tide": emberTideBase,
   charcoal,
   "charcoal-transparent": charcoalTransparent,
+  "charcoal-ink": charcoalInk,
+  "charcoal-ink-transparent": charcoalInkTransparent,
+  "charcoal-copper": charcoalCopper,
+  "charcoal-copper-transparent": charcoalCopperTransparent,
+  "charcoal-signal": charcoalSignal,
+  "charcoal-signal-transparent": charcoalSignalTransparent,
   nord,
   kanagawa,
   "gruvbox-material": gruvboxMaterial,

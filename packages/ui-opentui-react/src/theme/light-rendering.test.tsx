@@ -3,6 +3,7 @@ import { testRender } from "@opentui/react/test-utils"
 import { expect, test } from "bun:test"
 import { act, useState } from "react"
 import { itemId, threadId, turnId } from "@vimex/conversation"
+import type { ThemeName } from "@vimex/interaction"
 import { initialWorkbench, transitionWorkbench } from "@vimex/workbench"
 import { inertController } from "../contracts"
 import { VimexRoot } from "../index"
@@ -70,22 +71,9 @@ test("light and dark themes repaint existing user and tool panels on a live swit
       },
     },
   }).state
-  let switchTheme!: (
-    name:
-      | "rose-pine-dawn"
-      | "solarized-light"
-      | "solarized-dark"
-      | "charcoal"
-      | "charcoal-transparent",
-  ) => void
+  let switchTheme!: (name: ThemeName) => void
   function Harness() {
-    const [name, setName] = useState<
-      | "rose-pine-dawn"
-      | "solarized-light"
-      | "solarized-dark"
-      | "charcoal"
-      | "charcoal-transparent"
-    >("rose-pine-dawn")
+    const [name, setName] = useState<ThemeName>("rose-pine-dawn")
     switchTheme = setName
     return (
       <VimexRoot
@@ -113,6 +101,13 @@ test("light and dark themes repaint existing user and tool panels on a live swit
       "charcoal-transparent",
       "charcoal",
       "charcoal-transparent",
+      "charcoal-ink",
+      "charcoal-ink-transparent",
+      "charcoal-copper",
+      "charcoal-copper-transparent",
+      "charcoal-signal",
+      "charcoal-signal-transparent",
+      "charcoal",
     ] as const) {
       if (name !== "rose-pine-dawn") await act(async () => switchTheme(name))
       await waitForRender(

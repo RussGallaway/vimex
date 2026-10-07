@@ -245,3 +245,117 @@ for (const name of ["charcoal", "charcoal-transparent"] as const)
       reduced.destroy()
     }
   })
+
+for (const family of ["ink", "copper", "signal"] as const) {
+  const opaqueName = `charcoal-${family}` as const
+  const transparentName = `charcoal-${family}-transparent` as const
+  test(`Charcoal ${family} keeps syntax identical across opaque and transparent surfaces`, () => {
+    const opaque = themePalette(opaqueName)
+    const transparent = themePalette(transparentName)
+    expect(transparent.name).toBe(`${opaque.name} Transparent`)
+    for (const token of [
+      "background",
+      "backgroundRaised",
+      "backgroundPanel",
+      "diffContext",
+    ] as const) {
+      expect(RGBA.fromHex(opaque[token]).a).toBe(1)
+      expect(RGBA.fromHex(transparent[token]).a).toBe(0)
+    }
+    expect(transparent.syntax).toEqual(opaque.syntax)
+    for (const token of [
+      "text",
+      "textSoft",
+      "textMuted",
+      "userBorder",
+      "assistantBorder",
+      "textInverse",
+      "overlayBackground",
+      "overlayBackdrop",
+      "selection",
+      "diffAdded",
+      "diffRemoved",
+    ] as const)
+      expect(transparent[token]).toBe(opaque[token])
+    for (const palette of [opaque, transparent]) {
+      expect(palette.userBorder).not.toBe(palette.assistantBorder)
+      for (const token of [
+        "userBackground",
+        "composerBackground",
+        "overlayBackground",
+        "textInverse",
+      ] as const)
+        expect(RGBA.fromHex(palette[token]!).a).toBe(1)
+      // The transparent canvas is tested over this user's dark Ghostty background.
+      for (const background of [
+        opaque.background,
+        "#1c1917",
+        palette.userBackground!,
+        palette.composerBackground!,
+        palette.overlayBackground!,
+        palette.diffAdded,
+        palette.diffRemoved,
+      ]) {
+        expect(contrast(palette.text, background)).toBeGreaterThanOrEqual(7)
+        expect(contrast(palette.textSoft, background)).toBeGreaterThanOrEqual(
+          4.5,
+        )
+        expect(contrast(palette.textMuted, background)).toBeGreaterThanOrEqual(
+          4.5,
+        )
+      }
+      expect(
+        contrast(palette.selectionText, palette.selection),
+      ).toBeGreaterThanOrEqual(7)
+      expect(
+        contrast(palette.textMuted, palette.selection),
+      ).toBeGreaterThanOrEqual(3.5)
+      expect(
+        contrast(palette.textInverse!, palette.blueBright),
+      ).toBeGreaterThanOrEqual(7)
+    }
+    const normal = createEmberTideSyntax(opaqueName)
+    const transparentSyntax = createEmberTideSyntax(transparentName)
+    const reducedSyntax = createEmberTideSyntax(transparentName, true)
+    try {
+      for (const scope of [
+        "keyword",
+        "keyword.import",
+        "string",
+        "number",
+        "function.call",
+        "type",
+        "constructor",
+        "attribute",
+        "module",
+        "variable",
+        "markup.heading.1",
+        "markup.heading.6",
+      ])
+        expect(normal.getStyle(scope)!.fg!.toString()).toBe(
+          transparentSyntax.getStyle(scope)!.fg!.toString(),
+        )
+      for (const scope of [
+        "keyword",
+        "number",
+        "constructor",
+        "markup.heading.6",
+      ])
+        expect(reducedSyntax.getStyle(scope)!.fg!.toString()).toBe(
+          reducedSyntax.getStyle("default")!.fg!.toString(),
+        )
+      for (const scope of ["function.call", "module", "variable"])
+        expect(reducedSyntax.getStyle(scope)!.fg!.toString()).toBe(
+          RGBA.fromHex(transparent.textSoft).toString(),
+        )
+      const reducedPalette = selectTheme(transparentName, true)
+      expect(reducedPalette.userBorder).toBe(reducedPalette.textSoft)
+      expect(reducedPalette.assistantBorder).toBe(reducedPalette.textSoft)
+    } finally {
+      normal.destroy()
+      transparentSyntax.destroy()
+      reducedSyntax.destroy()
+      selectTheme("ember-tide")
+    }
+  })
+}
