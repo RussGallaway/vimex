@@ -16,7 +16,7 @@ test("transparent canvas preserves opaque badge text and floating dialog surface
       connection={initialWorkbench().connection}
       working={false}
       transcript={<text fg={palette.text}>CANVAS SAMPLE</text>}
-      composer={<text bg={palette.backgroundRaised}>COMPOSER SAMPLE</text>}
+      composer={<text bg={palette.composerBackground}>COMPOSER SAMPLE</text>}
       statusline={<text bg={palette.backgroundPanel}>STATUS SAMPLE</text>}
     />,
     { width: 80, height: 20 },
@@ -24,8 +24,13 @@ test("transparent canvas preserves opaque badge text and floating dialog surface
   try {
     await h.renderOnce()
     const spans = h.captureSpans().lines.flatMap((line) => line.spans)
-    for (const text of ["CANVAS SAMPLE", "COMPOSER SAMPLE", "STATUS SAMPLE"])
+    for (const text of ["CANVAS SAMPLE", "STATUS SAMPLE"])
       expect(spans.find((span) => span.text.includes(text))!.bg.a).toBe(0)
+    expect(
+      spans
+        .find((span) => span.text.includes("COMPOSER SAMPLE"))!
+        .bg.toString(),
+    ).toBe(RGBA.fromHex("#1e1e1e").toString())
     const badge = spans.find((span) => span.text.includes("PARENT"))!
     expect(badge.fg.a).toBe(1)
     expect(badge.fg.toString()).toBe(RGBA.fromHex("#151515").toString())

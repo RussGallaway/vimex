@@ -8,6 +8,10 @@ export interface VimexTheme {
   borderMuted: string
   /** Foreground on colored badges, independent of canvas transparency. */
   textInverse?: string
+  userBackground?: string
+  composerBackground?: string
+  userBorder?: string
+  assistantBorder?: string
   /** Solid dialog surface and valid alpha backdrop for transparent canvases. */
   overlayBackground?: string
   overlayBackdrop?: string

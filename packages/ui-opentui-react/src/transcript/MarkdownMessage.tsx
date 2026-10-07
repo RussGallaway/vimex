@@ -30,7 +30,7 @@ export function MarkdownMessage(props: {
     props.blockId && props.blockId !== "root" ? `:${props.blockId}` : ""
   return (
     <markdown
-      key={`${styleGeneration(props.syntax)}:${emberTide.background}:${emberTide.backgroundPanel}:${suffix}`}
+      key={`${styleGeneration(props.syntax)}:${emberTide.background}:${emberTide.userBackground ?? emberTide.backgroundPanel}:${suffix}`}
       id={`markdown:${props.item.id}${suffix}`}
       content={props.item.markdown}
       syntaxStyle={props.syntax}
@@ -47,7 +47,7 @@ export function MarkdownMessage(props: {
       }
       bg={
         props.item.kind === "user"
-          ? emberTide.backgroundPanel
+          ? (emberTide.userBackground ?? emberTide.backgroundPanel)
           : emberTide.background
       }
     />

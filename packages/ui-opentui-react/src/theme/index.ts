@@ -167,6 +167,8 @@ function reduced(palette: VimexTheme): VimexTheme {
           },
         }
       : {}),
+    ...(palette.userBorder ? { userBorder: palette.textSoft } : {}),
+    ...(palette.assistantBorder ? { assistantBorder: palette.textSoft } : {}),
     blue: palette.textSoft,
     blueBright: palette.text,
     sage: palette.textSoft,

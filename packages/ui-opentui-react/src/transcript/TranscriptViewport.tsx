@@ -193,6 +193,12 @@ const TranscriptRow = memo(function TranscriptRow(props: {
   agentSummaries?: Readonly<Record<string, ThreadSummary>>
 }) {
   const item = props.block.renderItem as ConversationItem
+  const roleBorder =
+    item.kind === "user"
+      ? emberTide.userBorder
+      : item.kind === "assistant"
+        ? emberTide.assistantBorder
+        : undefined
   const continues = Boolean(
     props.block.fragment &&
     props.block.fragment.index < props.block.fragment.count - 1,
@@ -213,8 +219,8 @@ const TranscriptRow = memo(function TranscriptRow(props: {
           props.selected
             ? emberTide.amber
             : props.current
-              ? emberTide.blueBright
-              : emberTide.borderMuted
+              ? (roleBorder ?? emberTide.blueBright)
+              : (roleBorder ?? emberTide.borderMuted)
         }
         paddingLeft={2}
         paddingRight={item.kind === "user" ? 2 : 0}
@@ -222,7 +228,7 @@ const TranscriptRow = memo(function TranscriptRow(props: {
         paddingBottom={item.kind === "user" && finalFragment ? 1 : 0}
         backgroundColor={
           item.kind === "user"
-            ? emberTide.backgroundPanel
+            ? (emberTide.userBackground ?? emberTide.backgroundPanel)
             : emberTide.background
         }
       >
