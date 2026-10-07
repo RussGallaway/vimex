@@ -24,12 +24,16 @@ export function MentionDrawer(props: {
       right={0}
       zIndex={30}
       height={Math.max(3, visible.length + 2)}
-      backgroundColor={emberTide.backgroundPanel}
+      backgroundColor={emberTide.overlayBackground ?? emberTide.backgroundPanel}
       border={["left"]}
       borderColor={emberTide.blueBright}
       paddingX={1}
     >
-      <text height={1} fg={emberTide.blueBright}>
+      <text
+        height={1}
+        fg={emberTide.blueBright}
+        bg={emberTide.overlayBackground ?? emberTide.backgroundPanel}
+      >
         /
         {props.kind === "file"
           ? "files"
@@ -51,7 +55,9 @@ export function MentionDrawer(props: {
               flexDirection="row"
               gap={1}
               backgroundColor={
-                active ? emberTide.selection : emberTide.backgroundPanel
+                active
+                  ? emberTide.selection
+                  : (emberTide.overlayBackground ?? emberTide.backgroundPanel)
               }
             >
               <text
@@ -86,7 +92,13 @@ export function MentionDrawer(props: {
           No matching {props.kind}
         </text>
       )}
-      <text height={1} fg={emberTide.textMuted} wrapMode="none" truncate>
+      <text
+        height={1}
+        fg={emberTide.textMuted}
+        bg={emberTide.overlayBackground ?? emberTide.backgroundPanel}
+        wrapMode="none"
+        truncate
+      >
         {props.hint ??
           "↑/↓ move · space mark · tab next · enter attach · esc cancel"}
       </text>

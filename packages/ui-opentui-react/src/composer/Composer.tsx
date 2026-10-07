@@ -59,12 +59,12 @@ export function Composer(props: {
         bold: true,
       },
       "vimex-mention-skill": {
-        fg: emberTide.background,
+        fg: emberTide.textInverse ?? emberTide.background,
         bg: emberTide.amber,
         bold: true,
       },
       "vimex-mention-plugin": {
-        fg: emberTide.background,
+        fg: emberTide.textInverse ?? emberTide.background,
         bg: emberTide.ember,
         bold: true,
       },
@@ -323,7 +323,9 @@ export function Composer(props: {
       flexShrink={0}
       border={["left"]}
       borderColor={accent}
-      backgroundColor={emberTide.backgroundRaised}
+      backgroundColor={
+        emberTide.composerBackground ?? emberTide.backgroundRaised
+      }
       paddingTop={compact ? 0 : 1}
       paddingX={2}
     >
@@ -339,8 +341,12 @@ export function Composer(props: {
         placeholderColor={emberTide.textMuted}
         textColor={emberTide.textSoft}
         focusedTextColor={emberTide.text}
-        backgroundColor={emberTide.backgroundRaised}
-        focusedBackgroundColor={emberTide.backgroundRaised}
+        backgroundColor={
+          emberTide.composerBackground ?? emberTide.backgroundRaised
+        }
+        focusedBackgroundColor={
+          emberTide.composerBackground ?? emberTide.backgroundRaised
+        }
         cursorColor={emberTide.sage}
         cursorStyle={{
           style: props.mode === "insert" ? "line" : "block",

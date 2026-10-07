@@ -205,3 +205,43 @@ for (const name of [
       contrast(palette.diffRemovedBright, palette.diffRemoved),
     ).toBeGreaterThanOrEqual(3)
   })
+
+for (const name of ["charcoal", "charcoal-transparent"] as const)
+  test(`${name} preserves the devbox pastel roles in normal and reduced syntax`, () => {
+    const syntax = createEmberTideSyntax(name)
+    const reduced = createEmberTideSyntax(name, true)
+    try {
+      for (const [scope, hex] of [
+        ["keyword", "#c9a0a8"],
+        ["string", "#a6b29b"],
+        ["function.call", "#a0b2c2"],
+        ["number", "#b5a5be"],
+        ["constant", "#c7ad98"],
+        ["type", "#9fbcb5"],
+        ["property", "#aab7bd"],
+        ["operator", "#b5b2aa"],
+        ["constructor", "#b8a5c4"],
+        ["attribute", "#b8a5c4"],
+        ["module", "#c2b696"],
+        ["keyword.import", "#c2b696"],
+        ["variable", "#d5d7d4"],
+        ["comment", "#8c8c8c"],
+        ["markup.heading.3", "#a6b29b"],
+        ["markup.heading.6", "#c7ad98"],
+      ]) {
+        expect(syntax.getStyle(scope!)!.fg!.toString()).toBe(
+          RGBA.fromHex(hex!).toString(),
+        )
+      }
+      for (const scope of ["constructor", "attribute", "markup.heading.6"])
+        expect(reduced.getStyle(scope)!.fg!.toString()).toBe(
+          reduced.getStyle("default")!.fg!.toString(),
+        )
+      expect(reduced.getStyle("variable")!.fg!.toString()).toBe(
+        RGBA.fromHex(themePalette(name).textSoft).toString(),
+      )
+    } finally {
+      syntax.destroy()
+      reduced.destroy()
+    }
+  })

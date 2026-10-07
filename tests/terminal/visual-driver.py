@@ -6,7 +6,7 @@ from frame_capture import save_frame
 
 root = pathlib.Path(__file__).resolve().parents[2]
 theme = os.environ.get('VIMEX_TEST_THEME', '')
-if theme not in ('', 'ember-tide', 'nord', 'kanagawa', 'gruvbox-material', 'tokyo-night', 'catppuccin-mocha', 'rose-pine-dawn', 'everforest', 'solarized-light', 'solarized-dark', 'one-dark', 'dracula'):
+if theme not in ('', 'ember-tide', 'charcoal', 'charcoal-transparent', 'nord', 'kanagawa', 'gruvbox-material', 'tokyo-night', 'catppuccin-mocha', 'rose-pine-dawn', 'everforest', 'solarized-light', 'solarized-dark', 'one-dark', 'dracula'):
     raise ValueError('Unsupported VIMEX_TEST_THEME')
 artifacts = pathlib.Path(os.environ.get('VIMEX_TEST_ARTIFACTS_DIR') or ('/tmp/vimex-visual-e2e' + ('-' + theme if theme else '')))
 screen = pyte.Screen(100, 30)
@@ -44,6 +44,16 @@ with tempfile.TemporaryDirectory(prefix='vimex-visual-') as temporary:
         wait('NORMAL')
         if theme:
             send(b':theme ' + theme.encode() + b'\r');wait('NORMAL')
+        if theme in ('charcoal', 'charcoal-transparent'):
+            for label, opaque_bg in (('VIMEX', '151515'), ('NORMAL', '1e1e1e')):
+                expected_bg = 'default' if theme == 'charcoal-transparent' else opaque_bg
+                cells = [screen.buffer[y][x] for y in range(screen.lines) for x in range(screen.columns)
+                         if screen.display[y][x:x+len(label)] == label]
+                assert cells and all(cell.bg == expected_bg for cell in cells), f'{label} did not preserve {theme} background'
+            composers = [screen.buffer[y][x] for y in range(screen.lines) for x in range(screen.columns)
+                         if screen.display[y][x:x+len('Message Codex')] == 'Message Codex']
+            assert composers and all(cell.bg == ('191919' if theme == 'charcoal-transparent' else '1e1e1e') for cell in composers), 'Composer is missing its charcoal fill'
+            checks.append('charcoal-terminal-background-and-composer')
         capture('01-demo')
         send(b'\x1b[B');send(b'i');wait('INSERT')
         send(b'Draft stays separate from status');capture('02-draft')
@@ -91,6 +101,10 @@ with tempfile.TemporaryDirectory(prefix='vimex-visual-') as temporary:
         assert 'NEXT_DRAFT_AFTER_SEND' in '\n'.join(screen.display[-9:]), 'Next draft missing after submit'
         assert 'statusNEXT_DRAFT_AFTER_SEND' not in '\n'.join(screen.display), 'Submitted native text was resurrected'
         checks.append('submit-clears-before-next-keystroke')
+        if theme in ('charcoal', 'charcoal-transparent'):
+            user_rows = [y for y in range(screen.lines) if 'Draft stays separate from status' in screen.display[y]]
+            assert any(screen.buffer[y][screen.display[y].index('Draft stays separate from status')].bg == ('202020' if theme == 'charcoal-transparent' else '252525') for y in user_rows), 'User message is missing its distinct charcoal fill'
+            checks.append('charcoal-user-message-fill')
         capture('08-working-heartbeat-a');pump(0.25);capture('09-working-heartbeat-b')
         panel_rows=[row for row in range(screen.lines) if screen.buffer[row][0].data == '│']
         send(b'\x1b[200~'+('\n'.join('Multiline '+str(i) for i in range(20))).encode()+b'\x1b[201~')

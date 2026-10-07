@@ -64,7 +64,7 @@ export function TelescopeModal(props: {
       alignItems="center"
       justifyContent="center"
       zIndex={45}
-      backgroundColor={`${emberTide.background}d8`}
+      backgroundColor={emberTide.overlayBackdrop ?? `${emberTide.background}d8`}
     >
       <box
         id="telescope-picker"
@@ -75,7 +75,9 @@ export function TelescopeModal(props: {
         border
         borderStyle="single"
         borderColor={emberTide.blue}
-        backgroundColor={emberTide.backgroundRaised}
+        backgroundColor={
+          emberTide.overlayBackground ?? emberTide.backgroundRaised
+        }
       >
         <box
           flexGrow={1}
@@ -217,7 +219,9 @@ export function TelescopeModal(props: {
                       }
                     }}
                     textColor={emberTide.text}
-                    backgroundColor={emberTide.backgroundRaised}
+                    backgroundColor={
+                      emberTide.overlayBackground ?? emberTide.backgroundRaised
+                    }
                     focusedBackgroundColor={emberTide.backgroundRaised}
                   />
                 ) : (

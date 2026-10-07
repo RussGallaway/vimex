@@ -22,7 +22,7 @@ export function NoticeStrip({ message }: { message?: string }) {
       maxHeight={3}
       paddingX={2}
       overflow="hidden"
-      backgroundColor={emberTide.backgroundPanel}
+      backgroundColor={emberTide.overlayBackground ?? emberTide.backgroundPanel}
     >
       <text wrapMode="word" fg={emberTide.amber}>
         {message}

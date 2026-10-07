@@ -132,7 +132,7 @@ export function FlashJump(props: {
           height={1}
           width={1}
           zIndex={50}
-          fg={emberTide.background}
+          fg={emberTide.textInverse ?? emberTide.background}
           bg={emberTide.amber}
         >
           <b>{target.label}</b>
@@ -148,7 +148,9 @@ export function FlashJump(props: {
         zIndex={51}
         flexDirection="row"
         paddingX={2}
-        backgroundColor={emberTide.backgroundRaised}
+        backgroundColor={
+          emberTide.overlayBackground ?? emberTide.backgroundRaised
+        }
       >
         <text fg={emberTide.amber}>Jump / </text>
         <input
@@ -158,7 +160,9 @@ export function FlashJump(props: {
           minWidth={0}
           value={query}
           textColor={emberTide.text}
-          backgroundColor={emberTide.backgroundRaised}
+          backgroundColor={
+            emberTide.overlayBackground ?? emberTide.backgroundRaised
+          }
           placeholder="type text, then its label"
           onInput={(value) => {
             const label =

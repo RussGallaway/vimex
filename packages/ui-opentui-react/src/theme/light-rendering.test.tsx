@@ -56,12 +56,35 @@ test("light and dark themes repaint existing user and tool panels on a live swit
       },
     },
   }).state
+  state = transitionWorkbench(state, {
+    type: "conversation.event",
+    event: {
+      type: "item.started",
+      threadId: thread,
+      item: {
+        id: itemId("light-assistant"),
+        turnId: turn,
+        kind: "assistant",
+        markdown: "ASSISTANT THEME SAMPLE",
+        status: "complete",
+      },
+    },
+  }).state
   let switchTheme!: (
-    name: "rose-pine-dawn" | "solarized-light" | "solarized-dark",
+    name:
+      | "rose-pine-dawn"
+      | "solarized-light"
+      | "solarized-dark"
+      | "charcoal"
+      | "charcoal-transparent",
   ) => void
   function Harness() {
     const [name, setName] = useState<
-      "rose-pine-dawn" | "solarized-light" | "solarized-dark"
+      | "rose-pine-dawn"
+      | "solarized-light"
+      | "solarized-dark"
+      | "charcoal"
+      | "charcoal-transparent"
     >("rose-pine-dawn")
     switchTheme = setName
     return (
@@ -74,7 +97,7 @@ test("light and dark themes repaint existing user and tool panels on a live swit
       />
     )
   }
-  const h = await testRender(<Harness />, { width: 80, height: 20 })
+  const h = await testRender(<Harness />, { width: 80, height: 30 })
   try {
     const spanOf = (token: string) =>
       h
@@ -86,6 +109,10 @@ test("light and dark themes repaint existing user and tool panels on a live swit
       "solarized-light",
       "solarized-dark",
       "solarized-light",
+      "charcoal",
+      "charcoal-transparent",
+      "charcoal",
+      "charcoal-transparent",
     ] as const) {
       if (name !== "rose-pine-dawn") await act(async () => switchTheme(name))
       await waitForRender(
@@ -95,11 +122,21 @@ test("light and dark themes repaint existing user and tool panels on a live swit
         `${name} transcript panels`,
       )
       const palette = themePalette(name)
+      expect(spanOf("ASSISTANT THEME SAMPLE")?.bg.toString()).toBe(
+        RGBA.fromHex(palette.background).toString(),
+      )
+      expect(spanOf("Message Codex")?.bg.toString()).toBe(
+        RGBA.fromHex(
+          palette.composerBackground ?? palette.backgroundRaised,
+        ).toString(),
+      )
       expect(spanOf("USER THEME SAMPLE")?.fg.toString()).toBe(
         RGBA.fromHex(palette.text).toString(),
       )
       expect(spanOf("USER THEME SAMPLE")?.bg.toString()).toBe(
-        RGBA.fromHex(palette.backgroundPanel).toString(),
+        RGBA.fromHex(
+          palette.userBackground ?? palette.backgroundPanel,
+        ).toString(),
       )
       expect(spanOf("TOOL THEME SAMPLE")?.fg.toString()).toBe(
         RGBA.fromHex(palette.text).toString(),
