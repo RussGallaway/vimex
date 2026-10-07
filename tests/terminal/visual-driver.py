@@ -52,7 +52,7 @@ with tempfile.TemporaryDirectory(prefix='vimex-visual-') as temporary:
                 assert cells and all(cell.bg == expected_bg for cell in cells), f'{label} did not preserve {theme} background'
             composers = [screen.buffer[y][x] for y in range(screen.lines) for x in range(screen.columns)
                          if screen.display[y][x:x+len('Message Codex')] == 'Message Codex']
-            assert composers and all(cell.bg == '1e1e1e' for cell in composers), 'Composer is missing its charcoal fill'
+            assert composers and all(cell.bg == ('191919' if theme == 'charcoal-transparent' else '1e1e1e') for cell in composers), 'Composer is missing its charcoal fill'
             checks.append('charcoal-terminal-background-and-composer')
         capture('01-demo')
         send(b'\x1b[B');send(b'i');wait('INSERT')
@@ -103,7 +103,7 @@ with tempfile.TemporaryDirectory(prefix='vimex-visual-') as temporary:
         checks.append('submit-clears-before-next-keystroke')
         if theme in ('charcoal', 'charcoal-transparent'):
             user_rows = [y for y in range(screen.lines) if 'Draft stays separate from status' in screen.display[y]]
-            assert any(screen.buffer[y][screen.display[y].index('Draft stays separate from status')].bg == '252525' for y in user_rows), 'User message is missing its distinct charcoal fill'
+            assert any(screen.buffer[y][screen.display[y].index('Draft stays separate from status')].bg == ('202020' if theme == 'charcoal-transparent' else '252525') for y in user_rows), 'User message is missing its distinct charcoal fill'
             checks.append('charcoal-user-message-fill')
         capture('08-working-heartbeat-a');pump(0.25);capture('09-working-heartbeat-b')
         panel_rows=[row for row in range(screen.lines) if screen.buffer[row][0].data == '│']

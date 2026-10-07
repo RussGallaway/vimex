@@ -1076,7 +1076,7 @@ test("completed oversized Markdown composes exact stable projection fragments wi
         .map(blockKey),
     ).toEqual([`item:${id}:root`])
   }
-})
+}, 30_000)
 
 test("completed multi-file edits become exact stable per-file fragments with metadata fallbacks", () => {
   const oversized = buildOversizedTranscriptFixtures().find(

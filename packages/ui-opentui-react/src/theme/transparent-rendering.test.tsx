@@ -30,7 +30,7 @@ test("transparent canvas preserves opaque badge text and floating dialog surface
       spans
         .find((span) => span.text.includes("COMPOSER SAMPLE"))!
         .bg.toString(),
-    ).toBe(RGBA.fromHex("#1e1e1e").toString())
+    ).toBe(RGBA.fromHex("#191919").toString())
     const badge = spans.find((span) => span.text.includes("PARENT"))!
     expect(badge.fg.a).toBe(1)
     expect(badge.fg.toString()).toBe(RGBA.fromHex("#151515").toString())

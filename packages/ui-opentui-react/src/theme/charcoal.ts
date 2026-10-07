@@ -62,6 +62,8 @@ export const charcoalTransparent: VimexTheme = {
   backgroundRaised: "#00000000",
   backgroundPanel: "#00000000",
   diffContext: "#00000000",
+  userBackground: "#202020",
+  composerBackground: "#191919",
   // Floating dialogs need a solid surface so transcript text cannot bleed through.
   overlayBackground: charcoal.backgroundRaised,
   overlayBackdrop: "#151515d8",
