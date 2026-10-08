@@ -107,6 +107,12 @@ test("light and dark themes repaint existing user and tool panels on a live swit
       "charcoal-copper-transparent",
       "charcoal-signal",
       "charcoal-signal-transparent",
+      "lichen",
+      "lichen-transparent",
+      "dusk",
+      "dusk-transparent",
+      "clay",
+      "clay-transparent",
       "charcoal",
     ] as const) {
       if (name !== "rose-pine-dawn") await act(async () => switchTheme(name))

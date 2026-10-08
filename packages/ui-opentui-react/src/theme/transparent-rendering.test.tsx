@@ -13,6 +13,9 @@ const transparentThemes = [
   "charcoal-ink-transparent",
   "charcoal-copper-transparent",
   "charcoal-signal-transparent",
+  "lichen-transparent",
+  "dusk-transparent",
+  "clay-transparent",
 ] as const
 
 for (const name of transparentThemes) {

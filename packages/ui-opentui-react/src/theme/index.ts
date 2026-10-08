@@ -19,6 +19,9 @@ import { charcoal, charcoalTransparent } from "./charcoal"
 import { charcoalInk, charcoalInkTransparent } from "./charcoal-ink"
 import { charcoalCopper, charcoalCopperTransparent } from "./charcoal-copper"
 import { charcoalSignal, charcoalSignalTransparent } from "./charcoal-signal"
+import { lichen, lichenTransparent } from "./lichen"
+import { dusk, duskTransparent } from "./dusk"
+import { clay, clayTransparent } from "./clay"
 export type { VimexTheme } from "./types"
 
 const emberTideBase: VimexTheme = {
@@ -134,6 +137,12 @@ const themes = {
   "charcoal-copper-transparent": charcoalCopperTransparent,
   "charcoal-signal": charcoalSignal,
   "charcoal-signal-transparent": charcoalSignalTransparent,
+  lichen,
+  "lichen-transparent": lichenTransparent,
+  dusk,
+  "dusk-transparent": duskTransparent,
+  clay,
+  "clay-transparent": clayTransparent,
   nord,
   kanagawa,
   "gruvbox-material": gruvboxMaterial,

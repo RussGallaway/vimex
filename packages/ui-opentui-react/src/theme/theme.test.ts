@@ -246,10 +246,15 @@ for (const name of ["charcoal", "charcoal-transparent"] as const)
     }
   })
 
-for (const family of ["ink", "copper", "signal"] as const) {
-  const opaqueName = `charcoal-${family}` as const
-  const transparentName = `charcoal-${family}-transparent` as const
-  test(`Charcoal ${family} keeps syntax identical across opaque and transparent surfaces`, () => {
+for (const [opaqueName, transparentName, selectionMinimum] of [
+  ["charcoal-ink", "charcoal-ink-transparent", 7],
+  ["charcoal-copper", "charcoal-copper-transparent", 7],
+  ["charcoal-signal", "charcoal-signal-transparent", 7],
+  ["lichen", "lichen-transparent", 4.5],
+  ["dusk", "dusk-transparent", 4.5],
+  ["clay", "clay-transparent", 4.5],
+] as const) {
+  test(`${opaqueName} keeps syntax identical across opaque and transparent surfaces`, () => {
     const opaque = themePalette(opaqueName)
     const transparent = themePalette(transparentName)
     expect(transparent.name).toBe(`${opaque.name} Transparent`)
@@ -306,7 +311,7 @@ for (const family of ["ink", "copper", "signal"] as const) {
       }
       expect(
         contrast(palette.selectionText, palette.selection),
-      ).toBeGreaterThanOrEqual(7)
+      ).toBeGreaterThanOrEqual(selectionMinimum)
       expect(
         contrast(palette.textMuted, palette.selection),
       ).toBeGreaterThanOrEqual(3.5)
