@@ -2,6 +2,11 @@
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for package boundaries and validation. The [v1 documents](work/projects/v1/README.md) remain the product and architecture authority.
 
+## Branch workflow
+
+- Work on main by default. Create a feature branch or pull request only when Russ explicitly requests that workflow.
+- Respect active edit claims and preserve other agents' working files when integrating changes into main.
+
 ## Concurrent edits
 
 - Inspect `git status` and `bun run claim list` before editing. Preserve existing changes; unclaimed dirty files may belong to an agent that started before this workflow.
