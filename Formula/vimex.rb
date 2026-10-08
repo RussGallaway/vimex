@@ -2,28 +2,28 @@
 class Vimex < Formula
   desc "Full-screen Vim-operated interface for the Codex app server"
   homepage "https://github.com/RussGallaway/vimex"
-  version "0.12.0"
+  version "0.13.0"
   license "MIT"
 
   on_macos do
     on_arm do
-      url "https://github.com/RussGallaway/vimex/releases/download/v0.12.0/vimex-v0.12.0-darwin-arm64.tar.gz"
-      sha256 "3b3707f79fe3d828edeb73ca19fcd9bf27db7ba12be0f77eeb484905a5339430"
+      url "https://github.com/RussGallaway/vimex/releases/download/v0.13.0/vimex-v0.13.0-darwin-arm64.tar.gz"
+      sha256 "f8e7f81549c611f0f58b3d62048fe4fabbe223901db218cec5a40058535ede02"
     end
     on_intel do
-      url "https://github.com/RussGallaway/vimex/releases/download/v0.12.0/vimex-v0.12.0-darwin-x64.tar.gz"
-      sha256 "1778ece9b436721b13ad3b96e13d17a02852b6503f860d5eed7abc791ba6b8b9"
+      url "https://github.com/RussGallaway/vimex/releases/download/v0.13.0/vimex-v0.13.0-darwin-x64.tar.gz"
+      sha256 "4cbbf96415045fdaf607e7a1aae535ac71a2abdc3822d07121c7b4e878ee792a"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/RussGallaway/vimex/releases/download/v0.12.0/vimex-v0.12.0-linux-arm64.tar.gz"
-      sha256 "7ebc7ee3f1ccad94933a8642d615d190f1f441188c0143105b13b040f0c78796"
+      url "https://github.com/RussGallaway/vimex/releases/download/v0.13.0/vimex-v0.13.0-linux-arm64.tar.gz"
+      sha256 "67139acb373406d3a71e960e69dbcda7f5087e5556e8515b4ace391202dbb8cb"
     end
     on_intel do
-      url "https://github.com/RussGallaway/vimex/releases/download/v0.12.0/vimex-v0.12.0-linux-x64.tar.gz"
-      sha256 "70a8273eacd750e5317e6159ab8d646dd05e85d8a125fd8d924bb1e369422bec"
+      url "https://github.com/RussGallaway/vimex/releases/download/v0.13.0/vimex-v0.13.0-linux-x64.tar.gz"
+      sha256 "d113eefb80a9406bfdade51910ec9a679ebadf7f13faafe27aa104fc9adc6227"
     end
   end
 
