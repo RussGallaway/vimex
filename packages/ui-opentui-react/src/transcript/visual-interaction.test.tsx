@@ -1217,3 +1217,126 @@ for (const surface of ["composer", "transcript"] as const) {
     }
   })
 }
+
+for (const reverse of [false, true]) {
+  test(`mouse selection copies on release (${reverse ? "reverse" : "forward"}) and pastes by mouse`, async () => {
+    const h = await visualHarness()
+    try {
+      const rows = h.captureCharFrame().split("\n")
+      const y = rows.findIndex((row) => row.includes("Alpha bold text."))
+      const x = rows[y]!.indexOf("Alpha")
+      const before = h.workspace().interaction
+      await act(async () => {
+        await h.mockMouse.pressDown(reverse ? x + 4 : x, y)
+        await h.mockMouse.moveTo(reverse ? x : x + 4, y)
+        await h.renderOnce()
+      })
+      expect(h.copied).toEqual([])
+      expect(h.renderer.getSelection()?.getSelectedText()).toBe("Alpha")
+      await act(async () => {
+        await h.mockMouse.release(reverse ? x : x + 4, y)
+        await h.flush()
+      })
+      expect(h.copied).toEqual(["Alpha"])
+      expect(h.workspace().interaction.unnamedRegister.text).toBe("Alpha")
+      expect(h.workspace().interaction.mode).toBe(before.mode)
+      expect(h.workspace().interaction.surface).toBe(before.surface)
+      // A second drag must work immediately, without waiting for a clipboard process.
+      await act(async () => {
+        await h.mockMouse.drag(x + 6, y, x + 9, y)
+        await h.flush()
+      })
+      expect(h.copied).toEqual(["Alpha", "bold"])
+      const composer = h.renderer.root.findDescendantById(
+        "composer",
+      ) as TextareaRenderable
+      await act(async () => {
+        await h.mockMouse.click(composer.x, composer.y, reverse ? 1 : 2)
+        await h.flush()
+      })
+      expect(h.workspace().composer.text).toBe("bold")
+      expect(h.workspace().interaction.surface).toBe("composer")
+      expect(h.workspace().interaction.mode).toBe("insert")
+      await act(async () => {
+        await h.mockInput.pasteBracketedText(" from terminal")
+        await h.flush()
+      })
+      expect(h.workspace().composer.text).toBe("bold from terminal")
+    } finally {
+      await h.close()
+    }
+  })
+}
+
+test("mouse clicks do not yank, and a transcript drag excludes composer text", async () => {
+  const h = await visualHarness()
+  try {
+    const rows = h.captureCharFrame().split("\n")
+    const y = rows.findIndex((row) => row.includes("Alpha bold text."))
+    const x = rows[y]!.indexOf("Alpha")
+    await act(async () => {
+      await h.mockMouse.click(x, y)
+      await h.flush()
+    })
+    expect(h.copied).toEqual([])
+    const composer = h.renderer.root.findDescendantById(
+      "composer",
+    ) as TextareaRenderable
+    await act(async () => {
+      await h.mockMouse.click(composer.x, composer.y)
+      await h.flush()
+      await h.mockInput.pasteBracketedText("PRIVATE DRAFT")
+      await h.flush()
+      await h.renderOnce()
+    })
+    expect(h.workspace().composer.text).toBe("PRIVATE DRAFT")
+    await act(async () => {
+      await h.mockMouse.drag(x + 1, y, composer.x + 6, composer.y)
+      await h.flush()
+    })
+    expect(h.copied).toHaveLength(1)
+    expect(h.copied[0]).toContain("lpha bold text.")
+    expect(h.copied[0]).toContain(
+      "Second line with a link (https://example.com).",
+    )
+    expect(h.copied[0]).not.toContain("PRIVATE")
+    expect(h.copied[0]).not.toContain("Codex")
+    expect(h.workspace().composer.text).toBe("PRIVATE DRAFT")
+  } finally {
+    await h.close()
+  }
+})
+
+test("mouse selection survives a frame and streaming while Visual mode is active", async () => {
+  const h = await visualHarness()
+  try {
+    await h.keys("\u001b\u000bv")
+    const rows = h.captureCharFrame().split("\n")
+    const y = rows.findIndex((row) => row.includes("Alpha bold text."))
+    const x = rows[y]!.indexOf("Alpha")
+    await act(async () => {
+      await h.mockMouse.pressDown(x, y)
+      await h.mockMouse.moveTo(x + 4, y)
+      h.emit({
+        type: "conversation",
+        event: {
+          type: "item.delta",
+          threadId: thread,
+          itemId: answer,
+          delta: " More text.",
+        },
+      })
+      await h.flush()
+      await h.renderOnce()
+    })
+    expect(h.renderer.getSelection()?.getSelectedText()).toBe("Alpha")
+    expect(h.copied).toEqual([])
+    await act(async () => {
+      await h.mockMouse.release(x + 4, y)
+      await h.flush()
+    })
+    expect(h.copied).toEqual(["Alpha"])
+  } finally {
+    await h.close()
+  }
+})

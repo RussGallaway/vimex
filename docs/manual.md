@@ -84,6 +84,10 @@ Ctrl-O moves backward through jumps and session visits; Ctrl-I moves forward. Le
 
 v starts character selection; V starts line selection. Move to extend, o swaps endpoints, y copies rendered text, and Y copies Markdown source. In the composer, p/P paste the register. r from the transcript quotes the selection or current block into the draft. gx opens a URL; [u and ]u navigate URLs.
 
+Drag across transcript text with the left mouse button and release to copy immediately to the system clipboard and Vim register. No Visual mode or y is needed. Click the composer to enter Insert mode; middle-click or right-click it to insert the current Vim register at the editing cursor, without submitting. Use your terminal's Paste command for clipboard contents copied from another app.
+
+Inside Herdr, Vimex receives mouse drags because it requests mouse reporting for scrolling. Vimex performs release-to-copy through its clipboard adapter; Herdr also supports forwarding terminal clipboard writes (OSC 52) to its foreground client. Herdr retains its right-click menu, so use middle-click for Vimex register paste or your terminal's Paste command for the system clipboard. Remote clipboard forwarding depends on the terminal's clipboard support.
+
 In composer Insert mode, Ctrl-V attaches an image from the host clipboard. Dropping a PNG, JPEG, GIF, or WebP file into the composer attaches its pasted path and inserts an inline [Image 1] marker at the cursor. You can type around the marker; Backspace or Delete beside it removes the image. Image-only messages are supported. Queued and failed messages retain their images in their message positions. The clipboard belongs to the machine running Vimex; over SSH, a dropped file path must be accessible on that machine.
 
 Enter or za toggles the current fold. zo/zc open/close it. zR/zM open/close all folds, including diffs. Shift-Tab opens or closes all tool blocks from either pane without changing file diffs; its choice also applies to new tools. Tool calls start collapsed; file diffs start expanded.

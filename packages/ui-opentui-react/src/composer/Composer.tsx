@@ -40,6 +40,8 @@ export function Composer(props: {
   onChange(text: string, cursorOffset: number): void
   onSubmit(intent: SubmissionIntent): void | boolean
   onEscape?(): void
+  onMouseActivate?(): void | boolean
+  mousePasteText?: string
   onRetry?(id: string): void
   onImageClipboard?(cursorOffset: number): void
   onImagePath?(path: string, cursorOffset: number): void
@@ -368,6 +370,25 @@ export function Composer(props: {
           }
           if (props.interactive === false || committedMode.current !== "insert")
             event.preventDefault()
+        }}
+        onMouseDown={(event) => {
+          if (
+            props.interactive === false ||
+            event.modifiers.shift ||
+            event.modifiers.ctrl ||
+            event.modifiers.alt
+          )
+            return
+          if (event.button > 2) return
+          if (props.onMouseActivate?.() === false) return
+          committedMode.current = "insert"
+          if (event.button === 1 || event.button === 2) {
+            event.preventDefault()
+            if (props.mousePasteText) {
+              props.textareaRef.current?.insertText(props.mousePasteText)
+              publishNativeDraft()
+            }
+          }
         }}
         onPaste={(event) => {
           if (

@@ -188,6 +188,8 @@ Markdown links and detected bare URLs are indexed as semantic targets. OSC 8 lin
 
 Use OpenCode's density, whitespace, compact tool cards, responsive layout, and restrained use of borders as inspiration. Do not inherit its mouse-first selection or ad hoc fold behavior. Mode, cursor, selection, and status must remain legible in low-color terminals.
 
+Mouse selection supplements the keyboard model: dragging transcript text copies the rendered selection to the system clipboard and unnamed Vim register on release, without changing keyboard focus or mode. A click without a selection does not copy. Clicking the composer enters Insert mode; middle/right click inserts the unnamed register at the editing cursor without submitting. Terminal Paste continues to supply system clipboard text through bracketed paste. Host-owned mouse gestures, including Herdr's right-click menu, remain host-owned.
+
 ## Interaction refinements from terminal testing
 
 - The composer is a full-width panel with a left accent and an internal model/effort footer, above a separate status strip.

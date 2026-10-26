@@ -125,6 +125,21 @@ source. In the composer, p/P paste the register. r from the transcript
 quotes the selection or current block into the draft. gx opens a URL;
 [u and ]u navigate URLs.
 .PP
+Drag across transcript text with the left mouse button and release to
+copy immediately to the system clipboard and Vim register. No Visual
+mode or y is needed. Click the composer to enter Insert mode;
+middle\-click or right\-click it to insert the current Vim register at
+the editing cursor, without submitting. Use your terminal's Paste
+command for clipboard contents copied from another app.
+.PP
+Inside Herdr, Vimex receives mouse drags because it requests mouse
+reporting for scrolling. Vimex performs release\-to\-copy through its
+clipboard adapter; Herdr also supports forwarding terminal clipboard
+writes (OSC 52) to its foreground client. Herdr retains its
+right\-click menu, so use middle\-click for Vimex register paste or your
+terminal's Paste command for the system clipboard. Remote clipboard
+forwarding depends on the terminal's clipboard support.
+.PP
 In composer Insert mode, Ctrl\-V attaches an image from the host
 clipboard. Dropping a PNG, JPEG, GIF, or WebP file into the composer
 attaches its pasted path and inserts an inline [Image 1] marker at the

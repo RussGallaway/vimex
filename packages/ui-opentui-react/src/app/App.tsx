@@ -270,6 +270,7 @@ export function VimexApp({
   const appliedNativeSelection = useRef<
     | {
         token: object
+        native: NonNullable<ReturnType<typeof renderer.getSelection>>
         selection: NonNullable<TranscriptState["selection"]>
         scrollTop: number
         startRoot: Renderable
@@ -716,10 +717,16 @@ export function VimexApp({
   useEffect(() => {
     if (!presentationVisible || !interactive) return
     const updateSelection = () => {
+      // Mouse drags own their native highlight until release-to-copy finishes.
+      if (renderer.getSelection()?.isDragging) {
+        appliedNativeSelection.current = undefined
+        return
+      }
       const runtimeFrame = transcriptRuntime?.getSnapshot()
       const selectionTranscript = runtimeFrame?.transcript ?? transcript
       const clear = () => {
-        if (renderer.getSelection()) renderer.clearSelection()
+        if (appliedNativeSelection.current?.native === renderer.getSelection())
+          renderer.clearSelection()
         appliedNativeSelection.current = undefined
       }
       if (
@@ -814,6 +821,7 @@ export function VimexApp({
       })
       appliedNativeSelection.current = {
         token,
+        native: renderer.getSelection()!,
         selection: selectionTranscript.selection,
         scrollTop: scrollbox.scrollTop,
         startRoot: startItem!,
@@ -830,10 +838,9 @@ export function VimexApp({
     renderer.on(CliRenderEvents.FRAME, updateSelection)
     return () => {
       renderer.off(CliRenderEvents.FRAME, updateSelection)
-      // This effect is the sole owner of the renderer-global native selection
-      // while its pane is interactive. Release destroyed transcript targets on
-      // focus loss, hide, or unmount; semantic selection remains authoritative.
-      if (appliedNativeSelection.current && renderer.getSelection())
+      // Release only our keyboard highlight; a mouse drag or another pane may
+      // have replaced the renderer-global selection since the previous frame.
+      if (appliedNativeSelection.current?.native === renderer.getSelection())
         renderer.clearSelection()
       appliedNativeSelection.current = undefined
     }
@@ -1797,6 +1804,17 @@ export function VimexApp({
     ],
   )
 
+  const copyMouseSelection = useCallback(
+    (text: string) => {
+      controller.dispatchInteraction({
+        type: "register.set",
+        register: { text, shape: "character" },
+      })
+      controller.copyText(text)
+    },
+    [controller],
+  )
+
   return (
     <FullscreenShell
       threadRole={context.role}
@@ -1836,6 +1854,11 @@ export function VimexApp({
               ) : undefined
             }
             scrollRef={scrollRef}
+            onMouseCopy={
+              interactive && !interaction.overlay
+                ? copyMouseSelection
+                : undefined
+            }
             onManualScroll={onManualScroll}
           />
         ) : undefined
@@ -1940,6 +1963,16 @@ export function VimexApp({
                 ) : undefined
               }
               onSubmit={slashCommands.submit}
+              mousePasteText={interaction.unnamedRegister.text}
+              onMouseActivate={() => {
+                if (interaction.overlay || jumpActive || !presentationVisible)
+                  return false
+                controller.dispatchInteraction({
+                  type: "focus.set",
+                  surface: "composer",
+                })
+                controller.dispatchInteraction({ type: "mode.insert" })
+              }}
               onEscape={() => {
                 if (composerInteractionRef.current.mode === "visual")
                   runComposerKey("escape")

@@ -1,5 +1,7 @@
 import {
   LinearScrollAccel,
+  CliRenderEvents,
+  Selection,
   type ScrollBoxRenderable,
   type SyntaxStyle,
 } from "@opentui/core"
@@ -12,7 +14,15 @@ import {
   type TranscriptState,
   type TranscriptWindow,
 } from "@vimex/transcript"
-import { memo, useMemo, type ReactNode, type RefObject } from "react"
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  type ReactNode,
+  type RefObject,
+} from "react"
+import { useRenderer } from "@opentui/react"
 import { selectedRangeForItem } from "./layout"
 import { emberTide } from "../theme"
 import { TranscriptNode } from "./TranscriptNode"
@@ -29,6 +39,7 @@ export interface TranscriptViewportProps {
   agentSummaries?: Readonly<Record<string, ThreadSummary>>
   activity?: ReactNode
   scrollRef: RefObject<ScrollBoxRenderable | null>
+  onMouseCopy?: (text: string) => void
   onManualScroll?: (
     rows?: number,
     cursor?: "follow" | "clamp",
@@ -49,6 +60,7 @@ export function sameTranscriptViewportProps(
     before.agentSummaries === after.agentSummaries &&
     before.activity === after.activity &&
     before.scrollRef === after.scrollRef &&
+    before.onMouseCopy === after.onMouseCopy &&
     before.onManualScroll === after.onManualScroll
   )
 }
@@ -59,6 +71,47 @@ export const TranscriptViewport = memo(function TranscriptViewport(
   // Terminal wheel events already encode movement; deterministic deltas avoid
   // accelerating trackpad bursts into large, unexpected viewport jumps.
   const scrollAcceleration = useMemo(() => new LinearScrollAccel(), [])
+  const renderer = useRenderer()
+  const mouseSelection = useRef<Selection | null>(null)
+  useEffect(() => {
+    const complete = (selection: Selection) => {
+      if (selection !== mouseSelection.current) return
+      mouseSelection.current = null
+      // Only copy this transcript, even when the drag ends over another pane.
+      const targets = selection.selectedRenderables.filter((target) => {
+        if (target.isDestroyed) return false
+        for (let node = target; node; node = node.parent!) {
+          if (node === props.scrollRef.current) return true
+        }
+        return false
+      })
+      const transcriptSelection = targets[0]
+        ? new Selection(
+            targets[0],
+            selection.anchor,
+            selection.focus,
+            selection.behavior,
+          )
+        : undefined
+      transcriptSelection?.updateSelectedRenderables(targets)
+      const text = transcriptSelection?.getSelectedText()
+      // finishSelection still notifies native targets after emitting this event.
+      queueMicrotask(() => {
+        if (renderer.getSelection() === selection) renderer.clearSelection()
+        if (text) props.onMouseCopy?.(text)
+      })
+    }
+    renderer.on(CliRenderEvents.SELECTION, complete)
+    return () => {
+      renderer.off(CliRenderEvents.SELECTION, complete)
+      if (
+        mouseSelection.current &&
+        renderer.getSelection() === mouseSelection.current
+      )
+        renderer.clearSelection()
+      mouseSelection.current = null
+    }
+  }, [renderer, props.onMouseCopy, props.scrollRef])
   const cursorId = props.state.cursor?.itemId
   const activityPresentation = props.window.activityPresentation
   return (
@@ -69,6 +122,11 @@ export const TranscriptViewport = memo(function TranscriptViewport(
       minHeight={0}
       stickyScroll={props.state.viewport.kind === "tail"}
       scrollAcceleration={scrollAcceleration}
+      onMouseDown={(event) => {
+        const selection = renderer.getSelection()
+        if (event.button === 0 && props.onMouseCopy && selection?.isDragging)
+          mouseSelection.current = selection
+      }}
       onMouseScroll={(event) => {
         if (
           event.scroll?.direction !== "up" &&
