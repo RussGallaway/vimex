@@ -367,3 +367,45 @@ test("a child result arriving before the spawn reply is attached when the child 
     childTasks: [{ status: "complete", message: "All clear" }],
   })
 })
+
+test("a new lifecycle start for a completed child does not inherit the previous completion", () => {
+  const parent = threadId("reused-parent"),
+    child = threadId("reused-child")
+  let state: WorkbenchState = {
+    ...initialWorkbench(),
+    activeThreadId: parent,
+    workspaces: { [parent]: createWorkspace(parent) },
+  }
+  for (const [id, action] of [
+    ["first", "spawn"],
+    ["done", "activity"],
+    ["again", "spawn"],
+  ] as const) {
+    state = applyConversationEvent(state, {
+      type: "item.completed",
+      threadId: parent,
+      item: {
+        id: itemId(id),
+        turnId: turnId(id),
+        kind: "agent",
+        ...(action === "activity"
+          ? {
+              action,
+              activity: "completed" as const,
+              agentPath: "/root/reused",
+            }
+          : {
+              action,
+              agentStates: [{ threadId: child, status: "running" as const }],
+            }),
+        detail: "",
+        agentThreadIds: [child],
+        status: "complete",
+      },
+    }).state
+    expect(agentRoster(state)[0]?.status).toBe(
+      action === "activity" ? "complete" : "running",
+    )
+  }
+  expect(agentRoster(state)).toHaveLength(1)
+})

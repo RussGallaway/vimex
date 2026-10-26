@@ -7,6 +7,14 @@ import { threadId } from "@vimex/conversation"
 import type { CodexAppServerClient } from "./capabilities/codex-app-server-client"
 
 const temporaryDirectories: string[] = []
+const sessionSummary = (id: string) => ({
+  id: threadId(id),
+  title: id,
+  cwd: "/work",
+  model: "test",
+  reasoningEffort: "high",
+  status: "idle" as const,
+})
 
 afterEach(async () => {
   await Promise.all(
@@ -128,5 +136,93 @@ test("thread listing excludes child sessions from relation metadata", async () =
   await expect(gateways.conversation.listThreads()).resolves.toEqual([
     summary(parent),
   ])
+  await gateways.connection.close()
+})
+
+test("session pages publish before older history finishes and keep indexed cursors", async () => {
+  const first = sessionSummary("first")
+  const older = sessionSummary("older")
+  const gate = Promise.withResolvers<void>()
+  const requests: unknown[] = []
+  const pages: unknown[] = []
+  const client = {
+    onEvent: () => () => {},
+    close: async () => {},
+    listThreads: async (params: { cursor?: string }) => {
+      requests.push(params)
+      if (params.cursor) await gate.promise
+      return {
+        threads: [params.cursor ? older : first],
+        relations: [],
+        nextCursor: params.cursor ? null : "older-page",
+      }
+    },
+  } as unknown as CodexAppServerClient
+  const gateways = createCodexGateways("/work", "codex", () => client)
+  const listed = gateways.conversation.listThreads((page) => pages.push(page))
+  await Promise.resolve()
+  expect(pages).toEqual([[first]])
+  expect(requests).toEqual([
+    { cursor: undefined, limit: 25, useStateDbOnly: true },
+    { cursor: "older-page", limit: 25, useStateDbOnly: true },
+  ])
+  gate.resolve()
+  expect(await listed).toEqual([first, older])
+  expect(pages).toEqual([[first], [older]])
+  await gateways.connection.close()
+})
+
+test("empty session index falls back once, including for an empty store", async () => {
+  for (const threads of [[], [sessionSummary("discovered")]]) {
+    const requests: unknown[] = []
+    const client = {
+      onEvent: () => () => {},
+      close: async () => {},
+      listThreads: async (params: { useStateDbOnly: boolean }) => {
+        requests.push(params)
+        return {
+          threads: params.useStateDbOnly ? [] : threads,
+          relations: [],
+          nextCursor: null,
+        }
+      },
+    } as unknown as CodexAppServerClient
+    const gateways = createCodexGateways("/work", "codex", () => client)
+    expect(await gateways.conversation.listThreads()).toEqual(threads)
+    expect(requests).toEqual([
+      { cursor: undefined, limit: 25, useStateDbOnly: true },
+      { cursor: undefined, limit: 25, useStateDbOnly: false },
+    ])
+    await gateways.connection.close()
+  }
+})
+
+test("agent picker queries descendants separately from the user session catalog", async () => {
+  const requests: unknown[] = []
+  const child = { ...sessionSummary("child"), parentThreadId: threadId("root") }
+  const client = {
+    onEvent: () => () => {},
+    close: async () => {},
+    listThreads: async (params: { cursor?: string }) => {
+      requests.push(params)
+      return {
+        threads: params.cursor ? [] : [child],
+        nextCursor: params.cursor ? null : "next",
+      }
+    },
+  } as unknown as CodexAppServerClient
+  const gateways = createCodexGateways("/work", "codex", () => client)
+  expect(
+    await gateways.conversation.listAgentThreads!(threadId("root")),
+  ).toEqual([child])
+  expect(requests).toEqual(
+    [undefined, "next"].map((cursor) => ({
+      cursor,
+      limit: 100,
+      useStateDbOnly: true,
+      sourceKinds: ["subAgentThreadSpawn"],
+      ancestorThreadId: "root",
+    })),
+  )
   await gateways.connection.close()
 })

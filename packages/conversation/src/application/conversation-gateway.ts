@@ -69,7 +69,11 @@ export interface ConversationGateway {
   clearGoal?(id: ThreadId): Promise<boolean>
   forkSideThread?(id: ThreadId): Promise<SessionSnapshot>
   retireThread?(id: ThreadId): Promise<void>
-  listThreads(): Promise<readonly ThreadSummary[]>
+  listAgentThreads?(root: ThreadId): Promise<readonly ThreadSummary[]>
+  /** Publishes pages as they arrive; the result is the complete catalog. */
+  listThreads(
+    onPage?: (summaries: readonly ThreadSummary[]) => void,
+  ): Promise<readonly ThreadSummary[]>
   startThread(cwd: string, model?: string): Promise<SessionSnapshot>
   resumeThread(id: ThreadId): Promise<SessionSnapshot>
   forkThread(id: ThreadId, through: TurnId): Promise<SessionSnapshot>

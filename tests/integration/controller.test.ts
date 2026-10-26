@@ -5012,3 +5012,75 @@ test("gc scopes a multi-child chooser to the selected spawn and ga restores the 
   expect(h.controller.getSnapshot().agentPickerTargets).toBeUndefined()
   await h.controller.close()
 })
+
+test("session picker publishes pages before completion without pruning favorites early", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  h.controller.toggleFavorite(b)
+  const newcomer = threadId("newcomer")
+  const gate = Promise.withResolvers<readonly ThreadSummary[]>()
+  let publish: ((page: readonly ThreadSummary[]) => void) | undefined
+  let requests = 0
+  h.backend.listThreads = async (onPage) => {
+    requests++
+    publish = onPage
+    return gate.promise
+  }
+  h.controller.dispatchInteraction({
+    type: "overlay.open",
+    overlay: "sessions",
+  })
+  await Promise.resolve()
+  publish!([summary(newcomer)])
+  expect(h.controller.getSnapshot().threadOrder).toContain(newcomer)
+  expect(h.controller.getSnapshot().favoriteThreadIds).toContain(b)
+  h.controller.dispatchInteraction({
+    type: "overlay.open",
+    overlay: "sessions",
+  })
+  expect(requests).toBe(1)
+  gate.resolve([summary(newcomer), summary(b)])
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().favoriteThreadIds).toContain(b)
+  await h.controller.close()
+  const state = h.controller.getSnapshot()
+  publish!([summary(threadId("late"))])
+  expect(h.controller.getSnapshot()).toBe(state)
+})
+
+test("opening agents refreshes descendants and preserves newer live status", async () => {
+  const h = harness()
+  await h.controller.initialize("/tmp", undefined, a)
+  h.emit({
+    type: "summary",
+    summary: { ...summary(b), parentThreadId: a, status: "idle" },
+  })
+  const gate = Promise.withResolvers<readonly ThreadSummary[]>()
+  h.backend.listAgentThreads = async (root) => {
+    expect(root).toBe(a)
+    return gate.promise
+  }
+  h.controller.dispatchInteraction({ type: "overlay.open", overlay: "agents" })
+  await Promise.resolve()
+  h.emit({ type: "metadata", threadId: b, patch: { status: "working" } })
+  const nested = threadId("discovered-agent")
+  gate.resolve([
+    { ...summary(b), parentThreadId: a, status: "idle" },
+    { ...summary(nested), parentThreadId: b, status: "working" },
+  ])
+  await h.controller.settle()
+  const state = h.controller.getSnapshot()
+  expect(state.summaries[b]?.status).toBe("working")
+  expect(state.summaries[nested]?.status).toBe("working")
+  expect(state.agentRelationships).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ parentId: a, childId: b, relation: "spawned" }),
+      expect.objectContaining({
+        parentId: b,
+        childId: nested,
+        relation: "spawned",
+      }),
+    ]),
+  )
+  await h.controller.close()
+})

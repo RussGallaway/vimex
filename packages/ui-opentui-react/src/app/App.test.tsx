@@ -1832,6 +1832,7 @@ describe("Vimex OpenTUI shell", () => {
           [finished]: {
             ...state.summaries[parent]!,
             id: finished,
+            status: "idle",
             agentNickname: "grok_ux",
           },
         },

@@ -203,18 +203,7 @@ export class CodexAppServerClient {
     const request: ThreadListParams = {
       sortKey: "recency_at",
       sortDirection: "desc",
-      sourceKinds: [
-        "cli",
-        "vscode",
-        "exec",
-        "appServer",
-        "subAgent",
-        "subAgentReview",
-        "subAgentCompact",
-        "subAgentThreadSpawn",
-        "subAgentOther",
-        "unknown",
-      ],
+      sourceKinds: ["cli", "vscode", "exec", "appServer"],
       archived: false,
       ...params,
     }

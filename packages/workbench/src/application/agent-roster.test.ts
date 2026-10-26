@@ -214,3 +214,56 @@ test("a completed child keeps its result after shutdown", () => {
     },
   ])
 })
+
+test("current child activity takes precedence over a recorded completed assignment", () => {
+  const parent = threadId("live-parent"),
+    child = threadId("live-child")
+  let state = initialWorkbench()
+  state = transitionWorkbench(state, {
+    type: "thread.open",
+    summary: {
+      id: parent,
+      title: "parent",
+      cwd: "/work",
+      model: "test",
+      reasoningEffort: "high",
+      status: "idle",
+    },
+  }).state
+  state = transitionWorkbench(state, {
+    type: "conversation.event",
+    event: {
+      type: "item.completed",
+      threadId: parent,
+      item: {
+        id: itemId("spawn"),
+        turnId: turnId("old"),
+        kind: "agent",
+        action: "spawn",
+        agentThreadIds: [child],
+        agentStates: [
+          { threadId: child, status: "complete", message: "Old result" },
+        ],
+        detail: "Assignment",
+        status: "complete",
+      },
+    },
+  }).state
+  for (const status of ["working", "blocked"] as const) {
+    state = transitionWorkbench(state, {
+      type: "thread.register",
+      summary: {
+        id: child,
+        title: "child",
+        cwd: "/work",
+        model: "test",
+        reasoningEffort: "high",
+        status,
+      },
+    }).state
+    expect(agentRoster(state)[0]).toMatchObject({
+      status: "running",
+      result: undefined,
+    })
+  }
+})

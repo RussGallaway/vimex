@@ -227,18 +227,7 @@ describe("Codex app-server client", () => {
       params: {
         sortKey: "recency_at",
         sortDirection: "desc",
-        sourceKinds: [
-          "cli",
-          "vscode",
-          "exec",
-          "appServer",
-          "subAgent",
-          "subAgentReview",
-          "subAgentCompact",
-          "subAgentThreadSpawn",
-          "subAgentOther",
-          "unknown",
-        ],
+        sourceKinds: ["cli", "vscode", "exec", "appServer"],
       },
     })
     expect(startRequest).toMatchObject({

@@ -372,19 +372,57 @@ export function createCodexGateways(
         ephemeralSideThreads.delete(id)
       } else await client.archiveThread(id)
     },
-    async listThreads() {
+    async listAgentThreads(root) {
       const all = []
       let cursor: string | undefined
+      const seen = new Set<string>()
       do {
-        const page = await client.listThreads({ cursor, limit: 100 })
+        const page = await client.listThreads({
+          cursor,
+          limit: 100,
+          useStateDbOnly: true,
+          sourceKinds: ["subAgentThreadSpawn"],
+          ancestorThreadId: root,
+        })
+        all.push(...page.threads)
+        cursor = page.nextCursor ?? undefined
+        if (cursor && seen.has(cursor))
+          throw new Error(
+            "Codex agent catalog returned a repeated pagination cursor",
+          )
+        if (cursor) seen.add(cursor)
+      } while (cursor)
+      return all
+    },
+    async listThreads(onPage) {
+      const all = []
+      let cursor: string | undefined
+      let useStateDbOnly = true
+      do {
+        const page = await client.listThreads({
+          cursor,
+          limit: 25,
+          useStateDbOnly,
+        })
+        // Match Codex's indexed-first lookup. An empty initial index may need
+        // rollout discovery; keep subsequent cursors in the same listing mode.
+        if (!cursor && useStateDbOnly && page.threads.length === 0) {
+          useStateDbOnly = false
+          continue
+        }
         const childIds = new Set(
           page.relations
             .filter((relation) => relation.parentThreadId)
             .map((relation) => relation.threadId),
         )
-        all.push(...page.threads.filter((thread) => !childIds.has(thread.id)))
+        const visible = page.threads.filter(
+          (thread) => !childIds.has(thread.id),
+        )
+        all.push(...visible)
+        onPage?.(visible)
         cursor = page.nextCursor ?? undefined
-      } while (cursor)
+        if (!cursor) break
+      } while (true)
       return all
     },
     async searchMentions(

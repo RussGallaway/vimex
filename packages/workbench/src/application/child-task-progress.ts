@@ -32,6 +32,15 @@ export function projectChildTaskProgress(
     const prior = previous.items[observed.id]
     if (prior?.kind !== "agent" || !prior.childTasks?.length) {
       // Child notifications can precede the spawn reply that supplies its ID.
+      const knownChildren = new Set(
+        Object.values(previous.items).flatMap((item) =>
+          item.kind === "agent" &&
+          item.action === "spawn" &&
+          item.id !== observed.id
+            ? item.agentThreadIds
+            : [],
+        ),
+      )
       updates = [
         ...updates,
         ...Object.values(previous.items)
@@ -40,7 +49,13 @@ export function projectChildTaskProgress(
               ? reportedStates(item)
               : [],
           )
-          .filter((task) => observed.agentThreadIds.includes(task.threadId)),
+          .filter(
+            (task) =>
+              observed.agentThreadIds.includes(task.threadId) &&
+              // Prior lifecycle reports belong to an earlier run when this child
+              // already has a spawn row. Only backfill a newly discovered child.
+              !knownChildren.has(task.threadId),
+          ),
       ]
     }
   }

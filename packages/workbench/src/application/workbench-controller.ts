@@ -1,5 +1,5 @@
 import { threadContext } from "./thread-context"
-import { agentRoster } from "./agent-roster"
+import { agentRoster, agentRosterRoot } from "./agent-roster"
 import { compactionBlockReason } from "./compaction"
 import { executeGoalCommand } from "./goal-command"
 import {
@@ -82,6 +82,7 @@ import {
 import { transitionWorkbench } from "./reduce-workbench"
 import {
   forkBoundary,
+  itemId,
   persistentConversationTurnIds,
   previewTitle,
   threadId,
@@ -499,6 +500,7 @@ export class VimexController
   private readonly threadContinuations = new Map<ThreadId, Set<Promise<void>>>()
   private readonly loaded = new Set<ThreadId>()
   private catalogThreadIds = new Set<ThreadId>()
+  private agentCatalogRevision = 0
   private sessionCatalogRequest?: Promise<void>
   private readonly buffered = new Map<ThreadId, ConversationEvent[]>()
   private readonly resumes = new Map<ThreadId, Promise<SessionSnapshot>>()
@@ -1526,11 +1528,47 @@ export class VimexController
           : withKnownCapability,
     })
   }
+  private async refreshAgentCatalog(): Promise<void> {
+    const root = agentRosterRoot(this.state)
+    if (!root || !this.ports.conversation.listAgentThreads) return
+    const epoch = this.runtimeEpoch
+    const before = this.state.summaries
+    const revision = ++this.agentCatalogRevision
+    const summaries = await this.ports.conversation.listAgentThreads(root)
+    if (
+      !this.currentRuntime(epoch) ||
+      revision !== this.agentCatalogRevision ||
+      agentRosterRoot(this.state) !== root
+    )
+      return
+    for (const summary of summaries) {
+      if (this.state.retiredSideThreadIds.includes(summary.id)) continue
+      // A live status notification received during this lookup wins over its snapshot.
+      if (this.state.summaries[summary.id] === before[summary.id])
+        this.register(summary)
+      if (summary.parentThreadId)
+        this.dispatch({
+          type: "agent.link",
+          link: {
+            parentId: summary.parentThreadId,
+            childId: summary.id,
+            itemId: itemId(`thread:${summary.id}`),
+            relation: "spawned",
+          },
+        })
+    }
+  }
   private refreshSessionCatalog(): Promise<void> {
     if (this.sessionCatalogRequest) return this.sessionCatalogRequest
     const epoch = this.runtimeEpoch
     const request = (async () => {
-      const summaries = await this.ports.conversation.listThreads()
+      const summaries = await this.ports.conversation.listThreads((page) => {
+        if (!this.currentRuntime(epoch)) return
+        for (const summary of page) {
+          this.register(summary)
+          this.catalogThreadIds.add(summary.id)
+        }
+      })
       if (!this.currentRuntime(epoch)) return
       const previous = this.catalogThreadIds
       const visibleSummaries = summaries.filter(
@@ -1923,6 +1961,8 @@ export class VimexController
       if (this.state.agentPickerTargets)
         this.setState({ ...this.state, agentPickerTargets: undefined })
     this.dispatch({ type: "interaction.command", command })
+    if (command.type === "overlay.open" && command.overlay === "agents")
+      this.launch(() => this.refreshAgentCatalog())
     if (command.type === "overlay.open" && command.overlay === "sessions")
       this.launch(() => this.refreshSessionCatalog())
     if (

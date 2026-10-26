@@ -129,7 +129,10 @@ export function agentRoster(
       visited.add(link.childId)
       const summary = state.summaries[link.childId]
       const task = parentReports.get(link.childId)
-      const status = statusOf(task?.progress)
+      const status =
+        summary?.status === "working" || summary?.status === "blocked"
+          ? "running"
+          : statusOf(task?.progress)
       rows.push({
         threadId: link.childId,
         parentId,
