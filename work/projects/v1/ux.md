@@ -86,7 +86,9 @@ Counts apply where their Vim equivalent is meaningful.
 
 ### Composer
 
-Composer Normal mode supports the familiar editing subset: `h/j/k/l`, `w/b/e`, `0/^/$`, `gg/G`, `x`, `dd`, `D`, `C`, `u`, `Ctrl-r`, `p/P`, and `i/a/I/A/o/O`.
+Composer Normal mode supports the familiar editing subset: `h/j/k/l`, `w/b/e`, `W/B/E`, `0/^/$`, `gg/G`, `x`, `dd`, `D`, `C`, `u`, `Ctrl-r`, `p/P`, and `i/a/I/A/o/O`. Lowercase word motions distinguish punctuation; uppercase WORD motions use whitespace boundaries. Counts apply to motions in Normal and Visual modes.
+
+Normal-mode `d`/`c` accept inner (`i`) and around (`a`) text objects for words/WORDs (`w`/`W`), double/single quotes, parentheses (`(`/`)`/`b`), brackets (`[`/`]`), and braces (`{`/`}`/`B`). For example, `ciw` changes the current word and `ci"` changes the contents of double quotes.
 
 Normal-mode `Enter` submits. Insert-mode submission versus newline is configurable because terminal modifier fidelity differs. Enter submits by default; Shift+Enter inserts a newline. Alt+Enter is not bound because the user’s terminal host opens a new window with that combination.
 
@@ -97,6 +99,8 @@ Each thread owns its draft. An active turn does not disable the composer. Submit
 Queued messages remain visible in a one-line strip above the composer showing the latest preview and total count. Focusing the queue expands a short list and shows the selected message in a scrollable detail area. Ctrl-K/Up and Ctrl-J/Down move through queued messages between the composer and transcript. In queue focus, `e` returns the selected message to an empty composer draft for editing; `x` asks for confirmation before removing it. A message that has started sending cannot be edited or removed from the queue.
 
 ### Visual mode and copying
+
+In both panes, `v` starts character selection and `V` starts line selection. Repeating the current shape's key returns to Normal mode; the other key changes shape while retaining the endpoints. Motions extend the selection, and `o` swaps anchor and head. Composer `y` yanks, `d`/`x` delete, and `c` changes the selection.
 
 Transcript Visual mode selects logical content rather than screen cells.
 

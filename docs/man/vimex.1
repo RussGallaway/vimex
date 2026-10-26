@@ -72,6 +72,17 @@ when supported by the terminal. Ctrl\-Enter steers an active turn or
 sends when idle. Escape leaves editing or closes an overlay; from
 Normal mode, it interrupts the active turn. Ctrl\-C also interrupts.
 .PP
+Composer Normal and Visual modes support h/j/k/l, w/b/e, W/B/E, 0/^/$,
+and gg/G. Lowercase word motions distinguish punctuation; uppercase
+WORD motions use whitespace boundaries. Counts repeat motions.
+.PP
+In composer Normal mode, d or c followed by i (inner) or a (around)
+acts on a text object: w/W for a word/WORD, double or single quotes,
+parentheses, brackets, or braces. For example, ciw changes the current
+word and ci" changes text inside double quotes; daw deletes a word
+with adjacent whitespace. Parentheses also accept b, and braces accept
+B.
+.PP
 Up/Ctrl\-K and Down/Ctrl\-J move between the composer and transcript
 through queued messages. Ctrl\-W K/J jump directly to the transcript or
 composer. These bindings respect local menu and completion navigation.
@@ -87,9 +98,11 @@ Space e expands or collapses the composer. Expanded drafts can scroll
 internally. Space r opens rename with the old name shown as a hint and
 an empty replacement ready to type.
 .SH TRANSCRIPT NAVIGATION
-h/j/k/l move the text cursor; w/b/e move by word. 0 and $ move to line
-boundaries. gg goes to the start. G or t resumes following the tail.
-:tail and :follow do the same.
+h/j/k/l move the text cursor; w/b/e move by word and W/B/E by
+whitespace\-delimited WORD. 0 and $ move to line boundaries. gg goes to
+the start. In Normal mode, G or t resumes following the tail; in
+Visual mode, G extends the selection to the end without attaching to
+new output. :tail and :follow resume following.
 .PP
 Ctrl\-E/Y scroll down/up one row; Ctrl\-D/U scroll half a viewport;
 Ctrl\-F/B scroll a viewport in the transcript. Ctrl\-E/Y/D/U also scroll
@@ -119,9 +132,12 @@ forward. Legacy terminals may send Tab for Ctrl\-I. ma through mz set
 local marks; backtick or apostrophe followed by the letter returns to
 the mark. Both forms currently restore the exact position.
 .PP
-v starts character selection; V starts line selection. Move to extend,
-o swaps endpoints, y copies rendered text, and Y copies Markdown
-source. In the composer, p/P paste the register. r from the transcript
+In either pane, v starts character selection and V starts line
+selection. Press the same key again to leave Visual mode, or the other
+key to change the selection shape. Move to extend; o swaps endpoints.
+In the transcript, y copies rendered text and Y copies Markdown
+source. In the composer, y yanks, d/x delete, c changes the selection,
+and p/P in Normal mode paste the register. r from the transcript
 quotes the selection or current block into the draft. gx opens a URL;
 [u and ]u navigate URLs.
 .PP

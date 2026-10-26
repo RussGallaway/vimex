@@ -186,6 +186,42 @@ export function currentSemanticBlock(
   )
 }
 
+/** Resolve `0`/`$` on logical lines, independently of terminal wrapping. */
+export function logicalLinePoint(
+  state: TranscriptState,
+  edge: "start" | "end",
+  point = state.cursor,
+  count = 1,
+): LogicalPoint | undefined {
+  if (!point || !transcriptOrderIndex(state.order).has(point.itemId))
+    return undefined
+  let itemId = point.itemId
+  let projection = state.projectionById[itemId]
+  if (!projection) return undefined
+  let parts = graphemes(projection.plain)
+  let offset = Math.min(Math.max(0, point.graphemeOffset), parts.length)
+  let start = offset
+  while (start > 0 && parts[start - 1] !== "\n") start--
+  if (edge === "start") return { itemId, graphemeOffset: start }
+  const repeat = Number.isFinite(count) ? Math.max(1, Math.trunc(count)) : 1
+  for (let step = 0; step < repeat; step++) {
+    while (offset < parts.length && parts[offset] !== "\n") offset++
+    if (step === repeat - 1) break
+    if (offset < parts.length) start = offset = offset + 1
+    else {
+      const next = adjacentTranscriptItem(state, itemId, "forward")
+      if (!next) break
+      itemId = next
+      projection = state.projectionById[itemId]!
+      parts = graphemes(projection.plain)
+      start = offset = 0
+    }
+  }
+  // Characterwise Visual selections are inclusive: stop on the last content
+  // grapheme, retaining the newline position only for an empty logical line.
+  return { itemId, graphemeOffset: Math.max(start, offset - 1) }
+}
+
 /** Implements Vim's `^` against a logical source line, independent of terminal wrapping. */
 export function firstContentPoint(
   state: TranscriptState,

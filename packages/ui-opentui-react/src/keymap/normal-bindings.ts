@@ -4,6 +4,9 @@ import { countBindings } from "./binding-context"
 import { transcriptBindings } from "./transcript-bindings"
 
 export function normalBindings(ctx: VimBindingContext): UiBinding[] {
+  const textObjectPending =
+    ctx.interaction.surface === "composer" &&
+    /^[dc][ia]$/.test(ctx.interaction.pendingKeys)
   return [
     ...(ctx.interaction.surface === "transcript"
       ? [
@@ -79,8 +82,12 @@ export function normalBindings(ctx: VimBindingContext): UiBinding[] {
       },
     },
     { key: "\\", cmd: () => ctx.controller.returnToParent() },
-    { key: "[a", cmd: () => ctx.controller.cycleAgent("previous") },
-    { key: "]a", cmd: () => ctx.controller.cycleAgent("next") },
+    ...(textObjectPending
+      ? []
+      : [
+          { key: "[a", cmd: () => ctx.controller.cycleAgent("previous") },
+          { key: "]a", cmd: () => ctx.controller.cycleAgent("next") },
+        ]),
     { key: "<leader>a", cmd: () => ctx.openOverlay("approvals") },
     {
       key: "<leader>r",
@@ -140,7 +147,9 @@ export function normalBindings(ctx: VimBindingContext): UiBinding[] {
     {
       key: "shift+v",
       cmd: () =>
-        ctx.interaction.surface === "transcript" && ctx.beginVisual("line"),
+        ctx.interaction.surface === "composer"
+          ? ctx.runComposerKey("shift+v")
+          : ctx.beginVisual("line"),
     },
     {
       key: ":",
@@ -206,10 +215,23 @@ export function normalBindings(ctx: VimBindingContext): UiBinding[] {
             "w",
             "b",
             "e",
+            "shift+w",
+            "shift+b",
+            "shift+e",
             "^",
             "$",
             "g",
             "d",
+            "c",
+            '"',
+            "'",
+            "(",
+            ")",
+            ...(textObjectPending ? ["[", "]"] : []),
+            "{",
+            "}",
+            "shift+[",
+            "shift+]",
             "shift+g",
             "x",
             "u",

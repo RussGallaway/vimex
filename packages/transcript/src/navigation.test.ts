@@ -8,6 +8,7 @@ import {
   firstContentPoint,
   graphemeCount,
   initialTranscript,
+  logicalLinePoint,
   moveByMessage,
   moveByWord,
   selectedText,
@@ -27,6 +28,41 @@ import {
 } from "./index"
 
 describe("logical transcript navigation", () => {
+  test("logical line endpoints select content without including the following newline", () => {
+    let state = syncTranscriptItem(
+      initialTranscript(),
+      message("a", "Alpha 🙂 omega\n\nlast"),
+    )
+    state = moveCursor(state, { itemId: itemId("a"), graphemeOffset: 8 })
+    expect(logicalLinePoint(state, "start")?.graphemeOffset).toBe(0)
+    expect(logicalLinePoint(state, "end")?.graphemeOffset).toBe(12)
+    state = moveCursor(state, logicalLinePoint(state, "start")!)
+    state = beginSelection(state, "character")
+    state = moveCursor(state, logicalLinePoint(state, "end")!)
+    expect(selectedText(state, "plain")).toBe("Alpha 🙂 omega")
+    expect(
+      logicalLinePoint(state, "end", state.cursor, 2)?.graphemeOffset,
+    ).toBe(14)
+    expect(
+      logicalLinePoint(state, "end", state.cursor, 3)?.graphemeOffset,
+    ).toBe(18)
+  })
+
+  test("counted line ends cross items and clamp at the final content grapheme", () => {
+    let state = syncTranscriptItem(initialTranscript(), message("a", "first"))
+    state = syncTranscriptItem(state, message("b", "next\nlast"))
+    state = moveCursor(state, { itemId: itemId("a"), graphemeOffset: 2 })
+    expect(logicalLinePoint(state, "end", state.cursor, 2)).toEqual({
+      itemId: itemId("b"),
+      graphemeOffset: 3,
+    })
+    expect(logicalLinePoint(state, "end", state.cursor, 99)).toEqual({
+      itemId: itemId("b"),
+      graphemeOffset: 8,
+    })
+    expect(logicalLinePoint(initialTranscript(), "end")).toBeUndefined()
+  })
+
   test("moves by semantic blocks and messages and finds first line content", () => {
     let state = syncTranscriptItem(
       initialTranscript(),

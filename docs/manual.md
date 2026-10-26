@@ -62,6 +62,10 @@ Normal, Insert, Visual, and Command modes follow Vim conventions. Focus and mode
 
 i enters Insert. Enter sends by default; Shift-Enter inserts a newline when supported by the terminal. Ctrl-Enter steers an active turn or sends when idle. Escape leaves editing or closes an overlay; from Normal mode, it interrupts the active turn. Ctrl-C also interrupts.
 
+Composer Normal and Visual modes support h/j/k/l, w/b/e, W/B/E, 0/^/$, and gg/G. Lowercase word motions distinguish punctuation; uppercase WORD motions use whitespace boundaries. Counts repeat motions.
+
+In composer Normal mode, d or c followed by i (inner) or a (around) acts on a text object: w/W for a word/WORD, double or single quotes, parentheses, brackets, or braces. For example, ciw changes the current word and ci" changes text inside double quotes; daw deletes a word with adjacent whitespace. Parentheses also accept b, and braces accept B.
+
 Up/Ctrl-K and Down/Ctrl-J move between the composer and transcript through queued messages. Ctrl-W K/J jump directly to the transcript or composer. These bindings respect local menu and completion navigation.
 
 Queued messages appear above the composer with a preview of the latest message and a total count. Focus the queue to see a short list and the selected message. Use Ctrl-K/J to move between messages, Ctrl-U/D to scroll the selected message, e to return it to an empty composer draft for editing, or x to remove it after confirmation. Once sending starts, the message can no longer be taken back.
@@ -70,7 +74,7 @@ Space e expands or collapses the composer. Expanded drafts can scroll internally
 
 ## TRANSCRIPT NAVIGATION
 
-h/j/k/l move the text cursor; w/b/e move by word. 0 and $ move to line boundaries. gg goes to the start. G or t resumes following the tail. :tail and :follow do the same.
+h/j/k/l move the text cursor; w/b/e move by word and W/B/E by whitespace-delimited WORD. 0 and $ move to line boundaries. gg goes to the start. In Normal mode, G or t resumes following the tail; in Visual mode, G extends the selection to the end without attaching to new output. :tail and :follow resume following.
 
 Ctrl-E/Y scroll down/up one row; Ctrl-D/U scroll half a viewport; Ctrl-F/B scroll a viewport in the transcript. Ctrl-E/Y/D/U also scroll the transcript while the composer keeps focus. Mouse-wheel scrolling preserves focus. Scrolling upward detaches tail following; scrolling back to the bottom resumes it automatically.
 
@@ -82,7 +86,7 @@ s opens Flash in Normal mode. Ctrl-G opens Flash from either pane, including com
 
 Ctrl-O moves backward through jumps and session visits; Ctrl-I moves forward. Legacy terminals may send Tab for Ctrl-I. ma through mz set local marks; backtick or apostrophe followed by the letter returns to the mark. Both forms currently restore the exact position.
 
-v starts character selection; V starts line selection. Move to extend, o swaps endpoints, y copies rendered text, and Y copies Markdown source. In the composer, p/P paste the register. r from the transcript quotes the selection or current block into the draft. gx opens a URL; [u and ]u navigate URLs.
+In either pane, v starts character selection and V starts line selection. Press the same key again to leave Visual mode, or the other key to change the selection shape. Move to extend; o swaps endpoints. In the transcript, y copies rendered text and Y copies Markdown source. In the composer, y yanks, d/x delete, c changes the selection, and p/P in Normal mode paste the register. r from the transcript quotes the selection or current block into the draft. gx opens a URL; [u and ]u navigate URLs.
 
 Drag across transcript text with the left mouse button and release to copy immediately to the system clipboard and Vim register. No Visual mode or y is needed. Click the composer to enter Insert mode; middle-click or right-click it to insert the current Vim register at the editing cursor, without submitting. Use your terminal's Paste command for clipboard contents copied from another app.
 

@@ -44,7 +44,11 @@ function applyKeys(
     surface: "composer",
   })
   for (const key of keys) {
-    const resolved = resolveComposerKey(interaction, key)
+    const resolved = resolveComposerKey(
+      interaction,
+      key,
+      buffer.selection?.shape,
+    )
     interaction = resolved.state
     if (!resolved.action) continue
     const result = applyComposerVimAction(buffer, resolved.action, register)
@@ -363,4 +367,106 @@ test("whole-buffer Visual deletion includes explicit line boundaries", () => {
     expect(deleted.register).toEqual({ text: value, shape: "character" })
     expect(deleted.interaction.mode).toBe("normal")
   }
+})
+
+test("Visual line selections copy/delete whole lines and swap the active endpoint", () => {
+  const selected = applyKeys("one\ntwo\nthree", [
+    "g",
+    "g",
+    "l",
+    "shift+v",
+    "j",
+    "o",
+  ])
+  expect(selected.buffer.cursorOffset).toBe(1)
+  expect(selected.buffer.selection).toEqual({
+    anchor: 5,
+    head: 1,
+    shape: "line",
+  })
+  expect(apply(selected.buffer, { type: "yank" }).register).toEqual({
+    text: "one\ntwo",
+    shape: "line",
+  })
+  expect(apply(selected.buffer, { type: "delete-selection" }).buffer.text).toBe(
+    "three",
+  )
+  expect(applyKeys("one\ntwo", ["shift+v", "d"]).buffer.text).toBe("one")
+  expect(
+    applyKeys("one\ntwo", ["g", "g", "shift+v", "shift+g", "d"]).buffer.text,
+  ).toBe("")
+  const changed = applyKeys("one\ntwo\nthree", ["g", "g", "shift+v", "j", "c"])
+  expect(changed.buffer).toEqual({ text: "\nthree", cursorOffset: 0 })
+  expect(changed.interaction.mode).toBe("insert")
+})
+
+test("WORD motions include punctuation while lowercase words stop at it", () => {
+  const buffer = { text: "foo.bar baz", cursorOffset: 0 }
+  expect(motion(buffer, "word-forward").cursorOffset).toBe(3)
+  expect(motion(buffer, "WORD-forward").cursorOffset).toBe(8)
+  expect(motion(buffer, "WORD-end").cursorOffset).toBe(6)
+  expect(
+    motion({ ...buffer, cursorOffset: 8 }, "WORD-backward").cursorOffset,
+  ).toBe(0)
+  expect(
+    applyKeys(buffer.text, ["g", "g", "v", "shift+e", "y"]).register.text,
+  ).toBe("foo.bar")
+})
+
+test("change text objects respect punctuation, combining graphemes and exact quote delimiters", () => {
+  for (const [text, cursorOffset, object, expected] of [
+    ["foo... bar", 4, "inner-word", "foo bar"],
+    ["élan noir", 0, "inner-word", " noir"],
+    ['say "hello" now', 10, "inner-quote", 'say "" now'],
+    ["say 'hello' now", 7, "inner-single-quote", "say '' now"],
+  ] as const) {
+    expect(
+      apply(
+        { text, cursorOffset },
+        { type: "text-object", operator: "change", object, count: 1 },
+      ).buffer.text,
+    ).toBe(expected)
+  }
+})
+
+test("counted dollar selects through the requested logical line", () => {
+  const result = applyKeys("one\ntwo\nthree", ["g", "g", "v", "2", "$", "y"])
+  expect(result.register.text).toBe("one\ntwo")
+})
+
+test("counted cc includes an empty final selected line", () => {
+  const changed = apply(
+    { text: "a\n\nb", cursorOffset: 0 },
+    { type: "edit", operator: "change-line", count: 2 },
+  )
+  expect(changed.buffer).toEqual({ text: "\nb", cursorOffset: 0 })
+  expect(changed.register).toEqual({ text: "a\n", shape: "line" })
+})
+
+test("inner delimiter changes include a cursor on the closing delimiter", () => {
+  for (const [text, cursorOffset, object, expected] of [
+    ["(abc)", 4, "inner-paren", "()"],
+    ["[abc]", 4, "inner-bracket", "[]"],
+    ["{abc}", 4, "inner-brace", "{}"],
+    ["(a(b)c)", 4, "inner-paren", "(a()c)"],
+    ["(a(b)c)", 6, "inner-paren", "()"],
+  ] as const) {
+    expect(
+      apply(
+        { text, cursorOffset },
+        { type: "text-object", operator: "change", object, count: 1 },
+      ).buffer.text,
+    ).toBe(expected)
+  }
+})
+
+test("successive vertical motions preserve columns across short lines and horizontal movement resets them", () => {
+  const buffer = { text: "abcdef\nx\nabcdef", cursorOffset: 5 }
+  const first = motion(buffer, "down")
+  expect(motion(first, "down").cursorOffset).toBe(
+    motion(buffer, "down", 2).cursorOffset,
+  )
+  expect(motion(motion(first, "left"), "down").cursorOffset).toBe(9)
+  const selected = applyKeys(buffer.text, ["g", "g", "$", "v", "j", "j"])
+  expect(selected.buffer.selection).toEqual({ anchor: 5, head: 14 })
 })

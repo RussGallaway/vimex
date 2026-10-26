@@ -15,6 +15,7 @@ import {
   type RuntimeEvent,
 } from "@vimex/workbench"
 import { VimexRoot } from "../index"
+import { selectedText } from "@vimex/transcript"
 
 const thread = threadId("visual-thread")
 const answer = itemId("visual-answer")
@@ -141,6 +142,99 @@ async function visualHarness() {
     close,
   }
 }
+
+for (const trailingNewline of [false, true])
+  test(`Visual G keeps its endpoint stable while streaming (trailing newline: ${trailingNewline})`, async () => {
+    const h = await visualHarness()
+    try {
+      if (trailingNewline)
+        await act(async () => {
+          h.emit({
+            type: "conversation",
+            event: {
+              type: "item.delta",
+              threadId: thread,
+              itemId: answer,
+              delta: "\n",
+            },
+          })
+          await h.flush()
+          await h.renderOnce()
+        })
+      await h.keys("ggv3G")
+      expect(h.workspace().interaction.mode).toBe("visual")
+      expect(h.workspace().interaction.count).toBe("")
+      expect(h.workspace().transcript.viewport.kind).toBe("point")
+      const selection = h.workspace().transcript.selection
+      const cursor = h.workspace().transcript.cursor
+      expect(selection?.head).toEqual(cursor)
+      const copied = selectedText(h.workspace().transcript, "plain")
+      await act(async () => {
+        h.emit({
+          type: "conversation",
+          event: {
+            type: "item.delta",
+            threadId: thread,
+            itemId: answer,
+            delta: "\n\nNew output after the selection.",
+          },
+        })
+        await h.flush()
+        await h.renderOnce()
+      })
+      expect(h.workspace().transcript.selection).toEqual(selection)
+      expect(h.workspace().transcript.cursor).toEqual(cursor)
+      expect(h.workspace().transcript.viewport.kind).toBe("point")
+      expect(selectedText(h.workspace().transcript, "plain")).toBe(copied)
+    } finally {
+      await h.close()
+    }
+  })
+
+test("transcript 0 and Visual dollar use logical lines across terminal wraps", async () => {
+  const h = await visualHarness()
+  const long = itemId("long-logical-line")
+  const text = "Long logical line with words and emoji 🙂 ".repeat(5).trim()
+  try {
+    await act(async () => {
+      h.emit({
+        type: "conversation",
+        event: {
+          type: "item.started",
+          threadId: thread,
+          item: {
+            id: long,
+            turnId: turnId("long-line-turn"),
+            kind: "assistant",
+            markdown: `${text}\n\nNext paragraph.`,
+            status: "complete",
+          },
+        },
+      })
+      await h.controller.settle()
+      h.controller.transcript({
+        type: "cursor.move",
+        target: { itemId: long, graphemeOffset: 90 },
+        preferredScreenRow: 2,
+        extend: false,
+      })
+      await h.flush()
+      await h.renderOnce()
+    })
+    await h.keys("0")
+    expect(h.workspace().transcript.cursor).toEqual({
+      itemId: long,
+      graphemeOffset: 0,
+    })
+    await h.keys("v$")
+    expect(selectedText(h.workspace().transcript, "plain")).toBe(text)
+    await h.keys("y")
+    await h.controller.settle()
+    expect(h.copied).toEqual([text])
+  } finally {
+    await h.close()
+  }
+})
 
 test("brace browsing preserves compact tool groups in both directions and explicit targets reveal output", async () => {
   const h = await visualHarness()

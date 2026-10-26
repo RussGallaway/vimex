@@ -104,11 +104,9 @@ export function transcriptBindings(ctx: VimBindingContext): UiBinding[] {
     { key: "gg", cmd: () => ctx.countedMotion("first") },
     {
       key: "shift+g",
-      cmd: () => {
-        ctx.dispatchMotion("last")
-        ctx.scrollRef.current?.scrollTo(Number.MAX_SAFE_INTEGER)
-        ctx.controller.transcript({ type: "viewport.tail" })
-      },
+      // The motion handler attaches the tail only in Normal mode. Visual G
+      // must keep a stable selection endpoint while more output streams in.
+      cmd: () => ctx.countedMotion("last"),
     },
     { key: "ctrl+e", cmd: () => ctx.scroll("down", "line") },
     { key: "ctrl+y", cmd: () => ctx.scroll("up", "line") },

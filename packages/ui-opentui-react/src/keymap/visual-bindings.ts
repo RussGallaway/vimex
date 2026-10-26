@@ -4,7 +4,22 @@ import { countBindings } from "./binding-context"
 import { transcriptBindings } from "./transcript-bindings"
 
 export function visualBindings(ctx: VimBindingContext): UiBinding[] {
+  const shape = (shape: "character" | "line" | "block") => {
+    if (ctx.interaction.surface === "composer") {
+      if (shape !== "block")
+        ctx.runComposerKey(shape === "line" ? "shift+v" : "v")
+      return
+    }
+    ctx.countRef.current = ""
+    ctx.controller.dispatchInteraction({ type: "count.clear" })
+    if (ctx.transcript.selection?.shape === shape) {
+      ctx.controller.transcript({ type: "selection.clear" })
+      ctx.controller.dispatchInteraction({ type: "mode.normal" })
+    } else ctx.controller.transcript({ type: "selection.shape", shape })
+  }
   return [
+    { key: "v", cmd: () => shape("character") },
+    { key: "shift+v", cmd: () => shape("line") },
     {
       key: ":",
       cmd: () => ctx.controller.dispatchInteraction({ type: "mode.command" }),
@@ -12,17 +27,13 @@ export function visualBindings(ctx: VimBindingContext): UiBinding[] {
     {
       key: "o",
       cmd: () =>
-        ctx.interaction.surface === "transcript" &&
-        ctx.controller.transcript({ type: "selection.swap" }),
+        ctx.interaction.surface === "composer"
+          ? ctx.runComposerKey("o")
+          : ctx.controller.transcript({ type: "selection.swap" }),
     },
     {
       key: "ctrl+v",
-      cmd: () =>
-        ctx.interaction.surface === "transcript" &&
-        ctx.controller.transcript({
-          type: "selection.shape",
-          shape: "block",
-        }),
+      cmd: () => shape("block"),
     },
     ...(ctx.interaction.surface === "transcript"
       ? [
@@ -69,7 +80,9 @@ export function visualBindings(ctx: VimBindingContext): UiBinding[] {
             "w",
             "b",
             "e",
-            "0",
+            "shift+w",
+            "shift+b",
+            "shift+e",
             "^",
             "$",
             "g",

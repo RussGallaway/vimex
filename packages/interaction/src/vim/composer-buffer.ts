@@ -40,11 +40,13 @@ export function graphemeOffsetToCodeUnitOffset(
 export interface ComposerBufferSelection {
   readonly anchor: number
   readonly head: number
+  readonly shape?: "character" | "line"
 }
 
 export interface ComposerBuffer {
   readonly text: string
   readonly cursorOffset: number
+  readonly preferredColumn?: number
   readonly selection?: ComposerBufferSelection
 }
 
@@ -53,6 +55,7 @@ export type ComposerBufferEffect =
   | { readonly type: "history"; readonly direction: "undo" | "redo" }
   | { readonly type: "copy"; readonly text: string }
   | { readonly type: "retry" }
+  | { readonly type: "invalid-text-object" }
 
 export interface ComposerBufferResult {
   readonly buffer: ComposerBuffer
@@ -102,41 +105,65 @@ function category(
     : "punctuation"
 }
 
-function wordForward(parts: readonly string[], origin: number): number {
+function wordForward(
+  parts: readonly string[],
+  origin: number,
+  big = false,
+): number {
+  const wordCategory = (value: string | undefined) =>
+    big && category(value) !== "space" ? "keyword" : category(value)
   let cursor = clamp(origin, 0, Math.max(0, parts.length - 1))
-  const kind = category(parts[cursor])
+  const kind = wordCategory(parts[cursor])
   if (kind !== "space")
-    while (cursor < parts.length && category(parts[cursor]) === kind) cursor++
-  while (cursor < parts.length && category(parts[cursor]) === "space") cursor++
+    while (cursor < parts.length && wordCategory(parts[cursor]) === kind)
+      cursor++
+  while (cursor < parts.length && wordCategory(parts[cursor]) === "space")
+    cursor++
   return Math.min(cursor, Math.max(0, parts.length - 1))
 }
 
-function wordBackward(parts: readonly string[], origin: number): number {
+function wordBackward(
+  parts: readonly string[],
+  origin: number,
+  big = false,
+): number {
+  const wordCategory = (value: string | undefined) =>
+    big && category(value) !== "space" ? "keyword" : category(value)
   let cursor = clamp(origin - 1, 0, Math.max(0, parts.length - 1))
-  while (cursor > 0 && category(parts[cursor]) === "space") cursor--
-  const kind = category(parts[cursor])
-  while (cursor > 0 && category(parts[cursor - 1]) === kind) cursor--
+  while (cursor > 0 && wordCategory(parts[cursor]) === "space") cursor--
+  const kind = wordCategory(parts[cursor])
+  while (cursor > 0 && wordCategory(parts[cursor - 1]) === kind) cursor--
   return cursor
 }
 
-function wordEnd(parts: readonly string[], origin: number): number {
+function wordEnd(
+  parts: readonly string[],
+  origin: number,
+  big = false,
+): number {
   if (parts.length === 0) return 0
+  const wordCategory = (value: string | undefined) =>
+    big && category(value) !== "space" ? "keyword" : category(value)
   let cursor = clamp(origin, 0, parts.length - 1)
-  const current = category(parts[cursor])
+  const current = wordCategory(parts[cursor])
   if (
     current !== "space" &&
     cursor + 1 < parts.length &&
-    category(parts[cursor + 1]) === current
+    wordCategory(parts[cursor + 1]) === current
   ) {
-    while (cursor + 1 < parts.length && category(parts[cursor + 1]) === current)
+    while (
+      cursor + 1 < parts.length &&
+      wordCategory(parts[cursor + 1]) === current
+    )
       cursor++
     return cursor
   }
   cursor++
-  while (cursor < parts.length && category(parts[cursor]) === "space") cursor++
+  while (cursor < parts.length && wordCategory(parts[cursor]) === "space")
+    cursor++
   if (cursor >= parts.length) return parts.length - 1
-  const kind = category(parts[cursor])
-  while (cursor + 1 < parts.length && category(parts[cursor + 1]) === kind)
+  const kind = wordCategory(parts[cursor])
+  while (cursor + 1 < parts.length && wordCategory(parts[cursor + 1]) === kind)
     cursor++
   return cursor
 }
@@ -173,6 +200,12 @@ function moveOnce(
       return firstContent(parts, offset)
     case "line-end":
       return end > start ? end - 1 : start
+    case "WORD-forward":
+      return wordForward(parts, offset, true)
+    case "WORD-backward":
+      return wordBackward(parts, offset, true)
+    case "WORD-end":
+      return wordEnd(parts, offset, true)
     case "word-forward":
       return wordForward(parts, offset)
     case "word-backward":
@@ -215,8 +248,14 @@ function moveBuffer(
     target = targetLine(parts, Math.max(1, count))
   else if (motion === "document-end" && count > 0)
     target = targetLine(parts, count)
-  else if (motion === "up" || motion === "down") {
-    const column = origin - lineStart(parts, origin)
+  else if (motion === "line-end") {
+    let end = lineEnd(parts, origin)
+    for (let line = 1; line < Math.max(1, count) && end < parts.length; line++)
+      end = lineEnd(parts, end + 1)
+    const start = lineStart(parts, end)
+    target = end > start ? end - 1 : start
+  } else if (motion === "up" || motion === "down") {
+    const column = buffer.preferredColumn ?? origin - lineStart(parts, origin)
     target = origin
     for (let step = 0; step < Math.max(1, count); step++) {
       const start = lineStart(parts, target)
@@ -244,8 +283,18 @@ function moveBuffer(
   return {
     text: buffer.text,
     cursorOffset: target,
+    ...(motion === "up" || motion === "down"
+      ? {
+          preferredColumn:
+            buffer.preferredColumn ?? origin - lineStart(parts, origin),
+        }
+      : {}),
     selection: select
-      ? { anchor: buffer.selection?.anchor ?? origin, head: target }
+      ? {
+          ...buffer.selection,
+          anchor: buffer.selection?.anchor ?? origin,
+          head: target,
+        }
       : undefined,
   }
 }
@@ -425,16 +474,36 @@ function paste(
   }
 }
 
+/** Half-open grapheme range; linewise payloads omit the final newline. */
+export function composerSelectionRange(
+  buffer: ComposerBuffer,
+): { from: number; to: number } | undefined {
+  if (!buffer.selection) return undefined
+  const parts = split(buffer.text)
+  const low = clamp(
+    Math.min(buffer.selection.anchor, buffer.selection.head),
+    0,
+    parts.length,
+  )
+  const high = clamp(
+    Math.max(buffer.selection.anchor, buffer.selection.head),
+    0,
+    parts.length,
+  )
+  return buffer.selection.shape === "line"
+    ? { from: lineStart(parts, low), to: lineEnd(parts, high) }
+    : { from: low, to: Math.min(parts.length, high + 1) }
+}
+
 function yank(
   buffer: ComposerBuffer,
   register: VimRegister,
 ): ComposerBufferResult {
   if (!buffer.selection) return { buffer, register }
   const parts = split(buffer.text)
-  const from = Math.min(buffer.selection.anchor, buffer.selection.head)
-  const to = Math.max(buffer.selection.anchor, buffer.selection.head) + 1
+  const { from, to } = composerSelectionRange(buffer)!
   const text = parts.slice(from, to).join("")
-  const nextRegister = { text, shape: "character" as const }
+  const nextRegister = { text, shape: buffer.selection.shape ?? "character" }
   return {
     buffer: { text: buffer.text, cursorOffset: buffer.cursorOffset },
     register: nextRegister,
@@ -449,16 +518,24 @@ function deleteSelection(
 ): ComposerBufferResult {
   if (!buffer.selection) return { buffer, register }
   const parts = split(buffer.text)
-  const from = clamp(
-    Math.min(buffer.selection.anchor, buffer.selection.head),
-    0,
-    parts.length,
-  )
-  const to = clamp(
-    Math.max(buffer.selection.anchor, buffer.selection.head) + 1,
-    from,
-    parts.length,
-  )
+  const { from, to } = composerSelectionRange(buffer)!
+  if (buffer.selection.shape === "line") {
+    const lines =
+      parts.slice(from, to).filter((part) => part === "\n").length + 1
+    if (!insertMode) {
+      const deleted = deleteLines(
+        { text: buffer.text, cursorOffset: from },
+        lines,
+      )
+      return { buffer: deleted.buffer, register: deleted.register ?? register }
+    }
+    const text = parts.slice(from, to).join("")
+    const next = replace(parts, from, to, [])
+    return {
+      buffer: { text: next.join(""), cursorOffset: from },
+      register: { text, shape: "line" },
+    }
+  }
   const text = parts.slice(from, to).join("")
   const next = replace(parts, from, to, [])
   return {
@@ -485,7 +562,7 @@ function textObjectRange(
     const big = kind === "WORD"
     const isSpace = (value: string | undefined) => !value || /^\s$/u.test(value)
     const isWord = (value: string | undefined) =>
-      Boolean(value) && (big || /^[\p{L}\p{M}\p{N}_]$/u.test(value!))
+      isSpace(value) ? "space" : big ? "word" : category(value)
     let from = bounded
     let to = bounded + 1
     if (isSpace(parts[bounded])) {
@@ -516,6 +593,7 @@ function textObjectRange(
   }
   const pairs: Record<string, [string, string]> = {
     quote: ['"', '"'],
+    "single-quote": ["'", "'"],
     paren: ["(", ")"],
     bracket: ["[", "]"],
     brace: ["{", "}"],
@@ -525,23 +603,32 @@ function textObjectRange(
   let open = -1
   let close = -1
   if (pair[0] === pair[1]) {
-    for (let index = bounded; index >= 0; index--)
-      if (
-        parts[index] === pair[0] &&
-        (index === 0 || parts[index - 1] !== "\\")
-      ) {
-        open = index
-        break
-      }
-    if (open < 0) return undefined
-    for (let index = open + 1; index < parts.length; index++)
-      if (parts[index] === pair[1] && parts[index - 1] !== "\\") {
-        close = index
-        break
-      }
+    // Pair unescaped quotes on the current line, including a cursor on either
+    // delimiter. A quote ahead of the cursor is the next eligible object.
+    const start = lineStart(parts, bounded)
+    const end = lineEnd(parts, bounded)
+    const quotes: number[] = []
+    for (let index = start; index < end; index++) {
+      if (parts[index] !== pair[0]) continue
+      let slashes = 0
+      for (
+        let previous = index - 1;
+        previous >= start && parts[previous] === "\\";
+        previous--
+      )
+        slashes++
+      if (slashes % 2 === 0) quotes.push(index)
+    }
+    for (let index = 0; index + 1 < quotes.length; index += 2) {
+      if (quotes[index + 1]! < bounded) continue
+      open = quotes[index]!
+      close = quotes[index + 1]!
+      break
+    }
   } else {
     let depth = 0
-    for (let index = bounded; index >= 0; index--) {
+    const searchFrom = parts[bounded] === pair[1] ? bounded - 1 : bounded
+    for (let index = searchFrom; index >= 0; index--) {
       if (parts[index] === pair[1]) depth++
       else if (parts[index] === pair[0]) {
         if (depth === 0) {
@@ -579,6 +666,11 @@ export function applyComposerVimAction(
       buffer: moveBuffer(buffer, action.motion, action.count, action.select),
       register,
     }
+  buffer = {
+    text: buffer.text,
+    cursorOffset: buffer.cursorOffset,
+    ...(buffer.selection ? { selection: buffer.selection } : {}),
+  }
   if (action.type === "enter-insert")
     return { buffer: enterInsert(buffer, action.placement), register }
   if (action.type === "open-line")
@@ -595,7 +687,26 @@ export function applyComposerVimAction(
     return {
       buffer: {
         ...buffer,
-        selection: { anchor: buffer.cursorOffset, head: buffer.cursorOffset },
+        selection: {
+          anchor: buffer.selection?.anchor ?? buffer.cursorOffset,
+          head: buffer.cursorOffset,
+          ...(action.shape ? { shape: action.shape } : {}),
+        },
+      },
+      register,
+    }
+  }
+  if (action.type === "swap-selection") {
+    if (!buffer.selection) return { buffer, register }
+    return {
+      buffer: {
+        ...buffer,
+        cursorOffset: buffer.selection.anchor,
+        selection: {
+          ...buffer.selection,
+          anchor: buffer.selection.head,
+          head: buffer.selection.anchor,
+        },
       },
       register,
     }
@@ -616,7 +727,8 @@ export function applyComposerVimAction(
       action.object,
       action.count,
     )
-    if (!range || range.from === range.to) return { buffer, register }
+    if (!range)
+      return { buffer, register, effect: { type: "invalid-text-object" } }
     const text = parts.slice(range.from, range.to).join("")
     const next = replace(parts, range.from, range.to, [])
     return {
@@ -639,6 +751,22 @@ export function applyComposerVimAction(
       buffer,
       register,
       effect: { type: "history", direction: action.operator },
+    }
+  }
+  if (action.operator === "change-line") {
+    const parts = split(buffer.text)
+    const start = lineStart(parts, buffer.cursorOffset)
+    let end = start
+    for (let line = 0; line < Math.max(1, action.count); line++) {
+      end = lineEnd(parts, end)
+      if (line + 1 < action.count && end < parts.length) end++
+    }
+    return {
+      buffer: {
+        text: replace(parts, start, end, []).join(""),
+        cursorOffset: start,
+      },
+      register: { text: parts.slice(start, end).join(""), shape: "line" },
     }
   }
   const changed =

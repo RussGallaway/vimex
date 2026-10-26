@@ -189,7 +189,7 @@ describe("composer Vim grammar", () => {
     expect(yanked.state).toMatchObject({ mode: "normal", surface: "composer" })
     const escaped = resolveComposerKey(visual.state, "escape")
     expect(escaped.action).toEqual({ type: "clear-selection" })
-    expect(escaped.state.surface).toBe("transcript")
+    expect(escaped.state.surface).toBe("composer")
   })
 
   test("submits from Normal Enter and retains retry as a semantic action", () => {
@@ -217,4 +217,39 @@ test("Visual d/x delete into Normal while c changes into Insert", () => {
     expect(result.state.surface).toBe("composer")
     expect(result.state.pendingKeys).toBe("")
   }
+})
+
+test("Visual switches shape, swaps endpoints and cancels pending prefixes", () => {
+  const visual = resolveComposerKey(composerNormal(), "v").state
+  expect(resolveComposerKey(visual, "shift+v").action).toEqual({
+    type: "begin-visual",
+    shape: "line",
+  })
+  expect(resolveComposerKey(visual, "v", "line").action).toEqual({
+    type: "begin-visual",
+    shape: "character",
+  })
+  expect(resolveComposerKey(visual, "shift+v", "line").state.mode).toBe(
+    "normal",
+  )
+  expect(resolveComposerKey(visual, "o").action).toEqual({
+    type: "swap-selection",
+  })
+  const pending = resolveComposerKey(visual, "g").state
+  expect(resolveComposerKey(pending, "escape")).toMatchObject({
+    state: { mode: "normal", pendingKeys: "", surface: "composer" },
+    action: { type: "clear-selection" },
+  })
+})
+
+test("cc changes lines while cd cancels an invalid operator sequence", () => {
+  const pending = resolveComposerKey(composerNormal(), "c").state
+  expect(resolveComposerKey(pending, "c")).toMatchObject({
+    state: { mode: "insert" },
+    action: { type: "edit", operator: "change-line" },
+  })
+  expect(resolveComposerKey(pending, "d")).toMatchObject({
+    state: { mode: "normal", pendingKeys: "" },
+    action: undefined,
+  })
 })

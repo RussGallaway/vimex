@@ -116,3 +116,58 @@ test("rapid Visual change enters Insert and accepts replacement text without nat
     await act(async () => setup.renderer.destroy())
   }
 })
+
+for (const [text, cursor, keys, expected, register] of [
+  ["alpha beta", 1, "ciw", " beta", "alpha"],
+  ['say "hello" now', 7, 'ci"', 'say "" now', "hello"],
+  ["use [hello] now", 7, "ci[", "use [] now", "hello"],
+  ["use [hello] now", 7, "ci]", "use [] now", "hello"],
+  ["one\ntwo", 1, "cc", "\ntwo", "one"],
+  ["foo.bar baz", 0, "vEy", "foo.bar baz", "foo.bar"],
+  ["one\ntwo\nthree", 1, "Vjd", "three", "one\ntwo"],
+  ["alpha", 1, "vlohy", "alpha", "alp"],
+] as const) {
+  test(`composer routes ${keys} through semantic Vim actions`, async () => {
+    const setup = await fixture(text, cursor)
+    try {
+      await act(async () => {
+        await setup.mockInput.typeText(keys)
+        await setup.flush()
+      })
+      expect(setup.composer.plainText).toBe(expected)
+      expect(setup.state().interaction.unnamedRegister.text).toBe(register)
+      expect(setup.state().interaction.mode).toBe(
+        keys.startsWith("c") ? "insert" : "normal",
+      )
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+}
+
+test("an unmatched change text object keeps Normal mode and the draft", async () => {
+  const setup = await fixture("plain text", 1)
+  try {
+    await act(async () => {
+      await setup.mockInput.typeText('ci"')
+      await setup.flush()
+    })
+    expect(setup.composer.plainText).toBe("plain text")
+    expect(setup.state().interaction.mode).toBe("normal")
+  } finally {
+    await act(async () => setup.renderer.destroy())
+  }
+})
+
+test("successive composer Visual j motions preserve the desired column", async () => {
+  const setup = await fixture("abcdef\nx\nabcdef", 5)
+  try {
+    await act(async () => {
+      await setup.mockInput.typeText("vjjy")
+      await setup.flush()
+    })
+    expect(setup.state().interaction.unnamedRegister.text).toBe("f\nx\nabcdef")
+  } finally {
+    await act(async () => setup.renderer.destroy())
+  }
+})

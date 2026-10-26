@@ -17,6 +17,8 @@ import { flushSync, useRenderer } from "@opentui/react"
 import { initialComposer, type SubmissionIntent } from "@vimex/composer"
 import {
   applyComposerVimAction,
+  composerSelectionRange,
+  type ComposerBufferSelection,
   commandCompletions,
   initialCommandHistory,
   initialInteraction,
@@ -29,6 +31,7 @@ import {
 } from "@vimex/interaction"
 import {
   initialTranscript,
+  logicalLinePoint,
   selectedGraphemeCount,
   type TranscriptRuntimeInput,
   type TranscriptState,
@@ -264,9 +267,12 @@ export function VimexApp({
   const liveSessionQuery = useRef("")
   const questionInputRef = useRef<InputRenderable>(null)
   const commandHistoryRef = useRef(initialCommandHistory())
-  const composerSelectionRef = useRef<
-    { anchor: number; head: number } | undefined
+  const composerPreferredColumnRef = useRef<
+    { text: string; cursorOffset: number; column: number } | undefined
   >(undefined)
+  const composerSelectionRef = useRef<ComposerBufferSelection | undefined>(
+    undefined,
+  )
   const appliedNativeSelection = useRef<
     | {
         token: object
@@ -507,6 +513,7 @@ export function VimexApp({
     )
       return
     composerSelectionRef.current = undefined
+    composerPreferredColumnRef.current = undefined
     textareaRef.current?.clearSelection()
   }, [interaction.mode, interaction.surface, state.activeThreadId])
   useEffect(() => {
@@ -922,8 +929,18 @@ export function VimexApp({
         }
         return result
       }
-      let result =
-        motion === "first" || motion === "last"
+      const logicalLineTarget =
+        motion === "line-start" || motion === "line-end"
+          ? logicalLinePoint(
+              transcript,
+              motion === "line-start" ? "start" : "end",
+              transcript.cursor,
+              repeat,
+            )
+          : undefined
+      let result = logicalLineTarget
+        ? { point: logicalLineTarget, preferredScreenRow: 0 }
+        : motion === "first" || motion === "last"
           ? undefined
           : calculate(activeLayout)
       // A mounted layout deliberately ends at the window boundary. Resolve only
@@ -940,6 +957,17 @@ export function VimexApp({
           motion,
           repeat,
         )
+      }
+      if (result && motion === "last" && interaction.mode === "visual") {
+        const projection = transcript.projectionById[result.point.itemId]
+        if (projection)
+          result = {
+            ...result,
+            point: {
+              ...result.point,
+              graphemeOffset: Math.max(0, projection.sourceSpans.length - 1),
+            },
+          }
       }
       if (result) {
         controller.transcript({
@@ -1001,13 +1029,24 @@ export function VimexApp({
       const textarea = textareaRef.current
       if (!textarea) return
       const nativeSelection = textarea.getSelection()
+      const cursorOffset =
+        composerSelectionRef.current?.head ??
+        nativeOffsetToGraphemeOffset(textarea.plainText, textarea.cursorOffset)
+      const preferred = composerPreferredColumnRef.current
       const result = applyComposerVimAction(
         {
+          preferredColumn:
+            preferred?.text === textarea.plainText &&
+            preferred.cursorOffset === cursorOffset
+              ? preferred.column
+              : undefined,
           text: textarea.plainText,
-          cursorOffset: nativeOffsetToGraphemeOffset(
-            textarea.plainText,
-            textarea.cursorOffset,
-          ),
+          cursorOffset:
+            composerSelectionRef.current?.head ??
+            nativeOffsetToGraphemeOffset(
+              textarea.plainText,
+              textarea.cursorOffset,
+            ),
           selection:
             composerSelectionRef.current ??
             (nativeSelection
@@ -1029,6 +1068,7 @@ export function VimexApp({
         action,
         composerInteractionRef.current.unnamedRegister,
       )
+      if (result.effect?.type === "invalid-text-object") return false
       if (result.effect?.type === "history") {
         if (result.effect.direction === "undo") textarea.undo()
         else textarea.redo()
@@ -1039,19 +1079,32 @@ export function VimexApp({
           result.buffer.text,
           result.buffer.cursorOffset,
         )
-        if (result.buffer.selection)
-          textarea.setSelectionInclusive(
-            graphemeOffsetToNativeOffset(
-              result.buffer.text,
-              result.buffer.selection.anchor,
-            ),
-            graphemeOffsetToNativeOffset(
-              result.buffer.text,
-              result.buffer.selection.head,
-            ),
+        if (result.buffer.selection) {
+          const range = composerSelectionRange(result.buffer)!
+          const backwards =
+            result.buffer.selection.head < result.buffer.selection.anchor
+          const start = graphemeOffsetToNativeOffset(
+            result.buffer.text,
+            range.from,
           )
-        else textarea.clearSelection()
+          const end = graphemeOffsetToNativeOffset(
+            result.buffer.text,
+            Math.max(range.from, range.to - 1),
+          )
+          textarea.setSelectionInclusive(
+            backwards ? end : start,
+            backwards ? start : end,
+          )
+        } else textarea.clearSelection()
       }
+      composerPreferredColumnRef.current =
+        result.buffer.preferredColumn === undefined
+          ? undefined
+          : {
+              text: result.buffer.text,
+              cursorOffset: result.buffer.cursorOffset,
+              column: result.buffer.preferredColumn,
+            }
       composerSelectionRef.current = result.buffer.selection
       controller.changeDraft(
         textarea.plainText,
@@ -1110,11 +1163,25 @@ export function VimexApp({
         })
         return
       }
-      const resolution = resolveComposerKey(composerInteractionRef.current, key)
+      const resolution = resolveComposerKey(
+        composerInteractionRef.current,
+        key,
+        composerSelectionRef.current?.shape,
+      )
       composerInteractionRef.current = resolution.state
-      if (resolution.action) applyComposerAction(resolution.action)
-      for (const command of resolution.commands)
+      const applied = resolution.action
+        ? applyComposerAction(resolution.action)
+        : undefined
+      for (const command of resolution.commands) {
+        if (applied === false && command.type === "mode.insert") {
+          composerInteractionRef.current = {
+            ...composerInteractionRef.current,
+            mode: "normal",
+          }
+          continue
+        }
         controller.dispatchInteraction(command)
+      }
     },
     [applyComposerAction, controller],
   )

@@ -13,13 +13,21 @@ export type ComposerMotion =
   | "word-forward"
   | "word-backward"
   | "word-end"
+  | "WORD-forward"
+  | "WORD-backward"
+  | "WORD-end"
   | "line-start"
   | "first-content"
   | "line-end"
   | "document-start"
   | "document-end"
 export type ComposerOperator =
-  "delete-char" | "delete-line" | "delete-to-line-end" | "undo" | "redo"
+  | "delete-char"
+  | "delete-line"
+  | "change-line"
+  | "delete-to-line-end"
+  | "undo"
+  | "redo"
 export type ComposerPlacement = "before" | "after" | "line-start" | "line-end"
 
 export type ComposerVimAction =
@@ -33,7 +41,8 @@ export type ComposerVimAction =
   | { type: "paste"; placement: "before" | "after"; count: number }
   | { type: "enter-insert"; placement: ComposerPlacement }
   | { type: "open-line"; placement: "above" | "below"; count: number }
-  | { type: "begin-visual" }
+  | { type: "begin-visual"; shape?: "character" | "line" }
+  | { type: "swap-selection" }
   | { type: "clear-selection" }
   | { type: "yank" }
   | { type: "delete-selection"; enterInsert?: boolean }
@@ -51,6 +60,8 @@ export type ComposerTextObject =
   | "a-word"
   | "inner-WORD"
   | "a-WORD"
+  | "inner-single-quote"
+  | "a-single-quote"
   | "inner-quote"
   | "a-quote"
   | "inner-paren"
@@ -74,6 +85,9 @@ const motions: Readonly<Record<string, ComposerMotion>> = {
   w: "word-forward",
   b: "word-backward",
   e: "word-end",
+  "shift+w": "WORD-forward",
+  "shift+b": "WORD-backward",
+  "shift+e": "WORD-end",
   "^": "first-content",
   $: "line-end",
   "shift+g": "document-end",
@@ -133,13 +147,17 @@ function prefixed(
     return resolved(state, [{ type: "keys.clear" }, { type: "count.clear" }])
   }
   if (state.pendingKeys === "d" || state.pendingKeys === "c") {
-    if (key === "d" && !select) {
+    if (key === state.pendingKeys && !select) {
       return resolved(
         state,
-        [{ type: "keys.clear" }, { type: "count.clear" }],
+        [
+          { type: "keys.clear" },
+          { type: "count.clear" },
+          ...(key === "c" ? [{ type: "mode.insert" as const }] : []),
+        ],
         {
           type: "edit",
-          operator: "delete-line",
+          operator: key === "c" ? "change-line" : "delete-line",
           count,
         },
       )
@@ -161,7 +179,9 @@ function prefixed(
         w: state.pendingKeys.endsWith("i") ? "inner-word" : "a-word",
         W: state.pendingKeys.endsWith("i") ? "inner-WORD" : "a-WORD",
         '"': state.pendingKeys.endsWith("i") ? "inner-quote" : "a-quote",
-        "'": state.pendingKeys.endsWith("i") ? "inner-quote" : "a-quote",
+        "'": state.pendingKeys.endsWith("i")
+          ? "inner-single-quote"
+          : "a-single-quote",
         b: state.pendingKeys.endsWith("i") ? "inner-paren" : "a-paren",
         ")": state.pendingKeys.endsWith("i") ? "inner-paren" : "a-paren",
         "(": state.pendingKeys.endsWith("i") ? "inner-paren" : "a-paren",
@@ -171,7 +191,17 @@ function prefixed(
         "]": state.pendingKeys.endsWith("i") ? "inner-bracket" : "a-bracket",
         "[": state.pendingKeys.endsWith("i") ? "inner-bracket" : "a-bracket",
       } as const
-    )[key]
+    )[
+      key === "shift+w"
+        ? "W"
+        : key === "shift+b"
+          ? "B"
+          : key === "shift+["
+            ? "{"
+            : key === "shift+]"
+              ? "}"
+              : key
+    ]
     if (object)
       return resolved(
         state,
@@ -215,6 +245,7 @@ function resolveMotion(
 export function resolveComposerKey(
   state: InteractionState,
   key: string,
+  visualShape: "character" | "line" = "character",
 ): ComposerKeyResolution {
   if (state.surface !== "composer") return resolved(state, [])
   if (state.mode === "normal") {
@@ -271,11 +302,13 @@ export function resolveComposerKey(
         },
       )
     }
-    if (key === "v")
+    if (key === "v" || key === "shift+v")
       return resolved(
         state,
         [{ type: "count.clear" }, { type: "mode.visual" }],
-        { type: "begin-visual" },
+        key === "v"
+          ? { type: "begin-visual" }
+          : { type: "begin-visual", shape: "line" },
       )
     if (key === "return" || key === "enter")
       return resolved(state, [{ type: "count.clear" }], { type: "submit" })
@@ -283,6 +316,30 @@ export function resolveComposerKey(
       return resolved(state, [{ type: "count.clear" }], { type: "retry" })
   }
   if (state.mode === "visual") {
+    if (key === "escape" || key === "v" || key === "shift+v") {
+      const shape = key === "shift+v" ? "line" : "character"
+      if (key !== "escape" && shape !== visualShape)
+        return resolved(
+          state,
+          [{ type: "keys.clear" }, { type: "count.clear" }],
+          { type: "begin-visual", shape },
+        )
+      return resolved(
+        state,
+        [
+          { type: "mode.normal" },
+          { type: "keys.clear" },
+          { type: "count.clear" },
+        ],
+        { type: "clear-selection" },
+      )
+    }
+    if (key === "o")
+      return resolved(
+        state,
+        [{ type: "keys.clear" }, { type: "count.clear" }],
+        { type: "swap-selection" },
+      )
     const pending = prefixed(state, key, true)
     if (pending) return pending
     const counted = countCommand(state, key)
@@ -306,12 +363,6 @@ export function resolveComposerKey(
         state,
         [{ type: "count.clear" }, { type: "mode.normal" }],
         { type: "yank" },
-      )
-    if (key === "escape")
-      return resolved(
-        state,
-        [{ type: "mode.normal" }, { type: "focus.set", surface: "transcript" }],
-        { type: "clear-selection" },
       )
   }
   return resolved(state, [])
