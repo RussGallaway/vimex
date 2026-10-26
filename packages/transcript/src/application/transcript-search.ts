@@ -16,6 +16,21 @@ export interface TranscriptSearchOptions {
   readonly caseSensitive?: boolean
 }
 
+interface SearchCacheEntry {
+  readonly projections: WeakRef<TranscriptState["projectionById"]>
+  readonly order: WeakRef<TranscriptState["order"]>
+  readonly query: string
+  readonly caseSensitive: boolean
+  readonly matches: readonly TranscriptSearchMatch[]
+}
+
+// Keep recent pane/query results without retaining their conversation histories.
+// Cursor, selection, folds, and viewport changes do not change these inputs.
+const searchCache: SearchCacheEntry[] = []
+const searchCacheLimit = 4
+const retainedMatchLimit = 10_000
+const retainedTextLimit = 1_000_000
+
 function comparePoint(
   order: ReadonlyMap<ItemId, number>,
   left: LogicalPoint,
@@ -35,12 +50,30 @@ export function findSearchMatches(
   options: TranscriptSearchOptions = {},
 ): readonly TranscriptSearchMatch[] {
   const caseSensitive = options.caseSensitive ?? false
+  for (let index = searchCache.length - 1; index >= 0; index--) {
+    const entry = searchCache[index]!
+    if (!entry.projections.deref() || !entry.order.deref())
+      searchCache.splice(index, 1)
+  }
+  const cachedIndex = searchCache.findIndex(
+    (entry) =>
+      entry.projections.deref() === state.projectionById &&
+      entry.order.deref() === state.order &&
+      entry.query === query &&
+      entry.caseSensitive === caseSensitive,
+  )
+  if (cachedIndex >= 0) {
+    const entry = searchCache.splice(cachedIndex, 1)[0]!
+    searchCache.push(entry)
+    return entry.matches
+  }
   const needle = graphemes(query)
   const comparableNeedle = caseSensitive
     ? needle
     : needle.map((part) => part.toLowerCase())
   if (needle.length === 0) return []
   const result: TranscriptSearchMatch[] = []
+  let retainedTextLength = query.length
   for (const itemId of state.order) {
     const projection = state.projectionById[itemId]
     if (!projection) continue
@@ -58,15 +91,34 @@ export function findSearchMatches(
       }
       if (!matched) continue
       const text = parts.slice(from, from + needle.length).join("")
-      result.push({
-        itemId,
-        text,
-        from: { itemId, graphemeOffset: from },
-        to: { itemId, graphemeOffset: from + needle.length },
-      })
+      retainedTextLength += text.length
+      result.push(
+        Object.freeze({
+          itemId,
+          text,
+          from: Object.freeze({ itemId, graphemeOffset: from }),
+          to: Object.freeze({ itemId, graphemeOffset: from + needle.length }),
+        }),
+      )
     }
   }
-  return result
+  const matches = Object.freeze(result)
+  // Dense or unusually long matches remain complete but disposable. A query
+  // count alone would allow the cache to retain an unbounded amount of text.
+  if (
+    matches.length > retainedMatchLimit ||
+    retainedTextLength > retainedTextLimit
+  )
+    return matches
+  searchCache.push({
+    projections: new WeakRef(state.projectionById),
+    order: new WeakRef(state.order),
+    query,
+    caseSensitive,
+    matches,
+  })
+  if (searchCache.length > searchCacheLimit) searchCache.shift()
+  return matches
 }
 
 /** Implements `/`, `?`, `n`, and `N` over a previously calculated match set. */

@@ -1,6 +1,7 @@
 import type { SyntaxStyle } from "@opentui/core"
 import type { ConversationItem } from "@vimex/conversation"
 import type { TranscriptItemFragment } from "@vimex/transcript"
+import { useMemo } from "react"
 import { emberTide } from "../theme"
 import { itemStatusGlyph } from "./item-status"
 import { diffFiletype, diffSummary } from "./diff-summary"
@@ -25,23 +26,34 @@ export function FileChange(props: {
   const finalFragment =
     !props.fragment || props.fragment.index === props.fragment.count - 1
   // A later patch delta may outpace metadata. Always display the exact current patch.
-  const changes =
-    fragmented && item.changes
-      ? item.changes
-      : item.changes
-            ?.map((change) => change.patch)
-            .filter(Boolean)
-            .join("\n") === item.patch
-        ? item.changes!
-        : [
-            {
-              path: item.title,
-              patch: item.patch,
-              action: undefined,
-              movePath: undefined,
-            },
-          ]
-  const summary = firstFragment ? diffSummary(sourceItem.patch) : undefined
+  const changes = useMemo(
+    () =>
+      fragmented && item.changes
+        ? item.changes
+        : item.changes
+              ?.map((change) => change.patch)
+              .filter(Boolean)
+              .join("\n") === item.patch
+          ? item.changes!
+          : [
+              {
+                path: item.title,
+                patch: item.patch,
+                action: undefined,
+                movePath: undefined,
+              },
+            ],
+    [fragmented, item.changes, item.patch, item.title],
+  )
+  const summary = useMemo(
+    () => (firstFragment ? diffSummary(sourceItem.patch) : undefined),
+    [firstFragment, sourceItem.patch],
+  )
+  const countsByFile = useMemo(
+    () =>
+      props.folded ? [] : changes.map((change) => diffSummary(change.patch)),
+    [changes, props.folded],
+  )
   return (
     <box
       backgroundColor={emberTide.backgroundRaised}
@@ -87,7 +99,7 @@ export function FileChange(props: {
       ) : null}
       {!props.folded
         ? changes.map((change, index) => {
-            const counts = diffSummary(change.patch)
+            const counts = countsByFile[index]
             return (
               <box key={`${index}:${change.path}`}>
                 {item.changes ? (

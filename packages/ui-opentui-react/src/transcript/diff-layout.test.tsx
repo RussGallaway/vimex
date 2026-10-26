@@ -7,13 +7,72 @@ import {
   initialTranscript,
   syncTranscriptItem,
 } from "@vimex/transcript"
-import { act } from "react"
+import { act, useState } from "react"
 import { createEmberTideSyntax } from "../theme"
 import { FileChange } from "./FileChange"
 import { measureRenderedTranscript } from "./rendered-layout"
+import { waitForRender } from "../test-support/wait-for-render"
 
 const repeatedPatch =
   "--- a/sample.ts\n+++ b/sample.ts\n@@ -1,4 +1,4 @@\n SAME\n-REPEAT\n----OLD\n+REPEAT\n++++NEW\n SAME\n"
+
+test("diff derivations refresh when streamed patch outpaces file metadata and when unfolded", async () => {
+  const initialPatch = "@@ -1 +1 @@\n-OLD\n+INITIAL\n"
+  const updatedPatch = "@@ -1 +1,2 @@\n-OLD\n+UPDATED\n+EXTRA\n"
+  const changes = [
+    { path: "sample.ts", patch: initialPatch, action: "update" as const },
+  ]
+  const syntax = createEmberTideSyntax()
+  let update!: () => void
+  let unfold!: () => void
+  function Harness() {
+    const [patch, setPatch] = useState(initialPatch)
+    const [folded, setFolded] = useState(true)
+    update = () => setPatch(updatedPatch)
+    unfold = () => setFolded(false)
+    return (
+      <FileChange
+        item={{
+          id: itemId("memo-edit"),
+          turnId: turnId("turn"),
+          kind: "edit",
+          title: "sample.ts",
+          patch,
+          changes,
+          status: "running",
+        }}
+        syntax={syntax}
+        folded={folded}
+      />
+    )
+  }
+  const setup = await testRender(<Harness />, { width: 80, height: 16 })
+  try {
+    await waitForRender(
+      setup,
+      () => setup.captureCharFrame().includes("+1 −1"),
+      "initial folded counts",
+    )
+    await act(async () => update())
+    await waitForRender(
+      setup,
+      () => setup.captureCharFrame().includes("+2 −1"),
+      "updated folded counts",
+    )
+    await act(async () => unfold())
+    await waitForRender(
+      setup,
+      () =>
+        setup.captureCharFrame().includes("UPDATED") &&
+        setup.captureCharFrame().includes("EXTRA"),
+      "current patch after unfolding",
+    )
+    expect(setup.captureCharFrame()).not.toContain("INITIAL")
+  } finally {
+    await act(async () => setup.renderer.destroy())
+    syntax.destroy()
+  }
+})
 
 test("split diff geometry maps repeated context and header-like code by hunk side", async () => {
   const patch = repeatedPatch
