@@ -32,6 +32,7 @@
     "docs:generate": "bun scripts/generate-manual.ts",
     "docs:check": "bun scripts/generate-manual.ts --check",
     "build": "bun scripts/release/build.ts",
+    "install:dev": "bun scripts/install-dev.ts",
     "package": "bun scripts/release/package.ts",
     "release:manifest": "bun scripts/release/manifest.ts",
     "release:formula": "bun scripts/release/update-homebrew.ts",

@@ -96,6 +96,11 @@ bun install --frozen-lockfile
 bun run start --demo
 ```
 
+To build a global `vimex-dev` command from this checkout, run `bun run install:dev`.
+Run it again after source changes to rebuild, then launch `vimex-dev` from any
+project directory. See [local development installation](docs/install.md#repeatable-local-development-install)
+for paths and setup.
+
 The offline demo needs no Codex credentials. Start a live source session with `bun run start`, and run the complete validation suite with:
 
 ```sh

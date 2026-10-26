@@ -62,6 +62,35 @@ From a checkout, replace `vimex` with `bun run start`. Bare resume and --last re
 
 ## Standalone bundles
 
+### Repeatable local development install
+
+From your checkout, build and install a separate global development command:
+
+```sh
+bun run install:dev
+```
+
+Run the same command after changing or pulling source to rebuild. It keeps the
+complete bundle in `~/.local/share/vimex-dev` and links `~/.local/bin/vimex-dev`
+to its executable. Your regular `vimex` installation is unchanged. An unrelated
+file or symlink already named `vimex-dev` is not overwritten.
+
+With `~/.local/bin` on your `PATH`, launch from any project directory:
+
+```sh
+cd /path/to/project
+vimex-dev
+```
+
+If needed, add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` and open a
+new terminal. A custom prefix is supported with
+`bun run install:dev --prefix /path/to/prefix`; the command goes in its `bin`
+directory and the bundle in `share/vimex-dev`. This rebuilds in place, so close
+running development sessions first. Configuration and Codex sessions are shared
+with regular Vimex; only the executable and its bundled assets are separate.
+
+### Build without installing
+
 ```sh
 bun run build
 bun run package
