@@ -1,5 +1,5 @@
 import { useBindings } from "@opentui/keymap/react"
-import type { MentionCandidate, MentionKind } from "@vimex/conversation"
+import type { MentionCandidate } from "@vimex/conversation"
 import { TelescopePicker } from "@vimex/interaction"
 import { useEffect, useRef, useState } from "react"
 import type { InputRenderable, ScrollBoxRenderable } from "@opentui/core"
@@ -17,6 +17,10 @@ export function useTelescopeModal(options: {
   const [source, setSource] = useState<readonly MentionCandidate[]>([])
   const [choices, setChoices] = useState<readonly MentionCandidate[]>([])
   const [selected, setSelected] = useState(0)
+  const [loadedPreview, setLoadedPreview] = useState<{
+    path: string
+    text: string | undefined
+  }>()
   const [markedChoices, setMarkedChoices] = useState<
     ReadonlyMap<string, MentionCandidate>
   >(new Map())
@@ -44,12 +48,17 @@ export function useTelescopeModal(options: {
       setSource([])
       return
     }
+    const abort = new AbortController()
+    setSource([])
     void options.controller
-      .searchMentions(remoteQuery, kind as MentionKind, options.cwd)
+      .searchMentions(remoteQuery, kind, options.cwd, abort.signal)
       .then((result) => {
-        if (id === request.current) setSource(result)
+        if (!abort.signal.aborted && id === request.current) setSource(result)
       })
-      .catch(() => id === request.current && setSource([]))
+      .catch(() => {
+        if (!abort.signal.aborted && id === request.current) setSource([])
+      })
+    return () => abort.abort()
   }, [active, kind, options.controller, options.cwd, remoteQuery])
   useEffect(() => {
     const id = ++filterRequest.current
@@ -70,7 +79,7 @@ export function useTelescopeModal(options: {
       .refresh()
       .then(() => {
         if (id !== filterRequest.current) return
-        // Grep is already filtered by ripgrep's regex query. Fuzzy-scoring the
+        // Grep is already filtered by the gateway's regex query. Fuzzy-scoring the
         // pattern again would hide valid alternatives such as `foo|bar`.
         setChoices(
           picker
@@ -82,6 +91,25 @@ export function useTelescopeModal(options: {
       .catch(() => id === filterRequest.current && setChoices([]))
     return () => picker.dispose()
   }, [active, kind, query, source])
+  const choice = active ? choices[selected] : undefined
+  const previewPath = choice?.path
+  const filePreviewPath = choice?.kind === "file" ? previewPath : undefined
+  const inlinePreview = choice?.preview
+  useEffect(() => {
+    setLoadedPreview(undefined)
+    if (!filePreviewPath || inlinePreview !== undefined) return
+    const abort = new AbortController()
+    void options.controller
+      .readMentionPreview?.(filePreviewPath, abort.signal)
+      .then((text) => {
+        if (!abort.signal.aborted)
+          setLoadedPreview({ path: filePreviewPath, text })
+      })
+      .catch(() => {
+        // Missing, binary, or unreadable files keep the metadata fallback.
+      })
+    return () => abort.abort()
+  }, [filePreviewPath, inlinePreview, options.controller])
   useEffect(() => {
     if (active && editing) inputRef.current?.focus()
     else inputRef.current?.blur()
@@ -184,8 +212,13 @@ export function useTelescopeModal(options: {
     choices,
     selected,
     marked: new Set(markedChoices.keys()),
-    preview: choices[selected]?.preview ?? choices[selected]?.detail,
-    previewPath: choices[selected]?.path,
+    preview:
+      inlinePreview ??
+      (loadedPreview?.path === filePreviewPath
+        ? loadedPreview?.text
+        : undefined) ??
+      choice?.detail,
+    previewPath,
     inputRef,
     previewScrollRef,
     activeRef,

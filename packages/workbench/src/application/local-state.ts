@@ -281,6 +281,7 @@ function sameSavedThreadView(
           message.id === candidate.id &&
           message.text === candidate.text &&
           sameImages(message.images, candidate.images) &&
+          sameMentions(message.mentions, candidate.mentions) &&
           message.intent === candidate.intent &&
           message.status === candidate.status &&
           message.reason === candidate.reason,
@@ -502,9 +503,19 @@ export function parseLocalState(value: unknown): LocalState {
 export function captureLocalState(
   state: WorkbenchState,
   previous: LocalState,
+  before?: WorkbenchState,
 ): LocalState {
   const threads = { ...previous.threads }
   for (const [id, workspace] of Object.entries(state.workspaces)) {
+    // The previous capture already owns this view. Canonical-only changes
+    // may replace a workspace without changing any persisted fields.
+    const previousWorkspace = before?.workspaces[id]
+    if (
+      previous.threads[id] &&
+      previousWorkspace &&
+      sameWorkspaceView(previousWorkspace, workspace)
+    )
+      continue
     const { composer, transcript, interaction } = workspace
     // An unvisited session-list entry must never overwrite its saved local view.
     if (

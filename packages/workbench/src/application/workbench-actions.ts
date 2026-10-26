@@ -3,7 +3,7 @@ import type { SubmissionIntent } from "@vimex/composer"
 import type {
   ItemId,
   MentionCandidate,
-  MentionKind,
+  MentionSearchKind,
   ThreadId,
 } from "@vimex/conversation"
 import type { InteractionCommand } from "@vimex/interaction"
@@ -93,9 +93,14 @@ export type TranscriptAction =
 export interface WorkbenchActions {
   searchMentions(
     query: string,
-    kind: MentionKind,
+    kind: MentionSearchKind,
     cwd: string,
+    signal?: AbortSignal,
   ): Promise<readonly MentionCandidate[]>
+  readMentionPreview?(
+    path: string,
+    signal?: AbortSignal,
+  ): Promise<string | undefined>
   refreshBackgroundTerminals(): void
   stopAllBackgroundTerminals(): void
   stopBackgroundTerminal(threadId: ThreadId, processId: string): void

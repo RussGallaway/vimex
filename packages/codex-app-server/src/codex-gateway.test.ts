@@ -1,4 +1,5 @@
-import { afterEach, expect, test } from "bun:test"
+import { afterEach, expect, spyOn, test } from "bun:test"
+import * as fs from "node:fs/promises"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -24,7 +25,7 @@ afterEach(async () => {
   )
 })
 
-test("grep mention results include hidden files and bounded file previews", async () => {
+test("grep results include hidden files and load previews separately", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "vimex-grep-"))
   temporaryDirectories.push(cwd)
   const file = join(cwd, ".env.example")
@@ -46,8 +47,11 @@ test("grep mention results include hidden files and bounded file previews", asyn
     kind: "file",
     path: file,
     detail: "1: CODEX_TOKEN=present",
-    preview: "CODEX_TOKEN=present\n",
   })
+  expect(results[0]?.preview).toBeUndefined()
+  expect(await gateways.conversation.readMentionPreview!(file)).toBe(
+    "CODEX_TOKEN=present\n",
+  )
   await gateways.connection.close()
 })
 
@@ -105,6 +109,126 @@ test("grep skips oversized files before reading them into memory", async () => {
 
   expect(results.map((entry) => entry.path)).toEqual([small])
   await gateways.connection.close()
+})
+
+test("file discovery does not read previews; selected previews are bounded and omit binary data", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "vimex-lazy-preview-"))
+  temporaryDirectories.push(cwd)
+  const selected = join(cwd, "selected.txt")
+  const binary = join(cwd, "asset.bin")
+  await writeFile(selected, "x".repeat(8192))
+  await writeFile(binary, Buffer.from([0, 1, 2]))
+  const gateways = createCodexGateways(
+    cwd,
+    "codex",
+    () =>
+      ({
+        onEvent: () => () => {},
+        close: async () => {},
+      }) as unknown as CodexAppServerClient,
+  )
+  const opens = spyOn(fs, "open")
+  try {
+    const candidates = await gateways.conversation.searchMentions!(
+      "",
+      "file",
+      cwd,
+    )
+    expect(candidates).toHaveLength(2)
+    expect(
+      candidates.every((candidate) => candidate.preview === undefined),
+    ).toBe(true)
+    expect(opens).not.toHaveBeenCalled()
+    expect(await gateways.conversation.readMentionPreview!(selected)).toBe(
+      "x".repeat(4096),
+    )
+    expect(opens).toHaveBeenCalledTimes(1)
+    expect(
+      await gateways.conversation.readMentionPreview!(binary),
+    ).toBeUndefined()
+    expect(
+      await gateways.conversation.readMentionPreview!(join(cwd, "missing")),
+    ).toBeUndefined()
+  } finally {
+    opens.mockRestore()
+    await gateways.connection.close()
+  }
+})
+
+test("cancellation stops an obsolete grep before it reads the remaining files", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "vimex-cancel-grep-"))
+  temporaryDirectories.push(cwd)
+  await Promise.all(
+    ["a", "b", "c"].map((name) => writeFile(join(cwd, name), "needle")),
+  )
+  const abort = new AbortController()
+  const gateways = createCodexGateways(
+    cwd,
+    "codex",
+    () =>
+      ({
+        onEvent: () => () => {},
+        close: async () => {},
+      }) as unknown as CodexAppServerClient,
+  )
+  const originalRead = fs.readFile
+  const reads = spyOn(fs, "readFile").mockImplementation((async (
+    ...args: Parameters<typeof fs.readFile>
+  ) => {
+    const value = await originalRead(...args)
+    abort.abort()
+    return value
+  }) as typeof fs.readFile)
+  try {
+    await expect(
+      gateways.conversation.searchMentions!(
+        "needle",
+        "grep",
+        cwd,
+        abort.signal,
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" })
+    expect(reads).toHaveBeenCalledTimes(1)
+  } finally {
+    reads.mockRestore()
+    await gateways.connection.close()
+  }
+})
+
+test("pre-cancelled search and preview perform no filesystem work", async () => {
+  const abort = new AbortController()
+  abort.abort()
+  const gateways = createCodexGateways(
+    "/unused",
+    "codex",
+    () =>
+      ({
+        onEvent: () => () => {},
+        close: async () => {},
+      }) as unknown as CodexAppServerClient,
+  )
+  const directories = spyOn(fs, "readdir")
+  const opens = spyOn(fs, "open")
+  try {
+    for (const kind of ["file", "grep"] as const)
+      await expect(
+        gateways.conversation.searchMentions!(
+          "needle",
+          kind,
+          "/unused",
+          abort.signal,
+        ),
+      ).rejects.toMatchObject({ name: "AbortError" })
+    await expect(
+      gateways.conversation.readMentionPreview!("/unused/file", abort.signal),
+    ).rejects.toMatchObject({ name: "AbortError" })
+    expect(directories).not.toHaveBeenCalled()
+    expect(opens).not.toHaveBeenCalled()
+  } finally {
+    directories.mockRestore()
+    opens.mockRestore()
+    await gateways.connection.close()
+  }
 })
 
 test("thread listing excludes child sessions from relation metadata", async () => {

@@ -96,7 +96,7 @@ import {
 import type {
   ConversationGateway,
   MentionCandidate,
-  MentionKind,
+  MentionSearchKind,
   SessionSnapshot,
 } from "@vimex/conversation"
 import type { ApprovalGateway } from "@vimex/approvals"
@@ -1106,7 +1106,11 @@ export class VimexController
     }
 
     if (localViewChanged(before, this.state, changedThreadIds)) {
-      const next = captureLocalState(this.state, this.localStateSnapshot)
+      const next = captureLocalState(
+        this.state,
+        this.localStateSnapshot,
+        before,
+      )
       if (!sameLocalState(next, this.localStateSnapshot)) {
         this.localStateSnapshot = next
         try {
@@ -1513,26 +1517,39 @@ export class VimexController
   }
 
   private register(summary: SessionSnapshot["summary"]): void {
-    if (this.state.retiredSideThreadIds.includes(summary.id)) return
-    const current = this.state.summaries[summary.id]
-    const withKnownCapability =
-      current?.canAcceptDirectInput !== undefined &&
-      summary.canAcceptDirectInput === undefined
-        ? { ...summary, canAcceptDirectInput: current.canAcceptDirectInput }
-        : summary
-    this.dispatch({
-      type: "thread.register",
-      summary:
-        (current?.titleSource === "name" && summary.titleSource !== "name") ||
-        (current?.titleSource === "preview" &&
-          summary.titleSource === "untitled")
-          ? {
-              ...withKnownCapability,
-              title: current.title,
-              titleSource: current.titleSource,
-            }
-          : withKnownCapability,
-    })
+    this.registerSummaries([summary])
+  }
+  private registerSummaries(
+    summaries: readonly SessionSnapshot["summary"][],
+  ): readonly SessionSnapshot["summary"][] {
+    const effective = new Map<ThreadId, SessionSnapshot["summary"]>()
+    const visible = summaries
+      .filter(
+        (summary) => !this.state.retiredSideThreadIds.includes(summary.id),
+      )
+      .map((summary) => {
+        const current =
+          effective.get(summary.id) ?? this.state.summaries[summary.id]
+        const withKnownCapability =
+          current?.canAcceptDirectInput !== undefined &&
+          summary.canAcceptDirectInput === undefined
+            ? { ...summary, canAcceptDirectInput: current.canAcceptDirectInput }
+            : summary
+        const next =
+          (current?.titleSource === "name" && summary.titleSource !== "name") ||
+          (current?.titleSource === "preview" &&
+            summary.titleSource === "untitled")
+            ? {
+                ...withKnownCapability,
+                title: current.title,
+                titleSource: current.titleSource,
+              }
+            : withKnownCapability
+        effective.set(summary.id, next)
+        return next
+      })
+    this.dispatch({ type: "threads.register", summaries: visible })
+    return visible
   }
   private async refreshAgentCatalog(): Promise<void> {
     const root = agentRosterRoot(this.state)
@@ -1568,10 +1585,14 @@ export class VimexController
     if (this.sessionCatalogRequest) return this.sessionCatalogRequest
     const epoch = this.runtimeEpoch
     const request = (async () => {
+      const published = new Map<ThreadId, SessionSnapshot["summary"]>()
+      const registered = new Map<ThreadId, SessionSnapshot["summary"]>()
       const summaries = await this.ports.conversation.listThreads((page) => {
         if (!this.currentRuntime(epoch)) return
+        for (const summary of this.registerSummaries(page))
+          registered.set(summary.id, summary)
         for (const summary of page) {
-          this.register(summary)
+          published.set(summary.id, summary)
           this.catalogThreadIds.add(summary.id)
         }
       })
@@ -1581,7 +1602,14 @@ export class VimexController
         (summary) => !this.state.retiredSideThreadIds.includes(summary.id),
       )
       const current = new Set(visibleSummaries.map((summary) => summary.id))
-      for (const summary of visibleSummaries) this.register(summary)
+      this.registerSummaries(
+        visibleSummaries.filter(
+          (summary) =>
+            published.get(summary.id) !== summary &&
+            (!registered.has(summary.id) ||
+              this.state.summaries[summary.id] === registered.get(summary.id)),
+        ),
+      )
       const state = this.state
       const local = state.threadOrder.filter(
         (id) =>
@@ -1757,7 +1785,7 @@ export class VimexController
       if (!this.state.activeThreadId && !resume && !resumeMode)
         this.prepareDraft(cwd, model)
       const summaries =
-        resumeMode || resume
+        resumeMode && !resume
           ? await this.unlessClosing(this.ports.conversation.listThreads())
           : {
               value:
@@ -1767,7 +1795,7 @@ export class VimexController
       this.catalogThreadIds = new Set(
         summaries.value.map((summary) => summary.id),
       )
-      for (const summary of summaries.value) this.register(summary)
+      this.registerSummaries(summaries.value)
       if (resumeMode && !resume) {
         const matching = summaries.value
           .filter(
@@ -1989,10 +2017,21 @@ export class VimexController
   }
   searchMentions = async (
     query: string,
-    kind: MentionKind,
+    kind: MentionSearchKind,
     cwd: string,
+    signal?: AbortSignal,
   ): Promise<readonly MentionCandidate[]> =>
-    (await this.ports.conversation.searchMentions?.(query, kind, cwd)) ?? []
+    (await this.ports.conversation.searchMentions?.(
+      query,
+      kind,
+      cwd,
+      signal,
+    )) ?? []
+  readMentionPreview = async (
+    path: string,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> =>
+    this.ports.conversation.readMentionPreview?.(path, signal)
   attachImageFromClipboard: WorkbenchActions["attachImageFromClipboard"] = (
     cursorOffset,
   ) => {

@@ -45,6 +45,9 @@ export const inertController: VimexUiController = {
   async searchMentions() {
     return []
   },
+  async readMentionPreview() {
+    return undefined
+  },
   refreshBackgroundTerminals() {},
   stopAllBackgroundTerminals() {},
   stopBackgroundTerminal() {},

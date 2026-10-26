@@ -5,18 +5,178 @@ import {
   type InputRenderable,
   type ScrollBoxRenderable,
 } from "@opentui/core"
-import { act, createRef } from "react"
+import { act, createRef, useMemo } from "react"
+import { useRenderer } from "@opentui/react"
+import { KeymapProvider } from "@opentui/keymap/react"
+import { createVimexKeymap } from "../keymap/create-keymap"
+import { useTelescopeModal } from "./use-telescope-modal"
 import { threadId, type MentionCandidate } from "@vimex/conversation"
 import { initialWorkbench, transitionWorkbench } from "@vimex/workbench"
 import { TelescopeModal } from "./TelescopeModal"
 import { createEmberTideSyntax } from "../theme"
-import { inertController, type TranscriptUiCommand } from "../contracts"
+import {
+  inertController,
+  type TranscriptUiCommand,
+  type VimexUiController,
+} from "../contracts"
 import { VimexRoot } from "../index"
 
 const longPreview = Array.from(
   { length: 120 },
   (_, index) => `const value${index} = ${index}`,
 ).join("\n")
+
+async function pickerHarness(controller: VimexUiController) {
+  let picker!: ReturnType<typeof useTelescopeModal>
+  function Picker() {
+    picker = useTelescopeModal({ controller, cwd: "/work" })
+    return <text>{picker.preview ?? ""}</text>
+  }
+  function Harness() {
+    const renderer = useRenderer()
+    const keymap = useMemo(() => createVimexKeymap(renderer), [renderer])
+    return (
+      <KeymapProvider keymap={keymap}>
+        <Picker />
+      </KeymapProvider>
+    )
+  }
+  const setup = await testRender(<Harness />, { width: 80, height: 24 })
+  const update = async (action: () => void) => {
+    await act(async () => {
+      action()
+      await setup.flush()
+    })
+    await act(async () => setup.flush())
+  }
+  await update(() => {})
+  return { setup, update, picker: () => picker }
+}
+
+test("Telescope reads only the selected preview and ignores cancelled preview completions", async () => {
+  const requests: Array<{
+    path: string
+    signal: AbortSignal
+    pending: ReturnType<typeof Promise.withResolvers<string | undefined>>
+  }> = []
+  const candidates: MentionCandidate[] = ["alpha", "beta"].map((name) => ({
+    kind: "file",
+    name,
+    path: `/work/${name}`,
+    detail: name,
+  }))
+  const harness = await pickerHarness({
+    ...inertController,
+    async searchMentions() {
+      return candidates
+    },
+    readMentionPreview(path, signal) {
+      const pending = Promise.withResolvers<string | undefined>()
+      requests.push({ path, signal: signal!, pending })
+      return pending.promise
+    },
+  })
+  try {
+    await harness.update(() => harness.picker().open("file"))
+    expect(requests.map(({ path }) => path)).toEqual(["/work/alpha"])
+    await harness.update(() => harness.picker().setQuery("beta"))
+    expect(requests.map(({ path }) => path)).toEqual([
+      "/work/alpha",
+      "/work/beta",
+    ])
+    expect(requests[0]!.signal.aborted).toBe(true)
+    expect(harness.picker().preview).toBe("beta")
+    await harness.update(() => requests[1]!.pending.resolve("current preview"))
+    await harness.update(() => requests[0]!.pending.resolve("obsolete preview"))
+    expect(harness.picker().preview).toBe("current preview")
+    await harness.update(() => harness.picker().close())
+    expect(requests[1]!.signal.aborted).toBe(true)
+    expect(harness.picker().preview).toBeUndefined()
+  } finally {
+    await act(async () => harness.setup.renderer.destroy())
+  }
+})
+
+test("Telescope keeps inline and non-file previews without filesystem requests", async () => {
+  const requests: string[] = []
+  const candidates: MentionCandidate[] = [
+    {
+      kind: "skill",
+      name: "skill",
+      path: "/skills/example",
+      detail: "skill detail",
+    },
+    {
+      kind: "plugin",
+      name: "plugin",
+      path: "plugin-id",
+      preview: "plugin preview",
+    },
+    { kind: "file", name: "file", path: "/work/file", preview: "inline file" },
+  ]
+  const harness = await pickerHarness({
+    ...inertController,
+    async searchMentions() {
+      return candidates
+    },
+    async readMentionPreview(path) {
+      requests.push(path)
+      return "unexpected"
+    },
+  })
+  try {
+    await harness.update(() => harness.picker().open("file"))
+    await harness.update(() => harness.picker().setQuery("skill"))
+    expect(harness.picker().preview).toBe("skill detail")
+    await harness.update(() => harness.picker().setQuery("plugin"))
+    expect(harness.picker().preview).toBe("plugin preview")
+    await harness.update(() => harness.picker().setQuery("file"))
+    expect(harness.picker().preview).toBe("inline file")
+    expect(requests).toEqual([])
+  } finally {
+    await act(async () => harness.setup.renderer.destroy())
+  }
+})
+
+test("Telescope aborts obsolete searches on query change, close, and unmount", async () => {
+  const requests: Array<{
+    query: string
+    signal: AbortSignal
+    pending: ReturnType<
+      typeof Promise.withResolvers<readonly MentionCandidate[]>
+    >
+  }> = []
+  const harness = await pickerHarness({
+    ...inertController,
+    searchMentions(query, _kind, _cwd, signal) {
+      const pending = Promise.withResolvers<readonly MentionCandidate[]>()
+      requests.push({ query, signal: signal!, pending })
+      return pending.promise
+    },
+  })
+  try {
+    await harness.update(() => harness.picker().open("grep"))
+    await harness.update(() => harness.picker().setQuery("current"))
+    expect(requests[0]!.signal.aborted).toBe(true)
+    const candidate: MentionCandidate = {
+      kind: "file",
+      name: "current",
+      path: "/work/current",
+    }
+    await harness.update(() => requests[1]!.pending.resolve([candidate]))
+    await harness.update(() =>
+      requests[0]!.pending.resolve([{ ...candidate, name: "obsolete" }]),
+    )
+    expect(harness.picker().choices).toEqual([candidate])
+    await harness.update(() => harness.picker().close())
+    expect(requests[1]!.signal.aborted).toBe(true)
+    await harness.update(() => harness.picker().open("file"))
+    expect(requests.at(-1)!.signal.aborted).toBe(false)
+  } finally {
+    await act(async () => harness.setup.renderer.destroy())
+  }
+  expect(requests.at(-1)!.signal.aborted).toBe(true)
+})
 
 test("Telescope preview uses the transcript syntax palette and preserves literal source", async () => {
   const syntax = createEmberTideSyntax("nord")

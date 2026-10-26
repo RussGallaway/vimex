@@ -7,23 +7,22 @@ import { hydrateTurns } from "./mapping/map-item"
 import {
   itemId,
   type MentionCandidate,
-  type MentionKind,
   type MentionSearchKind,
   type ConversationGateway,
   type ConversationInput,
 } from "@vimex/conversation"
 import type { UserInput } from "./generated/v0_154_0/v2/UserInput"
-import { execFile } from "node:child_process"
 import { open, readdir, readFile, stat } from "node:fs/promises"
 import { resolve } from "node:path"
-import { promisify } from "node:util"
 
-const execFileAsync = promisify(execFile)
 const mentionPreviewLimit = 4096
 const mentionSearchFileLimit = 2 * 1024 * 1024
 const mentionResultLimit = 50
 
-async function workspaceFiles(root: string): Promise<string[]> {
+async function workspaceFiles(
+  root: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
   const files: string[] = []
   const ignoredDirectories = new Set([
     ".git",
@@ -34,13 +33,16 @@ async function workspaceFiles(root: string): Promise<string[]> {
     "coverage",
   ])
   const visit = async (directory: string): Promise<void> => {
+    signal?.throwIfAborted()
     let entries
     try {
       entries = await readdir(directory, { withFileTypes: true })
     } catch {
+      signal?.throwIfAborted()
       return
     }
     for (const entry of entries) {
+      signal?.throwIfAborted()
       if (entry.isDirectory() && ignoredDirectories.has(entry.name)) continue
       const path = resolve(directory, entry.name)
       if (entry.isDirectory()) await visit(path)
@@ -48,15 +50,22 @@ async function workspaceFiles(root: string): Promise<string[]> {
     }
   }
   await visit(resolve(root))
+  signal?.throwIfAborted()
   return files.sort((left, right) => left.localeCompare(right))
 }
 
-async function readMentionPreview(path: string): Promise<string | undefined> {
+async function readMentionPreview(
+  path: string,
+  signal?: AbortSignal,
+): Promise<string | undefined> {
+  signal?.throwIfAborted()
   try {
     const file = await open(path, "r")
     try {
+      signal?.throwIfAborted()
       const buffer = Buffer.alloc(mentionPreviewLimit)
       const { bytesRead } = await file.read(buffer, 0, buffer.length, 0)
+      signal?.throwIfAborted()
       // File pickers can enumerate binary assets too. Avoid sending binary
       // control data into the terminal preview while keeping their attachment.
       if (buffer.subarray(0, bytesRead).includes(0)) return undefined
@@ -65,28 +74,9 @@ async function readMentionPreview(path: string): Promise<string | undefined> {
       await file.close()
     }
   } catch {
+    signal?.throwIfAborted()
     return undefined
   }
-}
-
-async function mapWithConcurrency<T, U>(
-  values: readonly T[],
-  limit: number,
-  mapper: (value: T) => Promise<U>,
-): Promise<U[]> {
-  const results = new Array<U>(values.length)
-  let next = 0
-  const worker = async () => {
-    while (true) {
-      const index = next++
-      if (index >= values.length) return
-      results[index] = await mapper(values[index]!)
-    }
-  }
-  await Promise.all(
-    Array.from({ length: Math.min(limit, values.length) }, () => worker()),
-  )
-  return results
 }
 
 function normalizeConversationInput(
@@ -303,6 +293,7 @@ export function createCodexGateways(
     return session
   }
   const conversation: ConversationGateway = {
+    readMentionPreview,
     async listBackgroundTerminals(id) {
       const terminals = await client.listBackgroundTerminals(id)
       return terminals.map((terminal) => ({
@@ -429,7 +420,9 @@ export function createCodexGateways(
       query: string,
       kind: MentionSearchKind,
       cwd: string,
+      signal?: AbortSignal,
     ): Promise<readonly MentionCandidate[]> {
+      signal?.throwIfAborted()
       if (kind === "grep") {
         if (!query.trim()) return []
         let matcher: RegExp
@@ -439,15 +432,19 @@ export function createCodexGateways(
           matcher = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
         }
         const matches = []
-        for (const path of await workspaceFiles(cwd)) {
+        for (const path of await workspaceFiles(cwd, signal)) {
+          signal?.throwIfAborted()
           if (matches.length >= mentionResultLimit) break
           let contents: string
           try {
             if ((await stat(path)).size > mentionSearchFileLimit) continue
-            contents = await readFile(path, "utf8")
+            signal?.throwIfAborted()
+            contents = await readFile(path, { encoding: "utf8", signal })
           } catch {
+            signal?.throwIfAborted()
             continue
           }
+          signal?.throwIfAborted()
           const lines = contents.split("\n")
           const lineNumber = lines.findIndex((line) => {
             matcher.lastIndex = 0
@@ -462,12 +459,7 @@ export function createCodexGateways(
             detail: `${lineNumber + 1}: ${lines[lineNumber]!.trim()}`,
           })
         }
-        return Promise.all(
-          matches.map(async (candidate) => ({
-            ...candidate,
-            preview: await readMentionPreview(candidate.path),
-          })),
-        )
+        return matches
       }
       if (kind === "file") {
         // The app-server fuzzy endpoint is intentionally bounded. An empty
@@ -482,7 +474,7 @@ export function createCodexGateways(
                 cancellationToken: null,
               })
             ).files
-          : (await workspaceFiles(cwd)).map((path) => ({
+          : (await workspaceFiles(cwd, signal)).map((path) => ({
               root: cwd,
               path,
               match_type: "file" as const,
@@ -490,8 +482,9 @@ export function createCodexGateways(
               score: 0,
               indices: null,
             }))
+        signal?.throwIfAborted()
         const candidates = files.filter((file) => file.match_type === "file")
-        return mapWithConcurrency(candidates, 32, async (file) => {
+        return candidates.map((file) => {
           const path = resolve(file.root, file.path)
           const candidate = {
             kind,
@@ -499,14 +492,12 @@ export function createCodexGateways(
             path,
             detail: file.file_name,
           }
-          return {
-            ...candidate,
-            preview: await readMentionPreview(candidate.path),
-          }
+          return candidate
         })
       }
       if (kind === "skill") {
         const result = await client.listSkills({ cwds: [cwd] })
+        signal?.throwIfAborted()
         return result.data
           .flatMap((entry) => entry.skills)
           .filter(
@@ -526,6 +517,7 @@ export function createCodexGateways(
           }))
       }
       const result = await client.listPlugins({ cwds: [cwd] })
+      signal?.throwIfAborted()
       return result.marketplaces
         .flatMap((marketplace) => marketplace.plugins)
         .filter(

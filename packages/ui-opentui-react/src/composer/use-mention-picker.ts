@@ -89,10 +89,11 @@ export function useMentionPicker(options: {
     // and sorter model used by the Telescope-style picker. Keeping ranking in
     // the UI makes keyboard behavior deterministic across transports and lets
     // remote finders return a broader candidate set without owning ordering.
+    const abort = new AbortController()
     const picker = new TelescopePicker<MentionCandidate>({
       finder: () =>
         controller
-          .searchMentions(query, kind as MentionKind, options.cwd!)
+          .searchMentions(query, kind, options.cwd!, abort.signal)
           .then((result) =>
             result.map((candidate) => ({
               id: `${candidate.kind}:${candidate.path}`,
@@ -108,19 +109,22 @@ export function useMentionPicker(options: {
     void picker
       .refresh()
       .then(() => {
+        if (abort.signal.aborted || id !== request.current) return
         const result = picker.setQuery(query).map((entry) => entry.value)
-        if (id !== request.current) return
         setChoices(result.slice(0, 50))
         setSelected(0)
         setMarked(new Set())
       })
       .catch(() => {
-        if (id !== request.current) return
+        if (abort.signal.aborted || id !== request.current) return
         setChoices([])
         setSelected(0)
         setMarked(new Set())
       })
-    return () => picker.dispose()
+    return () => {
+      abort.abort()
+      picker.dispose()
+    }
   }, [active, controller, kind, options.cwd, query])
 
   const move = (delta: number) =>

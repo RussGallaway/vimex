@@ -149,6 +149,7 @@ export type WorkbenchCommand =
     }
   | { type: "thread.open"; summary: ThreadSummary }
   | { type: "thread.register"; summary: ThreadSummary }
+  | { type: "threads.register"; summaries: readonly ThreadSummary[] }
   | { type: "thread.switch"; threadId: ThreadId }
   | { type: "thread.favorite.toggle"; threadId: ThreadId }
   | { type: "thread.close"; threadId: ThreadId }

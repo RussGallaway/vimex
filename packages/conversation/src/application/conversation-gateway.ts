@@ -56,7 +56,13 @@ export interface ConversationGateway {
     query: string,
     kind: MentionSearchKind,
     cwd: string,
+    signal?: AbortSignal,
   ): Promise<readonly MentionCandidate[]>
+  /** Read bounded preview text only when a picker selects a file. */
+  readMentionPreview?(
+    path: string,
+    signal?: AbortSignal,
+  ): Promise<string | undefined>
   listBackgroundTerminals?(id: ThreadId): Promise<readonly BackgroundTerminal[]>
   terminateBackgroundTerminal?(
     id: ThreadId,

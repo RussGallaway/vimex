@@ -78,24 +78,35 @@ export function transitionWorkbench(
         urlChoices: undefined,
         urlChoiceOwner: undefined,
       })
-    case "thread.register": {
-      const exists = Boolean(state.summaries[command.summary.id])
-      return done({
-        ...state,
-        threadOrder: exists
-          ? state.threadOrder
-          : [...state.threadOrder, command.summary.id],
-        summaries: {
-          ...state.summaries,
-          [command.summary.id]: command.summary,
-        },
-        workspaces: {
-          ...state.workspaces,
-          [command.summary.id]:
-            state.workspaces[command.summary.id] ??
-            createWorkspace(command.summary.id),
-        },
-      })
+    case "thread.register":
+    case "threads.register": {
+      const incoming =
+        command.type === "thread.register"
+          ? [command.summary]
+          : command.summaries
+      if (!incoming.length) return done(state)
+      const summaries = { ...state.summaries }
+      const workspaces = { ...state.workspaces }
+      const added = []
+      let changed = false
+      for (const summary of incoming) {
+        const previous = summaries[summary.id]
+        if (previous === summary) continue
+        if (!previous) added.push(summary.id)
+        summaries[summary.id] = summary
+        workspaces[summary.id] ??= createWorkspace(summary.id)
+        changed = true
+      }
+      return changed
+        ? done({
+            ...state,
+            threadOrder: added.length
+              ? [...state.threadOrder, ...added]
+              : state.threadOrder,
+            summaries,
+            workspaces,
+          })
+        : done(state)
     }
     case "thread.switch":
       return state.workspaces[command.threadId]
