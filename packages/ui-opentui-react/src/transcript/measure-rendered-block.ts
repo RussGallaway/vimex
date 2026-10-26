@@ -790,18 +790,23 @@ export function measureRenderedBlock(
   // fragment instead of segmenting the entire multi-file patch for every file.
   const text =
     "item" in input.block
-      ? input.block.projection.plain === input.block.projection.source
-        ? input.block.projection.source.slice(
-            input.block.projection.sourceSpans[range.from]?.from ??
-              input.block.projection.source.length,
-            range.to > range.from
-              ? input.block.projection.sourceSpans[range.to - 1]?.to
-              : (input.block.projection.sourceSpans[range.from]?.from ??
-                  input.block.projection.source.length),
-          )
-        : graphemes(input.block.projection.plain)
-            .slice(range.from, range.to)
-            .join("")
+      ? range.from === 0 &&
+        range.to === input.block.projection.sourceSpans.length
+        ? // Running Markdown is commonly one full-item block. Its already
+          // projected text needs no whole-message grapheme split and rejoin.
+          input.block.projection.plain
+        : input.block.projection.plain === input.block.projection.source
+          ? input.block.projection.source.slice(
+              input.block.projection.sourceSpans[range.from]?.from ??
+                input.block.projection.source.length,
+              range.to > range.from
+                ? input.block.projection.sourceSpans[range.to - 1]?.to
+                : (input.block.projection.sourceSpans[range.from]?.from ??
+                    input.block.projection.source.length),
+            )
+          : graphemes(input.block.projection.plain)
+              .slice(range.from, range.to)
+              .join("")
       : ""
   const textLength = range.to - range.from
   let nativePoints =

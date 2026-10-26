@@ -422,6 +422,53 @@ export function setTranscriptProjection(
   })
 }
 
+function deleteProjectionNode(
+  root: ProjectionNode,
+  key: string,
+): ProjectionNode | undefined {
+  if (key === root.key) {
+    if (!root.left) return root.right
+    if (!root.right) return root.left
+    let successor = root.right
+    while (successor.left) successor = successor.left
+    return balanceProjection(
+      projectionNode(
+        successor.key,
+        successor.value,
+        root.left,
+        deleteProjectionNode(root.right, successor.key),
+      ),
+    )
+  }
+  return balanceProjection(
+    projectionNode(
+      root.key,
+      root.value,
+      key < root.key && root.left
+        ? deleteProjectionNode(root.left, key)
+        : root.left,
+      key > root.key && root.right
+        ? deleteProjectionNode(root.right, key)
+        : root.right,
+    ),
+  )
+}
+
+/** Remove one projection by path copying, preserving all other values. */
+export function removeTranscriptProjection(
+  value: Readonly<Record<string, TextProjection>>,
+  itemId: ItemId,
+): Readonly<Record<string, TextProjection>> {
+  if (!Object.hasOwn(value, itemId)) return value
+  const record = persistentTranscriptProjections(value)
+  const data = projectionRecordData.get(record)!
+  return projectionRecord({
+    token: Object.freeze({}),
+    root: deleteProjectionNode(data.root!, itemId),
+    size: data.size - 1,
+  })
+}
+
 /** Prove one exact projection addition without scanning the projection record. */
 export function isTranscriptProjectionAddition(
   previous: Readonly<Record<string, TextProjection>>,
@@ -1218,6 +1265,107 @@ export function appendTranscriptOrder(
   return order
 }
 
+function popTranscriptOrderNode(
+  node: TranscriptOrderNode,
+): TranscriptOrderNode | undefined {
+  if (node.kind === "leaf")
+    return node.size === 1
+      ? undefined
+      : transcriptOrderLeaf(node.items.slice(0, -1))
+  const right = popTranscriptOrderNode(node.right)
+  return right
+    ? balanceTranscriptOrder(transcriptOrderBranch(node.left, right))
+    : node.left
+}
+
+function deleteOrderIndexNode(
+  root: OrderIndexNode,
+  key: ItemId,
+): OrderIndexNode | undefined {
+  if (key === root.key) {
+    if (!root.left) return root.right
+    if (!root.right) return root.left
+    let successor = root.right
+    while (successor.left) successor = successor.left
+    return balanceOrderIndex(
+      orderIndexNode(
+        successor.key,
+        successor.position,
+        root.left,
+        deleteOrderIndexNode(root.right, successor.key),
+      ),
+    )
+  }
+  return balanceOrderIndex(
+    orderIndexNode(
+      root.key,
+      root.position,
+      key < root.key && root.left
+        ? deleteOrderIndexNode(root.left, key)
+        : root.left,
+      key > root.key && root.right
+        ? deleteOrderIndexNode(root.right, key)
+        : root.right,
+    ),
+  )
+}
+
+const transcriptOrderRemovals = new WeakMap<
+  readonly ItemId[],
+  { previous: WeakRef<readonly ItemId[]>; itemId: ItemId }
+>()
+
+/** Remove the last unique logical item without copying the historical prefix. */
+export function popTranscriptOrder(
+  value: readonly ItemId[],
+): readonly ItemId[] {
+  if (!value.length) return value
+  const previous = persistentTranscriptOrder(value)
+  const data = transcriptOrderData.get(previous)!
+  const itemId = previous.at(-1)!
+  const index = orderIndexes.get(previous) as PersistentTranscriptOrderIndex
+  if (index.size !== previous.length) {
+    const order = persistentTranscriptOrder(previous.slice(0, -1))
+    transcriptOrderRemovals.set(order, { previous: new WeakRef(value), itemId })
+    return order
+  }
+  const order = persistentOrderArray({
+    root: popTranscriptOrderNode(data.root!),
+    size: data.size - 1,
+  })
+  orderIndexes.set(
+    order,
+    new PersistentTranscriptOrderIndex(
+      order,
+      deleteOrderIndexNode(index.root!, itemId),
+      index.size - 1,
+    ),
+  )
+  transcriptOrderRemovals.set(order, { previous: new WeakRef(value), itemId })
+  return order
+}
+
+/** Prove exact tail removal without traversing either historical prefix. */
+export function transcriptOrderTailRemoval(
+  previous: readonly ItemId[],
+  next: readonly ItemId[],
+): ItemId | undefined {
+  const removal = transcriptOrderRemovals.get(next)
+  return removal?.previous.deref() === previous ? removal.itemId : undefined
+}
+
+/** Prove a pop followed by one append, without scanning the retained prefix. */
+export function transcriptOrderTailReplacement(
+  previous: readonly ItemId[],
+  next: readonly ItemId[],
+): { removed: ItemId; added: ItemId } | undefined {
+  const append = transcriptOrderAppends.get(next)
+  const intermediate = append?.previous.deref()
+  const removed =
+    intermediate && transcriptOrderTailRemoval(previous, intermediate)
+  return removed && append ? { removed, added: append.itemId } : undefined
+}
+
 const emptyTranscriptUnseenItemIds = persistentTranscriptOrder(
   Object.freeze([] as ItemId[]),
 )
@@ -1415,6 +1563,32 @@ function updateTextLengthNode(
     left,
     right,
   })
+}
+
+/** Preserve a warm length index through an exact tail removal. */
+export function inheritTranscriptTextLengthTailRemoval(
+  previous: TranscriptState,
+  next: TranscriptState,
+): void {
+  if (!transcriptOrderTailRemoval(previous.order, next.order)) return
+  const prior = textLengthIndexes.get(previous.projectionById)
+  if (!prior || prior.order !== previous.order) return
+  const root = updateTextLengthNode(
+    prior.root,
+    0,
+    prior.capacity,
+    prior.size - 1,
+    0,
+  )
+  textLengthIndexes.set(
+    next.projectionById,
+    Object.freeze({
+      order: next.order,
+      root,
+      size: next.order.length,
+      capacity: prior.capacity,
+    }),
+  )
 }
 
 /** Inherit the disposable length index through one known item projection update. */

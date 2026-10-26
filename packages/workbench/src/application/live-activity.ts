@@ -7,7 +7,7 @@ export interface LiveActivity {
   startedAt?: number
 }
 
-/** Runtime turn state is authoritative; thread summaries and item events can lag it. */
+/** Runtime turns own Working; local submission owns Sending before confirmation. */
 export function liveActivity(
   state: WorkbenchState,
   threadId: ThreadId | undefined = state.activeThreadId,
@@ -21,7 +21,20 @@ export function liveActivity(
     return { working: true, label: "Stopping", startedAt: turn?.startedAt }
   if (threadId && state.compactingThreads[threadId])
     return { working: true, label: "Compacting", startedAt: turn?.startedAt }
-  if (!threadId || !conversation || !turnId) return { working: false }
+  if (!threadId || !conversation) return { working: false }
+  if (!turnId) {
+    const workspace = state.workspaces[threadId]!
+    // An acknowledgement can remove the outbox entry before turn.started.
+    // The presentation retains that submission until its server echo arrives.
+    const sending =
+      workspace.composer.outbox.some(
+        (message) => message.status === "sending",
+      ) ||
+      workspace.pendingSubmissions?.some(
+        (message) => message.status === "sending",
+      )
+    return sending ? { working: true, label: "Sending" } : { working: false }
+  }
   if (
     turn?.itemIds.some((id) => {
       const item = conversation.items[id]

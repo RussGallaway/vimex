@@ -1,6 +1,7 @@
 import type { ItemId } from "@vimex/conversation"
 import {
   transcriptOrderIndex,
+  transcriptOrderTailRemoval,
   type LinkTarget,
   type LogicalPoint,
   type TranscriptOrderIndexDiagnostics,
@@ -215,6 +216,35 @@ export function inheritTranscriptUrlIndex(
       root,
       size: next.order.length,
       capacity,
+    }),
+  )
+}
+
+/** Inherit the URL-count index through bounded existing-item changes. */
+export function inheritTranscriptUrlIndexTailRemoval(
+  previous: TranscriptState,
+  next: TranscriptState,
+  diagnostics?: TranscriptUrlIndexDiagnostics,
+): void {
+  if (!transcriptOrderTailRemoval(previous.order, next.order)) return
+  const prior = urlIndexes.get(previous.projectionById)
+  if (!prior || prior.order !== previous.order) return
+  const root = updateNode(
+    prior.root,
+    0,
+    prior.capacity,
+    prior.size - 1,
+    0,
+    diagnostics,
+  )
+  if (diagnostics) diagnostics.urlIndexUpdates += 1
+  urlIndexes.set(
+    next.projectionById,
+    Object.freeze({
+      order: next.order,
+      root,
+      size: next.order.length,
+      capacity: prior.capacity,
     }),
   )
 }

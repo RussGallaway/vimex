@@ -10,6 +10,7 @@ import {
   isTranscriptBlockAppend,
   isTranscriptBlockReplacement,
   isTranscriptBlockSplice,
+  isTranscriptTailItemReplacement,
   persistentTranscriptBlockPlan,
   replaceTranscriptBlock,
 } from "./window"
@@ -1588,6 +1589,39 @@ function spliceItemHeightIndex(
     previous,
     next,
     Object.freeze([...rows]),
+  )
+}
+
+/** Rebind a proven tail replacement, preserving the historical row index. */
+export function replaceTranscriptTailHeightIndex(
+  prior: TranscriptHeightIndex,
+  source: readonly TranscriptBlock[],
+  blocks: readonly TranscriptBlock[],
+  previous: TranscriptItemBlock,
+  next: TranscriptItemBlock | undefined,
+  rows: number,
+): TranscriptHeightIndex | undefined {
+  const ordinal = source.length - 1
+  if (
+    !prior.supports(source) ||
+    !isTranscriptTailItemReplacement(source, blocks, previous, next) ||
+    !validRows(rows) ||
+    structuralOverlayDepth(prior) >= 128 ||
+    prior.itemBlockIndexes(previous.key.itemId)?.length !== 1 ||
+    prior.blockIndex(blockKey(previous)) !== ordinal ||
+    (next &&
+      next.key.itemId !== previous.key.itemId &&
+      (prior.itemBlockIndexes(next.key.itemId)?.length ?? 0) > 0) ||
+    !Number.isSafeInteger(prior.prefixRows(ordinal) + (next ? rows : 0))
+  )
+    return undefined
+  return new SplicedTranscriptHeightIndex(
+    prior,
+    blocks,
+    ordinal,
+    Object.freeze([previous]),
+    Object.freeze(next ? [next] : []),
+    Object.freeze(next ? [rows] : []),
   )
 }
 

@@ -23,6 +23,8 @@ import {
   singleTranscriptFoldChange,
   transcriptOrderAppend,
   transcriptOrderIndex,
+  transcriptOrderTailRemoval,
+  transcriptOrderTailReplacement,
   transcriptTextLengthRange,
   type LogicalPoint,
   type TranscriptOrderIndexDiagnostics,
@@ -42,7 +44,11 @@ import {
   type LayoutResetReason,
   type TranscriptGeometry,
 } from "./geometry"
-import { createHeightIndex, type TranscriptHeightIndex } from "./height-index"
+import {
+  createHeightIndex,
+  replaceTranscriptTailHeightIndex,
+  type TranscriptHeightIndex,
+} from "./height-index"
 import {
   inheritTranscriptUrlIndex,
   inheritTranscriptUrlIndexChanges,
@@ -63,6 +69,7 @@ import {
   planTranscriptWindow,
   pointIsMaterialized,
   replaceTranscriptBlock,
+  replaceTranscriptTailItem,
   spliceTranscriptItemBlocks,
   transcriptPointBlockIndex,
   type TranscriptActivityPresentation,
@@ -101,6 +108,13 @@ export interface TranscriptRuntimeInput {
   /** One-shot explicit navigation intent; never inferred from canonical reprojection. */
   readonly reveal?: TranscriptRevealRequest
   readonly excludedTurnIds?: readonly TurnId[]
+  /** Owner-proven canonical metadata change with no presented content change. */
+  readonly canonicalPresentationUnchanged?: true
+  /** Owner-proven replacement/removal of a single unsplit semantic tail item. */
+  readonly tailReplacement?: Readonly<{
+    previousItemId: ItemId
+    nextItemId?: ItemId
+  }>
 }
 
 export interface TranscriptFrame {
@@ -910,11 +924,31 @@ function isTailItemAdmission(
         itemId,
         true,
       ))
+  // Optimistic local messages append a complete one-item turn without
+  // changing the server's active turn. Their immutable lineage proves the
+  // same bounded tail admission as a newly-started canonical turn.
+  const completedTurnAdmission = Boolean(
+    item &&
+    turn?.status === "complete" &&
+    !previous.conversation.turns[item.turnId] &&
+    previous.conversation.activeTurnId === next.conversation.activeTurnId &&
+    turn.itemIds.length === 1 &&
+    turn.itemIds[0] === itemId &&
+    !buildTranscriptTurnActivityBlock(turn) &&
+    isConversationTurnUpdate(
+      previous.conversation.turns,
+      next.conversation.turns,
+      item.turnId,
+      undefined,
+      turn,
+    ),
+  )
   if (
     !item ||
     !turn ||
-    turn.status !== "running" ||
-    next.conversation.activeTurnId !== item.turnId ||
+    (!completedTurnAdmission &&
+      (turn.status !== "running" ||
+        next.conversation.activeTurnId !== item.turnId)) ||
     next.conversation.turnIds.at(-1) !== item.turnId ||
     previous.conversation.items[itemId] ||
     previous.transcript.projectionById[itemId] ||
@@ -957,13 +991,14 @@ function isTailItemAdmission(
       next.conversation.turnIds,
       item.turnId,
     ) &&
-    isConversationTurnAdditionThenItemAppend(
-      previous.conversation.turns,
-      next.conversation.turns,
-      item.turnId,
-      itemId,
-      turn,
-    )
+    (completedTurnAdmission ||
+      isConversationTurnAdditionThenItemAppend(
+        previous.conversation.turns,
+        next.conversation.turns,
+        item.turnId,
+        itemId,
+        turn,
+      ))
   )
 }
 
@@ -1781,7 +1816,9 @@ export class TranscriptRuntime {
       previousInput.mode !== "follow" ||
       input.mode !== "follow" ||
       input.reveal ||
-      (input.presentationDamage && input.presentationDamage.kind !== "none")
+      (input.presentationDamage &&
+        input.presentationDamage.kind !== "none" &&
+        (input.presentationDamage.kind !== "view" || itemIds.length !== 1))
     )
       return undefined
     const completion =
@@ -2570,6 +2607,130 @@ export class TranscriptRuntime {
       input.excludedTurnIds,
       priorInput.excludedTurnIds,
     )
+    // These owner-proven transitions are deliberately limited to the visible
+    // tail. Detached snapshots and cold/excluded histories keep the full path.
+    if (
+      !lineageChanged &&
+      !exclusionsChanged &&
+      !this.excludedTurnIds.size &&
+      !input.reveal &&
+      priorInput.mode === "follow" &&
+      input.mode === "follow" &&
+      priorFrame.displayedCanonicalRevision === priorInput.canonicalRevision
+    ) {
+      if (
+        input.canonicalPresentationUnchanged &&
+        input.transcript === priorInput.transcript &&
+        (!input.presentationDamage || input.presentationDamage.kind === "none")
+      ) {
+        this.latestInput = input
+        this.displayedInput = Object.freeze({
+          ...input,
+          transcript: priorFrame.transcript,
+        })
+        return this.publish(
+          Object.freeze({
+            ...priorFrame,
+            displayedCanonicalRevision: input.canonicalRevision,
+            presentationRevision: priorFrame.presentationRevision + 1,
+            damage: noneDamage,
+          }),
+          this.heightIndex,
+        )
+      }
+      const change = input.tailReplacement
+      if (
+        change &&
+        this.windowPolicy &&
+        sameActivityProtection(
+          input.transcript,
+          this.activityProtectionState,
+          priorFrame.window,
+        )
+      ) {
+        const replacement = transcriptOrderTailReplacement(
+          priorInput.transcript.order,
+          input.transcript.order,
+        )
+        const validOrder = change.nextItemId
+          ? replacement?.removed === change.previousItemId &&
+            replacement.added === change.nextItemId
+          : transcriptOrderTailRemoval(
+              priorInput.transcript.order,
+              input.transcript.order,
+            ) === change.previousItemId
+        const prior = priorFrame.blocks.at(-1)
+        const next = change.nextItemId
+          ? buildTranscriptItemBlock(input, change.nextItemId)
+          : undefined
+        if (
+          validOrder &&
+          prior?.key.kind === "item" &&
+          "projection" in prior &&
+          prior.key.itemId === change.previousItemId &&
+          prior.key.blockId === "root" &&
+          prior.item.kind === "user" &&
+          !prior.followedByActivity &&
+          (!change.nextItemId ||
+            (next?.item.kind === "user" &&
+              next.key.blockId === "root" &&
+              !next.followedByActivity)) &&
+          this.heightIndex?.supports(priorFrame.blocks)
+        ) {
+          const blocks = replaceTranscriptTailItem(
+            priorFrame.blocks,
+            prior,
+            next,
+            this.diagnostics,
+          )
+          const index = blocks
+            ? replaceTranscriptTailHeightIndex(
+                this.heightIndex,
+                priorFrame.blocks,
+                blocks,
+                prior,
+                next,
+                next ? Math.max(1, next.estimatedRows) : 0,
+              )
+            : undefined
+          if (blocks && index) {
+            this.latestInput = input
+            this.hiddenDamage.reset()
+            const transcript = presentationTranscriptWithProjections(
+              input.transcript,
+              input.transcript.order,
+              input.transcript.projectionById,
+            )
+            const damage: TranscriptDamage = {
+              kind: "blocks",
+              itemIds: [
+                change.previousItemId,
+                ...(change.nextItemId ? [change.nextItemId] : []),
+              ],
+            }
+            const raw = Object.freeze({
+              ...priorFrame,
+              blocks,
+              transcript,
+              displayedCanonicalRevision: input.canonicalRevision,
+              presentationRevision: priorFrame.presentationRevision + 1,
+              window: Object.freeze({ ...priorFrame.window, blocks }),
+              damage,
+            })
+            const nextFrame = this.withPlannedWindow(raw, index)
+            this.itemBlockIndexes.delete(change.previousItemId)
+            if (change.nextItemId)
+              this.itemBlockIndexes.set(change.nextItemId, blocks.length - 1)
+            this.displayedInput = Object.freeze({
+              ...input,
+              transcript: nextFrame.transcript,
+            })
+            this.activityProtectionState = nextFrame.transcript
+            return this.publish(nextFrame, index)
+          }
+        }
+      }
+    }
     if (
       !lineageChanged &&
       input.canonicalRevision === priorInput.canonicalRevision &&
@@ -2579,7 +2740,21 @@ export class TranscriptRuntime {
       if (exclusionsChanged)
         this.excludedTurnIds = new Set(input.excludedTurnIds ?? [])
       transcriptOrderIndex(input.transcript.order, this.diagnostics)
-      return this.rebuild(input, fullDamage, false)
+      const damage = frozenDamage(input.canonicalDamage)
+      const tailAppend =
+        !exclusionsChanged &&
+        priorFrame.displayedCanonicalRevision ===
+          priorInput.canonicalRevision &&
+        damage.kind === "blocks" &&
+        damage.itemIds.length === 1 &&
+        isTailItemAdmission(priorInput, input, damage.itemIds[0]!)
+      return this.rebuild(
+        input,
+        tailAppend ? damage : fullDamage,
+        tailAppend,
+        tailAppend && damage.kind === "blocks" ? damage.itemIds : undefined,
+        priorInput,
+      )
     }
 
     const revisionChanged =

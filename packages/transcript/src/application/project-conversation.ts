@@ -8,9 +8,13 @@ import {
   appendTranscriptUnseenItemId,
   hasTranscriptUnseenItemId,
   inheritTranscriptTextLengthIndex,
+  inheritTranscriptTextLengthTailRemoval,
   persistentTranscriptFolds,
   persistentTranscriptOrder,
   persistentTranscriptUnseenItemIds,
+  popTranscriptOrder,
+  removeTranscriptProjection,
+  transcriptOrderIndex,
   setTranscriptFoldValue,
   setTranscriptProjection,
   type LogicalPoint,
@@ -23,6 +27,7 @@ import {
 } from "../domain/transcript-document"
 import {
   inheritTranscriptUrlIndex,
+  inheritTranscriptUrlIndexTailRemoval,
   type TranscriptUrlIndexDiagnostics,
 } from "./transcript-url-index"
 
@@ -106,13 +111,26 @@ export function removeTranscriptItem(
   state: TranscriptState,
   itemId: ConversationItem["id"],
 ): TranscriptState {
-  if (!state.projectionById[itemId]) return state
-  const removedIndex = state.order.indexOf(itemId)
-  const order = state.order.filter((id) => id !== itemId)
-  const projectionById = { ...state.projectionById }
-  const folded = { ...state.folded }
-  delete projectionById[itemId]
-  delete folded[itemId]
+  if (!Object.hasOwn(state.projectionById, itemId)) return state
+  const isTail =
+    state.order.at(-1) === itemId &&
+    transcriptOrderIndex(state.order).size === state.order.length
+  const removedIndex = isTail
+    ? state.order.length - 1
+    : state.order.indexOf(itemId)
+  const order = isTail
+    ? popTranscriptOrder(state.order)
+    : state.order.filter((id) => id !== itemId)
+  const projectionById = removeTranscriptProjection(
+    state.projectionById,
+    itemId,
+  )
+  let folded = state.folded
+  if (Object.hasOwn(folded, itemId)) {
+    const next = { ...folded }
+    delete next[itemId]
+    folded = next
+  }
   const fallbackId =
     order[Math.min(Math.max(removedIndex, 0), order.length - 1)]
   const fallback = fallbackId
@@ -120,7 +138,7 @@ export function removeTranscriptItem(
     : undefined
   const retained = (point: LogicalPoint): boolean => point.itemId !== itemId
   const unseenItemIds = state.unseenItemIds.filter((id) => id !== itemId)
-  return {
+  const next: TranscriptState = {
     ...state,
     order,
     projectionById,
@@ -156,6 +174,11 @@ export function removeTranscriptItem(
       ),
     ),
   }
+  if (isTail) {
+    inheritTranscriptTextLengthTailRemoval(state, next)
+    inheritTranscriptUrlIndexTailRemoval(state, next)
+  }
+  return next
 }
 
 export function syncTranscriptItem(

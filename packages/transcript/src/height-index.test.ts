@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { itemId, turnId, type TurnId } from "@vimex/conversation"
 import {
   createHeightIndex,
+  replaceTranscriptTailHeightIndex,
   type BlockHeightOverride,
   type HeightIndexDiagnostics,
 } from "./height-index"
@@ -10,6 +11,7 @@ import {
   blockKey,
   persistentTranscriptBlockPlan,
   replaceTranscriptBlock,
+  replaceTranscriptTailItem,
   spliceTranscriptItemBlocks,
   transcriptPointBlockIndex,
   type TranscriptBlock,
@@ -1036,4 +1038,57 @@ test("seeded multi-item fold splices retain exact row and point lookup beyond 32
         ),
       )
   }
+})
+
+test("tail rekey and removal preserve historical row lookups and reject unproven plans", () => {
+  const head = item("head")
+  const local = item("local")
+  const echoed = item("echoed", "canonical text")
+  const source = persistentTranscriptBlockPlan([head, local])
+  const before = createHeightIndex(source)!
+  const plan = replaceTranscriptTailItem(source, local, echoed)!
+  const after = replaceTranscriptTailHeightIndex(
+    before,
+    source,
+    plan,
+    local,
+    echoed,
+    7,
+  )!
+  expect(after).toBeDefined()
+  expect(after.totalRows).toBe(before.prefixRows(1) + 7)
+  expect(after.blockIndex(blockKey(head))).toBe(0)
+  expect(after.blockIndex(blockKey(local))).toBeUndefined()
+  expect(after.itemBlockIndexes(local.key.itemId)).toEqual([])
+  expect(after.itemBlockIndexes(echoed.key.itemId)).toEqual([1])
+  expect(after.blockAtRow(after.totalRows - 1)).toBe(1)
+  expect(before.blockIndex(blockKey(local))).toBe(1)
+  const removed = replaceTranscriptTailItem(plan, echoed)!
+  const final = replaceTranscriptTailHeightIndex(
+    after,
+    plan,
+    removed,
+    echoed,
+    undefined,
+    0,
+  )!
+  expect(final.blockCount).toBe(1)
+  expect(final.totalRows).toBe(before.prefixRows(1))
+  expect(final.blockIndex(blockKey(echoed))).toBeUndefined()
+  expect(final.blockAtRow(final.totalRows)).toBeUndefined()
+  expect(replaceTranscriptTailItem(source, head, echoed)).toBeUndefined()
+  expect(
+    replaceTranscriptTailHeightIndex(
+      before,
+      source,
+      [...plan],
+      local,
+      echoed,
+      7,
+    ),
+  ).toBeUndefined()
+  const duplicate = replaceTranscriptTailItem(source, local, head)!
+  expect(
+    replaceTranscriptTailHeightIndex(before, source, duplicate, local, head, 1),
+  ).toBeUndefined()
 })

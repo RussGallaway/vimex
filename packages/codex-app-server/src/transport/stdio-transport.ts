@@ -67,6 +67,10 @@ export class StdioTransport implements CodexTransport {
   private started = false
   private closed = false
   private finished = false
+  private draining = false
+  private drainTimer?: ReturnType<typeof setImmediate>
+  private finishRequested?: { error?: Error }
+  private readonly completion = Promise.withResolvers<void>()
 
   constructor(private readonly options: StdioTransportOptions = {}) {}
 
@@ -101,11 +105,12 @@ export class StdioTransport implements CodexTransport {
   }
 
   async close(): Promise<void> {
-    if (this.closed) return
+    if (this.closed) return this.completion.promise
     this.closed = true
     this.process?.end()
     this.process?.kill()
     this.finish()
+    await this.completion.promise
   }
 
   onMessage(listener: MessageListener): () => void {
@@ -124,35 +129,81 @@ export class StdioTransport implements CodexTransport {
   }
 
   private acceptChunk(chunk: string | Uint8Array): void {
+    if (this.finished || this.finishRequested) return
     this.buffer +=
       typeof chunk === "string"
         ? `${this.decoder.decode()}${chunk}`
         : this.decoder.decode(chunk, { stream: true })
-    while (true) {
-      const newline = this.buffer.indexOf("\n")
-      if (newline < 0) return
-      const line = this.buffer.slice(0, newline).trim()
-      this.buffer = this.buffer.slice(newline + 1)
-      if (!line) continue
+    // A queued continuation owns the backlog. New stdout chunks must not jump
+    // ahead of it and restart an unbounded run of synchronous event delivery.
+    if (!this.drainTimer) this.drain()
+  }
+
+  private drain(): void {
+    if (this.draining || this.finished) return
+    this.draining = true
+    const startedAt = performance.now()
+    let delivered = 0
+    try {
+      while (true) {
+        const newline = this.buffer.indexOf("\n")
+        if (newline < 0) break
+        // Bound both cheap-message bursts and expensive downstream callbacks.
+        // Lifecycle shutdown deliberately drains its finite prefix before close.
+        if (
+          !this.finishRequested &&
+          delivered > 0 &&
+          (delivered >= 32 || performance.now() - startedAt >= 4)
+        ) {
+          this.drainTimer = setImmediate(() => {
+            this.drainTimer = undefined
+            this.drain()
+          })
+          break
+        }
+        const line = this.buffer.slice(0, newline).trim()
+        this.buffer = this.buffer.slice(newline + 1)
+        delivered++
+        if (!line) continue
+        try {
+          const message: unknown = JSON.parse(line)
+          for (const listener of this.messageListeners) listener(message)
+        } catch (cause) {
+          this.emitError(
+            new Error(`Invalid JSONL from codex app-server: ${line}`, {
+              cause,
+            }),
+          )
+        }
+      }
+    } finally {
+      this.draining = false
+    }
+    if (this.finishRequested) this.completeFinish()
+  }
+
+  private emitError(error: Error): void {
+    for (const listener of this.errorListeners) {
       try {
-        const message: unknown = JSON.parse(line)
-        for (const listener of this.messageListeners) listener(message)
-      } catch (cause) {
-        this.emitError(
-          new Error(`Invalid JSONL from codex app-server: ${line}`, { cause }),
-        )
+        listener(error)
+      } catch {
+        // Diagnostic observers must not strand queued messages or shutdown.
       }
     }
   }
 
-  private emitError(error: Error): void {
-    for (const listener of this.errorListeners) listener(error)
+  private finish(error?: Error): void {
+    if (this.finished || this.finishRequested) return
+    this.finishRequested = { error }
+    if (this.drainTimer) clearImmediate(this.drainTimer)
+    this.drainTimer = undefined
+    this.buffer += this.decoder.decode()
+    this.drain()
   }
 
-  private finish(error?: Error): void {
+  private completeFinish(): void {
     if (this.finished) return
     this.finished = true
-    this.buffer += this.decoder.decode()
     const finalLine = this.buffer.trim()
     if (finalLine) {
       try {
@@ -169,8 +220,13 @@ export class StdioTransport implements CodexTransport {
       this.buffer = ""
     }
     if (!this.closed) this.closed = true
-    for (const listener of this.closeListeners) listener(error)
-    this.closeListeners.clear()
+    try {
+      for (const listener of this.closeListeners)
+        listener(this.finishRequested?.error)
+    } finally {
+      this.closeListeners.clear()
+      this.completion.resolve()
+    }
   }
 }
 

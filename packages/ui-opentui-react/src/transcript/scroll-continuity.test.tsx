@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test"
+import { expect, spyOn, test } from "bun:test"
 import type { ScrollBoxRenderable } from "@opentui/core"
 import { act } from "react"
 import { blockKey, graphemes } from "@vimex/transcript"
@@ -27,7 +27,7 @@ function paintedTranscript(h: Harness): string[] {
 async function settle(h: Harness, frames = 8) {
   for (let i = 0; i < frames; i++)
     await act(async () => {
-      await h.flush()
+      await h.flush({ maxPasses: 300 })
       await h.renderOnce()
     })
 }
@@ -167,7 +167,12 @@ const scenarios: Scenario[] = [
   },
 ]
 
-async function sample(expanded: boolean, dense: boolean, scenario: Scenario) {
+async function sample(
+  expanded: boolean,
+  dense: boolean,
+  scenario: Scenario,
+  nativePassElapsedMs = 0,
+) {
   const h = await wheelHarness(100, expanded, dense)
   const frames: string[][] = []
   const frameWindows: Array<{ top: number; bottom: number }> = []
@@ -177,6 +182,12 @@ async function sample(expanded: boolean, dense: boolean, scenario: Scenario) {
     window: { top: number; bottom: number }
   }> = []
   const originalEmit = h.renderer.emit
+  const originalNow = performance.now.bind(performance)
+  const originalCalculateLayout = h.renderer.root.calculateLayout
+  let elapsedNativeMs = 0
+  let nativePasses = 0
+  let clock: ReturnType<typeof spyOn<typeof performance, "now">> | undefined
+  const passesAtPaint: number[] = []
   try {
     await settle(h)
     if (scenario.navigation) {
@@ -199,10 +210,23 @@ async function sample(expanded: boolean, dense: boolean, scenario: Scenario) {
       await settle(h)
     }
     const initialFrame = h.controller.transcriptRuntime("main")!.getSnapshot()
+    if (nativePassElapsedMs) {
+      // Make the preparation clock observe slow native passes without sleeping
+      // or relying on the machine's CPU speed to exercise the yield boundary.
+      clock = spyOn(performance, "now").mockImplementation(
+        () => originalNow() + elapsedNativeMs,
+      )
+      h.renderer.root.calculateLayout = function (...args) {
+        nativePasses++
+        elapsedNativeMs += nativePassElapsedMs
+        return originalCalculateLayout.apply(this, args)
+      }
+    }
     h.renderer.emit = function (event: string | symbol, ...args: unknown[]) {
       // FRAME fires after renderNative; listeners can already move the viewport.
       // Capture before listeners so text and position belong to the same paint.
       if (event === "frame") {
+        passesAtPaint.push(nativePasses)
         frames.push(paintedTranscript(h))
         const window = h.controller
           .transcriptRuntime("main")!
@@ -228,7 +252,7 @@ async function sample(expanded: boolean, dense: boolean, scenario: Scenario) {
           },
         })
       })
-      await h.flush()
+      await h.flush({ maxPasses: 300 })
       await h.renderOnce()
     })
     await settle(h)
@@ -276,6 +300,7 @@ async function sample(expanded: boolean, dense: boolean, scenario: Scenario) {
     }
     return {
       frames,
+      passesAtPaint,
       frameWindows,
       checkpoints,
       final: paintedTranscript(h),
@@ -284,6 +309,8 @@ async function sample(expanded: boolean, dense: boolean, scenario: Scenario) {
       finalFrame: h.controller.transcriptRuntime("main")!.getSnapshot(),
     }
   } finally {
+    clock?.mockRestore()
+    h.renderer.root.calculateLayout = originalCalculateLayout
     h.renderer.emit = originalEmit
     await h.close()
   }
@@ -311,11 +338,11 @@ test("expanded hot-tail boundary paints a continuous destination across upward a
     startCommand: 75,
     async input(h, checkpoint) {
       for (let i = 0; i < 230; i++) h.mockInput.pressKey("u", { ctrl: true })
-      await h.flush()
+      await h.flush({ maxPasses: 300 })
       await h.renderOnce()
       checkpoint?.()
       for (let i = 0; i < 8; i++) h.mockInput.pressKey("e", { ctrl: true })
-      await h.flush()
+      await h.flush({ maxPasses: 300 })
       await h.renderOnce()
       checkpoint?.()
     },
@@ -367,6 +394,43 @@ test("cold queued row reversal preserves accepted keys and paints readable conte
     )
 }, 30000)
 
+test("slow overloaded preparation paints coherent progress before finishing queued navigation", async () => {
+  const scenario: Scenario = {
+    name: "slow cold preparation",
+    navigation: true,
+    startCommand: 75,
+    input(h) {
+      for (let i = 0; i < 230; i++) h.mockInput.pressKey("u", { ctrl: true })
+      for (let i = 0; i < 8; i++) h.mockInput.pressKey("d", { ctrl: true })
+    },
+  }
+  const reference = await sample(true, true, scenario)
+  const windowed = await sample(true, false, scenario, 16)
+  // An overloaded hot queue yields before traversing hundreds of native passes.
+  expect(windowed.passesAtPaint[0]).toBeLessThanOrEqual(8)
+  expect(windowed.final).toEqual(reference.final)
+  expect(windowed.cursor).toEqual(reference.cursor)
+  expect(
+    windowed.frames.some(
+      (paint) => paint.join("\n") !== windowed.final.join("\n"),
+    ),
+  ).toBe(true)
+  for (const paint of windowed.frames)
+    expect(paint.join("")).toMatch(/OUTPUT|Command|Line \d+ readable output/)
+  const boundedProgressFrames = windowed.frames.filter((paint, index) => {
+    const nativePasses =
+      windowed.passesAtPaint[index]! - (windowed.passesAtPaint[index - 1] ?? 0)
+    return (
+      windowed.frameWindows[index]!.bottom > 0 &&
+      paint.join("\n") !== windowed.final.join("\n") &&
+      nativePasses <= 8
+    )
+  })
+  // The old pass-only ceiling used 32+ native passes for these cold frames.
+  // Require repeated useful yields, not just the final quiet settling frames.
+  expect(boundedProgressFrames.length).toBeGreaterThan(4)
+}, 30000)
+
 async function recordPaints(h: Harness, input: () => void | Promise<void>) {
   const frames: string[][] = []
   const originalEmit = h.renderer.emit
@@ -377,7 +441,7 @@ async function recordPaints(h: Harness, input: () => void | Promise<void>) {
   try {
     await act(async () => {
       await input()
-      await h.flush()
+      await h.flush({ maxPasses: 300 })
       await h.renderOnce()
     })
     await settle(h)
@@ -448,7 +512,25 @@ for (const expanded of [false, true])
       expect(h.workspace().transcript.viewport.kind).toBe("tail")
       for (const paint of reattached)
         expect(paint.join("\n")).toContain("LIVE UPDATE ONE")
-      const following = await recordPaints(h, () => delta("LIVE UPDATE TWO"))
+      // Following output must still paint the latest content when native
+      // preparation consumes its elapsed budget rather than merely a few passes.
+      const originalNow = performance.now.bind(performance)
+      const calculateLayout = h.renderer.root.calculateLayout
+      let elapsedNativeMs = 0
+      const clock = spyOn(performance, "now").mockImplementation(
+        () => originalNow() + elapsedNativeMs,
+      )
+      h.renderer.root.calculateLayout = function (...args) {
+        elapsedNativeMs += 16
+        return calculateLayout.apply(this, args)
+      }
+      let following: string[][]
+      try {
+        following = await recordPaints(h, () => delta("LIVE UPDATE TWO"))
+      } finally {
+        clock.mockRestore()
+        h.renderer.root.calculateLayout = calculateLayout
+      }
       expect(h.workspace().transcript.viewport.kind).toBe("tail")
       for (const paint of following)
         expect(paint.join("\n")).toContain("LIVE UPDATE TWO")
@@ -555,7 +637,7 @@ test("expanded multi-file diffs do not spin native layout during Ctrl-U and brac
     const runtime = h.controller.transcriptRuntime("main")!
     await act(async () => {
       await h.mockInput.typeText("{")
-      await h.flush()
+      await h.flush({ maxPasses: 300 })
       await h.renderOnce()
     })
     expect(layoutPasses).toBeLessThan(16)
@@ -585,7 +667,7 @@ test("expanded multi-file diffs do not spin native layout during Ctrl-U and brac
     await act(async () => {
       for (let index = 0; index < 8; index++)
         h.mockInput.pressKey("u", { ctrl: true })
-      await h.flush()
+      await h.flush({ maxPasses: 300 })
       await h.renderOnce()
     })
     expect(layoutPasses).toBeLessThan(40)
@@ -595,7 +677,7 @@ test("expanded multi-file diffs do not spin native layout during Ctrl-U and brac
     layoutPasses = 0
     await act(async () => {
       await h.mockInput.typeText("{")
-      await h.flush()
+      await h.flush({ maxPasses: 300 })
       await h.renderOnce()
     })
     expect(layoutPasses).toBeLessThan(16)

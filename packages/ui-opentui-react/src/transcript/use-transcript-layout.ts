@@ -78,7 +78,7 @@ export function useTranscriptLayout(options: {
   )
   const pendingNativeScroll = useRef(false)
   const pendingNativeDirection = useRef<"up" | "down" | undefined>(undefined)
-  const coldContinuation = useRef(false)
+  const preparationContinuation = useRef(false)
   const pendingAnchor = useRef(false)
   const pendingRestore = useRef(false)
   const lastScrollTop = useRef(0)
@@ -132,7 +132,7 @@ export function useTranscriptLayout(options: {
     pendingCursor.current = undefined
     pendingNativeScroll.current = false
     pendingNativeDirection.current = undefined
-    coldContinuation.current = false
+    preparationContinuation.current = false
     queuedViewport.current = undefined
     queuedIntentRevision.current = undefined
     pendingAnchor.current = false
@@ -150,7 +150,7 @@ export function useTranscriptLayout(options: {
     pendingCursor.current = undefined
     pendingNativeScroll.current = false
     pendingNativeDirection.current = undefined
-    coldContinuation.current = false
+    preparationContinuation.current = false
     queuedViewport.current = undefined
     queuedIntentRevision.current = undefined
     pendingAnchor.current = false
@@ -370,7 +370,7 @@ export function useTranscriptLayout(options: {
         pendingCursor.current = undefined
         pendingNativeScroll.current = false
         pendingNativeDirection.current = undefined
-        coldContinuation.current = false
+        preparationContinuation.current = false
       }
       queuedViewport.current = viewport
       queuedIntentRevision.current = intentRevision
@@ -592,7 +592,7 @@ export function useTranscriptLayout(options: {
         pendingCursor.current = undefined
         pendingNativeScroll.current = false
         pendingNativeDirection.current = undefined
-        coldContinuation.current = false
+        preparationContinuation.current = false
       }
       queuedViewport.current = undefined
       queuedIntentRevision.current = undefined
@@ -610,8 +610,11 @@ export function useTranscriptLayout(options: {
         pendingNativeDirection.current = undefined
         if (!pendingScrollRows.current.length) pendingAnchor.current = true
       }
-      let coldBoundaryCrossed = coldContinuation.current
-      coldContinuation.current = false
+      let budgetedPreparation =
+        preparationContinuation.current ||
+        pendingScrollRows.current.length > 64 ||
+        (viewport.kind === "tail" && pendingScrollRows.current.length === 0)
+      preparationContinuation.current = false
       const advance = () => {
         const prior = measuredLayout.current
         const top = scrollbox.viewport.screenY
@@ -696,7 +699,7 @@ export function useTranscriptLayout(options: {
               ? runtimeFrame.window.topSpacerRows > 0
               : runtimeFrame.window.bottomSpacerRows > 0
           if (hasHistory && viewportPoint) {
-            coldBoundaryCrossed = true
+            budgetedPreparation = true
             const owning = runtimeFrame.window.blocks.find((block) => {
               if (
                 !("projection" in block) ||
@@ -819,14 +822,23 @@ export function useTranscriptLayout(options: {
         measuredLayout.current
       )
         advance()
-      // Keep the measured hot window's existing single-frame semantics. A
-      // crossing into an unmounted window can require many native layout
-      // passes; prepare a bounded number after that crossing, then paint the
-      // newly mounted neighborhood before continuing on the next frame.
-      let coldPreparationPasses = 0
-      let deferredColdPreparation = false
+      // Keep ordinary hot-window bursts in one frame. Cold transitions,
+      // streaming follow, and overloaded queues can need many layout passes. Once
+      // preparation has used half a 60 Hz frame, paint the next
+      // coherent neighborhood before continuing. The pass cap also bounds
+      // unusually cheap preparation; neither limit permits blank/stale paint.
+      // Allow four settling passes so layout/anchor corrections cannot consume
+      // every frame before a queued row intent gets a chance to advance.
+      let budgetedPreparationPasses = 0
+      let deferredPreparation = false
+      const preparationStartedAt = performance.now()
       for (let pass = 0; pass < 128; pass++) {
-        if (coldBoundaryCrossed && coldPreparationPasses++ >= 32) {
+        if (
+          budgetedPreparation &&
+          (budgetedPreparationPasses++ >= 32 ||
+            (budgetedPreparationPasses >= 4 &&
+              performance.now() - preparationStartedAt >= 8))
+        ) {
           const runtimeFrame = latest.current.runtime?.getSnapshot()
           const layout = measuredLayout.current
           const coherent =
@@ -876,7 +888,7 @@ export function useTranscriptLayout(options: {
             !pendingCursor.current &&
             !pendingRestore.current
           ) {
-            deferredColdPreparation = true
+            deferredPreparation = true
             break
           }
         }
@@ -890,7 +902,7 @@ export function useTranscriptLayout(options: {
           before?.window.blocks !==
           latest.current.runtime?.getSnapshot().window.blocks
         )
-          coldBoundaryCrossed = true
+          budgetedPreparation = true
         const settled =
           before === latest.current.runtime?.getSnapshot() &&
           top === scrollbox.scrollTop &&
@@ -949,8 +961,8 @@ export function useTranscriptLayout(options: {
         // Cold remainder is resolved after the next neighborhood is prepared.
         advance()
       }
-      if (pendingScrollRows.current.length || deferredColdPreparation) {
-        coldContinuation.current = deferredColdPreparation
+      if (pendingScrollRows.current.length || deferredPreparation) {
+        preparationContinuation.current = deferredPreparation
         queuedViewport.current =
           latest.current.runtime?.getSnapshot().transcript.viewport ??
           latest.current.transcript.viewport

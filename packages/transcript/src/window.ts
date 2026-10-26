@@ -139,6 +139,11 @@ interface BlockPlanData {
   readonly replacement?: BlockPlanReplacement
   readonly append?: BlockPlanAppend
   readonly splice?: BlockPlanSplice
+  readonly tailReplacement?: Readonly<{
+    source: readonly TranscriptBlock[]
+    previous: TranscriptItemBlock
+    next?: TranscriptItemBlock
+  }>
 }
 
 export interface TranscriptBlockPlanDiagnostics {
@@ -511,6 +516,45 @@ export function appendTranscriptBlock(
     length: data.length + 1,
     append: Object.freeze({ source: plan, next }),
   })
+}
+
+/** Replace or remove one unsplit tail item without visiting historical slots. */
+export function replaceTranscriptTailItem(
+  blocks: readonly TranscriptBlock[],
+  previous: TranscriptItemBlock,
+  next?: TranscriptItemBlock,
+  diagnostics?: TranscriptBlockPlanDiagnostics,
+): readonly TranscriptBlock[] | undefined {
+  if (
+    blocks.at(-1) !== previous ||
+    previous.key.blockId !== "root" ||
+    (next && next.key.blockId !== "root")
+  )
+    return undefined
+  const plan = persistentTranscriptBlockPlan(blocks)
+  const data = blockPlanData.get(plan)!
+  const [prefix] = splitBlockPlanNode(data.root, data.length - 1, diagnostics)
+  const root = next ? appendBlockPlanNode(prefix, next, diagnostics) : prefix
+  if (diagnostics) diagnostics.blockPlanUpdates += 1
+  return blockPlan({
+    root,
+    length: data.length - (next ? 0 : 1),
+    tailReplacement: Object.freeze({ source: plan, previous, next }),
+  })
+}
+
+export function isTranscriptTailItemReplacement(
+  source: readonly TranscriptBlock[],
+  blocks: readonly TranscriptBlock[],
+  previous: TranscriptItemBlock,
+  next?: TranscriptItemBlock,
+): boolean {
+  const change = blockPlanData.get(blocks)?.tailReplacement
+  return (
+    change?.source === source &&
+    change.previous === previous &&
+    change.next === next
+  )
 }
 
 /** Replace one contiguous logical item's block span while sharing history. */

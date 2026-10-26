@@ -4,6 +4,90 @@ import { initialWorkbench } from "./workbench-state"
 import { transitionWorkbench } from "./reduce-workbench"
 import { liveActivity } from "./live-activity"
 
+test("sending starts locally, survives an early ack, then becomes server Working", () => {
+  const id = threadId("sending")
+  let state = transitionWorkbench(initialWorkbench(), {
+    type: "thread.open",
+    summary: {
+      id,
+      title: "Sending",
+      cwd: "/tmp",
+      model: "test",
+      reasoningEffort: "high",
+      status: "idle",
+    },
+  }).state
+  const dispatch = (command: Parameters<typeof transitionWorkbench>[1]) => {
+    state = transitionWorkbench(state, command).state
+  }
+  dispatch({ type: "composer.change", text: "hello" })
+  dispatch({
+    type: "composer.submit",
+    intent: "next-turn",
+    clientMessageId: "local",
+  })
+  expect(liveActivity(state)).toEqual({ working: true, label: "Sending" })
+  dispatch({ type: "composer.ack", threadId: id, clientMessageId: "local" })
+  expect(state.workspaces[id]!.composer.outbox).toHaveLength(0)
+  expect(liveActivity(state)).toEqual({ working: true, label: "Sending" })
+  dispatch({
+    type: "conversation.event",
+    event: {
+      type: "turn.started",
+      threadId: id,
+      turnId: turnId("server"),
+      startedAt: 123,
+    },
+  })
+  expect(liveActivity(state)).toEqual({
+    working: true,
+    label: "Working",
+    startedAt: 123,
+  })
+})
+
+test("failed and merely queued submissions do not animate as Sending", () => {
+  const id = threadId("not-sending")
+  let state = transitionWorkbench(initialWorkbench(), {
+    type: "thread.open",
+    summary: {
+      id,
+      title: "Test",
+      cwd: "/tmp",
+      model: "test",
+      reasoningEffort: "high",
+      status: "idle",
+    },
+  }).state
+  state = transitionWorkbench(state, {
+    type: "composer.change",
+    text: "hello",
+  }).state
+  state = transitionWorkbench(state, {
+    type: "composer.submit",
+    intent: "next-turn",
+    clientMessageId: "local",
+  }).state
+  state = transitionWorkbench(state, {
+    type: "composer.fail",
+    threadId: id,
+    clientMessageId: "local",
+    reason: "offline",
+  }).state
+  expect(liveActivity(state)).toEqual({ working: false })
+  state = { ...state, provisionalThreadIds: [id] }
+  state = transitionWorkbench(state, {
+    type: "composer.change",
+    text: "queued",
+  }).state
+  state = transitionWorkbench(state, {
+    type: "composer.submit",
+    intent: "next-turn",
+    clientMessageId: "queued",
+  }).state
+  expect(liveActivity(state)).toEqual({ working: false })
+})
+
 test("keeps one stable working heartbeat while underlying item kinds advance", () => {
   const thread = threadId("activity"),
     turn = turnId("turn")

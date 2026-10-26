@@ -1,5 +1,8 @@
 import { threadContext } from "./thread-context"
-import { submissionConversation } from "./submission-presentation"
+import {
+  submissionConversation,
+  submissionPresentationChange,
+} from "./submission-presentation"
 import { agentRoster, agentRosterRoot } from "./agent-roster"
 import { compactionBlockReason } from "./compaction"
 import { executeGoalCommand } from "./goal-command"
@@ -796,6 +799,7 @@ export class VimexController
     const workspace = thread ? state.workspaces[thread] : undefined
     if (!thread || !workspace) return undefined
     const previous = before?.workspaces[thread]
+    const submissionChange = submissionPresentationChange(previous, workspace)
     const side = sideChatForChild(state, thread)
     const transcriptChanged =
       previous && previous.transcript !== workspace.transcript
@@ -820,7 +824,25 @@ export class VimexController
           workspace.pendingSubmissions?.length) &&
         (previous?.pendingSubmissions !== workspace.pendingSubmissions ||
           previous?.conversation !== workspace.conversation)
-          ? { kind: "full" }
+          ? previous?.conversation === workspace.conversation
+            ? {
+                kind: "blocks",
+                itemIds: [
+                  ...new Set(
+                    [
+                      ...(previous.pendingSubmissions ?? []),
+                      ...(workspace.pendingSubmissions ?? []),
+                    ].map((message) => itemId(message.id)),
+                  ),
+                ],
+              }
+            : previous &&
+                previous.pendingSubmissions === workspace.pendingSubmissions &&
+                previous.conversation.turns === workspace.conversation.turns &&
+                previous.conversation.turnIds === workspace.conversation.turnIds
+              ? (hint.canonicalDamageByThread?.[thread] ??
+                this.canonicalDamage(previous, workspace))
+              : { kind: "full" }
           : (hint.canonicalDamageByThread?.[thread] ??
             this.canonicalDamage(previous, workspace)),
       presentationDamage,
@@ -830,6 +852,7 @@ export class VimexController
           ? hint.reveal.request
           : undefined,
       excludedTurnIds: side?.inheritedTurnIds,
+      ...submissionChange,
     }
   }
   private syncTranscriptRuntimes(
