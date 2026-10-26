@@ -1,4 +1,5 @@
 import { threadContext } from "./thread-context"
+import { submissionConversation } from "./submission-presentation"
 import { agentRoster, agentRosterRoot } from "./agent-roster"
 import { compactionBlockReason } from "./compaction"
 import { executeGoalCommand } from "./goal-command"
@@ -810,13 +811,18 @@ export class VimexController
       threadId: thread,
       canonicalGeneration: workspace.canonicalGeneration,
       canonicalRevision: workspace.canonicalRevision,
-      conversation: workspace.conversation,
+      conversation: submissionConversation(workspace),
       transcript: workspace.transcript,
       mode:
         workspace.transcript.viewport.kind === "tail" ? "follow" : "detached",
       canonicalDamage:
-        hint.canonicalDamageByThread?.[thread] ??
-        this.canonicalDamage(previous, workspace),
+        (previous?.pendingSubmissions?.length ||
+          workspace.pendingSubmissions?.length) &&
+        (previous?.pendingSubmissions !== workspace.pendingSubmissions ||
+          previous?.conversation !== workspace.conversation)
+          ? { kind: "full" }
+          : (hint.canonicalDamageByThread?.[thread] ??
+            this.canonicalDamage(previous, workspace)),
       presentationDamage,
       reveal:
         hint.reveal?.threadId === thread &&

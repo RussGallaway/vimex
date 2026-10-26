@@ -111,7 +111,7 @@ export function createDemoGateway(): ConversationGateway &
     forkThread: async () => {
       throw new Error("Forking requires a live Codex thread")
     },
-    async startTurn(id, text) {
+    async startTurn(id, text, clientMessageId) {
       const turn = turnId(crypto.randomUUID()),
         answer = itemId(crypto.randomUUID())
       add({ type: "turn.started", threadId: id, turnId: turn })
@@ -122,6 +122,7 @@ export function createDemoGateway(): ConversationGateway &
           id: itemId(crypto.randomUUID()),
           turnId: turn,
           kind: "user",
+          clientMessageId,
           markdown: text,
           status: "complete",
         },

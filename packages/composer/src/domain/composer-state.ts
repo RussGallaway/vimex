@@ -1,6 +1,8 @@
 import type { SubmissionIntent } from "./submission-intent"
 export interface OutgoingMessage {
   id: string
+  /** Echo observed before the submission RPC has acknowledged. */
+  serverItemId?: string
   text: string
   images?: readonly ImageAttachment[]
   mentions?: readonly MentionAttachment[]

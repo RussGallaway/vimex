@@ -102,7 +102,7 @@ export function projectsToTranscript(item: ConversationItem): boolean {
   return true
 }
 
-function removeTranscriptItem(
+export function removeTranscriptItem(
   state: TranscriptState,
   itemId: ConversationItem["id"],
 ): TranscriptState {

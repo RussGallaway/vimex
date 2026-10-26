@@ -172,7 +172,7 @@ for await (const line of createInterface({ input: process.stdin })) {
             type: "userMessage",
             id: `${id}-user`,
             content: request.params.input,
-            clientId: null,
+            clientId: request.params.clientUserMessageId ?? null,
           },
           message,
         ],

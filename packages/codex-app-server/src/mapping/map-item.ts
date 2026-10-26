@@ -31,6 +31,7 @@ export function mapThreadItem(
         id,
         turnId: owner,
         kind: "user",
+        ...(item.clientId ? { clientMessageId: item.clientId } : {}),
         markdown: inputText(item.content),
         status: fallbackStatus,
       }

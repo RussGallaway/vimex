@@ -64,6 +64,8 @@ export type ConversationItem = { durationMs?: number } & (
       id: ItemId
       turnId: TurnId
       kind: "user" | "assistant" | "reasoning"
+      /** Client submission correlation supplied by user-message echoes. */
+      clientMessageId?: string
       markdown: string
       status: ItemStatus
     }

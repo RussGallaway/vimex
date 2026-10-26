@@ -1,4 +1,5 @@
 import type { AvailableModel } from "./model-catalog"
+import { syncSubmissionPresentation } from "./submission-presentation"
 import type { DisplayPreferences } from "./display-preferences"
 import {
   createConversation,
@@ -46,6 +47,8 @@ export interface ThreadWorkspace {
   canonicalRevision: number
   transcript: TranscriptState
   composer: ComposerState
+  /** Local messages awaiting the server echo, including acknowledged requests. */
+  pendingSubmissions?: readonly import("@vimex/composer").OutgoingMessage[]
   interaction: InteractionState
 }
 export interface PendingFork {
@@ -303,7 +306,11 @@ export function updateWorkspace(
 ): WorkbenchState {
   const workspace = state.workspaces[id]
   if (!workspace) return state
-  const next = update(workspace)
+  const next = syncSubmissionPresentation(
+    workspace,
+    update(workspace),
+    state.provisionalThreadIds.includes(id),
+  )
   return next === workspace
     ? state
     : { ...state, workspaces: { ...state.workspaces, [id]: next } }

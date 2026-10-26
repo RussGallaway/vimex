@@ -12,8 +12,10 @@ import {
   initialTranscript,
   persistentTranscriptFolds,
   syncTranscriptItem,
+  removeTranscriptItem,
 } from "@vimex/transcript"
 import { initialComposer } from "@vimex/composer"
+import { itemId } from "@vimex/conversation"
 import { initialInteraction } from "@vimex/interaction"
 import {
   done,
@@ -62,6 +64,32 @@ export function applyConversationEvent(
       })
   }
   let transcript = workspace.transcript
+  let composer = workspace.composer
+  let pendingSubmissions = workspace.pendingSubmissions
+  if (
+    (event.type === "item.started" || event.type === "item.completed") &&
+    event.item.kind === "user"
+  ) {
+    const echoedId = event.item.clientMessageId ?? event.item.id
+    if (pendingSubmissions?.some((message) => message.id === echoedId)) {
+      pendingSubmissions = pendingSubmissions.filter(
+        (message) => message.id !== echoedId,
+      )
+      // Retain sending status until the RPC settles so queued starts/steers
+      // cannot overtake a turn whose turn.started notification is delayed.
+      if (composer.outbox.some((message) => message.id === echoedId))
+        composer = {
+          ...composer,
+          outbox: composer.outbox.map((message) =>
+            message.id === echoedId
+              ? { ...message, serverItemId: event.item.id }
+              : message,
+          ),
+        }
+      if (echoedId !== event.item.id)
+        transcript = removeTranscriptItem(transcript, itemId(echoedId))
+    }
+  }
   const changedItemId =
     event.type === "item.started" || event.type === "item.completed"
       ? event.item.id
@@ -82,7 +110,6 @@ export function applyConversationEvent(
     )
       transcript = syncTranscriptItem(transcript, item)
   }
-  let composer = workspace.composer
   const effects: WorkbenchEffect[] = []
   if (
     event.type === "turn.started" &&
@@ -111,6 +138,7 @@ export function applyConversationEvent(
           : current.canonicalRevision + 1,
       transcript,
       composer,
+      pendingSubmissions,
     })),
     ...effects,
   )

@@ -251,6 +251,7 @@ export function retryOutgoing(
             ...message,
             status: queued ? "queued" : "sending",
             reason: undefined,
+            serverItemId: undefined,
           }
         : message,
     ),
