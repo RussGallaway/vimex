@@ -19,11 +19,11 @@ const mentionPreviewLimit = 4096
 const mentionSearchFileLimit = 2 * 1024 * 1024
 const mentionResultLimit = 50
 
-async function workspaceFiles(
+async function workspaceEntries(
   root: string,
   signal?: AbortSignal,
-): Promise<string[]> {
-  const files: string[] = []
+): Promise<{ path: string; match_type: "file" | "directory" }[]> {
+  const files: { path: string; match_type: "file" | "directory" }[] = []
   const ignoredDirectories = new Set([
     ".git",
     "node_modules",
@@ -45,13 +45,15 @@ async function workspaceFiles(
       signal?.throwIfAborted()
       if (entry.isDirectory() && ignoredDirectories.has(entry.name)) continue
       const path = resolve(directory, entry.name)
-      if (entry.isDirectory()) await visit(path)
-      else if (entry.isFile()) files.push(path)
+      if (entry.isDirectory()) {
+        files.push({ path, match_type: "directory" })
+        await visit(path)
+      } else if (entry.isFile()) files.push({ path, match_type: "file" })
     }
   }
   await visit(resolve(root))
   signal?.throwIfAborted()
-  return files.sort((left, right) => left.localeCompare(right))
+  return files.sort((left, right) => left.path.localeCompare(right.path))
 }
 
 async function readMentionPreview(
@@ -63,6 +65,7 @@ async function readMentionPreview(
     const file = await open(path, "r")
     try {
       signal?.throwIfAborted()
+      if (!(await file.stat()).isFile()) return undefined
       const buffer = Buffer.alloc(mentionPreviewLimit)
       const { bytesRead } = await file.read(buffer, 0, buffer.length, 0)
       signal?.throwIfAborted()
@@ -432,8 +435,10 @@ export function createCodexGateways(
           matcher = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
         }
         const matches = []
-        for (const path of await workspaceFiles(cwd, signal)) {
+        for (const entry of await workspaceEntries(cwd, signal)) {
           signal?.throwIfAborted()
+          if (entry.match_type !== "file") continue
+          const { path } = entry
           if (matches.length >= mentionResultLimit) break
           let contents: string
           try {
@@ -464,7 +469,7 @@ export function createCodexGateways(
       if (kind === "file") {
         // The app-server fuzzy endpoint is intentionally bounded. An empty
         // query is the modal's initial state, so enumerate the workspace
-        // directly to make every file searchable. Non-empty queries can use
+        // directly to make files and directories searchable. Non-empty queries can use
         // the server's indexed search and only need the visible matches.
         const files = query.trim()
           ? (
@@ -474,23 +479,27 @@ export function createCodexGateways(
                 cancellationToken: null,
               })
             ).files
-          : (await workspaceFiles(cwd, signal)).map((path) => ({
-              root: cwd,
-              path,
-              match_type: "file" as const,
-              file_name: path.split(/[\\/]/u).pop() ?? path,
-              score: 0,
-              indices: null,
-            }))
+          : (await workspaceEntries(cwd, signal)).map(
+              ({ path, match_type }) => ({
+                root: cwd,
+                path,
+                match_type,
+                file_name: path.split(/[\\/]/u).pop() ?? path,
+                score: 0,
+                indices: null,
+              }),
+            )
         signal?.throwIfAborted()
-        const candidates = files.filter((file) => file.match_type === "file")
-        return candidates.map((file) => {
+        return files.map((file) => {
           const path = resolve(file.root, file.path)
+          const directory = file.match_type === "directory"
           const candidate = {
             kind,
-            name: file.path,
+            name: directory
+              ? `${file.path.replace(/[\\/]+$/u, "")}/`
+              : file.path,
             path,
-            detail: file.file_name,
+            detail: directory ? "Directory" : file.file_name,
           }
           return candidate
         })

@@ -111,6 +111,101 @@ test("grep skips oversized files before reading them into memory", async () => {
   await gateways.connection.close()
 })
 
+test("workspace mentions include nested and empty directories without searching their contents", async () => {
+  const cwd = await mkdtemp(join(tmpdir(), "vimex-directory-mentions-"))
+  temporaryDirectories.push(cwd)
+  await fs.mkdir(join(cwd, "src", "empty"), { recursive: true })
+  await fs.mkdir(join(cwd, "node_modules"))
+  await writeFile(join(cwd, "src", "index.ts"), "needle")
+  const gateways = createCodexGateways(
+    cwd,
+    "codex",
+    () =>
+      ({
+        onEvent: () => () => {},
+        close: async () => {},
+      }) as unknown as CodexAppServerClient,
+  )
+  try {
+    const results = await gateways.conversation.searchMentions!("", "file", cwd)
+    expect(results.map((entry) => entry.name)).toEqual([
+      `${cwd}/src/`,
+      `${cwd}/src/empty/`,
+      `${cwd}/src/index.ts`,
+    ])
+    expect(results[0]).toMatchObject({
+      kind: "file",
+      path: join(cwd, "src"),
+      detail: "Directory",
+    })
+    expect(
+      await gateways.conversation.readMentionPreview!(join(cwd, "src")),
+    ).toBeUndefined()
+    const grep = await gateways.conversation.searchMentions!(
+      "needle",
+      "grep",
+      cwd,
+    )
+    expect(grep.map((entry) => entry.path)).toEqual([
+      join(cwd, "src", "index.ts"),
+    ])
+  } finally {
+    await gateways.connection.close()
+  }
+})
+
+test("indexed mention search preserves directory matches and canonical attachment paths", async () => {
+  const gateways = createCodexGateways(
+    "/work",
+    "codex",
+    () =>
+      ({
+        onEvent: () => () => {},
+        close: async () => {},
+        fuzzyFileSearch: async () => ({
+          files: [
+            {
+              root: "/work",
+              path: "src/components/",
+              match_type: "directory",
+              file_name: "components",
+              score: 1,
+              indices: null,
+            },
+            {
+              root: "/work",
+              path: "src/component.ts",
+              match_type: "file",
+              file_name: "component.ts",
+              score: 1,
+              indices: null,
+            },
+          ],
+        }),
+      }) as unknown as CodexAppServerClient,
+  )
+  try {
+    expect(
+      await gateways.conversation.searchMentions!("comp", "file", "/work"),
+    ).toEqual([
+      {
+        kind: "file",
+        name: "src/components/",
+        path: "/work/src/components",
+        detail: "Directory",
+      },
+      {
+        kind: "file",
+        name: "src/component.ts",
+        path: "/work/src/component.ts",
+        detail: "component.ts",
+      },
+    ])
+  } finally {
+    await gateways.connection.close()
+  }
+})
+
 test("file discovery does not read previews; selected previews are bounded and omit binary data", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "vimex-lazy-preview-"))
   temporaryDirectories.push(cwd)
