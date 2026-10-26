@@ -6,7 +6,32 @@ import type {
 import type { VimRegister } from "./state-machine"
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" })
-const split = (value: string): string[] =>
+// Cursor-only motions and native cursor synchronization share the same text.
+// Retain one bounded revision, never an undo history or an unbounded paste.
+const maxCachedCodeUnits = 65_536
+let cachedText:
+  | { text: string; parts: readonly string[]; boundaries: readonly number[] }
+  | undefined
+
+function textIndex(text: string): typeof cachedText {
+  if (text.length > maxCachedCodeUnits) {
+    cachedText = undefined
+    return undefined
+  }
+  if (cachedText?.text === text) return cachedText
+  const parts: string[] = []
+  const boundaries: number[] = []
+  for (const part of segmenter.segment(text)) {
+    parts.push(part.segment)
+    boundaries.push(part.index)
+  }
+  boundaries.push(text.length)
+  cachedText = { text, parts, boundaries }
+  return cachedText
+}
+
+const split = (value: string): readonly string[] =>
+  textIndex(value)?.parts ??
   [...segmenter.segment(value)].map(({ segment }) => segment)
 
 /** Converts a JavaScript text control's UTF-16 cursor boundary to a safe grapheme boundary. */
@@ -15,6 +40,18 @@ export function codeUnitOffsetToGraphemeOffset(
   offset: number,
 ): number {
   const bounded = clamp(offset, 0, text.length)
+  const index = textIndex(text)
+  if (index) {
+    if (Number.isNaN(bounded)) return index.parts.length
+    let low = 0
+    let high = index.boundaries.length - 1
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2)
+      if (index.boundaries[middle]! <= bounded) low = middle
+      else high = middle - 1
+    }
+    return low
+  }
   let graphemeOffset = 0
   for (const part of segmenter.segment(text)) {
     if (part.index >= bounded) break
@@ -30,6 +67,8 @@ export function graphemeOffsetToCodeUnitOffset(
   offset: number,
 ): number {
   const target = Math.max(0, Math.trunc(offset))
+  const index = textIndex(text)
+  if (index) return index.boundaries[target] ?? text.length
   let graphemeOffset = 0
   for (const part of segmenter.segment(text)) {
     if (graphemeOffset++ === target) return part.index

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import {
   applyComposerVimAction,
   codeUnitOffsetToGraphemeOffset,
@@ -18,6 +18,43 @@ import {
 } from "./state-machine"
 
 const emptyRegister: VimRegister = { text: "", shape: "character" }
+
+test("cursor motions reuse bounded text segmentation and discard prior revisions", () => {
+  const text = "cache-test é👨‍👩‍👧‍👦界\nnext"
+  const segments = [
+    ...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text),
+  ]
+  const segment = spyOn(Intl.Segmenter.prototype, "segment")
+  try {
+    let buffer = { text, cursorOffset: 0 }
+    for (let index = 0; index < 20; index++) {
+      buffer = motion(buffer, index % 2 ? "left" : "right")
+      for (let offset = 0; offset <= text.length; offset++) {
+        const expected = segments.filter(
+          (part) => part.index + part.segment.length <= offset,
+        ).length
+        expect(codeUnitOffsetToGraphemeOffset(text, offset)).toBe(expected)
+        expect(graphemeOffsetToCodeUnitOffset(text, expected)).toBe(
+          segments[expected]?.index ?? text.length,
+        )
+      }
+    }
+    expect(segment).toHaveBeenCalledTimes(1)
+    motion({ text: "different revision", cursorOffset: 0 }, "right")
+    motion(buffer, "right")
+    expect(segment).toHaveBeenCalledTimes(3)
+
+    const oversized = "x".repeat(65_537)
+    codeUnitOffsetToGraphemeOffset(oversized, 1)
+    codeUnitOffsetToGraphemeOffset(oversized, 1)
+    expect(segment).toHaveBeenCalledTimes(5)
+    // Oversized input does not retain itself or the prior small revision.
+    motion(buffer, "right")
+    expect(segment).toHaveBeenCalledTimes(6)
+  } finally {
+    segment.mockRestore()
+  }
+})
 const apply = (
   buffer: ComposerBuffer,
   action: ComposerVimAction,
