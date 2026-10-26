@@ -936,7 +936,17 @@ export class VimexController
       return
     }
     if (command.type === "copy") {
-      const text = selectedText(transcript, command.format)
+      const summary = command.renderedSummary
+      const useSummary =
+        command.format === "plain" &&
+        summary &&
+        transcript.selection?.anchor.itemId === summary.itemId &&
+        transcript.selection.head.itemId === summary.itemId &&
+        transcript.folded[summary.itemId] &&
+        transcript.projectionById[summary.itemId]?.nodeKind !== "message"
+      const text = useSummary
+        ? summary.text
+        : selectedText(transcript, command.format)
       if (text === undefined) return
       const shape = transcript.selection?.shape ?? "character"
       this.dispatch({ type: "transcript.yank", threadId, text, shape })
@@ -2812,7 +2822,12 @@ export class VimexController
             }
           : {
               type: "transcript.navigate",
-              command: { type: "cursor.reveal", point, preferredScreenRow: 2 },
+              command: {
+                type: "cursor.reveal",
+                point,
+                preferredScreenRow: 2,
+                preserveFolds,
+              },
             },
       )
     }
@@ -2845,6 +2860,10 @@ export class VimexController
           command.motion.startsWith("word-") ||
           command.motion.startsWith("WORD-")
         ) {
+          const presentation = this.activeTranscriptPresentation()
+          const frame = presentation
+            ? this.transcriptRuntime(presentation)?.getSnapshot()
+            : undefined
           const motion = command.motion.endsWith("previous")
             ? "previous"
             : command.motion.endsWith("end")
@@ -2857,8 +2876,21 @@ export class VimexController
               transcript.cursor,
               count,
               command.motion.startsWith("WORD-"),
+              {
+                isItemHidden: (itemId) => {
+                  const batch = frame?.window.activityBatchByItem[itemId]
+                  return Boolean(
+                    batch &&
+                    itemId !== batch.leadItemId &&
+                    frame?.window.activityPresentation[batch.blockKeys[0]!]
+                      ?.kind === "activity-lead",
+                  )
+                },
+              },
             ),
             false,
+            undefined,
+            true,
           )
         } else if (command.motion.startsWith("block-")) {
           const presentation = this.activeTranscriptPresentation()
@@ -2905,7 +2937,7 @@ export class VimexController
             "url",
           )
         else if (command.motion === "first-content")
-          move(firstContentPoint(transcript), false)
+          move(firstContentPoint(transcript), false, undefined, true)
         else
           move(moveByMessage(transcript, direction, transcript.cursor, count))
         break

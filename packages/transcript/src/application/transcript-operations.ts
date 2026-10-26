@@ -536,7 +536,9 @@ export function reduceTranscript(
       return moveCursor(state, command.point, command.preferredScreenRow)
     case "cursor.reveal":
       return moveCursor(
-        setFold(state, command.point.itemId, false),
+        command.preserveFolds
+          ? state
+          : setFold(state, command.point.itemId, false),
         command.point,
         command.preferredScreenRow,
       )

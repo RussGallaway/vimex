@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { itemId } from "@vimex/conversation"
 import type { VimBindingContext } from "./binding-context"
 import { normalBindings } from "./normal-bindings"
 import { visualBindings } from "./visual-bindings"
@@ -66,6 +67,9 @@ describe("visual key routing", () => {
       "shift+w",
       "shift+b",
       "shift+e",
+      "shift+d",
+      "shift+x",
+      "shift+y",
       "0",
     ]) {
       const matches = bindings.filter((binding) => binding.key === key)
@@ -79,6 +83,9 @@ describe("visual key routing", () => {
       "shift+w",
       "shift+b",
       "shift+e",
+      "shift+d",
+      "shift+x",
+      "shift+y",
       "0",
     ])
     expect(commands).toEqual([])
@@ -144,4 +151,20 @@ describe("visual key routing", () => {
       "shift+v",
     ])
   })
+})
+
+test("transcript plain yank forwards the verified folded summary; source yank does not", () => {
+  const { ctx, commands } = context("transcript")
+  const summary = { itemId: itemId("folded"), text: "visible summary" }
+  ctx.selectedFoldedSummary = () => summary
+  const bindings = visualBindings(ctx)
+  bindings.find((binding) => binding.key === "y")!.cmd()
+  bindings.find((binding) => binding.key === "shift+y")!.cmd()
+  expect(commands[0]).toMatchObject({
+    type: "copy",
+    format: "plain",
+    renderedSummary: summary,
+  })
+  expect(commands[1]).toMatchObject({ type: "copy", format: "source" })
+  expect(commands[1]).not.toHaveProperty("renderedSummary")
 })

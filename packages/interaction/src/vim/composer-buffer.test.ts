@@ -324,7 +324,7 @@ describe("pure composer Vim buffer", () => {
     expect(selected.selection).toEqual({ anchor: 1, head: 3 })
     const yanked = apply(selected, { type: "yank" })
     expect(yanked).toEqual({
-      buffer: { text: "alpha", cursorOffset: 3 },
+      buffer: { text: "alpha", cursorOffset: 1 },
       register: { text: "lph", shape: "character" },
       effect: { type: "copy", text: "lph" },
     })
@@ -506,4 +506,84 @@ test("successive vertical motions preserve columns across short lines and horizo
   expect(motion(motion(first, "left"), "down").cursorOffset).toBe(9)
   const selected = applyKeys(buffer.text, ["g", "g", "$", "v", "j", "j"])
   expect(selected.buffer.selection).toEqual({ anchor: 5, head: 14 })
+})
+
+test("forced linewise Visual operators preserve whole Unicode lines in either direction", () => {
+  const text = "keep\nA😀B\nénd\nlast"
+  for (const [anchor, head] of [
+    [6, 11],
+    [11, 6],
+  ]) {
+    const buffer: ComposerBuffer = {
+      text,
+      cursorOffset: head!,
+      selection: { anchor: anchor!, head: head!, shape: "character" },
+    }
+    const expected: VimRegister = { text: "A😀B\nénd", shape: "line" }
+    const deleted = apply(buffer, { type: "delete-selection", shape: "line" })
+    expect(deleted.buffer.text).toBe("keep\nlast")
+    expect(deleted.register).toEqual(expected)
+    expect(deleted.buffer.selection).toBeUndefined()
+    const yanked = apply(buffer, { type: "yank", shape: "line" })
+    expect(yanked.buffer.text).toBe(text)
+    expect(yanked.register).toEqual(expected)
+    expect(buffer.selection?.shape).toBe("character")
+  }
+})
+
+test("Visual y and Y return to the start of the selected range in either direction", () => {
+  for (const [anchor, head] of [
+    [2, 9],
+    [9, 2],
+  ] as const) {
+    const buffer: ComposerBuffer = {
+      text: "alpha\nsecond",
+      cursorOffset: head,
+      selection: { anchor, head, shape: "character" },
+    }
+    expect(apply(buffer, { type: "yank" }).buffer.cursorOffset).toBe(2)
+    expect(
+      apply(buffer, { type: "yank", shape: "line" }).buffer.cursorOffset,
+    ).toBe(0)
+  }
+})
+
+test("dG deletes whole lines to EOF or an absolute line while preserving the cursor column", () => {
+  for (const [text, cursorOffset, count, remaining, cursor, deleted] of [
+    [
+      "alpha beta\nsecond line\nthird line",
+      14,
+      0,
+      "alpha beta",
+      3,
+      "second line\nthird line",
+    ],
+    [
+      "alpha beta\nsecond line\nthird line",
+      14,
+      2,
+      "alpha beta\nthird line",
+      14,
+      "second line",
+    ],
+    [
+      "alpha beta\nsecond line\nthird line",
+      14,
+      1,
+      "third line",
+      3,
+      "alpha beta\nsecond line",
+    ],
+    ["A😀é\n界xy\nlast", 6, 0, "A😀é", 2, "界xy\nlast"],
+    ["abc", 1, 0, "", 0, "abc"],
+    ["first\n", 6, 0, "first", 0, ""],
+  ] as const) {
+    const result = applyComposerVimAction(
+      { text, cursorOffset },
+      { type: "edit", operator: "delete-to-document-line", count },
+      emptyRegister,
+    )
+    expect(result.buffer).toEqual({ text: remaining, cursorOffset: cursor })
+    expect(result.register).toEqual({ text: deleted, shape: "line" })
+  }
 })

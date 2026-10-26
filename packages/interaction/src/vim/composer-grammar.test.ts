@@ -253,3 +253,45 @@ test("cc changes lines while cd cancels an invalid operator sequence", () => {
     action: undefined,
   })
 })
+
+test("Visual uppercase operators force whole lines without changing lowercase operators", () => {
+  const visual = resolveComposerKey(composerNormal(), "v").state
+  for (const key of ["shift+d", "shift+x"]) {
+    const result = resolveComposerKey(visual, key)
+    expect(result.action).toEqual({
+      type: "delete-selection",
+      enterInsert: false,
+      shape: "line",
+    })
+    expect(result.state.mode).toBe("normal")
+  }
+  const yank = resolveComposerKey(visual, "shift+y")
+  expect(yank.action).toEqual({ type: "yank", shape: "line" })
+  expect(yank.state.mode).toBe("normal")
+  const pending = resolveComposerKey(visual, "g").state
+  for (const key of ["shift+d", "shift+x", "shift+y"]) {
+    const unsupported = resolveComposerKey(pending, key)
+    expect(unsupported.action).toBeUndefined()
+    expect(unsupported.state).toMatchObject({
+      mode: "visual",
+      pendingKeys: "",
+      count: "",
+    })
+  }
+})
+
+test("dG consumes its prefix and optional absolute line count; gD stays unsupported", () => {
+  for (const count of ["", "2"]) {
+    const pending = resolveComposerKey({ ...composerNormal(), count }, "d")
+    const result = resolveComposerKey(pending.state, "shift+g")
+    expect(result.action).toEqual({
+      type: "edit",
+      operator: "delete-to-document-line",
+      count: count ? 2 : 0,
+    })
+    expect(result.state.pendingKeys).toBe("")
+    expect(result.state.count).toBe("")
+  }
+  const pending = resolveComposerKey(composerNormal(), "g")
+  expect(resolveComposerKey(pending.state, "shift+d").action).toBeUndefined()
+})

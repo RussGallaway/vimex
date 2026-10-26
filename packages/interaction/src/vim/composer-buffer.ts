@@ -544,7 +544,7 @@ function yank(
   const text = parts.slice(from, to).join("")
   const nextRegister = { text, shape: buffer.selection.shape ?? "character" }
   return {
-    buffer: { text: buffer.text, cursorOffset: buffer.cursorOffset },
+    buffer: { text: buffer.text, cursorOffset: normalCursor(parts, from) },
     register: nextRegister,
     effect: { type: "copy", text },
   }
@@ -755,9 +755,15 @@ export function applyComposerVimAction(
       buffer: { text: buffer.text, cursorOffset: buffer.cursorOffset },
       register,
     }
-  if (action.type === "yank") return yank(buffer, register)
-  if (action.type === "delete-selection")
-    return deleteSelection(buffer, register, action.enterInsert ?? false)
+  if (action.type === "yank" || action.type === "delete-selection") {
+    const selected =
+      action.shape && buffer.selection
+        ? { ...buffer, selection: { ...buffer.selection, shape: action.shape } }
+        : buffer
+    return action.type === "yank"
+      ? yank(selected, register)
+      : deleteSelection(selected, register, action.enterInsert ?? false)
+  }
   if (action.type === "text-object") {
     const parts = split(buffer.text)
     const range = textObjectRange(
@@ -790,6 +796,35 @@ export function applyComposerVimAction(
       buffer,
       register,
       effect: { type: "history", direction: action.operator },
+    }
+  }
+  if (action.operator === "delete-to-document-line") {
+    const parts = split(buffer.text)
+    const origin = clamp(buffer.cursorOffset, 0, parts.length)
+    const column = origin - lineStart(parts, origin)
+    const target =
+      action.count > 0 ? targetLine(parts, action.count) : lastLine(parts)
+    const result = deleteSelection(
+      {
+        ...buffer,
+        selection: { anchor: origin, head: target, shape: "line" },
+      },
+      register,
+      false,
+    )
+    const remaining = split(result.buffer.text)
+    const start = lineStart(remaining, result.buffer.cursorOffset)
+    return {
+      ...result,
+      buffer: {
+        ...result.buffer,
+        cursorOffset: normalLineTarget(
+          remaining,
+          start,
+          lineEnd(remaining, start),
+          column,
+        ),
+      },
     }
   }
   if (action.operator === "change-line") {

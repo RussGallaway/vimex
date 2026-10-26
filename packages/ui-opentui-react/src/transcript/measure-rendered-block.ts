@@ -19,7 +19,7 @@ import {
   type TranscriptBlock,
   type TranscriptBlockPresentation,
 } from "@vimex/transcript"
-import { graphemeCellWidth } from "./layout"
+import { graphemeCellWidth, type MeasuredPoint } from "./layout"
 
 interface NativePoint {
   readonly graphemeOffset: number
@@ -192,10 +192,13 @@ function observeNativeTree(state: RenderedBlockState, root: Renderable): void {
   visit(root)
 }
 
-function cellsIn(renderable: Renderable): ScreenCell[] {
+function cellsIn(
+  renderable: Renderable,
+  includeDecoration = false,
+): ScreenCell[] {
   const measured: ScreenCell[] = []
   const visit = (current: Renderable) => {
-    if (current.id.startsWith("decoration:")) return
+    if (!includeDecoration && current.id.startsWith("decoration:")) return
     if (current instanceof TextBufferRenderable) {
       const lines = current.plainText.split("\n")
       const info = current.lineInfo
@@ -242,6 +245,18 @@ function cellsIn(renderable: Renderable): ScreenCell[] {
   // destination is being prepared. Only native text owned by this block may
   // provide semantic coordinates; old screen cells are never a layout oracle.
   return measured.sort((a, b) => a.y - b.y || a.x - b.x)
+}
+
+/** Fold headers are presentation text, often unrelated to canonical patch/tool text.
+ * Select their visible cells without changing the logical cursor geometry. */
+export function foldedSelectionEdge(
+  renderable: Renderable,
+  point: MeasuredPoint,
+  edge: "start" | "end",
+): MeasuredPoint {
+  const cells = cellsIn(renderable, true)
+  const cell = edge === "start" ? cells[0] : cells.at(-1)
+  return cell ? { ...point, screenX: cell.x, screenY: cell.y } : point
 }
 
 function sameCell(grapheme: string, cell: Pick<ScreenCell, "char">): boolean {

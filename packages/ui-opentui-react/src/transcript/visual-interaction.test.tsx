@@ -1340,3 +1340,185 @@ test("mouse selection survives a frame and streaming while Visual mode is active
     await h.close()
   }
 })
+
+for (const kind of ["command", "edit", "agent"] as const) {
+  test(`Visual selection paints the complete collapsed ${kind} header`, async () => {
+    const h = await visualHarness()
+    const id = itemId(`folded-${kind}`)
+    const source = "opaque body without header wording"
+    const item =
+      kind === "command"
+        ? {
+            id,
+            turnId: turnId("fold-turn"),
+            kind,
+            title: "Inspect workspace",
+            detail: source,
+            status: "complete" as const,
+          }
+        : kind === "edit"
+          ? {
+              id,
+              turnId: turnId("fold-turn"),
+              kind,
+              title: "Update widget",
+              patch: source,
+              status: "complete" as const,
+            }
+          : {
+              id,
+              turnId: turnId("fold-turn"),
+              kind,
+              action: "spawn" as const,
+              agentThreadIds: [threadId("child")],
+              detail: source,
+              status: "complete" as const,
+            }
+    try {
+      await act(async () => {
+        h.emit({
+          type: "conversation",
+          event: { type: "item.started", threadId: thread, item },
+        })
+        await h.controller.settle()
+        h.controller.transcript({ type: "fold.set", itemId: id, folded: true })
+        h.controller.dispatchInteraction({
+          type: "focus.set",
+          surface: "transcript",
+        })
+        h.controller.transcript({
+          type: "cursor.move",
+          target: { itemId: id, graphemeOffset: 0 },
+          preferredScreenRow: 2,
+          extend: false,
+        })
+        h.controller.transcript({ type: "selection.begin", shape: "character" })
+        h.controller.dispatchInteraction({ type: "mode.visual" })
+        await h.flush()
+        await h.renderOnce()
+      })
+      expect(h.workspace().transcript.folded[id]).toBe(true)
+      const label =
+        kind === "command"
+          ? "Inspect workspace"
+          : kind === "edit"
+            ? "Update widget"
+            : "Agent 1"
+      expect(h.captureCharFrame()).toContain(label)
+      expect(h.renderer.getSelection()?.getSelectedText()).toContain(label)
+      expect(h.renderer.getSelection()?.getSelectedText()).not.toContain(source)
+      await act(async () => {
+        h.controller.transcript({
+          type: "cursor.move",
+          target: {
+            itemId: id,
+            graphemeOffset:
+              h.workspace().transcript.projectionById[id]!.sourceSpans.length -
+              1,
+          },
+          preferredScreenRow: 2,
+          extend: true,
+        })
+        await h.flush()
+        await h.renderOnce()
+      })
+      expect(h.renderer.getSelection()?.getSelectedText()).toContain(label)
+      await h.keys("o")
+      const summary = h.renderer.getSelection()!.getSelectedText()
+      expect(summary).toContain(label)
+      await h.keys("y")
+      expect(h.copied.at(-1)).toBe(summary)
+      expect(h.workspace().interaction.unnamedRegister.text).toBe(summary)
+      expect(h.workspace().transcript.folded[id]).toBe(true)
+      expect(h.workspace().transcript.selection).toBeUndefined()
+      await h.keys("vy")
+      expect(h.copied.at(-1)).toBe(summary)
+      expect(h.workspace().transcript.folded[id]).toBe(true)
+    } finally {
+      await h.close()
+    }
+  })
+}
+
+test("Visual selection paints a compact tool summary without opening its children", async () => {
+  const h = await visualHarness()
+  const ids = [itemId("compact-a"), itemId("compact-b"), itemId("compact-c")]
+  try {
+    await act(async () => {
+      for (const id of ids)
+        h.emit({
+          type: "conversation",
+          event: {
+            type: "item.started",
+            threadId: thread,
+            item: {
+              id,
+              turnId: turnId("compact-turn"),
+              kind: "tool",
+              title: "Web search",
+              detail: `hidden result ${id}`,
+              activity: { family: "web-research" },
+              status: "complete",
+            },
+          },
+        })
+      h.emit({
+        type: "conversation",
+        event: {
+          type: "item.started",
+          threadId: thread,
+          item: {
+            id: itemId("after-compact"),
+            turnId: turnId("after-compact-turn"),
+            kind: "assistant",
+            markdown: "After compact tools",
+            status: "complete",
+          },
+        },
+      })
+      await h.controller.settle()
+      for (const id of ids)
+        h.controller.transcript({ type: "fold.set", itemId: id, folded: true })
+      h.controller.dispatchInteraction({
+        type: "focus.set",
+        surface: "transcript",
+      })
+      h.controller.transcript({
+        type: "cursor.move",
+        target: { itemId: ids[0]!, graphemeOffset: 0 },
+        preferredScreenRow: 2,
+        extend: false,
+      })
+      h.controller.transcript({ type: "selection.begin", shape: "character" })
+      h.controller.dispatchInteraction({ type: "mode.visual" })
+      await h.flush()
+      await h.renderOnce()
+    })
+    expect(h.captureCharFrame()).toContain("3 searches")
+    expect(h.renderer.getSelection()?.getSelectedText()).toContain("3 searches")
+    expect(h.renderer.getSelection()?.getSelectedText()).not.toContain(
+      "hidden result",
+    )
+    await h.keys("w")
+    expect(h.workspace().transcript.selection?.head.itemId).toBe(
+      itemId("after-compact"),
+    )
+    await h.keys("b")
+    expect(h.workspace().transcript.selection?.head.itemId).toBe(ids[0]!)
+    await h.keys("b")
+    expect(h.workspace().transcript.selection?.head.itemId).toBe(answer)
+    await h.keys("w")
+    expect(h.workspace().transcript.selection?.head.itemId).toBe(ids[0]!)
+    expect(h.captureCharFrame()).toContain("3 searches")
+    for (const id of ids) expect(h.workspace().transcript.folded[id]).toBe(true)
+    // Reset the anchor after traversing the compact row in both directions.
+    await h.keys("\u001bv")
+    const summary = h.renderer.getSelection()!.getSelectedText()
+    await h.keys("y")
+    expect(h.copied.at(-1)).toBe(summary)
+    expect(h.workspace().interaction.unnamedRegister.text).toBe(summary)
+    for (const id of ids) expect(h.workspace().transcript.folded[id]).toBe(true)
+  } finally {
+    await h.close()
+  }
+})

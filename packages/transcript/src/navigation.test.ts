@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { itemId, turnId } from "@vimex/conversation"
+import { itemId, turnId, type ItemId } from "@vimex/conversation"
 import { assistantMessage as message } from "@vimex/testkit"
 import {
   adjacentSearchMatch,
@@ -612,4 +612,137 @@ test("folded tools are one block in either direction without losing explicit rev
   })
   expect(state.folded[tool]).toBe(false)
   expect(state.cursor).toEqual(output)
+})
+
+test("word motions skip compact batch members without segmenting hidden output", () => {
+  let state = initialTranscript()
+  for (const [id, text] of [
+    ["before", "Before"],
+    ["hidden", "Hidden output"],
+    ["middle", "Middle"],
+    ["after", "After"],
+  ])
+    state = syncTranscriptItem(state, message(id!, text!))
+  const hiddenId = itemId("hidden")
+  state = {
+    ...state,
+    projectionById: {
+      ...state.projectionById,
+      [hiddenId]: {
+        ...state.projectionById[hiddenId]!,
+        get plain(): string {
+          throw new Error("Hidden compact output was segmented")
+        },
+      },
+    },
+  }
+  const before = { itemId: itemId("before"), graphemeOffset: 0 }
+  const middle = { itemId: itemId("middle"), graphemeOffset: 0 }
+  const after = { itemId: itemId("after"), graphemeOffset: 0 }
+  const options = { isItemHidden: (id: ItemId) => id === hiddenId }
+  for (const bigWord of [false, true]) {
+    expect(moveByWord(state, "next", before, 1, bigWord, options)).toEqual(
+      middle,
+    )
+    expect(moveByWord(state, "previous", middle, 1, bigWord, options)).toEqual(
+      before,
+    )
+    expect(moveByWord(state, "next", before, 2, bigWord, options)).toEqual(
+      after,
+    )
+    expect(moveByWord(state, "previous", after, 2, bigWord, options)).toEqual(
+      before,
+    )
+    expect(
+      moveByWord(
+        state,
+        "end",
+        { ...before, graphemeOffset: 5 },
+        1,
+        bigWord,
+        options,
+      ),
+    ).toEqual({ ...middle, graphemeOffset: 5 })
+    expect(
+      moveByWord(
+        state,
+        "end",
+        { ...before, graphemeOffset: 5 },
+        2,
+        bigWord,
+        options,
+      ),
+    ).toEqual({ ...after, graphemeOffset: 4 })
+  }
+})
+
+test("word motions treat closed tools as one stop without reading hidden output", () => {
+  let state = syncTranscriptItem(
+    initialTranscript(),
+    message("before", "Before"),
+  )
+  const tool = itemId("folded-word-tool")
+  state = syncTranscriptItem(state, {
+    id: tool,
+    turnId: turnId("turn"),
+    kind: "command",
+    title: "Run",
+    detail: "hidden first\nsecond output",
+    status: "complete",
+  })
+  state = syncTranscriptItem(state, message("after", "After"))
+  state = reduceTranscript(state, {
+    type: "fold.set",
+    itemId: tool,
+    folded: true,
+  })
+  const projection = state.projectionById[tool]!
+  state = {
+    ...state,
+    projectionById: {
+      ...state.projectionById,
+      [tool]: {
+        ...projection,
+        get plain(): string {
+          throw new Error("Hidden folded output was segmented")
+        },
+      },
+    },
+  }
+  const before = { itemId: itemId("before"), graphemeOffset: 0 }
+  const header = { itemId: tool, graphemeOffset: 0 }
+  const after = { itemId: itemId("after"), graphemeOffset: 0 }
+  const hidden = { itemId: tool, graphemeOffset: 10 }
+  expect(firstContentPoint(state, hidden)).toEqual(header)
+  expect(logicalLinePoint(state, "start", hidden)).toEqual(header)
+  expect(logicalLinePoint(state, "end", hidden)).toEqual(header)
+  expect(logicalLinePoint(state, "end", before, 2)).toEqual(header)
+  expect(logicalLinePoint(state, "end", before, 3)).toEqual({
+    ...after,
+    graphemeOffset: 4,
+  })
+  for (const bigWord of [false, true]) {
+    expect(moveByWord(state, "next", before, 1, bigWord)).toEqual(header)
+    expect(moveByWord(state, "previous", after, 1, bigWord)).toEqual(header)
+    expect(moveByWord(state, "next", header, 1, bigWord)).toEqual(after)
+    expect(moveByWord(state, "previous", header, 1, bigWord)).toEqual(before)
+    expect(moveByWord(state, "next", before, 2, bigWord)).toEqual(after)
+    expect(
+      moveByWord(state, "end", { ...before, graphemeOffset: 5 }, 1, bigWord),
+    ).toEqual(header)
+    expect(moveByWord(state, "end", header, 1, bigWord)).toEqual({
+      ...after,
+      graphemeOffset: 4,
+    })
+  }
+  expect(state.folded[tool]).toBe(true)
+  const expanded = {
+    ...state,
+    folded: { ...state.folded, [tool]: false },
+    projectionById: { ...state.projectionById, [tool]: projection },
+  }
+  expect(moveByWord(expanded, "next", header)?.itemId).toBe(tool)
+  expect(moveByWord(expanded, "next", header)?.graphemeOffset).toBeGreaterThan(
+    0,
+  )
 })

@@ -65,6 +65,7 @@ import { useTelescopeModal } from "../composer/use-telescope-modal"
 import { Statusline } from "../statusline/Statusline"
 import { useTranscriptLayout } from "../transcript/use-transcript-layout"
 import { TranscriptViewport } from "../transcript/TranscriptViewport"
+import { foldedSelectionEdge } from "../transcript/measure-rendered-block"
 import { defaultVimexUiSettings, type VimexAppProps } from "../contracts"
 import {
   materializedSelectionEndpoints,
@@ -799,14 +800,18 @@ export function VimexApp({
         clipped.anchor.screenY < clipped.head.screenY ||
         (clipped.anchor.screenY === clipped.head.screenY &&
           clipped.anchor.screenX <= clipped.head.screenX)
-      const start = forward ? clipped.anchor : clipped.head
-      const end = forward ? clipped.head : clipped.anchor
+      let start = forward ? clipped.anchor : clipped.head
+      let end = forward ? clipped.head : clipped.anchor
       const startItem = scrollbox.getRenderable(
         transcriptRenderableIdForPoint(activeLayout, start),
       )
       const endItem = scrollbox.getRenderable(
         transcriptRenderableIdForPoint(activeLayout, end),
       )
+      if (startItem && selectionTranscript.folded[start.itemId])
+        start = foldedSelectionEdge(startItem, start, "start")
+      if (endItem && selectionTranscript.folded[end.itemId])
+        end = foldedSelectionEdge(endItem, end, "end")
       const startTarget = startItem
         ? selectableAt(startItem, start.screenX, start.screenY)
         : undefined
@@ -1546,6 +1551,27 @@ export function VimexApp({
     positionCursor,
     runComposerKey,
     beginVisual,
+    selectedFoldedSummary: () => {
+      const frame = transcriptRuntime?.getSnapshot()
+      const current = frame?.transcript ?? transcript
+      const selection = current.selection
+      const applied = appliedNativeSelection.current
+      if (
+        !selection ||
+        selection.anchor.itemId !== selection.head.itemId ||
+        !current.folded[selection.anchor.itemId] ||
+        current.projectionById[selection.anchor.itemId]?.nodeKind ===
+          "message" ||
+        applied?.selection !== selection ||
+        (frame && applied.token !== frame) ||
+        renderer.getSelection() !== applied.native ||
+        applied.startRoot.isDestroyed ||
+        applied.endRoot.isDestroyed
+      )
+        return undefined
+      const text = applied.native.getSelectedText()
+      return text ? { itemId: selection.anchor.itemId, text } : undefined
+    },
     openOverlay,
     scroll,
     enterVisibleTranscript,

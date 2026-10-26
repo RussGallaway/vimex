@@ -198,7 +198,9 @@ export function logicalLinePoint(
   let itemId = point.itemId
   let projection = state.projectionById[itemId]
   if (!projection) return undefined
-  let parts = graphemes(projection.plain)
+  // Treat a closed item as one empty logical line, matching its sole visible
+  // cursor stop and allowing counted `$` to continue at the following item.
+  let parts = state.folded[itemId] ? [] : graphemes(projection.plain)
   let offset = Math.min(Math.max(0, point.graphemeOffset), parts.length)
   let start = offset
   while (start > 0 && parts[start - 1] !== "\n") start--
@@ -213,7 +215,7 @@ export function logicalLinePoint(
       if (!next) break
       itemId = next
       projection = state.projectionById[itemId]!
-      parts = graphemes(projection.plain)
+      parts = state.folded[itemId] ? [] : graphemes(projection.plain)
       start = offset = 0
     }
   }
@@ -230,6 +232,8 @@ export function firstContentPoint(
   if (!point) return undefined
   const projection = state.projectionById[point.itemId]
   if (!projection) return undefined
+  if (state.folded[point.itemId])
+    return { itemId: point.itemId, graphemeOffset: 0 }
   const parts = graphemes(projection.plain)
   let cursor = Math.min(Math.max(0, point.graphemeOffset), parts.length)
   while (cursor > 0 && parts[cursor - 1] !== "\n") cursor--
@@ -521,6 +525,7 @@ export function moveByWord(
   point = state.cursor,
   count = 1,
   bigWord = false,
+  options: { readonly isItemHidden?: (itemId: ItemId) => boolean } = {},
 ): LogicalPoint | undefined {
   if (!point || !transcriptOrderIndex(state.order).has(point.itemId))
     return undefined
@@ -536,7 +541,15 @@ export function moveByWord(
     if (cached) return cached
     const words: { from: LogicalPoint; end: LogicalPoint }[] = []
     const projection = state.projectionById[itemId]
-    if (!projection) {
+    if (!projection || options.isItemHidden?.(itemId)) {
+      cache.set(itemId, words)
+      return words
+    }
+    // A closed tool has one visible cursor stop. Its hidden words must not
+    // move the selection into output that cannot be seen or measured.
+    if (state.folded[itemId]) {
+      const header = { itemId, graphemeOffset: 0 }
+      words.push({ from: header, end: header })
       cache.set(itemId, words)
       return words
     }

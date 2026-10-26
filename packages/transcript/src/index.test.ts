@@ -1376,3 +1376,36 @@ test("default folds initialize complete semantic kinds without overriding an exp
   expect(appended.folded).toEqual({ [tool]: true, [laterTool]: true })
   expect(appended.foldDefaults).toEqual({ reasoning: true, tools: true })
 })
+
+test("fold-preserving cursor reveal extends selection without opening the destination", () => {
+  const id = itemId("reveal-fold")
+  let state = syncTranscriptItem(
+    initialTranscript(),
+    message("before", "before"),
+  )
+  state = syncTranscriptItem(state, {
+    id,
+    turnId: turnId("fold-turn"),
+    kind: "tool",
+    title: "Tool",
+    detail: "body",
+    status: "complete",
+  })
+  state = setFold(state, id, true)
+  state = beginSelection(
+    moveCursor(state, { itemId: itemId("before"), graphemeOffset: 0 }, 0),
+    "character",
+  )
+  const point = { itemId: id, graphemeOffset: 0 }
+  const next = reduceTranscript(state, {
+    type: "cursor.reveal",
+    point,
+    preserveFolds: true,
+  })
+  expect(next.folded[id]).toBe(true)
+  expect(next.selection?.head).toEqual(point)
+  expect(next.selection?.anchor).toEqual(state.selection?.anchor)
+  expect(
+    reduceTranscript(state, { type: "cursor.reveal", point }).folded[id],
+  ).toBe(false)
+})

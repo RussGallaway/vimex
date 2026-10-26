@@ -2176,7 +2176,9 @@ test("off-window URL motion unfolds one target and picker ownership settles atom
     itemId: ids[50]!,
     graphemeOffset: 0,
   })
-  expect(runtime.getSnapshot().transcript.folded[ids[50]!]).toBe(false)
+  // A line-boundary motion browses the summary; only explicit URL navigation
+  // below opens the tool containing its destination.
+  expect(runtime.getSnapshot().transcript.folded[ids[50]!]).toBe(true)
   expect(
     pointIsMaterialized(
       runtime.getSnapshot().window.blocks,

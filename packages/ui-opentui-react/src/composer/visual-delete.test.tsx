@@ -171,3 +171,94 @@ test("successive composer Visual j motions preserve the desired column", async (
     await act(async () => setup.renderer.destroy())
   }
 })
+
+for (const [keys, expected, register] of [
+  ["vGD", "alpha beta", "second line\nthird line"],
+  ["vggD", "third line", "alpha beta\nsecond line"],
+  ["vlD", "alpha beta\nthird line", "second line"],
+  ["vlX", "alpha beta\nthird line", "second line"],
+  ["vlY", "alpha beta\nsecond line\nthird line", "second line"],
+] as const) {
+  test(`composer ${keys} acts on whole selected lines`, async () => {
+    const setup = await fixture("alpha beta\nsecond line\nthird line", 14)
+    try {
+      await act(async () => {
+        await setup.mockInput.typeText(keys)
+        await setup.flush()
+      })
+      expect(setup.composer.plainText).toBe(expected)
+      expect(setup.state().interaction.mode).toBe("normal")
+      expect(setup.state().interaction.unnamedRegister).toEqual({
+        text: register,
+        shape: "line",
+      })
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+}
+
+for (const keys of ["gD", "vgD"]) {
+  test(`unsupported composer ${keys} does not fall through to destructive D`, async () => {
+    const setup = await fixture("alpha beta\nsecond line", 14)
+    try {
+      await act(async () => {
+        await setup.mockInput.typeText(keys)
+        await setup.flush()
+      })
+      expect(setup.composer.plainText).toBe("alpha beta\nsecond line")
+      expect(setup.state().interaction.mode).toBe(
+        keys === "gD" ? "normal" : "visual",
+      )
+      expect(setup.state().interaction.pendingKeys).toBe("")
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+}
+
+for (const [keys, cursor] of [
+  ["vjy", 2],
+  ["vjY", 0],
+  ["vkhy", 1],
+] as const) {
+  test(`composer ${keys} returns its editing cursor to the selection start`, async () => {
+    const setup = await fixture("alpha\nsecond\nthird", keys === "vkhy" ? 8 : 2)
+    try {
+      await act(async () => {
+        await setup.mockInput.typeText(keys)
+        await setup.flush()
+      })
+      expect(setup.state().composer.cursorOffset).toBe(cursor)
+      expect(setup.state().interaction.mode).toBe("normal")
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+}
+
+test("normal composer dG deletes through the draft end and undo restores it", async () => {
+  const text = "alpha beta\nsecond line\nthird line"
+  const setup = await fixture(text, 14)
+  try {
+    await act(async () => {
+      await setup.mockInput.typeText("dG")
+      await setup.flush()
+    })
+    expect(setup.composer.plainText).toBe("alpha beta")
+    expect(setup.state().interaction.unnamedRegister).toEqual({
+      text: "second line\nthird line",
+      shape: "line",
+    })
+    expect(setup.state().interaction.mode).toBe("normal")
+    expect(setup.state().interaction.pendingKeys).toBe("")
+    expect(setup.state().composer.cursorOffset).toBe(3)
+    await act(async () => {
+      await setup.mockInput.typeText("u")
+      await setup.flush()
+    })
+    expect(setup.composer.plainText).toBe(text)
+  } finally {
+    await act(async () => setup.renderer.destroy())
+  }
+})

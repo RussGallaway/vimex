@@ -1,4 +1,5 @@
 import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
+import type { ItemId } from "@vimex/conversation"
 import type { ComposerState, SubmissionIntent } from "@vimex/composer"
 import type { InteractionState } from "@vimex/interaction"
 import type { TranscriptState } from "@vimex/transcript"
@@ -29,6 +30,7 @@ export interface VimBindingContext {
   positionCursor(position: "top" | "center" | "bottom"): void
   runComposerKey(key: string): void
   openMentionPicker?(kind: MentionPickerKind): void
+  selectedFoldedSummary?(): { itemId: ItemId; text: string } | undefined
   beginVisual(shape: "character" | "line" | "block"): void
   openOverlay(
     overlay:

@@ -74,7 +74,10 @@ Normal mode, it interrupts the active turn. Ctrl\-C also interrupts.
 .PP
 Composer Normal and Visual modes support h/j/k/l, w/b/e, W/B/E, 0/^/$,
 and gg/G. Lowercase word motions distinguish punctuation; uppercase
-WORD motions use whitespace boundaries. Counts repeat motions.
+WORD motions use whitespace boundaries. Counts repeat motions. In
+composer Normal mode, dG deletes the current logical line through the
+end of the draft, following Neovim; D deletes from the cursor to the
+end of the current line.
 .PP
 In composer Normal mode, d or c followed by i (inner) or a (around)
 acts on a text object: w/W for a word/WORD, double or single quotes,
@@ -137,9 +140,18 @@ selection. Press the same key again to leave Visual mode, or the other
 key to change the selection shape. Move to extend; o swaps endpoints.
 In the transcript, y copies rendered text and Y copies Markdown
 source. In the composer, y yanks, d/x delete, c changes the selection,
-and p/P in Normal mode paste the register. r from the transcript
-quotes the selection or current block into the draft. gx opens a URL;
-[u and ]u navigate URLs.
+and p/P in Normal mode paste the register. Visual D/X delete whole
+selected lines, and Y yanks whole selected lines; y/Y return the
+cursor to the start of the copied range. r from the transcript quotes
+the selection or current block into the draft. gx opens a URL; [u and
+]u navigate URLs.
+.PP
+Collapsed tool rows remain closed during word and line\-boundary
+motions. A Visual selection confined to one collapsed tool highlights
+its visible summary; y copies that summary to the clipboard and Vim
+register. Expand the tool first to select its details. Cross\-item
+selections and Y source copies retain logical transcript text
+semantics.
 .PP
 Drag across transcript text with the left mouse button and release to
 copy immediately to the system clipboard and Vim register. No Visual

@@ -86,9 +86,9 @@ Counts apply where their Vim equivalent is meaningful.
 
 ### Composer
 
-Composer Normal mode supports the familiar editing subset: `h/j/k/l`, `w/b/e`, `W/B/E`, `0/^/$`, `gg/G`, `x`, `dd`, `D`, `C`, `u`, `Ctrl-r`, `p/P`, and `i/a/I/A/o/O`. Lowercase word motions distinguish punctuation; uppercase WORD motions use whitespace boundaries. Counts apply to motions in Normal and Visual modes.
+Composer Normal mode supports the familiar editing subset: `h/j/k/l`, `w/b/e`, `W/B/E`, `0/^/$`, `gg/G`, `x`, `dd`, `dG`, `D`, `C`, `u`, `Ctrl-r`, `p/P`, and `i/a/I/A/o/O`. Lowercase word motions distinguish punctuation; uppercase WORD motions use whitespace boundaries. Counts apply to motions in Normal and Visual modes.
 
-Normal-mode `d`/`c` accept inner (`i`) and around (`a`) text objects for words/WORDs (`w`/`W`), double/single quotes, parentheses (`(`/`)`/`b`), brackets (`[`/`]`), and braces (`{`/`}`/`B`). For example, `ciw` changes the current word and `ci"` changes the contents of double quotes.
+Normal-mode `d`/`c` accept inner (`i`) and around (`a`) text objects for words/WORDs (`w`/`W`), double/single quotes, parentheses (`(`/`)`/`b`), brackets (`[`/`]`), and braces (`{`/`}`/`B`). For example, `ciw` changes the current word and `ci"` changes the contents of double quotes. Normal `dG` deletes the current logical line through the end of the draft, using Neovim linewise operator semantics; `D` deletes only from the cursor to the current line end.
 
 Normal-mode `Enter` submits. Insert-mode submission versus newline is configurable because terminal modifier fidelity differs. Enter submits by default; Shift+Enter inserts a newline. Alt+Enter is not bound because the user’s terminal host opens a new window with that combination.
 
@@ -100,9 +100,9 @@ Queued messages remain visible in a one-line strip above the composer showing th
 
 ### Visual mode and copying
 
-In both panes, `v` starts character selection and `V` starts line selection. Repeating the current shape's key returns to Normal mode; the other key changes shape while retaining the endpoints. Motions extend the selection, and `o` swaps anchor and head. Composer `y` yanks, `d`/`x` delete, and `c` changes the selection.
+In both panes, `v` starts character selection and `V` starts line selection. Repeating the current shape's key returns to Normal mode; the other key changes shape while retaining the endpoints. Motions extend the selection, and `o` swaps anchor and head. Composer `y` yanks, `d`/`x` delete, and `c` changes the selection. Visual `D`/`X` delete whole selected lines; `Y` yanks whole selected lines. Yanking returns the cursor to the beginning of the copied range.
 
-Transcript Visual mode selects logical content rather than screen cells.
+Transcript Visual mode selects logical content rather than screen cells. Closed tools remain one cursor stop during word and line-boundary motions; navigating them does not open their details. A selection confined to one collapsed tool paints the complete visible summary, and plain `y` copies that displayed summary. Expand the tool to select its details. Cross-item selection and source `Y` preserve logical transcript text semantics; the single-summary plain-copy exception does not redefine source offsets or canonical content.
 
 - Motions extend the selection.
 - `o` swaps anchor and head.

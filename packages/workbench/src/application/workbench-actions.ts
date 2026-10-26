@@ -81,6 +81,8 @@ export type TranscriptAction =
       type: "copy"
       format: "plain" | "source"
       presentationId: TranscriptPresentationId
+      /** Native text for a selected, single collapsed summary; never source copy. */
+      renderedSummary?: { itemId: ItemId; text: string }
     }
   | {
       type: "url.open"

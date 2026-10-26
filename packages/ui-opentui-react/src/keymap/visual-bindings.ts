@@ -88,7 +88,9 @@ export function visualBindings(ctx: VimBindingContext): UiBinding[] {
             "g",
             "shift+g",
             "d",
+            "shift+d",
             "x",
+            "shift+x",
             "c",
           ].map((key) => ({ key, cmd: () => ctx.runComposerKey(key) })),
         ]),
@@ -100,6 +102,7 @@ export function visualBindings(ctx: VimBindingContext): UiBinding[] {
           ctx.controller.transcript({
             type: "copy",
             format: "plain",
+            renderedSummary: ctx.selectedFoldedSummary?.(),
             presentationId: ctx.presentationId,
           })
       },
@@ -107,12 +110,13 @@ export function visualBindings(ctx: VimBindingContext): UiBinding[] {
     {
       key: "shift+y",
       cmd: () =>
-        ctx.interaction.surface === "transcript" &&
-        ctx.controller.transcript({
-          type: "copy",
-          format: "source",
-          presentationId: ctx.presentationId,
-        }),
+        ctx.interaction.surface === "composer"
+          ? ctx.runComposerKey("shift+y")
+          : ctx.controller.transcript({
+              type: "copy",
+              format: "source",
+              presentationId: ctx.presentationId,
+            }),
     },
   ]
 }

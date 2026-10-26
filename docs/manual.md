@@ -62,7 +62,7 @@ Normal, Insert, Visual, and Command modes follow Vim conventions. Focus and mode
 
 i enters Insert. Enter sends by default; Shift-Enter inserts a newline when supported by the terminal. Ctrl-Enter steers an active turn or sends when idle. Escape leaves editing or closes an overlay; from Normal mode, it interrupts the active turn. Ctrl-C also interrupts.
 
-Composer Normal and Visual modes support h/j/k/l, w/b/e, W/B/E, 0/^/$, and gg/G. Lowercase word motions distinguish punctuation; uppercase WORD motions use whitespace boundaries. Counts repeat motions.
+Composer Normal and Visual modes support h/j/k/l, w/b/e, W/B/E, 0/^/$, and gg/G. Lowercase word motions distinguish punctuation; uppercase WORD motions use whitespace boundaries. Counts repeat motions. In composer Normal mode, dG deletes the current logical line through the end of the draft, following Neovim; D deletes from the cursor to the end of the current line.
 
 In composer Normal mode, d or c followed by i (inner) or a (around) acts on a text object: w/W for a word/WORD, double or single quotes, parentheses, brackets, or braces. For example, ciw changes the current word and ci" changes text inside double quotes; daw deletes a word with adjacent whitespace. Parentheses also accept b, and braces accept B.
 
@@ -86,7 +86,9 @@ s opens Flash in Normal mode. Ctrl-G opens Flash from either pane, including com
 
 Ctrl-O moves backward through jumps and session visits; Ctrl-I moves forward. Legacy terminals may send Tab for Ctrl-I. ma through mz set local marks; backtick or apostrophe followed by the letter returns to the mark. Both forms currently restore the exact position.
 
-In either pane, v starts character selection and V starts line selection. Press the same key again to leave Visual mode, or the other key to change the selection shape. Move to extend; o swaps endpoints. In the transcript, y copies rendered text and Y copies Markdown source. In the composer, y yanks, d/x delete, c changes the selection, and p/P in Normal mode paste the register. r from the transcript quotes the selection or current block into the draft. gx opens a URL; [u and ]u navigate URLs.
+In either pane, v starts character selection and V starts line selection. Press the same key again to leave Visual mode, or the other key to change the selection shape. Move to extend; o swaps endpoints. In the transcript, y copies rendered text and Y copies Markdown source. In the composer, y yanks, d/x delete, c changes the selection, and p/P in Normal mode paste the register. Visual D/X delete whole selected lines, and Y yanks whole selected lines; y/Y return the cursor to the start of the copied range. r from the transcript quotes the selection or current block into the draft. gx opens a URL; [u and ]u navigate URLs.
+
+Collapsed tool rows remain closed during word and line-boundary motions. A Visual selection confined to one collapsed tool highlights its visible summary; y copies that summary to the clipboard and Vim register. Expand the tool first to select its details. Cross-item selections and Y source copies retain logical transcript text semantics.
 
 Drag across transcript text with the left mouse button and release to copy immediately to the system clipboard and Vim register. No Visual mode or y is needed. Click the composer to enter Insert mode; middle-click or right-click it to insert the current Vim register at the editing cursor, without submitting. Use your terminal's Paste command for clipboard contents copied from another app.
 

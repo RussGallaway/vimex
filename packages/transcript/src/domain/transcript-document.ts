@@ -1560,7 +1560,12 @@ export type TranscriptCommand =
       search?: { query: string; direction: "forward" | "backward" }
     }
   | { type: "cursor.move"; point: LogicalPoint; preferredScreenRow?: number }
-  | { type: "cursor.reveal"; point: LogicalPoint; preferredScreenRow?: number }
+  | {
+      type: "cursor.reveal"
+      point: LogicalPoint
+      preferredScreenRow?: number
+      preserveFolds?: boolean
+    }
   | {
       type: "jump.to"
       target: JumpLocation

@@ -26,6 +26,7 @@ export type ComposerOperator =
   | "delete-line"
   | "change-line"
   | "delete-to-line-end"
+  | "delete-to-document-line"
   | "undo"
   | "redo"
 export type ComposerPlacement = "before" | "after" | "line-start" | "line-end"
@@ -44,8 +45,8 @@ export type ComposerVimAction =
   | { type: "begin-visual"; shape?: "character" | "line" }
   | { type: "swap-selection" }
   | { type: "clear-selection" }
-  | { type: "yank" }
-  | { type: "delete-selection"; enterInsert?: boolean }
+  | { type: "yank"; shape?: "line" }
+  | { type: "delete-selection"; enterInsert?: boolean; shape?: "line" }
   | {
       type: "text-object"
       operator: "delete" | "change"
@@ -147,6 +148,17 @@ function prefixed(
     return resolved(state, [{ type: "keys.clear" }, { type: "count.clear" }])
   }
   if (state.pendingKeys === "d" || state.pendingKeys === "c") {
+    if (state.pendingKeys === "d" && key === "shift+g" && !select)
+      return resolved(
+        state,
+        [{ type: "keys.clear" }, { type: "count.clear" }],
+        {
+          type: "edit",
+          operator: "delete-to-document-line",
+          count: state.count ? count : 0,
+        },
+      )
+
     if (key === state.pendingKeys && !select) {
       return resolved(
         state,
@@ -348,7 +360,13 @@ export function resolveComposerKey(
       return resolved(state, [{ type: "keys.pending", value: key }])
     const motion = resolveMotion(state, key, true)
     if (motion) return motion
-    if (key === "d" || key === "x" || key === "c")
+    if (
+      key === "d" ||
+      key === "x" ||
+      key === "c" ||
+      key === "shift+d" ||
+      key === "shift+x"
+    )
       return resolved(
         state,
         [
@@ -356,13 +374,22 @@ export function resolveComposerKey(
           { type: "keys.clear" },
           { type: key === "c" ? "mode.insert" : "mode.normal" },
         ],
-        { type: "delete-selection", enterInsert: key === "c" },
+        {
+          type: "delete-selection",
+          enterInsert: key === "c",
+          ...(key === "shift+d" || key === "shift+x"
+            ? { shape: "line" as const }
+            : {}),
+        },
       )
-    if (key === "y")
+    if (key === "y" || key === "shift+y")
       return resolved(
         state,
         [{ type: "count.clear" }, { type: "mode.normal" }],
-        { type: "yank" },
+        {
+          type: "yank",
+          ...(key === "shift+y" ? { shape: "line" as const } : {}),
+        },
       )
   }
   return resolved(state, [])
