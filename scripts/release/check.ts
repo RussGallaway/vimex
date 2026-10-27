@@ -5,7 +5,9 @@ import { join, resolve } from "node:path"
 
 const root = resolve(import.meta.dir, "../..")
 const args = process.argv.slice(2)
-const usage = "Usage: bun run check:release [--outdir PATH]"
+const packageOnly = args[0] === "--package-only"
+if (packageOnly) args.shift()
+const usage = "Usage: bun run check:release [--package-only] [--outdir PATH]"
 if (args.length && (args.length !== 2 || args[0] !== "--outdir" || !args[1]))
   throw new Error(usage)
 const { version, packageManager } = await Bun.file(
@@ -57,7 +59,8 @@ try {
       `${error.message}. Use a Python 3.12 virtual environment and install tests/terminal/requirements-live.txt (see docs/releasing.md).`,
     )
   })
-  await run("complete repository gate", [process.execPath, "run", "check"])
+  if (!packageOnly)
+    await run("complete repository gate", [process.execPath, "run", "check"])
   await run("diff whitespace", ["git", "diff", "--check"])
 
   temporary = await mkdtemp(join(tmpdir(), "vimex-release-check-"))
@@ -135,5 +138,6 @@ try {
 } catch (error) {
   console.error(error instanceof Error ? error.message : error)
   if (temporary) console.error(`Failure diagnostics retained in ${temporary}`)
+  if (args[1]) console.error(`Release output retained in ${resolve(args[1])}`)
   process.exitCode = 1
 }

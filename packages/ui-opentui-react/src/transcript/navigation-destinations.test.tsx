@@ -374,7 +374,9 @@ test("wide overscan cannot reverse an upward burst after window reconciliation",
   } finally {
     await paced.close()
   }
-}, 30000)
+  // This compares two complete 10k-block native traces; each gets the same
+  // 30-second allowance as the single-trace integration tests above.
+}, 60000)
 
 test("a cold native edge does not trap the next opposite scroll key", async () => {
   const h = await navigationHarness("mixed", 1_000, 80)

@@ -228,14 +228,40 @@ test("diagnostic subprocess timeout is bounded even when SIGTERM is ignored", as
   try {
     const script = `require('node:fs').writeFileSync(${JSON.stringify(pidPath)}, String(process.pid)); process.on('SIGTERM', () => {}); setInterval(() => {}, 100)`
     await expect(
-      runProcess(process.execPath, ["-e", script], { timeoutMs: 100 }),
+      runProcess(process.execPath, ["-e", script], { timeoutMs: 1000 }),
     ).rejects.toThrow("timed out")
     const pid = Number(await readFile(pidPath, "utf8"))
-    await Bun.sleep(350)
     expect(() => process.kill(pid, 0)).toThrow()
   } finally {
     await rm(directory, { recursive: true, force: true })
   }
+})
+
+test("process completion preserves output and nonzero exit status", async () => {
+  const result = await runProcess(process.execPath, [
+    "-e",
+    'process.stdout.write("out"); process.stderr.write("err"); process.exitCode = 7',
+  ])
+  expect(result).toEqual({ code: 7, stdout: "out", stderr: "err" })
+})
+
+test("a missing executable rejects without waiting for the timeout", async () => {
+  await expect(
+    runProcess("/vimex-nonexistent-executable", []),
+  ).rejects.toThrow()
+})
+
+test("a graceful SIGTERM exit still reports the command timeout", async () => {
+  await expect(
+    runProcess(
+      process.execPath,
+      [
+        "-e",
+        'process.on("SIGTERM", () => process.exit(0)); setInterval(() => {}, 100)',
+      ],
+      { timeoutMs: 1000 },
+    ),
+  ).rejects.toThrow("timed out")
 })
 
 test("Homebrew libexec symlink ownership routes upgrades to the package manager", async () => {

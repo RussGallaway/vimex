@@ -43,7 +43,7 @@ bun run check
 git diff --check
 ```
 
-`check` checks formatting, generated documentation, TypeScript, dependency boundaries, and the complete default Bun test suite. Focused scripts are available:
+`check` checks formatting, generated documentation, TypeScript, dependency boundaries, and the complete default Bun test suite. Native UI test files each run in a fresh process to isolate React and renderer state. Focused scripts are available:
 
 ```sh
 bun run test:unit
@@ -58,7 +58,7 @@ The default terminal suite needs Python 3 and a Unix PTY. It runs the actual ren
 
 CI is configured for macOS and Ubuntu with Bun 1.3.6, Python 3.12, and `TERM=xterm-256color`. A configured target is not considered supported until its run has been observed and recorded in the [terminal matrix](docs/terminal-support.md).
 
-Before tagging a release, run `bun run check:release`. It runs the complete `check` gate, builds and archives the native executable, verifies its checksum, and tests the extracted bundle with CLI, offline syntax, visual PTY, and fixture-backed resume probes. Use Bun 1.3.6 and a Python 3.12 virtual environment with `tests/terminal/requirements-live.txt` installed. The Release workflow uses this same command on all four native platforms.
+Before tagging a release, run `bun run check:release`. It runs the complete `check` gate, builds and archives the native executable, verifies its checksum, and tests the extracted bundle with CLI, offline syntax, visual PTY, and fixture-backed resume probes. Use Bun 1.3.6 and a Python 3.12 virtual environment with `tests/terminal/requirements-live.txt` installed. The Release workflow preserves the same gates on all four native platforms, with source validation and packaging in separate jobs. Its packaging jobs use `--package-only` only after all source checks pass; local release validation runs both by default.
 
 Builds use a temporary directory that is removed after success and retained after failure. To keep archives and reconstructed PTY frames for inspection, use `bun run check:release --outdir dist`. See [local release validation](docs/releasing.md#local-release-validation) for setup and the limits of a single-host check.
 

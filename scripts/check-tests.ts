@@ -24,7 +24,11 @@ const groups = [
     "transcript",
     tests.filter((file) => file.startsWith("packages/transcript/")),
   ],
-  ["ui", tests.filter((file) => file.startsWith("packages/ui-opentui-react/"))],
+  // Each native renderer file owns its React and OpenTUI process state. A
+  // timed-out act() must not poison later files in the suite.
+  ...tests
+    .filter((file) => file.startsWith("packages/ui-opentui-react/"))
+    .map((file) => [file, [file]] as const),
 ] as const
 
 for (const [name, files] of groups) {

@@ -17,15 +17,25 @@ export const runProcess: RunProcess = (command, args, options = {}) =>
     })
     let stdout = "",
       stderr = ""
+    let timedOut = false
+    let cleanupTimer: ReturnType<typeof setTimeout> | undefined
     let killTimer: ReturnType<typeof setTimeout> | undefined
     const timer = setTimeout(() => {
+      timedOut = true
       child.kill("SIGTERM")
       killTimer = setTimeout(() => {
         child.kill("SIGKILL")
         child.stdout.destroy()
         child.stderr.destroy()
       }, 250)
-      reject(new Error(`${command} timed out`))
+      // A timeout is not complete until the child has been reaped. Keep a
+      // final bound for an OS process that cannot be killed or reaped.
+      cleanupTimer = setTimeout(() => {
+        child.stdout.destroy()
+        child.stderr.destroy()
+        child.unref()
+        reject(new Error(`${command} timed out; process cleanup unconfirmed`))
+      }, 5000)
     }, options.timeoutMs ?? 30_000)
     child.stdout.on("data", (chunk) => {
       stdout += String(chunk)
@@ -34,14 +44,19 @@ export const runProcess: RunProcess = (command, args, options = {}) =>
       stderr += String(chunk)
     })
     child.once("error", (error) => {
+      // A failed signal must not cancel escalation or the cleanup deadline.
+      if (timedOut) return
       clearTimeout(timer)
       if (killTimer) clearTimeout(killTimer)
+      if (cleanupTimer) clearTimeout(cleanupTimer)
       reject(error)
     })
     child.once("close", (code) => {
       clearTimeout(timer)
       if (killTimer) clearTimeout(killTimer)
-      resolve({ code: code ?? 1, stdout, stderr })
+      if (cleanupTimer) clearTimeout(cleanupTimer)
+      if (timedOut) reject(new Error(`${command} timed out`))
+      else resolve({ code: code ?? 1, stdout, stderr })
     })
   })
 export async function homebrewUpgrade(

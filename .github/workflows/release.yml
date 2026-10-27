@@ -10,7 +10,42 @@ concurrency:
   group: vimex-release
   cancel-in-progress: false
 jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel, ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+      - name: Verify release tag
+        run: |
+          # shellcheck disable=SC2016
+          bun -e 'const v = (await Bun.file("package.json").json()).version; if (process.env.GITHUB_REF_NAME !== `v${v}`) throw new Error("Tag must match package version")'
+      - run: bun install --frozen-lockfile
+      - name: Validate source
+        shell: bash
+        run: bun run check 2>&1 | tee release-check.log
+        env:
+          HERDR_ENV: "0"
+          TERM: xterm-256color
+      - name: Retain failed validation log
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: diagnostics-check-${{ matrix.os }}
+          path: release-check.log
+          if-no-files-found: ignore
+          retention-days: 14
   build:
+    needs: validate
     strategy:
       fail-fast: false
       matrix:
@@ -41,10 +76,21 @@ jobs:
       - name: Install offline visual probe dependencies
         run: python3 -m pip install -r tests/terminal/requirements-live.txt
       - name: Validate native release bundle
-        run: bun run check:release --outdir dist
+        shell: bash
+        run: bun run check:release --package-only --outdir dist 2>&1 | tee release-package.log
         env:
           HERDR_ENV: "0"
           TERM: xterm-256color
+      - name: Retain failed packaging diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: diagnostics-package-${{ matrix.target }}
+          path: |
+            release-package.log
+            dist/
+          if-no-files-found: ignore
+          retention-days: 14
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: vimex-${{ matrix.target }}
