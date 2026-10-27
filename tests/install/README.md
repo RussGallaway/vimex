@@ -2,7 +2,7 @@
 
 Run the complete local release gate with `bun run check:release`. It builds, packages, verifies the checksum, and runs the probes below against an extracted native archive outside the checkout. Use Bun 1.3.6 and Python 3.12 with `tests/terminal/requirements-live.txt` installed. See [release validation](../../docs/releasing.md#local-release-validation) for virtual environment setup.
 
-Temporary artifacts are removed after success and retained after failure. `bun run check:release --outdir dist` retains the archive, metadata, and reconstructed frames in `dist/frames/`. The same command runs on the Release workflow's four native targets.
+Temporary artifacts are removed after success and retained after failure. `bun run check:release --outdir dist` retains the archive, metadata, and reconstructed frames in `dist/frames/`. The Release workflow first runs `bun run check` on all four native targets, then runs `bun run check:release --package-only --outdir dist` in separate packaging jobs after every source validation job passes. Local release validation runs both stages by default.
 
 Run these commands against an unpacked or installed release executable:
 

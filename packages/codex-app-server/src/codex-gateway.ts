@@ -86,17 +86,23 @@ function normalizeConversationInput(
   text: string,
   input?: readonly ConversationInput[],
 ): string | UserInput[] {
-  return !input?.length
-    ? text
-    : input.map((part) =>
-        part.type === "text"
-          ? { type: "text" as const, text: part.text, text_elements: [] }
-          : part.type === "image"
-            ? { type: "localImage" as const, path: part.path }
-            : part.type === "skill"
-              ? { type: "skill" as const, name: part.name, path: part.path }
-              : { type: "mention" as const, name: part.name, path: part.path },
-      )
+  if (!input?.length) return text
+  const parts: UserInput[] = []
+  for (const part of input) {
+    // Codex mentions select apps/plugins; they do not put filesystem paths
+    // into the model's input. Keep file/directory references in literal text.
+    if (part.type === "text" || part.type === "file") {
+      const value = part.type === "file" ? `@${part.path}` : part.text
+      const previous = parts.at(-1)
+      if (previous?.type === "text") previous.text += value
+      else parts.push({ type: "text", text: value, text_elements: [] })
+    } else if (part.type === "image") {
+      parts.push({ type: "localImage", path: part.path })
+    } else {
+      parts.push({ type: part.type, name: part.name, path: part.path })
+    }
+  }
+  return parts
 }
 import type {
   RuntimeEvent,

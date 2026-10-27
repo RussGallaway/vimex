@@ -25,6 +25,7 @@ export interface AgentRelationship {
 export type ConversationInput =
   | { type: "text"; text: string }
   | { type: "image"; path: string }
+  | { type: "file"; name: string; path: string }
   | { type: "mention"; name: string; path: string }
   | { type: "skill"; name: string; path: string }
 

@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createCodexGateways } from "./codex-gateway"
-import { threadId } from "@vimex/conversation"
+import { threadId, turnId } from "@vimex/conversation"
 import type { CodexAppServerClient } from "./capabilities/codex-app-server-client"
 
 const temporaryDirectories: string[] = []
@@ -443,5 +443,106 @@ test("agent picker queries descendants separately from the user session catalog"
       ancestorThreadId: "root",
     })),
   )
+  await gateways.connection.close()
+})
+
+for (const path of [
+  "/work/README.md",
+  "/work/src",
+  "/work/docs with spaces/日本語.md",
+]) {
+  test(`filesystem reference reaches turn start, steer, and transcript: ${path}`, async () => {
+    const calls: unknown[] = []
+    const client = {
+      onEvent: () => () => {},
+      close: async () => {},
+      startTurn: async (_id: string, input: unknown) => {
+        calls.push(input)
+        return {
+          turn: {
+            id: "turn",
+            status: "inProgress",
+            items: [{ type: "userMessage", id: "message", content: input }],
+          },
+        }
+      },
+      steerTurn: async (_id: string, _turn: string, input: unknown) => {
+        calls.push(input)
+      },
+    } as unknown as CodexAppServerClient
+    const gateways = createCodexGateways("/work", "codex", () => client)
+    const input = [
+      { type: "text" as const, text: "Inspect " },
+      { type: "file" as const, name: "selected", path },
+      { type: "text" as const, text: " please" },
+    ]
+    const expected = [
+      { type: "text", text: `Inspect @${path} please`, text_elements: [] },
+    ]
+    const events = await gateways.conversation.startTurn(
+      threadId("thread"),
+      "Inspect @selected please",
+      "message",
+      input,
+    )
+    await gateways.conversation.steerTurn(
+      threadId("thread"),
+      turnId("turn"),
+      "Inspect @selected please",
+      "steer",
+      input,
+    )
+    expect(calls).toEqual([expected, expected])
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "item.started",
+        item: expect.objectContaining({
+          kind: "user",
+          markdown: `Inspect @${path} please`,
+        }),
+      }),
+    )
+    await gateways.connection.close()
+  })
+}
+
+test("file-only input is model-visible while skills, plugins, and images keep their wire types", async () => {
+  const calls: unknown[] = []
+  const client = {
+    onEvent: () => () => {},
+    close: async () => {},
+    steerTurn: async (_id: string, _turn: string, input: unknown) => {
+      calls.push(input)
+    },
+  } as unknown as CodexAppServerClient
+  const gateways = createCodexGateways("/work", "codex", () => client)
+  await gateways.conversation.steerTurn(
+    threadId("thread"),
+    turnId("turn"),
+    "@src",
+    "only",
+    [{ type: "file", name: "src", path: "/work/src" }],
+  )
+  await gateways.conversation.steerTurn(
+    threadId("thread"),
+    turnId("turn"),
+    "",
+    "mixed",
+    [
+      { type: "file", name: "src", path: "/work/src" },
+      { type: "skill", name: "build", path: "/work/skills/build/SKILL.md" },
+      { type: "mention", name: "plugin", path: "plugin@marketplace" },
+      { type: "image", path: "/work/photo.png" },
+    ],
+  )
+  expect(calls).toEqual([
+    [{ type: "text", text: "@/work/src", text_elements: [] }],
+    [
+      { type: "text", text: "@/work/src", text_elements: [] },
+      { type: "skill", name: "build", path: "/work/skills/build/SKILL.md" },
+      { type: "mention", name: "plugin", path: "plugin@marketplace" },
+      { type: "localImage", path: "/work/photo.png" },
+    ],
+  ])
   await gateways.connection.close()
 })

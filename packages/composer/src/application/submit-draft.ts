@@ -122,6 +122,7 @@ export function attachMention(
 export type ComposerPart =
   | { type: "text"; text: string }
   | { type: "image"; path: string }
+  | { type: "file"; name: string; path: string }
   | { type: "mention"; name: string; path: string }
   | { type: "skill"; name: string; path: string }
 export function composerParts(
@@ -157,7 +158,7 @@ export function composerParts(
       offset = index + entry.image.marker!.length
     } else {
       parts.push({
-        type: entry.kind === "skill" ? "skill" : "mention",
+        type: entry.kind === "plugin" ? "mention" : entry.kind,
         name: entry.mention.name,
         path: entry.mention.path,
       })
@@ -173,7 +174,7 @@ export function composerParts(
   for (const mention of mentions.filter((mention) => !mention.marker)) {
     if (!parts.length && text) parts.push({ type: "text", text })
     parts.push({
-      type: mention.kind === "skill" ? "skill" : "mention",
+      type: mention.kind === "plugin" ? "mention" : mention.kind,
       name: mention.name,
       path: mention.path,
     })

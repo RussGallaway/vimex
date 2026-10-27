@@ -330,7 +330,7 @@ test("file and skill mentions keep their input kinds when a turn is sent", async
     {
       text: "@README.md @build",
       input: [
-        { type: "mention", name: "README.md", path: "/tmp/README.md" },
+        { type: "file", name: "README.md", path: "/tmp/README.md" },
         { type: "text", text: " " },
         {
           type: "skill",
