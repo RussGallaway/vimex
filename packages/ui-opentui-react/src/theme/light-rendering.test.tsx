@@ -116,13 +116,19 @@ test("light and dark themes repaint existing user and tool panels on a live swit
       "charcoal",
     ] as const) {
       if (name !== "rose-pine-dawn") await act(async () => switchTheme(name))
+      const palette = themePalette(name)
       await waitForRender(
         h,
         () =>
-          Boolean(spanOf("USER THEME SAMPLE") && spanOf("TOOL THEME SAMPLE")),
+          Boolean(
+            spanOf("USER THEME SAMPLE") &&
+            spanOf("TOOL THEME SAMPLE") &&
+            spanOf("Message Codex") &&
+            spanOf("ASSISTANT THEME SAMPLE")?.bg.toString() ===
+              RGBA.fromHex(palette.background).toString(),
+          ),
         `${name} transcript panels`,
       )
-      const palette = themePalette(name)
       expect(spanOf("ASSISTANT THEME SAMPLE")?.bg.toString()).toBe(
         RGBA.fromHex(palette.background).toString(),
       )
