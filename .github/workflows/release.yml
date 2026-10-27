@@ -1,5 +1,6 @@
 name: Release
 on:
+  workflow_dispatch:
   push:
     tags: ["v*"]
 permissions:
@@ -26,6 +27,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Verify release tag
+        if: github.event_name == 'push'
         run: |
           # shellcheck disable=SC2016
           bun -e 'const v = (await Bun.file("package.json").json()).version; if (process.env.GITHUB_REF_NAME !== `v${v}`) throw new Error("Tag must match package version")'
@@ -69,6 +71,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Verify release tag
+        if: github.event_name == 'push'
         run: |
           # shellcheck disable=SC2016
           bun -e 'const v = (await Bun.file("package.json").json()).version; if (process.env.GITHUB_REF_NAME !== `v${v}`) throw new Error("Tag must match package version")'
@@ -99,6 +102,7 @@ jobs:
             dist/*.json
           if-no-files-found: error
   publish:
+    if: github.event_name == 'push'
     needs: build
     runs-on: ubuntu-24.04
     permissions:

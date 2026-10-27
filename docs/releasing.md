@@ -69,6 +69,8 @@ Separate jobs let GitHub's **Re-run failed jobs** preserve successful validation
 
 ## Release procedure
 
+Before creating a tag, run `gh workflow run release.yml --ref main` against the intended release commit (including its version bump). This manual preflight runs the complete validation and native packaging matrices and retains the four archives. It never publishes a release or deploys the formula. Confirm the run's commit SHA matches the intended tag commit. A tag push repeats the gates and is the only publication trigger; it does not trust artifacts from a different run or commit.
+
 1. Update the root package.json version using SemVer; regenerate docs with `bun run docs:generate` when the manual changes. Run `bun run check:release` using the setup above.
 2. Commit the version update with a Conventional Commit message such as `chore(release): release v0.1.0`, and use the same convention for the PR title. Review and merge the intended source into main before creating and pushing the matching immutable tag, initially `v0.1.0`.
 3. After its four-platform source validation passes, the Release workflow builds natively on macOS/Linux ARM64/x64, runs checks and packaged CLI/PTY/syntax probes, and uploads archives. `release:manifest` verifies all four archive hashes before publication.
