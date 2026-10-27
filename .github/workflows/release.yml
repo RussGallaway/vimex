@@ -40,7 +40,7 @@ jobs:
           TERM: xterm-256color
       - name: Retain failed validation log
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: diagnostics-check-${{ matrix.os }}
           path: release-check.log
@@ -86,7 +86,7 @@ jobs:
           TERM: xterm-256color
       - name: Retain failed packaging diagnostics
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: diagnostics-package-${{ matrix.target }}
           path: |
@@ -94,7 +94,7 @@ jobs:
             dist/
           if-no-files-found: ignore
           retention-days: 14
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: vimex-${{ matrix.target }}
           path: |
