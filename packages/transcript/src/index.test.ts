@@ -447,9 +447,9 @@ describe("transcript", () => {
       textLengthIndexUpdates: 0,
       textLengthNodeVisits: 0,
     }
-    expect(selectedGraphemeCount(state, diagnostics)).toBe(
-      graphemeCount(selectedText(state, "plain")!),
-    )
+    // Each selected item is one grapheme, with one newline between items.
+    // Keep the 100k scaling oracle exact without materializing that history.
+    expect(selectedGraphemeCount(state, diagnostics)).toBe(199_961)
     expect(diagnostics.textLengthIndexBuilds).toBe(0)
     expect(diagnostics.textLengthItemVisits).toBe(0)
     expect(diagnostics.textLengthIndexCacheHits).toBe(1)
