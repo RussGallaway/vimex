@@ -396,10 +396,11 @@ export function transitionWorkbench(
             "Wait for compaction to finish before sending; your draft is preserved",
         })
       const activeTurnId = workspace.conversation.activeTurnId
-      const startingTurn = workspace.composer.outbox.some(
-        (message) =>
-          message.intent === "next-turn" && message.status === "sending",
-      )
+      const startingTurn =
+        !activeTurnId &&
+        workspace.composer.outbox.some(
+          (message) => message.status === "sending",
+        )
       const queued = state.provisionalThreadIds.includes(id)
         ? true
         : command.intent === "next-turn"
@@ -462,7 +463,7 @@ export function transitionWorkbench(
           : undefined
       const waitForStartedTurn =
         command.type === "composer.ack" &&
-        outgoing?.intent === "next-turn" &&
+        (outgoing?.intent === "next-turn" || Boolean(command.turnId)) &&
         !workspace.conversation.activeTurnId &&
         !(acknowledgedTurn && acknowledgedTurn.status !== "running")
       const scheduled = waitForStartedTurn
@@ -493,12 +494,12 @@ export function transitionWorkbench(
             "Wait for compaction to finish before sending; your draft is preserved",
         })
       const activeTurnId = workspace.conversation.activeTurnId
-      const startingTurn = workspace.composer.outbox.some(
-        (message) =>
-          message.id !== outgoing.id &&
-          message.intent === "next-turn" &&
-          message.status === "sending",
-      )
+      const startingTurn =
+        !activeTurnId &&
+        workspace.composer.outbox.some(
+          (message) =>
+            message.id !== outgoing.id && message.status === "sending",
+        )
       const queued =
         outgoing.intent === "next-turn"
           ? Boolean(activeTurnId) || startingTurn

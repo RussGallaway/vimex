@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
 import type { TextareaRenderable } from "@opentui/core"
 import { act, useMemo, useState } from "react"
-import { threadId, turnId } from "@vimex/conversation"
+import { itemId, threadId, turnId } from "@vimex/conversation"
 import {
   activeWorkspace,
   initialWorkbench,
@@ -115,7 +115,14 @@ async function setupMode(
   }
 }
 
-async function setupSubmission(mode: "insert" | "normal") {
+async function setupSubmission(
+  mode: "insert" | "normal",
+  options: {
+    busy?: boolean
+    busySubmit?: "queue" | "steer"
+    kittyKeyboard?: boolean
+  } = {},
+) {
   const id = threadId("submission")
   let initial = transitionWorkbench(initialWorkbench(), {
     type: "thread.open",
@@ -141,6 +148,12 @@ async function setupSubmission(mode: "insert" | "normal") {
     initial = transitionWorkbench(initial, {
       type: "interaction.command",
       command: { type: "mode.insert" },
+    }).state
+
+  if (options.busy)
+    initial = transitionWorkbench(initial, {
+      type: "conversation.event",
+      event: { type: "turn.started", threadId: id, turnId: turnId("running") },
     }).state
 
   let observed = initial
@@ -186,7 +199,15 @@ async function setupSubmission(mode: "insert" | "normal") {
       }),
       [],
     )
-    return <VimexRoot state={state} controller={controller} />
+    return (
+      <VimexRoot
+        state={state}
+        controller={controller}
+        settings={
+          options.busySubmit ? { busySubmit: options.busySubmit } : undefined
+        }
+      />
+    )
   }
 
   let setup!: Awaited<ReturnType<typeof testRender>>
@@ -194,7 +215,7 @@ async function setupSubmission(mode: "insert" | "normal") {
     setup = await testRender(<Harness />, {
       width: 80,
       height: 24,
-      kittyKeyboard: true,
+      kittyKeyboard: options.kittyKeyboard ?? true,
     })
   })
   await act(async () => setup.flush())
@@ -376,6 +397,185 @@ describe("composer mode input isolation", () => {
           status: "sending",
         }),
       ])
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
+  for (const mode of ["insert", "normal"] as const) {
+    test(`${mode} Enter steers immediately while busy by default`, async () => {
+      const setup = await setupSubmission(mode, { busy: true })
+      try {
+        await act(async () => {
+          setup.mockInput.pressEnter()
+          await setup.flush()
+        })
+        const workspace = activeWorkspace(setup.state())!
+        expect(workspace.composer.text).toBe("")
+        expect(setup.composer.plainText).toBe("")
+        expect(workspace.composer.outbox).toEqual([
+          expect.objectContaining({
+            text: "first message",
+            intent: "steer",
+            status: "sending",
+          }),
+        ])
+        expect(workspace.pendingSubmissions).toHaveLength(1)
+        expect(workspace.transcript.order).toContain(itemId("submission-1"))
+      } finally {
+        await act(async () => setup.renderer.destroy())
+      }
+    })
+    for (const kittyKeyboard of [true, false]) {
+      test(`${mode} Tab queues while busy with kitty=${kittyKeyboard}`, async () => {
+        const setup = await setupSubmission(mode, { busy: true, kittyKeyboard })
+        try {
+          await act(async () => {
+            await setup.mockInput.pressKeys(["TAB"])
+            await setup.flush()
+          })
+          const workspace = activeWorkspace(setup.state())!
+          expect(setup.composer.plainText).toBe("")
+          expect(workspace.composer.text).toBe("")
+          expect(workspace.composer.outbox).toEqual([
+            expect.objectContaining({
+              text: "first message",
+              intent: "next-turn",
+              status: "queued",
+            }),
+          ])
+          expect(workspace.pendingSubmissions ?? []).toHaveLength(0)
+          expect(workspace.transcript.order).not.toContain(
+            itemId("submission-1"),
+          )
+          if (mode === "insert") {
+            await act(async () => {
+              await setup.mockInput.typeText("next draft")
+              await setup.flush()
+            })
+            expect(activeWorkspace(setup.state())!.composer.text).toBe(
+              "next draft",
+            )
+          }
+        } finally {
+          await act(async () => setup.renderer.destroy())
+        }
+      })
+    }
+  }
+
+  for (const ctrl of [false, true])
+    for (const key of ["RETURN", "TAB"]) {
+      test(`${key} after ctrl=${ctrl} retains its intent while the first turn is still starting`, async () => {
+        const setup = await setupSubmission("insert")
+        try {
+          await act(async () => {
+            setup.mockInput.pressEnter({ ctrl })
+            await setup.flush()
+          })
+          await act(async () => {
+            await setup.mockInput.typeText("follow-up")
+            await setup.mockInput.pressKeys([key])
+            await setup.flush()
+          })
+          const workspace = activeWorkspace(setup.state())!
+          expect(workspace.composer.outbox[1]).toMatchObject({
+            text: "follow-up",
+            intent: key === "RETURN" ? "steer" : "next-turn",
+            status: "queued",
+          })
+          expect(workspace.pendingSubmissions?.length).toBe(
+            key === "RETURN" ? 2 : 1,
+          )
+          await act(async () => {
+            setup.settle({
+              type: "conversation.event",
+              event: {
+                type: "turn.started",
+                threadId: setup.thread,
+                turnId: turnId("running"),
+              },
+            })
+            await setup.flush()
+          })
+          await act(async () => {
+            setup.settle({
+              type: "composer.ack",
+              threadId: setup.thread,
+              clientMessageId: "submission-1",
+              turnId: turnId("running"),
+            })
+            await setup.flush()
+          })
+          expect(
+            activeWorkspace(setup.state())!.composer.outbox.find(
+              (message) => message.id === "submission-2",
+            )?.status,
+          ).toBe(key === "RETURN" ? "sending" : "queued")
+        } finally {
+          await act(async () => setup.renderer.destroy())
+        }
+      })
+    }
+
+  test("busy Tab preserves a shell command and explains that it cannot queue", async () => {
+    const setup = await setupSubmission("insert", { busy: true })
+    try {
+      await act(async () => {
+        setup.settle({
+          type: "composer.change",
+          text: "!echo hello",
+          cursorOffset: 11,
+        })
+        await setup.flush()
+      })
+      await act(async () => {
+        await setup.mockInput.pressKeys(["TAB"])
+        await setup.flush()
+        await setup.renderOnce()
+      })
+      expect(setup.composer.plainText).toBe("!echo hello")
+      expect(activeWorkspace(setup.state())!.composer.outbox).toHaveLength(0)
+      expect(setup.captureCharFrame()).toContain(
+        "Shell commands cannot be queued",
+      )
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
+  test("an explicit queue preference still controls busy Enter", async () => {
+    const setup = await setupSubmission("insert", {
+      busy: true,
+      busySubmit: "queue",
+    })
+    try {
+      await act(async () => {
+        setup.mockInput.pressEnter()
+        await setup.flush()
+      })
+      expect(activeWorkspace(setup.state())!.composer.outbox[0]).toMatchObject({
+        intent: "next-turn",
+        status: "queued",
+      })
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  })
+
+  test("busy Tab completes an active slash command instead of queuing", async () => {
+    const setup = await setupSubmission("insert", { busy: true })
+    try {
+      await act(async () => {
+        setup.settle({ type: "composer.change", text: "/hel", cursorOffset: 4 })
+        await setup.flush()
+      })
+      await act(async () => {
+        await setup.mockInput.pressKeys(["TAB"])
+        await setup.flush()
+      })
+      expect(activeWorkspace(setup.state())!.composer.text).toBe("/help ")
+      expect(activeWorkspace(setup.state())!.composer.outbox).toHaveLength(0)
     } finally {
       await act(async () => setup.renderer.destroy())
     }

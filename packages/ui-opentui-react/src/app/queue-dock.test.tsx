@@ -114,6 +114,7 @@ async function queueHarness(
       else if (name === "ctrl-j") setup.mockInput.pressKey("j", { ctrl: true })
       else if (name === "ctrl-c") setup.mockInput.pressKey("c", { ctrl: true })
       else if (name === "return") setup.mockInput.pressKey("RETURN")
+      else if (name === "tab") setup.mockInput.pressKey("TAB")
       else await setup.mockInput.typeText(name)
       await setup.flush()
       await setup.renderOnce()
@@ -122,11 +123,11 @@ async function queueHarness(
   return { ...setup, key, state: () => observed, interrupts: () => interrupted }
 }
 
-test("Enter queues a visible preview and Ctrl-K opens it from Insert mode", async () => {
+test("Tab queues a visible preview and Ctrl-K opens it from Insert mode", async () => {
   const h = await queueHarness(0, "", true)
   try {
     await h.key("new follow-up")
-    await h.key("return")
+    await h.key("tab")
     expect(h.captureCharFrame()).toContain("latest: new follow-up")
     expect(activeWorkspace(h.state())?.composer.outbox).toMatchObject([
       { text: "new follow-up", status: "queued" },

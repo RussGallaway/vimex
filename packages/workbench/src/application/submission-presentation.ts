@@ -139,7 +139,8 @@ export function syncSubmissionPresentation(
   for (const message of next.composer.outbox) {
     if (
       message.status === "sending" ||
-      (provisional && message.status === "queued")
+      ((provisional || message.intent === "steer") &&
+        message.status === "queued")
     )
       messages.set(message.id, message)
     else messages.delete(message.id)

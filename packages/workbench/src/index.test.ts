@@ -616,6 +616,50 @@ describe("workbench", () => {
     expect(result.effects[0]?.type).toBe("conversation.turn.start")
   })
 
+  test("an idle steer serializes follow-ups through an acknowledgement before turn.started", () => {
+    const thread = threadId("a"),
+      turn = turnId("started")
+    let state = run(initialWorkbench(), {
+      type: "thread.open",
+      summary: summary("a"),
+    }).state
+    state = run(state, { type: "composer.change", text: "first" }).state
+    let result = run(state, {
+      type: "composer.submit",
+      intent: "steer",
+      clientMessageId: "first",
+    })
+    expect(result.effects[0]?.type).toBe("conversation.turn.start")
+    state = run(result.state, {
+      type: "composer.change",
+      text: "follow-up",
+    }).state
+    result = run(state, {
+      type: "composer.submit",
+      intent: "steer",
+      clientMessageId: "second",
+    })
+    expect(result.effects).toEqual([])
+    result = run(result.state, {
+      type: "composer.ack",
+      threadId: thread,
+      clientMessageId: "first",
+      turnId: turn,
+    })
+    expect(result.effects).toEqual([])
+    expect(activeWorkspace(result.state)?.composer.outbox[0]?.status).toBe(
+      "queued",
+    )
+    result = run(result.state, {
+      type: "conversation.event",
+      event: { type: "turn.started", threadId: thread, turnId: turn },
+    })
+    expect(result.effects[0]?.type).toBe("conversation.turn.steer")
+    expect(activeWorkspace(result.state)?.composer.outbox[0]?.status).toBe(
+      "sending",
+    )
+  })
+
   test("queues steering until the starting turn id is known", () => {
     const thread = threadId("a"),
       turn = turnId("started")

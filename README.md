@@ -74,7 +74,7 @@ Configuration lives at `$XDG_CONFIG_HOME/vimex/config.json`, defaulting to `~/.c
   "theme": "ember-tide",
   "syntaxTheme": "theme",
   "insertEnter": "submit",
-  "busySubmit": "queue",
+  "busySubmit": "steer",
   "foldTools": true,
   "composerMaxHeight": 0.33,
   "keybindings": {}

@@ -35,7 +35,7 @@ export const defaultVimexUiSettings: VimexUiSettings = {
   syntaxTheme: "theme",
   reducedColor: false,
   insertEnter: "submit",
-  busySubmit: "queue",
+  busySubmit: "steer",
   foldTools: true,
   composerMaxHeight: 0.32,
   keybindings: {},

@@ -60,7 +60,7 @@ upgrade and update are aliases. Homebrew installations delegate to brew upgrade;
 
 Normal, Insert, Visual, and Command modes follow Vim conventions. Focus and mode are separate: either the composer or transcript can have focus.
 
-i enters Insert. Enter sends by default; Shift-Enter inserts a newline when supported by the terminal. Ctrl-Enter steers an active turn or sends when idle. Escape leaves editing or closes an overlay; from Normal mode, it interrupts the active turn. Ctrl-C also interrupts.
+i enters Insert. Enter sends by default: it starts a turn when idle and steers the active turn when busy. Tab in the busy composer queues a follow-up prompt for the next turn; active completion menus keep Tab for completion. Shift-Enter inserts a newline when supported by the terminal. Ctrl-Enter steers an active turn or sends when idle. Escape leaves editing or closes an overlay; from Normal mode, it interrupts the active turn. Ctrl-C also interrupts.
 
 Composer Normal and Visual modes support h/j/k/l, w/b/e, W/B/E, 0/^/$, and gg/G. Lowercase word motions distinguish punctuation; uppercase WORD motions use whitespace boundaries. Counts repeat motions. In composer Normal mode, dG deletes the current logical line through the end of the draft, following Neovim; D deletes from the cursor to the end of the current line.
 
@@ -68,7 +68,9 @@ In composer Normal mode, d or c followed by i (inner) or a (around) acts on a te
 
 Up/Ctrl-K and Down/Ctrl-J move between the composer and transcript through queued messages. Ctrl-W K/J jump directly to the transcript or composer. These bindings respect local menu and completion navigation.
 
-Queued messages appear above the composer with a preview of the latest message and a total count. Focus the queue to see a short list and the selected message. Use Ctrl-K/J to move between messages, Ctrl-U/D to scroll the selected message, e to return it to an empty composer draft for editing, or x to remove it after confirmation. Once sending starts, the message can no longer be taken back.
+Tab preserves !shell drafts with a notice because shell commands cannot be queued.
+
+The busySubmit setting defaults to steer; an explicit queue preference is still respected. Sending messages appear in the transcript immediately. Queued messages appear above the composer with a preview of the latest message and a total count. Focus the queue to see a short list and the selected message. Use Ctrl-K/J to move between messages, Ctrl-U/D to scroll the selected message, e to return it to an empty composer draft for editing, or x to remove it after confirmation. Once sending starts, the message can no longer be taken back.
 
 Space e expands or collapses the composer. Expanded drafts can scroll internally. Space r opens rename with the old name shown as a hint and an empty replacement ready to type.
 

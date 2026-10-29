@@ -30,6 +30,7 @@ export function Composer(props: {
   mode: VimMode
   activeTurn: boolean
   drawer?: ReactNode
+  queueNotice?: string
   model?: string
   reasoningEffort?: string
   maxHeight: number
@@ -451,17 +452,22 @@ export function Composer(props: {
         </box>
         <box flexDirection="row" gap={1} flexShrink={0}>
           {props.activeTurn && showSendHint ? (
-            <text fg={emberTide.amber}>ctrl↵ steer</text>
+            <text fg={emberTide.amber}>tab queue</text>
           ) : null}
           {showSendHint ? (
             <text id="composer-send-hint" fg={emberTide.textMuted}>
               {props.insertEnter === "submit"
-                ? "enter send · shift↵ newline"
+                ? props.activeTurn
+                  ? `enter ${props.busySubmit} · shift↵ newline`
+                  : "enter send · shift↵ newline"
                 : "enter newline · ctrl↵ send"}
             </text>
           ) : null}
         </box>
       </box>
+      {props.queueNotice ? (
+        <text fg={emberTide.amber}>{props.queueNotice}</text>
+      ) : null}
       {failed.map((message) => (
         <box
           key={message.id}

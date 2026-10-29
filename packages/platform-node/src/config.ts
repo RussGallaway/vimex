@@ -23,7 +23,7 @@ export const defaultConfig: VimexConfig = {
   syntaxTheme: "theme",
   reducedColor: false,
   insertEnter: "submit",
-  busySubmit: "queue",
+  busySubmit: "steer",
   foldTools: true,
   foldReasoning: true,
   composerMaxHeight: 0.33,

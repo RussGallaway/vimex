@@ -309,8 +309,9 @@ export function VimexApp({
   const [queueFocusId, setQueueFocusId] = useState<string>()
   const [queueConfirmId, setQueueConfirmId] = useState<string>()
   const [queueNotice, setQueueNotice] = useState<string>()
+  const [queueBlockedDraft, setQueueBlockedDraft] = useState<string>()
   const queuedMessages = composer.outbox.filter(
-    (message) => message.status === "queued",
+    (message) => message.status === "queued" && message.intent === "next-turn",
   )
   const selectedQueued = queuedMessages.find(
     (message) => message.id === queueFocusId,
@@ -368,6 +369,8 @@ export function VimexApp({
         : undefined,
   })
   const busy = activeTurn(interaction, workspace?.conversation.activeTurnId)
+  const composerBusy =
+    busy || composer.outbox.some((message) => message.status === "sending")
   const approvals = state.approvals.order.flatMap((id) => {
     const approval = state.approvals.byId[id]
     return approval &&
@@ -1129,7 +1132,9 @@ export function VimexApp({
         controller.copyText(result.effect.text)
       if (result.effect?.type === "submit") {
         const submitted = controller.submit(
-          busy && settings.busySubmit === "steer" ? "steer" : "next-turn",
+          composerBusy && settings.busySubmit === "steer"
+            ? "steer"
+            : "next-turn",
         )
         if (submitted === false) return
         // Normal-mode Enter bypasses the textarea's native submit callback. Clear
@@ -1148,7 +1153,7 @@ export function VimexApp({
         if (failed) controller.retryOutgoing(failed.id)
       }
     },
-    [busy, composer.outbox, controller, settings.busySubmit],
+    [composerBusy, composer.outbox, controller, settings.busySubmit],
   )
   const runComposerKey = useCallback(
     (key: string) => {
@@ -1699,6 +1704,47 @@ export function VimexApp({
       telescopeModal.active,
     ],
   )
+  // Completion menus (priority 180+) keep Tab. In the busy composer it
+  // queues a follow-up; transcript Tab/Ctrl-I navigation remains unchanged.
+  useBindings(
+    () => ({
+      priority: 110,
+      bindings:
+        !interactive ||
+        !composerBusy ||
+        interaction.surface !== "composer" ||
+        (interaction.mode !== "insert" && interaction.mode !== "normal") ||
+        interaction.overlay ||
+        jumpActive ||
+        telescopeModal.active ||
+        queueFocused
+          ? []
+          : (distinctControlI ? ["tab"] : ["tab", "ctrl+i"]).map((key) => ({
+              key,
+              cmd: () => {
+                if (telescopeModal.activeRef.current) return false
+                const draft = textareaRef.current?.plainText ?? composer.text
+                if (draft.startsWith("!") && !draft.startsWith("!!")) {
+                  flushSync(() => setQueueBlockedDraft(draft))
+                  return
+                }
+                return flushSync(() => composerSubmitRef.current?.("next-turn"))
+              },
+            })),
+    }),
+    [
+      interactive,
+      composerBusy,
+      composer.text,
+      interaction.surface,
+      interaction.mode,
+      interaction.overlay,
+      jumpActive,
+      telescopeModal.active,
+      queueFocused,
+      distinctControlI,
+    ],
+  )
   useBindings(
     () => ({
       priority: 150,
@@ -2011,7 +2057,12 @@ export function VimexApp({
               key={state.activeThreadId}
               state={composer}
               mode={interaction.mode}
-              activeTurn={busy}
+              activeTurn={composerBusy}
+              queueNotice={
+                queueBlockedDraft === composer.text
+                  ? "Shell commands cannot be queued; submit to run the command."
+                  : undefined
+              }
               model={summary?.model}
               reasoningEffort={summary?.reasoningEffort}
               maxHeight={
