@@ -67,7 +67,6 @@ import {
   passThroughWindowWithActivityPlan,
   persistentTranscriptBlockPlan,
   planTranscriptWindow,
-  pointIsMaterialized,
   replaceTranscriptBlock,
   replaceTranscriptTailItem,
   spliceTranscriptItemBlocks,
@@ -120,7 +119,7 @@ export interface TranscriptRuntimeInput {
 export interface TranscriptFrame {
   readonly threadId: ThreadId
   readonly canonicalGeneration: number
-  /** Canonical revision represented by blocks, not the latest hidden revision. */
+  /** Canonical revision represented by the presented content. */
   readonly displayedCanonicalRevision: number
   readonly presentationRevision: number
   readonly mode: "follow" | "detached"
@@ -136,11 +135,11 @@ export interface TranscriptFrame {
 export interface TranscriptWindowPolicy {
   readonly viewportRows: number
   readonly overscanRows: number
-  /** Upper bound for the recent mounted area while reading near the tail. */
+  /** Shared block budget for prepared areas at the beginning and end. */
   readonly recentTailBlocks?: number
-  /** Indexed row budget; native measurements may refine earlier estimates. */
+  /** Shared edge row budget; native measurements refine earlier estimates. */
   readonly recentTailRows?: number
-  /** Indexed rows mounted before the recent tail's older boundary. */
+  /** Indexed rows prepared beyond either edge area toward the middle. */
   readonly olderLookAheadRows?: number
 }
 
@@ -169,11 +168,6 @@ export interface TranscriptRuntimeDiagnostics
   windowGeometryBlockVisits: number
   blockPlanWindowSliceItems: number
   changedItemBuilds: number
-  hiddenDamageMerges?: number
-  hiddenDamageInputItemVisits?: number
-  hiddenDamageItemAdditions?: number
-  hiddenDamageSnapshots?: number
-  hiddenDamageSnapshotItemVisits?: number
 }
 
 export const defaultTranscriptWindowPolicy: TranscriptWindowPolicy =
@@ -227,92 +221,6 @@ function mergeDamage(
     return frozenDamage({ kind: "blocks", itemIds: ids })
   }
   return noneDamage
-}
-
-class HiddenDamageAccumulator {
-  private kind: TranscriptDamage["kind"] = "none"
-  private readonly itemIds = new Set<ItemId>()
-
-  add(
-    damage: TranscriptDamage,
-    diagnostics?: TranscriptRuntimeDiagnostics,
-  ): void {
-    if (diagnostics)
-      diagnostics.hiddenDamageMerges = (diagnostics.hiddenDamageMerges ?? 0) + 1
-    if (damage.kind === "none") return
-    if (this.kind === "none") {
-      this.kind = damage.kind
-      this.itemIds.clear()
-      this.addItemIds(damage, diagnostics)
-      return
-    }
-    if (this.kind === "full" || damage.kind === "full")
-      return this.setScalar("full")
-    if (this.kind === "layout" || damage.kind === "layout")
-      return this.setScalar("layout")
-    if (this.kind === "folds" || damage.kind === "folds") {
-      if (this.kind === "folds" && damage.kind === "folds") {
-        this.addItemIds(damage, diagnostics)
-        return
-      }
-      const otherKind = this.kind === "folds" ? damage.kind : this.kind
-      if (otherKind === "view") {
-        if (damage.kind === "folds") {
-          this.itemIds.clear()
-          this.addItemIds(damage, diagnostics)
-        }
-        this.kind = "folds"
-        return
-      }
-      return this.setScalar("layout")
-    }
-    if (this.kind === "view" || damage.kind === "view")
-      return this.setScalar("view")
-    this.kind = "blocks"
-    this.addItemIds(damage, diagnostics)
-  }
-
-  snapshot(diagnostics?: TranscriptRuntimeDiagnostics): TranscriptDamage {
-    if (diagnostics)
-      diagnostics.hiddenDamageSnapshots =
-        (diagnostics.hiddenDamageSnapshots ?? 0) + 1
-    if (this.kind !== "blocks" && this.kind !== "folds")
-      return this.kind === "none"
-        ? noneDamage
-        : (Object.freeze({ kind: this.kind }) as TranscriptDamage)
-    const itemIds = Object.freeze([...this.itemIds])
-    if (diagnostics)
-      diagnostics.hiddenDamageSnapshotItemVisits =
-        (diagnostics.hiddenDamageSnapshotItemVisits ?? 0) + itemIds.length
-    return Object.freeze({ kind: this.kind, itemIds })
-  }
-
-  reset(): void {
-    this.kind = "none"
-    this.itemIds.clear()
-  }
-
-  private setScalar(kind: "view" | "layout" | "full"): void {
-    this.kind = kind
-    this.itemIds.clear()
-  }
-
-  private addItemIds(
-    damage: TranscriptDamage,
-    diagnostics?: TranscriptRuntimeDiagnostics,
-  ): void {
-    if (damage.kind !== "blocks" && damage.kind !== "folds") return
-    for (const itemId of damage.itemIds) {
-      if (diagnostics)
-        diagnostics.hiddenDamageInputItemVisits =
-          (diagnostics.hiddenDamageInputItemVisits ?? 0) + 1
-      const size = this.itemIds.size
-      this.itemIds.add(itemId)
-      if (diagnostics && this.itemIds.size !== size)
-        diagnostics.hiddenDamageItemAdditions =
-          (diagnostics.hiddenDamageItemAdditions ?? 0) + 1
-    }
-  }
 }
 
 function blockDamageIds(
@@ -891,18 +799,6 @@ function activeTurnPresentationChanged(
   )
 }
 
-function unprovenTurnStructureChanged(
-  previous: TranscriptRuntimeInput,
-  next: TranscriptRuntimeInput,
-  itemIds: readonly ItemId[],
-): boolean {
-  if (previous.conversation.turnIds === next.conversation.turnIds) return false
-  if (isEmptyTailTurnAdmission(previous, next)) return false
-  return (
-    itemIds.length !== 1 || !isTailItemAdmission(previous, next, itemIds[0]!)
-  )
-}
-
 function isTailItemAdmission(
   previous: TranscriptRuntimeInput,
   next: TranscriptRuntimeInput,
@@ -1010,8 +906,8 @@ export function createTranscriptFrame(
 }
 
 /**
- * Renderer-neutral presentation cache. It retains one coherent displayed
- * revision while detached; canonical and semantic authority remain upstream.
+ * Renderer-neutral presentation cache. Detached readers retain a logical
+ * anchor while the document stays current; canonical authority remains upstream.
  */
 export class TranscriptRuntime {
   private frame: TranscriptFrame
@@ -1025,7 +921,6 @@ export class TranscriptRuntime {
   private recentGeometryPoints = 0
   private readonly diagnostics: TranscriptRuntimeDiagnostics | undefined
   private readonly itemBlockIndexes = new Map<ItemId, number>()
-  private readonly hiddenDamage = new HiddenDamageAccumulator()
   private readonly listeners = new Set<() => void>()
   private disposed = false
   private notifying = false
@@ -1429,43 +1324,6 @@ export class TranscriptRuntime {
     return index
   }
 
-  private revealExistsInDisplayedFrame(
-    input: TranscriptRuntimeInput,
-    frame: TranscriptFrame,
-    point: LogicalPoint,
-  ): boolean {
-    const latest = input.transcript.projectionById[point.itemId]
-    const displayed = frame.transcript.projectionById[point.itemId]
-    if (!latest || !displayed || !latest.source.startsWith(displayed.source))
-      return false
-    const targetSpan = latest.sourceSpans[point.graphemeOffset]
-    // A concrete grapheme beginning at the old source end belongs to hidden
-    // appended output. The document-end sentinel belongs to the displayed
-    // revision only when both revisions have the same source extent.
-    if (
-      targetSpan
-        ? targetSpan.from >= displayed.source.length ||
-          targetSpan.to > displayed.source.length
-        : latest.source.length !== displayed.source.length
-    )
-      return false
-    const mapped = mapPoint(
-      input.transcript,
-      frame.transcript.projectionById,
-      point,
-    )
-    if (!mapped) return false
-    const index = this.heightIndex
-    if (index?.supports(frame.blocks))
-      return (
-        transcriptPointBlockIndex(frame.blocks, index, mapped, undefined) !==
-        undefined
-      )
-    // Inert consumers intentionally omit windowing and retain the complete
-    // reference plan; only that pass-through path may use the linear oracle.
-    return !this.windowPolicy && pointIsMaterialized(frame.blocks, mapped)
-  }
-
   private withPlannedWindow(
     frame: TranscriptFrame,
     index: TranscriptHeightIndex | undefined,
@@ -1813,8 +1671,7 @@ export class TranscriptRuntime {
       !this.windowPolicy ||
       this.frame.displayedCanonicalRevision !==
         previousInput.canonicalRevision ||
-      previousInput.mode !== "follow" ||
-      input.mode !== "follow" ||
+      previousInput.mode !== input.mode ||
       input.reveal ||
       (input.presentationDamage &&
         input.presentationDamage.kind !== "none" &&
@@ -2131,7 +1988,6 @@ export class TranscriptRuntime {
         true,
         undefined,
         this.displayedInput,
-        true,
       )
     if (foldDamage.kind === "folds") {
       const changed = foldDamage.itemIds.filter(
@@ -2230,7 +2086,6 @@ export class TranscriptRuntime {
           true,
           undefined,
           this.displayedInput,
-          true,
         )
     }
     const foldsChanged = raw.transcript.folded !== this.frame.transcript.folded
@@ -2477,9 +2332,7 @@ export class TranscriptRuntime {
     reuse = true,
     incrementalItemIds?: readonly ItemId[],
     previousInput: TranscriptRuntimeInput = this.latestInput,
-    preserveHiddenDamage = false,
   ): TranscriptFrame {
-    if (!preserveHiddenDamage) this.hiddenDamage.reset()
     const canonicalOnly = Boolean(
       incrementalItemIds?.length &&
       incrementalItemIds.every(
@@ -2608,7 +2461,7 @@ export class TranscriptRuntime {
       priorInput.excludedTurnIds,
     )
     // These owner-proven transitions are deliberately limited to the visible
-    // tail. Detached snapshots and cold/excluded histories keep the full path.
+    // tail. Detached readers and cold/excluded histories keep the general path.
     if (
       !lineageChanged &&
       !exclusionsChanged &&
@@ -2695,7 +2548,6 @@ export class TranscriptRuntime {
             : undefined
           if (blocks && index) {
             this.latestInput = input
-            this.hiddenDamage.reset()
             const transcript = presentationTranscriptWithProjections(
               input.transcript,
               input.transcript.order,
@@ -2782,98 +2634,34 @@ export class TranscriptRuntime {
     if (exclusionsChanged)
       return this.rebuild(input, fullDamage, true, undefined, priorInput)
 
-    if (input.mode === "detached") {
-      const detaching = priorFrame.mode !== "detached"
-      if (detaching && revisionChanged)
-        return this.rebuild(
-          input,
-          mergeDamage(canonicalDamage, presentationDamage),
-          true,
-          blockDamageIds(canonicalDamage),
-          priorInput,
-        )
-      if (revisionChanged) {
-        const hiddenDamage =
-          canonicalDamage.kind === "blocks" &&
-          (activeTurnPresentationChanged(priorInput, input) ||
-            unprovenTurnStructureChanged(
-              priorInput,
-              input,
-              canonicalDamage.itemIds,
-            ))
-            ? fullDamage
-            : canonicalDamage
-        this.hiddenDamage.add(hiddenDamage, this.diagnostics)
-      }
-
-      if (revealIsNew) {
-        const reveal = validReveal(input, this.diagnostics)
-        if (!reveal) return priorFrame
-        if (!this.revealExistsInDisplayedFrame(input, priorFrame, reveal)) {
-          const hiddenDamage = this.hiddenDamage.snapshot(this.diagnostics)
-          return this.rebuild(
-            input,
-            mergeDamage(
-              presentationDamage,
-              mergeDamage({ kind: "view" }, hiddenDamage),
-            ),
-            true,
-            blockDamageIds(hiddenDamage),
-            priorInput,
-          )
-        }
-        return this.publishPresentation(
-          input,
-          mergeDamage(
+    // Detachment pins navigation, not a historical document revision. Publish
+    // new content in order below the reader without changing their intent.
+    // The same incremental planner serves following and detached readers.
+    const attachmentChanged = priorFrame.mode !== input.mode
+    if (revisionChanged)
+      return this.rebuild(
+        input,
+        mergeDamage(canonicalDamage, presentationDamage),
+        true,
+        blockDamageIds(canonicalDamage),
+        priorInput,
+      )
+    if (revealIsNew && !validReveal(input, this.diagnostics)) return priorFrame
+    if (
+      !attachmentChanged &&
+      !revealIsNew &&
+      presentationDamage.kind === "none"
+    )
+      return priorFrame
+    return this.publishPresentation(
+      input,
+      revealIsNew
+        ? mergeDamage(
             presentationDamage,
             Object.freeze({ kind: "view" as const }),
-          ),
-        )
-      }
-
-      if (detaching || presentationDamage.kind !== "none") {
-        return this.publishPresentation(
-          input,
-          presentationDamage.kind === "none" ? noneDamage : presentationDamage,
-        )
-      }
-      return priorFrame
-    }
-
-    const reattaching = priorFrame.mode === "detached"
-    if (!reattaching && !revisionChanged && presentationDamage.kind === "none")
-      return priorFrame
-    const hiddenDamage = reattaching
-      ? this.hiddenDamage.snapshot(this.diagnostics)
-      : noneDamage
-    // A detached viewport can return to follow without any canonical change.
-    // Keep the existing block plan and height index in that case: rebuilding
-    // the entire history only to change attachment makes `G` scale with it.
-    if (
-      reattaching &&
-      !revisionChanged &&
-      priorFrame.displayedCanonicalRevision === input.canonicalRevision &&
-      hiddenDamage.kind === "none" &&
-      canonicalDamage.kind === "none" &&
-      (presentationDamage.kind === "none" ||
-        presentationDamage.kind === "view" ||
-        presentationDamage.kind === "folds")
-    ) {
-      this.hiddenDamage.reset()
-      return this.publishPresentation(input, presentationDamage)
-    }
-    const damage = reattaching
-      ? mergeDamage(
-          hiddenDamage,
-          mergeDamage(canonicalDamage, presentationDamage),
-        )
-      : mergeDamage(canonicalDamage, presentationDamage)
-    if (!revisionChanged && !reattaching)
-      return this.publishPresentation(input, damage)
-    const incrementalItemIds = reattaching
-      ? blockDamageIds(hiddenDamage, canonicalDamage)
-      : blockDamageIds(canonicalDamage)
-    return this.rebuild(input, damage, true, incrementalItemIds, priorInput)
+          )
+        : presentationDamage,
+    )
   }
 
   dispose(): void {

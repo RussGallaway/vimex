@@ -251,58 +251,134 @@ for (const mode of ["normal", "insert", "visual"] as const)
     }
   })
 
-test("wheel and keyboard scrolling to the detached bottom resume following", async () => {
+for (const input of ["wheel", "keyboard"] as const)
+  test(`${input} traverses live output beyond the old bottom before resuming follow`, async () => {
+    const h = await wheelHarness()
+    try {
+      const scrollbox = h.renderer.root.findDescendantById(
+        "transcript",
+      ) as ScrollBoxRenderable
+      const scroll = async (direction: "up" | "down", count: number) => {
+        await act(async () => {
+          for (let index = 0; index < count; index++) {
+            if (input === "wheel")
+              await h.mockMouse.scroll(
+                scrollbox.x + 10,
+                scrollbox.y + 3,
+                direction,
+              )
+            else
+              h.mockInput.pressKey(direction === "up" ? "y" : "e", {
+                ctrl: true,
+              })
+          }
+          await h.flush()
+          await h.renderOnce()
+        })
+        await act(async () => {
+          await h.flush()
+          await h.renderOnce()
+        })
+      }
+      const oldBottom = scrollbox.scrollTop
+      await scroll("up", 3)
+      const detachedTop = scrollbox.scrollTop
+      const anchor = h.workspace().transcript.viewport
+      expect(anchor.kind).toBe("point")
+      const visibleLines = () =>
+        h
+          .captureCharFrame()
+          .split("\n")
+          .filter((line) => line.includes("readable output"))
+      const before = visibleLines()
+      await act(async () => {
+        h.emit({
+          type: "conversation",
+          event: {
+            type: "item.delta",
+            threadId: thread,
+            itemId: answer,
+            delta:
+              "\n\n" +
+              Array.from(
+                { length: 40 },
+                (_, index) => `Live ${index} readable output`,
+              ).join("\n\n"),
+          },
+        })
+        await h.flush()
+        await h.renderOnce()
+      })
+      await act(async () => {
+        await h.flush()
+        await h.renderOnce()
+      })
+      expect(h.workspace().transcript.viewport).toEqual(anchor)
+      expect(scrollbox.scrollTop).toBe(detachedTop)
+      expect(visibleLines()).toEqual(before)
+      expect(h.workspace().transcript.unseenEntries).toBe(1)
+      expect(
+        scrollbox.scrollHeight - scrollbox.viewport.height,
+      ).toBeGreaterThan(oldBottom + 40)
+
+      // Cross the old end by a few rows. This must expose the beginning of
+      // the appended output, not jump over it to the latest tail.
+      await scroll("down", 6)
+      expect(scrollbox.scrollTop).toBe(detachedTop + 6)
+      expect(h.workspace().transcript.viewport.kind).toBe("point")
+      expect(h.captureCharFrame()).toContain("Live 0 readable output")
+      expect(h.captureCharFrame()).not.toContain("Live 39 readable output")
+
+      const rowsToBottom =
+        scrollbox.scrollHeight - scrollbox.viewport.height - scrollbox.scrollTop
+      await scroll("down", rowsToBottom + 1)
+      expect(h.workspace().transcript.viewport.kind).toBe("tail")
+      expect(h.workspace().transcript.unseenEntries).toBe(0)
+      expect(h.captureCharFrame()).toContain("Live 39 readable output")
+      expect(scrollbox.scrollTop).toBe(
+        scrollbox.scrollHeight - scrollbox.viewport.height,
+      )
+    } finally {
+      await h.close()
+    }
+  })
+
+test("queued scrolling uses the live bottom when output arrives before native layout", async () => {
   const h = await wheelHarness()
   try {
     const scrollbox = h.renderer.root.findDescendantById(
       "transcript",
     ) as ScrollBoxRenderable
-    const wheel = async (direction: "up" | "down", count = 1) => {
-      await act(async () => {
-        for (let index = 0; index < count; index++)
-          await h.mockMouse.scroll(scrollbox.x + 10, scrollbox.y + 3, direction)
-        await h.flush()
-        await h.renderOnce()
-      })
-      await act(async () => {
-        await h.flush()
-        await h.renderOnce()
-      })
-    }
-    await wheel("up", 3)
+    await act(async () => {
+      for (let index = 0; index < 3; index++)
+        h.mockInput.pressKey("y", { ctrl: true })
+      await h.flush()
+      await h.renderOnce()
+    })
+    const before = scrollbox.scrollTop
     expect(h.workspace().transcript.viewport.kind).toBe("point")
     await act(async () => {
       h.emit({
         type: "conversation",
         event: {
-          type: "item.delta",
+          type: "item.started",
           threadId: thread,
-          itemId: answer,
-          delta: "\n\nHidden until the reader returns",
+          item: {
+            id: itemId("new-live-answer"),
+            turnId: turnId("wheel-turn"),
+            kind: "assistant",
+            markdown: Array.from(
+              { length: 40 },
+              (_, index) => `New ${index} readable output`,
+            ).join("\n\n"),
+            status: "running",
+          },
         },
       })
-      await h.flush()
-      await h.renderOnce()
-    })
-    expect(h.workspace().transcript.unseenEntries).toBe(1)
-    expect(h.captureCharFrame()).not.toContain(
-      "Hidden until the reader returns",
-    )
-
-    await wheel("down", 3)
-    expect(h.workspace().transcript.viewport.kind).toBe("tail")
-    expect(h.workspace().transcript.unseenEntries).toBe(0)
-    expect(h.captureCharFrame()).toContain("Hidden until the reader returns")
-
-    await wheel("up", 2)
-    expect(h.workspace().transcript.viewport.kind).toBe("point")
-    const rowsToBottom =
-      scrollbox.scrollHeight - scrollbox.viewport.height - scrollbox.scrollTop
-    expect(rowsToBottom).toBeGreaterThan(0)
-    await act(async () => {
-      // Native wheel displacement can differ from the number of wheel events.
-      // Send enough one-row keys to reach the actual bottom on every platform.
-      for (let index = 0; index <= rowsToBottom; index++)
+      await h.controller.settle()
+      // The canonical update exists, but React/native placement has not yet
+      // painted it. Reaching the previously measured bottom must not attach.
+      for (let index = 0; index < 6; index++)
         h.mockInput.pressKey("e", { ctrl: true })
       await h.flush()
       await h.renderOnce()
@@ -311,10 +387,10 @@ test("wheel and keyboard scrolling to the detached bottom resume following", asy
       await h.flush()
       await h.renderOnce()
     })
-    expect(scrollbox.scrollTop).toBe(
-      Math.max(0, scrollbox.scrollHeight - scrollbox.viewport.height),
-    )
-    expect(h.workspace().transcript.viewport.kind).toBe("tail")
+    expect(h.workspace().transcript.viewport.kind).toBe("point")
+    expect(scrollbox.scrollTop).toBe(before + 6)
+    expect(h.captureCharFrame()).not.toContain("New 39 readable output")
+    expect(h.captureCharFrame()).toContain("New 0 readable output")
   } finally {
     await h.close()
   }

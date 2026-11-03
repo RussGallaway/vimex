@@ -7,11 +7,7 @@
 //   VIMEX_WINDOWING_SIZES=100 VIMEX_WINDOWING_VIEWPORTS=80x24 \
 //   bun scripts/benchmark-transcript-windowing.tsx
 import assert from "node:assert/strict"
-import {
-  CliRenderEvents,
-  type Renderable,
-  type ScrollBoxRenderable,
-} from "@opentui/core"
+import { type Renderable, type ScrollBoxRenderable } from "@opentui/core"
 import { testRender } from "@opentui/react/test-utils"
 import {
   appendTranscriptScalingTail,
@@ -299,11 +295,6 @@ function createRuntimeDiagnostics() {
     unseenItemAppendNodeVisits: 0,
     unseenItemIndexUpdateNodeVisits: 0,
     unseenItemIndexUpdateNodesCopied: 0,
-    hiddenDamageMerges: 0,
-    hiddenDamageInputItemVisits: 0,
-    hiddenDamageItemAdditions: 0,
-    hiddenDamageSnapshots: 0,
-    hiddenDamageSnapshotItemVisits: 0,
   }
 }
 
@@ -1203,16 +1194,15 @@ function boundedFollowRuntimeBaseline(
       fixture.tailDelta,
     )
     publications = 0
-    assert.equal(
-      runtime.update(
-        runtimeInput(fixture, hidden, "detached", {
-          canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
-        }),
-      ),
-      pinned,
+    const detached = runtime.update(
+      runtimeInput(fixture, hidden, "detached", {
+        canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
+      }),
     )
-    const detachedHiddenPublications = publications
-    assert.equal(detachedHiddenPublications, 0)
+    assert.deepEqual(detached.transcript.viewport, pinned.transcript.viewport)
+    assert.equal(detached.displayedCanonicalRevision, hidden.canonicalRevision)
+    const detachedLivePublications = publications
+    assert.equal(detachedLivePublications, 1)
     const latest = Object.freeze({
       ...hidden,
       transcript: Object.freeze({
@@ -1288,14 +1278,14 @@ function boundedFollowRuntimeBaseline(
     assert.equal(reattachCounts.completePlanBlockVisits, 0)
     assert.equal(reattachCounts.heightIndexBuilds, 0)
     assert.equal(reattachCounts.heightIndexBlockVisits, 0)
-    assert.equal(reattachCounts.heightIndexUpdates, 1)
-    assert.equal(reattachCounts.changedItemBuilds, 1)
+    assert.equal(reattachCounts.heightIndexUpdates, 0)
+    assert.equal(reattachCounts.changedItemBuilds, 0)
     assert.equal(reattachCounts.completeGeometryBlockVisits, 0)
     assert(
       reattachCounts.projectionRecordNodeVisits <=
         2 * Math.ceil(Math.log2(fixture.blockCount + 1)) + 1,
     )
-    assert(reattachCounts.projectionRecordNodesCopied > 0)
+    assert.equal(reattachCounts.projectionRecordNodesCopied, 0)
     assert(
       reattachCounts.projectionRecordNodesCopied <=
         2 * Math.ceil(Math.log2(fixture.blockCount + 1)) + 1,
@@ -1304,7 +1294,7 @@ function boundedFollowRuntimeBaseline(
       reattachCounts.blockPlanNodeVisits <=
         2 * (Math.ceil(Math.log2(fixture.blockCount)) + 1),
     )
-    assert(reattachCounts.blockPlanNodesCopied > 0)
+    assert.equal(reattachCounts.blockPlanNodesCopied, 0)
     assert(
       reattachCounts.blockPlanNodesCopied <=
         Math.ceil(Math.log2(fixture.blockCount)) + 1,
@@ -1340,7 +1330,7 @@ function boundedFollowRuntimeBaseline(
         mountedBlocksAfterFollow: followed.value.window.blocks.length,
         mountedBlocksAfterReattach: reattached.value.window.blocks.length,
         followPublications: 1,
-        detachedHiddenPublications,
+        detachedLivePublications,
         reattachPublications: publications,
         follow: followCounts,
         reattach: reattachCounts,
@@ -1945,48 +1935,7 @@ function detachedUnseenAccumulationBaseline(
   )
   try {
     const pinned = runtime.getSnapshot()
-    const hiddenDamageBacklog = Array.from(
-      { length: fixture.blockCount },
-      (_, index) =>
-        itemId(`detached-hidden-damage-${fixture.blockCount}-${index}`),
-    )
-    const seededSnapshot: TranscriptFixtureSnapshot = Object.freeze({
-      ...detachedSnapshot,
-      canonicalRevision: detachedSnapshot.canonicalRevision + 1,
-    })
-    const runtimeBeforeSeed = { ...runtimeDiagnostics }
-    assert.equal(
-      runtime.update(
-        runtimeInput(fixture, seededSnapshot, "detached", {
-          canonicalDamage: { kind: "blocks", itemIds: hiddenDamageBacklog },
-        }),
-      ),
-      pinned,
-    )
-    const hiddenDamageSeed = {
-      merges:
-        runtimeDiagnostics.hiddenDamageMerges! -
-        (runtimeBeforeSeed.hiddenDamageMerges ?? 0),
-      inputItemVisits:
-        runtimeDiagnostics.hiddenDamageInputItemVisits! -
-        (runtimeBeforeSeed.hiddenDamageInputItemVisits ?? 0),
-      itemAdditions:
-        runtimeDiagnostics.hiddenDamageItemAdditions! -
-        (runtimeBeforeSeed.hiddenDamageItemAdditions ?? 0),
-      snapshots:
-        runtimeDiagnostics.hiddenDamageSnapshots! -
-        (runtimeBeforeSeed.hiddenDamageSnapshots ?? 0),
-      snapshotItemVisits:
-        runtimeDiagnostics.hiddenDamageSnapshotItemVisits! -
-        (runtimeBeforeSeed.hiddenDamageSnapshotItemVisits ?? 0),
-    }
-    assert.deepEqual(hiddenDamageSeed, {
-      merges: 1,
-      inputItemVisits: hiddenDamageBacklog.length,
-      itemAdditions: hiddenDamageBacklog.length,
-      snapshots: 0,
-      snapshotItemVisits: 0,
-    })
+    const seededSnapshot = detachedSnapshot
     const runtimeBefore = { ...runtimeDiagnostics }
     const canonicalDiagnostics = createConversationReductionDiagnostics()
     const semanticDiagnostics = createTranscriptItemSyncDiagnostics()
@@ -2019,7 +1968,10 @@ function detachedUnseenAccumulationBaseline(
         }),
       ),
     )
-    assert.equal(emptyTurnRuntime.value, pinned)
+    assert.deepEqual(
+      emptyTurnRuntime.value.transcript.viewport,
+      pinned.transcript.viewport,
+    )
 
     const item = Object.freeze({
       id: fixture.nextItemId,
@@ -2054,7 +2006,14 @@ function detachedUnseenAccumulationBaseline(
         }),
       ),
     )
-    assert.equal(itemRuntime.value, pinned)
+    assert.deepEqual(
+      itemRuntime.value.transcript.viewport,
+      pinned.transcript.viewport,
+    )
+    assert.equal(
+      itemRuntime.value.transcript.projectionById[fixture.nextItemId]?.source,
+      item.markdown,
+    )
 
     const deltaReduction = timed(() =>
       reduceConversationWithDiagnostics(
@@ -2089,9 +2048,16 @@ function detachedUnseenAccumulationBaseline(
       ),
     )
     const hiddenSequenceSettlementMs = performance.now() - sequenceStarted
-    assert.equal(repeatRuntime.value, pinned)
-    assert.equal(publications, 0)
-    const hiddenContentPublications = publications
+    assert.deepEqual(
+      repeatRuntime.value.transcript.viewport,
+      pinned.transcript.viewport,
+    )
+    assert.equal(
+      repeatRuntime.value.transcript.projectionById[fixture.nextItemId]?.source,
+      item.markdown + " More.",
+    )
+    assert.equal(publications, 3)
+    const liveContentPublications = publications
 
     const presentation = timed(() =>
       runtime.update({
@@ -2100,10 +2066,10 @@ function detachedUnseenAccumulationBaseline(
       }),
     )
     stop()
-    assert.equal(publications, 1)
-    assert.equal(presentation.value.blocks, pinned.blocks)
-    assert.equal(presentation.value.window, pinned.window)
-    assert.equal(presentation.value.geometry, pinned.geometry)
+    assert.equal(publications, 4)
+    assert.equal(presentation.value.blocks, repeatRuntime.value.blocks)
+    assert.equal(presentation.value.window, repeatRuntime.value.window)
+    assert.equal(presentation.value.geometry, repeatRuntime.value.geometry)
     assert.equal(
       presentation.value.transcript.unseenItemIds,
       repeatProjection.value.unseenItemIds,
@@ -2163,26 +2129,6 @@ function detachedUnseenAccumulationBaseline(
       0,
     )
     assert.equal(
-      runtimeDiagnostics.hiddenDamageMerges! -
-        (runtimeBefore.hiddenDamageMerges ?? 0),
-      3,
-    )
-    assert.equal(
-      runtimeDiagnostics.hiddenDamageInputItemVisits! -
-        (runtimeBefore.hiddenDamageInputItemVisits ?? 0),
-      2,
-    )
-    assert.equal(
-      runtimeDiagnostics.hiddenDamageItemAdditions! -
-        (runtimeBefore.hiddenDamageItemAdditions ?? 0),
-      1,
-    )
-    assert.equal(
-      runtimeDiagnostics.hiddenDamageSnapshots! -
-        (runtimeBefore.hiddenDamageSnapshots ?? 0),
-      0,
-    )
-    assert.equal(
       runtimeDiagnostics.completePlanBuilds - runtimeBefore.completePlanBuilds,
       0,
     )
@@ -2193,7 +2139,7 @@ function detachedUnseenAccumulationBaseline(
     )
     assert.equal(
       runtimeDiagnostics.blockPlanUpdates - runtimeBefore.blockPlanUpdates,
-      0,
+      2,
     )
     assert.equal(
       runtimeDiagnostics.heightIndexBuilds - runtimeBefore.heightIndexBuilds,
@@ -2201,21 +2147,21 @@ function detachedUnseenAccumulationBaseline(
     )
     assert.equal(
       runtimeDiagnostics.heightIndexUpdates - runtimeBefore.heightIndexUpdates,
-      0,
+      2,
     )
     assert.equal(
       runtimeDiagnostics.completeGeometryBlockVisits -
         runtimeBefore.completeGeometryBlockVisits,
       0,
     )
-    assert.equal(
+    assert(
       runtimeDiagnostics.windowGeometryBlockVisits -
-        runtimeBefore.windowGeometryBlockVisits,
-      0,
+        runtimeBefore.windowGeometryBlockVisits <=
+        4 * 72,
     )
     assert.equal(
       runtimeDiagnostics.changedItemBuilds - runtimeBefore.changedItemBuilds,
-      0,
+      2,
     )
 
     printResult({
@@ -2239,8 +2185,8 @@ function detachedUnseenAccumulationBaseline(
         mountedBlocks: pinned.window.blocks.length,
         unseenEntriesBefore: fixture.blockCount,
         unseenEntriesAfter: repeatProjection.value.unseenEntries,
-        hiddenContentPublications,
-        presentationOnlyPublications: publications - hiddenContentPublications,
+        liveContentPublications,
+        presentationOnlyPublications: publications - liveContentPublications,
         semantic: {
           sequenceNormalizations:
             semanticDiagnostics.unseenItemSequenceNormalizations,
@@ -2255,25 +2201,6 @@ function detachedUnseenAccumulationBaseline(
             semanticDiagnostics.unseenItemIndexUpdateNodeVisits,
           indexUpdateNodesCopied:
             semanticDiagnostics.unseenItemIndexUpdateNodesCopied,
-        },
-        hiddenDamage: {
-          backlogBefore: hiddenDamageBacklog.length,
-          seed: hiddenDamageSeed,
-          merges:
-            runtimeDiagnostics.hiddenDamageMerges! -
-            (runtimeBefore.hiddenDamageMerges ?? 0),
-          inputItemVisits:
-            runtimeDiagnostics.hiddenDamageInputItemVisits! -
-            (runtimeBefore.hiddenDamageInputItemVisits ?? 0),
-          itemAdditions:
-            runtimeDiagnostics.hiddenDamageItemAdditions! -
-            (runtimeBefore.hiddenDamageItemAdditions ?? 0),
-          snapshots:
-            runtimeDiagnostics.hiddenDamageSnapshots! -
-            (runtimeBefore.hiddenDamageSnapshots ?? 0),
-          snapshotItemVisits:
-            runtimeDiagnostics.hiddenDamageSnapshotItemVisits! -
-            (runtimeBefore.hiddenDamageSnapshotItemVisits ?? 0),
         },
         runtime: {
           completePlanBuilds:
@@ -2544,8 +2471,16 @@ function runtimeBaseline(
         }),
       ),
     )
-    assert.equal(detached.value, pinned)
-    assert.equal(publications, 0)
+    assert.deepEqual(
+      detached.value.transcript.viewport,
+      pinned.transcript.viewport,
+    )
+    assert.equal(
+      detached.value.displayedCanonicalRevision,
+      hidden.canonicalRevision,
+    )
+    assert.equal(publications, 1)
+    publications = 0
 
     const hiddenTail = hidden.transcript.projectionById[fixture.tailItemId]!
     const revealPoint = Object.freeze({
@@ -2600,8 +2535,8 @@ function runtimeBaseline(
     )
     assert.equal(
       publications,
-      1,
-      "hidden output after reveal must not publish the pinned presentation",
+      2,
+      "streaming after reveal updates content without changing the reading anchor",
     )
     publications = 0
     const reattach = timed(() =>
@@ -2637,7 +2572,7 @@ function runtimeBaseline(
         mountedBlocks: 0,
         measuredBlocks: 0,
         changedBlocks,
-        publications: 5,
+        publications: 7,
         materializedWindowBlocks: cold.window.blocks.length,
         syntheticSeededMeasurements: measurements.length,
         invalidatedMeasurements: 1,
@@ -2646,7 +2581,7 @@ function runtimeBaseline(
         followPublications: 1,
         navigationPublications: 1,
         detachPublications: 1,
-        detachedPublications: 0,
+        detachedPublications: 2,
         revealPublications: 1,
         reattachPublications: 1,
       },
@@ -2842,10 +2777,10 @@ async function hiddenPresentationResourceBaseline(
     />,
     primaryViewport,
   )
+  // OpenTUI 0.5.11 pre-paint preparation uses frame callbacks, not FRAME events.
   const frameListeners = () =>
-    (
-      setup.renderer as unknown as { listenerCount(event: string): number }
-    ).listenerCount(CliRenderEvents.FRAME)
+    (setup.renderer as unknown as { frameCallbacks: readonly unknown[] })
+      .frameCallbacks.length
   const settle = async () => {
     for (let index = 0; index < 4; index++)
       await act(async () => {
@@ -2863,7 +2798,8 @@ async function hiddenPresentationResourceBaseline(
     assert(measurementReports > 0)
     assert.equal(activeRuntimeSubscriptions, 1)
     assert.equal(activePresentationSubscriptions, 1)
-    assert.equal(frameListeners(), 1)
+    const visibleFrameCallbacks = frameListeners()
+    assert(visibleFrameCallbacks > 0)
 
     await act(async () => {
       control.setVisible!(false)
@@ -2889,7 +2825,7 @@ async function hiddenPresentationResourceBaseline(
     assert.equal(hiddenTranscriptRoots, 0)
     assert.equal(hiddenMountedBlocks, 0)
     assert.equal(hiddenSpacerRoots, 0)
-    assert.equal(hiddenFrameListeners, 0)
+    assert.equal(hiddenFrameListeners, visibleFrameCallbacks - 1)
     assert.equal(activeRuntimeSubscriptions, 0)
     assert.equal(activePresentationSubscriptions, 0)
     const hiddenRenders = observe.renders
@@ -2929,7 +2865,7 @@ async function hiddenPresentationResourceBaseline(
     )
     assert.equal(hiddenMeasurementReports, 0)
     assert.equal(hiddenReactCommits, 0)
-    assert.equal(frameListeners(), 0)
+    assert.equal(frameListeners(), hiddenFrameListeners)
 
     const latest = runtime.getSnapshot()
     const retainedRuntime = runtime
@@ -2951,7 +2887,7 @@ async function hiddenPresentationResourceBaseline(
     assert.equal(observe.presentation?.error, "hidden publication")
     assert.equal(activeRuntimeSubscriptions, 1)
     assert.equal(activePresentationSubscriptions, 1)
-    assert.equal(frameListeners(), 1)
+    assert.equal(frameListeners(), visibleFrameCallbacks)
     const runtimeIdentityRetained = retainedRuntime === runtime ? 1 : 0
     const latestRevisionOnReveal =
       observe.frame?.displayedCanonicalRevision ===
@@ -3114,7 +3050,12 @@ function runtimeCorrectionBaseline(
       runtime.reportMeasurements({ ...base, measurements: [measurement] }),
     )
     assert.equal(publications, 1)
-    assert.equal(corrected.value.geometry.totalRows, fixture.blockCount + 3)
+    assert.equal(
+      corrected.value.geometry.totalRows,
+      before.geometry.totalRows -
+        before.geometry.blockRows.at(-1)!.rows +
+        measurement.rows,
+    )
     assert.equal(
       corrected.value.geometry.blockRows.length,
       corrected.value.window.blocks.length,
@@ -3239,14 +3180,13 @@ function offWindowTargetBaseline(
       fixture.tailItemId,
       fixture.tailDelta,
     )
-    assert.equal(
-      runtime.update(
-        runtimeInput(fixture, hidden, "detached", {
-          canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
-        }),
-      ),
-      before,
+    const current = runtime.update(
+      runtimeInput(fixture, hidden, "detached", {
+        canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
+      }),
     )
+    assert.deepEqual(current.transcript.viewport, before.transcript.viewport)
+    assert.equal(current.displayedCanonicalRevision, hidden.canonicalRevision)
     const motionDiagnostics = { wrappedItems: 0, itemTransitions: 0 }
     const motion = timed(() =>
       movePointInTranscript(
@@ -3294,10 +3234,10 @@ function offWindowTargetBaseline(
     )
     unsubscribe()
     assert.equal(publications, 1)
-    assert.equal(revealed.value.blocks, before.blocks)
+    assert.equal(revealed.value.blocks, current.blocks)
     assert.equal(
       revealed.value.displayedCanonicalRevision,
-      before.displayedCanonicalRevision,
+      current.displayedCanonicalRevision,
     )
     assert(pointIsMaterialized(revealed.value.window.blocks, target))
     assert(revealed.value.window.blocks.length <= 72)
@@ -3996,7 +3936,8 @@ async function detachedStatusNativePublicationBaseline(
         mode: "detached",
         canonicalDamage: { kind: "blocks", itemIds: [fixture.nextItemId] },
       })
-      assert.equal(result, pinned)
+      assert.deepEqual(result.transcript.viewport, pinned.transcript.viewport)
+      assert.equal(result.mode, "detached")
       await setup.flush()
     })
     const firstSettlementMs = performance.now() - firstStarted
@@ -4016,16 +3957,17 @@ async function detachedStatusNativePublicationBaseline(
     )
     assert.equal(observe.unseenEntries, fixture.blockCount + 1)
     assert.equal(workbenchPublications, 1)
-    assert.equal(runtimePublications, 0)
-    assert.equal(firstCommits, 1)
+    assert.equal(runtimePublications, 1)
+    assert(firstCommits >= 1 && firstCommits <= 2)
     assert.equal(firstMeasurementReports, 0)
-    assert.equal(firstAttemptedMeasurements, 0)
+    assert(firstAttemptedMeasurements <= rootsBefore.size)
     assert.equal(rootsAfterFirst.size, rootsBefore.size)
     assert.equal(retainedAfterFirst, rootsBefore.size)
 
     commits.length = 0
     measurementReports = 0
     workbenchPublications = 0
+    runtimePublications = 0
     const repeatMeasurementPassesBefore = measurementTotals.passes
     const repeatAttemptedMeasurementsBefore =
       measurementTotals.attemptedMeasurements
@@ -4048,7 +3990,8 @@ async function detachedStatusNativePublicationBaseline(
         mode: "detached",
         canonicalDamage: { kind: "blocks", itemIds: [fixture.nextItemId] },
       })
-      assert.equal(result, pinned)
+      assert.deepEqual(result.transcript.viewport, pinned.transcript.viewport)
+      assert.equal(result.mode, "detached")
       await setup.flush()
     })
     const repeatSettlementMs = performance.now() - repeatStarted
@@ -4068,10 +4011,10 @@ async function detachedStatusNativePublicationBaseline(
     )
     assert.equal(observe.unseenEntries, fixture.blockCount + 1)
     assert.equal(workbenchPublications, 0)
-    assert.equal(runtimePublications, 0)
-    assert.equal(commits.length, 0)
+    assert.equal(runtimePublications, 1)
+    assert(commits.length >= 1 && commits.length <= 2)
     assert.equal(measurementReports, 0)
-    assert.equal(repeatAttemptedMeasurements, 0)
+    assert(repeatAttemptedMeasurements <= rootsBefore.size)
     assert.equal(rootsAfterRepeat.size, rootsBefore.size)
     assert.equal(retainedAfterRepeat, rootsBefore.size)
 
@@ -4096,7 +4039,7 @@ async function detachedStatusNativePublicationBaseline(
         unseenEntriesAfter: fixture.blockCount + 1,
         firstDistinctItem: {
           workbenchPublications: 1,
-          runtimePublications: 0,
+          runtimePublications: 1,
           reactCommits: firstCommits,
           measurementPasses: firstMeasurementPasses,
           measurementReports: firstMeasurementReports,
@@ -4119,9 +4062,7 @@ async function detachedStatusNativePublicationBaseline(
       },
       timingsMs: {
         firstDistinctStatusSettlement: Number(firstSettlementMs.toFixed(6)),
-        repeatedItemNoPublicationSettlement: Number(
-          repeatSettlementMs.toFixed(6),
-        ),
+        repeatedItemSettlement: Number(repeatSettlementMs.toFixed(6)),
       },
       samples: { warmup: 0, measured: 1 },
     })
@@ -4178,16 +4119,23 @@ async function nativeStructuralAdmissionBaseline(
     for (let pass = 0; pass < 8; pass++) {
       seedDiagnostics = createDiagnostics()
       await act(async () => {
+        await setup.flush()
+        await setup.renderOnce()
         seededLayout = measureRenderedTranscript(setup.renderer, scroll, {
           frame: runtime.getSnapshot(),
           runtime,
           styleRevision,
           diagnostics: seedDiagnostics,
         })
-        await setup.flush()
-        await setup.renderOnce()
       })
-      if (seededLayout && seedDiagnostics.pendingAfter === 0) break
+      // Measure after painting so its line-info notifications are included.
+      // A clean pass ends setup without another render dirtying those roots.
+      if (
+        seededLayout &&
+        seedDiagnostics.pendingAfter === 0 &&
+        seedDiagnostics.attemptedMeasurements === 0
+      )
+        break
     }
     assert(
       seededLayout,
@@ -4197,6 +4145,11 @@ async function nativeStructuralAdmissionBaseline(
       seedDiagnostics.pendingAfter,
       0,
       "seeded structural geometry must drain pending measurements",
+    )
+    assert.equal(
+      seedDiagnostics.attemptedMeasurements,
+      0,
+      "seeded structural geometry must reach a clean measurement pass",
     )
     const initial = runtime.getSnapshot()
     const rootsBefore = mountedBlockRoots(scroll)
@@ -4267,6 +4220,20 @@ async function nativeStructuralAdmissionBaseline(
     assert.equal(rootsAfterEmptyTurn.size, rootsBefore.size)
     for (const [id, root] of rootsBefore)
       assert.equal(rootsAfterEmptyTurn.get(id), root)
+
+    // Empty-turn painting can refresh native line information without changing
+    // geometry. Account for those checks in this phase, not item admission.
+    const emptyTurnMeasurementDiagnostics = createDiagnostics()
+    const emptyTurnLayout = measureRenderedTranscript(setup.renderer, scroll, {
+      frame: emptyFrame,
+      runtime,
+      styleRevision,
+      diagnostics: emptyTurnMeasurementDiagnostics,
+    })
+    assert(emptyTurnLayout)
+    assert.equal(emptyTurnMeasurementDiagnostics.changedMeasurements, 0)
+    assert.equal(emptyTurnMeasurementDiagnostics.rejectedMeasurements, 0)
+    assert.equal(emptyTurnMeasurementDiagnostics.pendingAfter, 0)
 
     commits.length = 0
     const itemStarted = performance.now()
@@ -4401,7 +4368,21 @@ async function nativeStructuralAdmissionBaseline(
     const completionUnmountedRoots =
       rootsBeforeCompletion.size - completionRetainedRoots
     assert.equal(completionMountedRoots, 1)
-    assert.equal(completionUnmountedRoots, 0)
+    // The activity footer can push an older block outside the planned window.
+    // Every root still in that window must retain its native identity.
+    const completedRootIds = new Set(
+      completed.window.blocks.map(transcriptBlockRenderableId),
+    )
+    let plannedCompletionRemovals = 0
+    for (const [id, root] of rootsBeforeCompletion) {
+      if (completedRootIds.has(id))
+        assert.equal(rootsAfterCompletion.get(id), root)
+      else {
+        plannedCompletionRemovals++
+        assert(!rootsAfterCompletion.has(id))
+      }
+    }
+    assert.equal(completionUnmountedRoots, plannedCompletionRemovals)
     assert.equal(completionRuntimePublications, 1)
     assert.equal(completionReactCommits, 1)
 
@@ -4524,6 +4505,10 @@ async function nativeStructuralAdmissionBaseline(
         unmountedRoots,
         runtimePublications,
         emptyTurnReactCommits,
+        emptyTurnMeasurementAttempts:
+          emptyTurnMeasurementDiagnostics.attemptedMeasurements,
+        emptyTurnCachedMeasurements:
+          emptyTurnMeasurementDiagnostics.cachedMeasurements,
         itemReactCommits,
         measurementPublications,
         measuredBlocks: measurementDiagnostics.attemptedMeasurements,
@@ -5518,6 +5503,31 @@ async function nativeMountBaseline(
         settledLayout,
         "published native geometry must build a layout on the next scheduler pass",
       )
+      // Initial painting may reveal native geometry after the acknowledgement
+      // pass. Finish that setup work before timing a single tail delta.
+      let settledDiagnostics = createDiagnostics()
+      for (let pass = 0; pass < 8; pass++) {
+        settledDiagnostics = createDiagnostics()
+        await act(async () => {
+          await setup.flush()
+          await setup.renderOnce()
+          settledLayout = measureRenderedTranscript(setup.renderer, scroll, {
+            frame: runtime.getSnapshot(),
+            runtime,
+            styleRevision,
+            diagnostics: settledDiagnostics,
+          })
+        })
+        if (
+          settledLayout &&
+          settledDiagnostics.pendingAfter === 0 &&
+          settledDiagnostics.attemptedMeasurements === 0
+        )
+          break
+      }
+      assert(settledLayout)
+      assert.equal(settledDiagnostics.pendingAfter, 0)
+      assert.equal(settledDiagnostics.attemptedMeasurements, 0)
       steadyRoots = mountedBlockRoots(scroll)
       assertMountedRoots(runtime.getSnapshot(), steadyRoots)
       const blocksWithPoints = Object.values(
@@ -5975,20 +5985,21 @@ async function nativeMountBaseline(
           canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
         }),
       )
-      assert.equal(result, pinned)
+      assert.deepEqual(result.transcript.viewport, pinned.transcript.viewport)
+      assert.equal(result.mode, "detached")
       await setup.flush()
       await setup.renderOnce()
     })
     const detachedSettlementMs = performance.now() - detachedStarted
     unsubscribeDetached()
     const detachedRootsAfter = mountedBlockRoots(scroll)
-    assertMountedRoots(pinned, detachedRootsAfter)
+    assertMountedRoots(runtime.getSnapshot(), detachedRootsAfter)
     let detachedRetainedRoots = 0
     for (const [id, root] of pinnedRoots)
       if (detachedRootsAfter.get(id) === root) detachedRetainedRoots++
     assert.equal(detachedRetainedRoots, pinnedRoots.size)
-    assert.equal(detachedPublications, 0)
-    assert.equal(commits.length, 0)
+    assert.equal(detachedPublications, 1)
+    assert.equal(commits.length, 1)
     printResult({
       scenario: "detached-hidden-delta-presentation",
       materialization: "windowed-production",

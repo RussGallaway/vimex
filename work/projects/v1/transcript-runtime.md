@@ -46,7 +46,7 @@ One canonical conversation may have multiple presentations: main and side panes,
 
 - the displayed presentation revision;
 - stable projected render blocks;
-- pending damage, including hidden tail damage while detached;
+- revision-guarded content damage, including changes below a detached reader;
 - block measurements and estimates reported by a renderer;
 - the currently materialized window;
 - revision guards and full-rebuild fallback decisions.
@@ -85,12 +85,12 @@ A presentation runtime:
 - may outlive a React mount or renderer replacement;
 - is bound to the thread currently displayed by that presentation;
 - performs a guarded full presentation rebuild when that thread identity changes;
-- retains a detached frame while its canonical thread continues to advance;
+- advances detached content with its canonical thread while preserving the logical reading anchor;
 - is disposed when the presentation is explicitly retired or the application shuts down.
 
 Two presentations may show the same canonical thread while holding different displayed revisions, follow modes, windows, and geometry caches. They share canonical conversation and semantic per-thread state; they never share mutable presentation frames.
 
-The runtime and its geometry are recoverable caches. Persisted semantic state can restore cursor, selection, folds, and logical anchor, but a process restart does not promise to restore an obsolete detached presentation revision.
+The runtime and its geometry are recoverable caches. Persisted semantic state can restore cursor, selection, folds, and logical anchor, while displayed content is derived from the current canonical revision.
 
 ## Boundary contracts
 
@@ -116,8 +116,8 @@ This feedback path is not an authority cycle: canonical and semantic state flow 
 
 1. Conversation state is the only canonical record of turns and items.
 2. Semantic `TranscriptState` is authoritative for cursor, selection, folds, search, marks, jumps, and logical viewport anchor.
-3. A detached frame is a retained presentation revision, not a second transcript store.
-4. Reattaching follow mode selects the newest canonical presentation atomically; it never merges histories.
+3. Detachment pins the logical reading position while the presentation continues to receive canonical content. It does not freeze the document or create a second transcript store.
+4. Ordinary downward scrolling reattaches only at the current live bottom; explicit tail navigation jumps there directly. Crossing a former bottom never skips intervening output.
 5. Streaming ingress may be coalesced, but item, turn, hydration, disconnect, restart, and shutdown boundaries preserve event order.
 6. Activity summaries never replace canonical item IDs. Search, yank, marks, jumps, and fork boundaries address canonical content.
 7. Native geometry is disposable and block-local. Terminal rows never become semantic identity.
@@ -243,10 +243,10 @@ Move responsibility in tested vertical slices. The legacy hook and the runtime m
 
 - Coalesce item-local deltas within a short bounded cadence while preserving first-seen item order and semantic boundaries.
 - Flush before every semantic or lifecycle boundary.
-- Keep a detached presentation revision coherent while canonical state advances.
-- Accumulate hidden tail damage and live unseen counts without invalidating the detached frame.
-- Materialize canonical content when an explicit navigation target is absent from the displayed frame.
-- Reattach by selecting the latest canonical revision once.
+- Keep detached content current while retaining its logical viewport anchor, cursor, selection, and folds.
+- Update changed blocks and unseen counts without invalidating unchanged historical content.
+- Materialize canonical content when a navigation target is outside the mounted window.
+- Reattach at the current live bottom without skipping output accumulated during detached reading.
 
 ### Stage 3 — block-local geometry
 
@@ -307,7 +307,7 @@ Item blocks address canonical source; an item with empty canonical source uses a
 The future planner owns:
 
 - a height prefix index;
-- block range and overscan selection;
+- block range and overscan selection, with equal generous prepared areas at the beginning and end;
 - leading and trailing row estimates;
 - stable-anchor correction after measurement;
 - materialization of off-window navigation targets.
@@ -319,7 +319,7 @@ Server-backed paging, eviction, and indexed global search are separate future vo
 ## Acceptance and measurement
 
 - Settlement occurs at a bounded cadence rather than once per protocol delta.
-- A detached presentation receives no content invalidation from hidden tail streaming.
+- Detached streaming preserves the reading anchor while making appended content continuously reachable below it.
 - Historical block geometry is reused when only a live block changes.
 - One visible pane has at most one elapsed-time heartbeat.
 - Navigation input is processed ahead of hidden presentation work.

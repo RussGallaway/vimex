@@ -142,7 +142,10 @@ async function navigationHarness(
     }
     throw new Error(`No native cursor geometry for ${JSON.stringify(point)}`)
   }
-  const key = async (value: "up" | "down" | "{" | "}", repeat = 1) => {
+  const key = async (
+    value: "up" | "down" | "{" | "}" | "gg" | "G",
+    repeat = 1,
+  ) => {
     await act(async () => {
       if (value === "up" || value === "down") {
         for (let i = 0; i < repeat; i++)
@@ -191,6 +194,52 @@ test("default folding hides oversized command output in the mounted viewport", a
     ).toEqual([`item:${commandId}:root`])
     expect(h.painted()).toContain("Command output #0")
     expect(h.painted()).not.toContain("compile output")
+  } finally {
+    await h.close()
+  }
+}, 30000)
+
+test("gg prepares native content for repeated half-page paging just like the tail", async () => {
+  const h = await navigationHarness("command", 1000, 80)
+  try {
+    const mounted = () =>
+      new Map(
+        h.frame().window.blocks.map((block) => {
+          const id = transcriptBlockRenderableId(block)
+          const root = h.scroll.getRenderable(id)
+          expect(root).toBeDefined()
+          return [id, root!] as const
+        }),
+      )
+    await h.key("G")
+    const tail = mounted()
+    expect(tail.size).toBeGreaterThan(250)
+    for (let i = 0; i < 8; i++) {
+      await h.key("up")
+      for (const [id, root] of tail)
+        expect(h.scroll.getRenderable(id)).toBe(root)
+    }
+    await h.key("gg")
+    expect(h.cursor().itemId).toBe(h.fixture.before.transcript.order[0]!)
+    expect(h.cursor().row).toBe(0)
+    const head = mounted()
+    // Both ends prepare hundreds of native roots, then retain them across the
+    // same paging workload. Exact counts differ with the live tail/footer and
+    // whole-block inclusion, but neither side falls back to viewport overscan.
+    expect(head.size).toBeGreaterThan(250)
+    const start = h.scroll.scrollTop
+    for (let i = 0; i < 8; i++) {
+      await h.key("down")
+      for (const [id, root] of head)
+        expect(h.scroll.getRenderable(id)).toBe(root)
+      const cursor = h.cursor()
+      expect(cursor.row).toBeGreaterThanOrEqual(0)
+      expect(cursor.row).toBeLessThan(h.scroll.viewport.height)
+      expect(h.paintedRow(cursor.row).trim()).not.toBe("")
+    }
+    expect(h.scroll.scrollTop - start).toBeGreaterThan(
+      2 * h.scroll.viewport.height,
+    )
   } finally {
     await h.close()
   }

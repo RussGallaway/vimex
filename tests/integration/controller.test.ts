@@ -1087,7 +1087,7 @@ test("scheduled ingress yields to transcript navigation between bounded batches"
   await h.controller.close()
 })
 
-test("controller-owned transcript runtime freezes detached content and follows latest once", async () => {
+test("controller-owned transcript runtime updates detached content without moving its anchor", async () => {
   const h = harness()
   await h.controller.initialize("/tmp")
   const runtime = h.controller.transcriptRuntime("main")!
@@ -1129,9 +1129,15 @@ test("controller-owned transcript runtime freezes detached content and follows l
     },
   })
   await h.controller.settle()
-  expect(runtime.getSnapshot()).toBe(pinned)
+  expect(runtime.getSnapshot().transcript.viewport).toEqual(
+    pinned.transcript.viewport,
+  )
+  expect(runtime.getSnapshot().transcript.cursor).toEqual(
+    pinned.transcript.cursor,
+  )
+  expect(runtime.getSnapshot().mode).toBe("detached")
   expect(runtime.getSnapshot().transcript.projectionById[id]?.source).toBe(
-    "visible",
+    "visible hidden tail",
   )
   expect(
     h.controller.getSnapshot().workspaces[a]?.transcript.unseenEntries,
@@ -1206,8 +1212,10 @@ test("detached unseen membership publishes status once per item and resets for t
     h.controller.getSnapshot().workspaces[a]!.transcript.unseenEntries,
   ).toBe(1)
   expect(presentationPublications).toBe(1)
-  expect(runtimePublications).toBe(0)
-  expect(runtime.getSnapshot()).toBe(pinned)
+  expect(runtimePublications).toBe(1)
+  expect(runtime.getSnapshot().transcript.viewport).toEqual(
+    pinned.transcript.viewport,
+  )
 
   presentationPublications = 0
   h.emit({
@@ -1224,8 +1232,10 @@ test("detached unseen membership publishes status once per item and resets for t
     h.controller.getSnapshot().workspaces[a]!.transcript.unseenEntries,
   ).toBe(1)
   expect(presentationPublications).toBe(0)
-  expect(runtimePublications).toBe(0)
-  expect(runtime.getSnapshot()).toBe(pinned)
+  expect(runtimePublications).toBe(2)
+  expect(runtime.getSnapshot().transcript.viewport).toEqual(
+    pinned.transcript.viewport,
+  )
 
   h.emit({
     type: "conversation",
@@ -1248,8 +1258,10 @@ test("detached unseen membership publishes status once per item and resets for t
     ...h.controller.getSnapshot().workspaces[a]!.transcript.unseenItemIds,
   ]).toEqual([first, second])
   expect(presentationPublications).toBe(1)
-  expect(runtimePublications).toBe(0)
-  expect(runtime.getSnapshot()).toBe(pinned)
+  expect(runtimePublications).toBe(3)
+  expect(runtime.getSnapshot().transcript.viewport).toEqual(
+    pinned.transcript.viewport,
+  )
 
   presentationPublications = runtimePublications = 0
   h.controller.transcript({ type: "viewport.tail" })
@@ -1287,8 +1299,10 @@ test("detached unseen membership publishes status once per item and resets for t
     ...h.controller.getSnapshot().workspaces[a]!.transcript.unseenItemIds,
   ]).toEqual([first])
   expect(presentationPublications).toBe(1)
-  expect(runtimePublications).toBe(0)
-  expect(runtime.getSnapshot()).toBe(secondPinned)
+  expect(runtimePublications).toBe(1)
+  expect(runtime.getSnapshot().transcript.viewport).toEqual(
+    secondPinned.transcript.viewport,
+  )
   await h.controller.close()
 })
 
@@ -1613,7 +1627,7 @@ test("controller reasoning ingress is canonical but publishes no transcript fram
   await h.controller.close()
 })
 
-test("detached copy, reference, and URL reads use the displayed presentation until follow", async () => {
+test("detached copy, reference, and URL reads use current content while preserving selection and detachment", async () => {
   const h = harness()
   await h.controller.initialize("/tmp")
   const runtime = h.controller.transcriptRuntime("main")!
@@ -1670,7 +1684,7 @@ test("detached copy, reference, and URL reads use the displayed presentation unt
       ?.source,
   ).toBe(latest)
   expect(runtime.getSnapshot().transcript.projectionById[id]?.source).toBe(
-    visible,
+    latest,
   )
 
   h.controller.transcript({
@@ -1682,22 +1696,26 @@ test("detached copy, reference, and URL reads use the displayed presentation unt
   expect(h.copied.at(-1)).toBe("visible")
   h.controller.executeCommand("copy markdown", "main")
   await h.controller.settle()
-  expect(h.copied.at(-1)).toBe(visible)
+  expect(h.copied.at(-1)).toBe(latest)
 
   h.controller.changeDraft("note", 4)
   h.controller.transcript({ type: "reference", presentationId: "main" })
   expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe(
-    `note\n\n> ${visible}\n\n`,
+    `note\n\n> ${latest}\n\n`,
   )
   h.controller.transcript({ type: "url.open", presentationId: "main" })
   expect(
     h.controller.getSnapshot().urlChoices?.map((choice) => choice.url),
-  ).toEqual(["https://shown.test", "https://second.test"])
+  ).toEqual([
+    "https://shown.test",
+    "https://second.test",
+    "https://secret.test",
+  ])
   expect(
     h.controller
       .getSnapshot()
       .urlChoices?.some((choice) => choice.url === "https://secret.test"),
-  ).toBe(false)
+  ).toBe(true)
   h.controller.transcript({
     type: "url.open",
     url: "https://second.test",
@@ -1708,12 +1726,14 @@ test("detached copy, reference, and URL reads use the displayed presentation unt
   expect(h.controller.getSnapshot().urlChoices).toBeUndefined()
   expect(runtime.getSnapshot()).toMatchObject({
     mode: "detached",
-    displayedCanonicalRevision: pinnedRevision,
   })
   expect(runtime.getSnapshot().transcript.projectionById[id]?.source).toBe(
-    visible,
+    latest,
   )
 
+  expect(runtime.getSnapshot().displayedCanonicalRevision).toBeGreaterThan(
+    pinnedRevision,
+  )
   h.controller.transcript({ type: "viewport.tail" })
   h.controller.executeCommand("copy markdown", "main")
   await h.controller.settle()
@@ -1724,7 +1744,7 @@ test("detached copy, reference, and URL reads use the displayed presentation unt
   await h.controller.close()
 })
 
-test("explicit navigation materializes an item created beyond a detached frame", async () => {
+test("explicit navigation materializes newly streamed content while detached", async () => {
   const h = harness()
   await h.controller.initialize("/tmp")
   const runtime = h.controller.transcriptRuntime("main")!
@@ -1770,7 +1790,12 @@ test("explicit navigation materializes an item created beyond a detached frame",
       },
     },
   })
-  expect(runtime.getSnapshot()).toBe(pinned)
+  expect(runtime.getSnapshot().transcript.viewport).toEqual(
+    pinned.transcript.viewport,
+  )
+  expect(runtime.getSnapshot().transcript.projectionById[hidden]?.source).toBe(
+    "target",
+  )
   h.controller.transcript({
     type: "jump",
     target: { itemId: hidden, graphemeOffset: 0 },
@@ -1905,7 +1930,7 @@ test("distant selection swap reveals one bounded endpoint and copy spans unmount
   await h.controller.close()
 })
 
-test("off-window search adopts hidden content in one bounded coherent publication", async () => {
+test("off-window search reveals newly streamed content in one bounded coherent publication", async () => {
   const h = harness()
   await h.controller.initialize("/tmp")
   const runtime = h.controller.transcriptRuntime("main")!
@@ -1951,7 +1976,15 @@ test("off-window search adopts hidden content in one bounded coherent publicatio
       },
     },
   })
-  expect(runtime.getSnapshot()).toBe(pinned)
+  expect(runtime.getSnapshot().transcript.viewport).toEqual(
+    pinned.transcript.viewport,
+  )
+  expect(
+    pointIsMaterialized(runtime.getSnapshot().window.blocks, {
+      itemId: hidden,
+      graphemeOffset: 0,
+    }),
+  ).toBe(false)
   h.controller.transcript({ type: "fold.set", itemId: hidden, folded: true })
   h.controller.dispatchInteraction({ type: "mode.insert" })
   let statePublications = 0,

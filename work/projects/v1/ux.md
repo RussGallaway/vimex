@@ -36,12 +36,14 @@ The viewport starts attached to the tail. New output remains visible until the u
 
 While detached:
 
-- New content accumulates below without moving the viewport.
+- New content remains available below without moving the reading anchor; detachment does not freeze the transcript.
 - The status line shows the number of unseen logical blocks or lines.
 - Composer focus and Insert mode leave the anchor unchanged.
 - Folding and terminal resize reproject the same logical anchor.
 
-Scrolling down to the bottom reattaches and resumes following output. `G` moves to the bottom and reattaches directly. Merely entering Normal mode does not reattach.
+Scrolling down to the current live bottom reattaches and resumes following output. Crossing the point that used to be the bottom continues through newly generated content without jumping over it. `G` moves to the bottom and reattaches directly. Merely entering Normal mode does not reattach.
+
+The beginning and end of the transcript receive the same prepared-content budget. After `gg`, downward paging should have the same generous prepared neighborhood as upward paging from the tail.
 
 ## Default navigation
 

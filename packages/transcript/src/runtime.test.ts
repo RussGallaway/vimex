@@ -16,7 +16,6 @@ import {
 } from "./application/transcript-operations"
 import {
   appendTranscriptOrder,
-  appendTranscriptUnseenItemId,
   initialTranscript,
   persistentTranscriptUnseenItemIds,
   setTranscriptFoldValue,
@@ -342,11 +341,6 @@ function runtimeDiagnostics(): TranscriptRuntimeDiagnostics {
     windowGeometryBlockVisits: 0,
     blockPlanWindowSliceItems: 0,
     changedItemBuilds: 0,
-    hiddenDamageMerges: 0,
-    hiddenDamageInputItemVisits: 0,
-    hiddenDamageItemAdditions: 0,
-    hiddenDamageSnapshots: 0,
-    hiddenDamageSnapshotItemVisits: 0,
   }
 }
 
@@ -860,7 +854,7 @@ test("batch-aware navigation preserves geometry unless a protected child changes
   ).toBe(1)
 })
 
-test("detached old-frame measurement cannot adopt hidden protection state", () => {
+test("detached old-frame measurement cannot overwrite live protection state", () => {
   let source = fixture()
   const first = itemId("detached-web-first"),
     second = itemId("detached-web-second")
@@ -903,7 +897,15 @@ test("detached old-frame measurement cannot adopt hidden protection state", () =
     "detached",
     { kind: "blocks", itemIds: [answer] },
   )
-  expect(runtime.update(hiddenInput)).toBe(detached)
+  const staleBatch = batch(runtime, [
+    measurement(runtime, `item:${first}:root`, {
+      folded: true,
+      presentation: "activity-lead",
+    }),
+  ])
+  const current = runtime.update(hiddenInput)
+  expect(current).not.toBe(detached)
+  expect(runtime.reportMeasurements(staleBatch)).toBe(current)
   const measured = runtime.reportMeasurements(
     batch(runtime, [
       measurement(runtime, `item:${first}:root`, {
@@ -919,7 +921,7 @@ test("detached old-frame measurement cannot adopt hidden protection state", () =
     presentationDamage: { kind: "view" },
   })
   expect(revealed.window.activityPresentation).toEqual({})
-  expect(revealed.damage).toEqual({ kind: "blocks", itemIds: [first, second] })
+  expect(revealed.transcript.cursor).toEqual(hiddenTranscript.cursor)
 })
 
 test("a newly appended batch retains historical batch identity and damages only the new run", () => {
@@ -1686,7 +1688,7 @@ test("detached structural completion intent survives prior item damage through r
         itemIds: [answer],
       }),
     ),
-  ).toBe(pinned)
+  ).not.toBe(pinned)
   expect(
     reattachRuntime.update(
       input(completed, "detached", {
@@ -1694,7 +1696,7 @@ test("detached structural completion intent survives prior item damage through r
         itemIds: [],
       }),
     ),
-  ).toBe(pinned)
+  ).not.toBe(pinned)
   let reattachPublications = 0
   reattachRuntime.subscribe(() => {
     reattachPublications++
@@ -1720,7 +1722,7 @@ test("detached structural completion intent survives prior item damage through r
         itemIds: [answer],
       }),
     ),
-  ).toBe(revealPinned)
+  ).not.toBe(revealPinned)
   const hiddenEnd =
     completed.transcript.projectionById[answer]!.sourceSpans.length
   const revealed = revealRuntime.update(
@@ -1755,7 +1757,7 @@ test("detached structural completion intent survives prior item damage through r
         itemIds: [answer],
       }),
     ),
-  ).toBe(retainedPinned)
+  ).not.toBe(retainedPinned)
   const retained = retainedRuntime.update(
     input(
       completed,
@@ -1767,8 +1769,8 @@ test("detached structural completion intent survives prior item damage through r
       },
     ),
   )
-  expect(retained.blocks).toBe(retainedPinned.blocks)
-  expect(retained.displayedCanonicalRevision).toBe(initial.revision)
+  expect(retained.blocks).not.toBe(retainedPinned.blocks)
+  expect(retained.displayedCanonicalRevision).toBe(completed.revision)
   const retainedReattached = retainedRuntime.update(input(completed, "follow"))
   expect(semanticFrame(retainedReattached).blocks).toEqual(
     semanticFrame(reference).blocks,
@@ -1821,7 +1823,7 @@ test("detached mixed replay preserves activity for a turn admitted and completed
         itemIds: [answer],
       }),
     ),
-  ).toBe(pinned)
+  ).not.toBe(pinned)
   const reattached = reattachRuntime.update(input(replayed, "follow"))
   expect(semanticFrame(reattached).blocks).toEqual(
     semanticFrame(reference).blocks,
@@ -1842,7 +1844,7 @@ test("detached mixed replay preserves activity for a turn admitted and completed
         itemIds: [answer],
       }),
     ),
-  ).toBe(revealPinned)
+  ).not.toBe(revealPinned)
   const revealed = revealRuntime.update(
     input(
       replayed,
@@ -1897,7 +1899,7 @@ test("detached mixed replay preserves an admitted activity while an older turn r
           itemIds: [answer],
         }),
       ),
-    ).toBe(pinned)
+    ).not.toBe(pinned)
     const adopted = reveal
       ? runtime.update(
           input(
@@ -2283,7 +2285,7 @@ test("layout folding replaces a measured command height with its collapsed row",
   expect(diagnostics.heightIndexBuilds).toBe(baseline.heightIndexBuilds)
 })
 
-test("detached fragment fold fallbacks rebuild only the pinned revision and preserve hidden damage", () => {
+test("detached fragment fold fallbacks retain live content while preserving historical fragments", () => {
   let displayed = fixture()
   displayed = apply(displayed, {
     type: "turn.completed",
@@ -2354,19 +2356,8 @@ test("detached fragment fold fallbacks rebuild only the pinned revision and pres
     runtime.update(
       input(latest, "detached", { kind: "blocks", itemIds: [hiddenItem] }),
     ),
-  ).toBe(initial)
+  ).not.toBe(initial)
 
-  const foldedDisplayed = {
-    ...displayed,
-    transcript: {
-      ...displayed.transcript,
-      folded: setTranscriptFoldValue(
-        displayed.transcript.folded,
-        commandId,
-        true,
-      ),
-    },
-  }
   const foldedLatest = {
     ...latest,
     transcript: {
@@ -2378,14 +2369,14 @@ test("detached fragment fold fallbacks rebuild only the pinned revision and pres
     ...input(foldedLatest, "detached"),
     presentationDamage: { kind: "folds", itemIds: [commandId] },
   })
-  expect(folded.displayedCanonicalRevision).toBe(displayed.revision)
+  expect(folded.displayedCanonicalRevision).toBe(latest.revision)
   expect(
     folded.blocks.some(
       (block) => block.key.kind === "item" && block.key.itemId === hiddenItem,
     ),
-  ).toBe(false)
+  ).toBe(true)
   const foldedReference = new TranscriptRuntime(
-    input(foldedDisplayed, "detached", { kind: "full" }),
+    input(foldedLatest, "detached", { kind: "full" }),
     {
       windowPolicy: { viewportRows: 12, overscanRows: 12 },
     },
@@ -2399,12 +2390,12 @@ test("detached fragment fold fallbacks rebuild only the pinned revision and pres
     ...input(latest, "detached"),
     presentationDamage: { kind: "folds", itemIds: [commandId] },
   })
-  expect(restored.displayedCanonicalRevision).toBe(displayed.revision)
+  expect(restored.displayedCanonicalRevision).toBe(latest.revision)
   expect(
     restored.blocks.some(
       (block) => block.key.kind === "item" && block.key.itemId === hiddenItem,
     ),
-  ).toBe(false)
+  ).toBe(true)
   const restoredFragments = restored.blocks.filter(
     (block) => block.key.kind === "item" && block.key.itemId === commandId,
   )
@@ -2414,7 +2405,6 @@ test("detached fragment fold fallbacks rebuild only the pinned revision and pres
     ),
   ).toBe(true)
 
-  const snapshotsBeforeAttach = diagnostics.hiddenDamageSnapshots!
   const attached = runtime.update(input(latest, "follow"))
   expect(attached.displayedCanonicalRevision).toBe(latest.revision)
   expect(
@@ -2429,7 +2419,6 @@ test("detached fragment fold fallbacks rebuild only the pinned revision and pres
     semanticFrame(attachedReference.getSnapshot()),
   )
   attachedReference.dispose()
-  expect(diagnostics.hiddenDamageSnapshots! - snapshotsBeforeAttach).toBe(1)
   runtime.dispose()
 })
 
@@ -2925,15 +2914,21 @@ test("structural admission retains exclusions, supports exact default folds, and
   ).toBe(1)
 })
 
-test("detached tail streaming retains exact frame identity while canonical input advances", () => {
+test("detached tail streaming keeps the document current without changing navigation intent", () => {
   let source = fixture()
-  const runtime = new TranscriptRuntime(input(source, "follow"))
-  runtime.update(input(source, "detached"))
-  const detached = runtime.getSnapshot()
-  let notifications = 0
-  runtime.subscribe(() => {
-    notifications++
+  const point = { itemId: answer, graphemeOffset: 2 }
+  source = {
+    ...source,
+    transcript: {
+      ...source.transcript,
+      cursor: point,
+      viewport: { kind: "point", point, preferredScreenRow: 3 },
+    },
+  }
+  const runtime = new TranscriptRuntime(input(source, "detached"), {
+    windowPolicy: { viewportRows: 12, overscanRows: 12 },
   })
+  const intent = runtime.getViewportIntentRevision()
   for (let index = 0; index < 100; index++) {
     source = apply(source, {
       type: "item.delta",
@@ -2941,37 +2936,30 @@ test("detached tail streaming retains exact frame identity while canonical input
       itemId: answer,
       delta: String(index % 10),
     })
-    expect(
-      runtime.update(
-        input(source, "detached", { kind: "blocks", itemIds: [answer] }),
-      ),
-    ).toBe(detached)
+    const next = runtime.update(
+      input(source, "detached", { kind: "blocks", itemIds: [answer] }),
+    )
+    expect(next.displayedCanonicalRevision).toBe(source.revision)
+    expect(next.transcript.projectionById[answer]!.source).toBe(
+      source.transcript.projectionById[answer]!.source,
+    )
+    expect(next.transcript.viewport).toEqual(source.transcript.viewport)
+    expect(next.transcript.cursor).toEqual(point)
+    expect(next.mode).toBe("detached")
+    expect(runtime.getViewportIntentRevision()).toBe(intent)
   }
-  expect(runtime.getSnapshot()).toBe(detached)
-  expect(runtime.getSnapshot().displayedCanonicalRevision).toBe(2)
-  expect(notifications).toBe(0)
+  runtime.dispose()
 })
 
-test("detached hidden damage accumulates distinct items without copying its prior backlog", () => {
+test("detached item admission preserves the anchor and reaches a fresh-build document immediately", () => {
   let source = fixture()
-  let unseenItemIds = persistentTranscriptUnseenItemIds()
-  for (let index = 0; index < 4_096; index++) {
-    unseenItemIds = appendTranscriptUnseenItemId(
-      unseenItemIds,
-      itemId(`hidden-${index}`),
-    )
-  }
+  const point = { itemId: answer, graphemeOffset: 1 }
   source = {
     ...source,
     transcript: {
       ...source.transcript,
-      viewport: {
-        kind: "point",
-        point: { itemId: answer, graphemeOffset: 0 },
-        preferredScreenRow: 3,
-      },
-      unseenEntries: unseenItemIds.length,
-      unseenItemIds,
+      cursor: point,
+      viewport: { kind: "point", point, preferredScreenRow: 4 },
     },
   }
   const diagnostics = runtimeDiagnostics()
@@ -2979,112 +2967,35 @@ test("detached hidden damage accumulates distinct items without copying its prio
     windowPolicy: { viewportRows: 12, overscanRows: 12 },
     diagnostics,
   })
-  const presented = runtime.update({
-    ...input(source, "detached"),
-    presentationDamage: { kind: "view" },
-  })
-  expect(presented.transcript.unseenItemIds).toBe(unseenItemIds)
-  const pinned = runtime.getSnapshot()
-  let notifications = 0
-  runtime.subscribe(() => {
-    notifications++
-  })
-
-  for (let index = 0; index < unseenItemIds.length; index++) {
-    source = { ...source, revision: source.revision + 1 }
-    expect(
-      runtime.update(
-        input(source, "detached", {
-          kind: "blocks",
-          itemIds: [itemId(`hidden-${index}`)],
-        }),
-      ),
-    ).toBe(pinned)
-  }
-  source = { ...source, revision: source.revision + 1 }
-  expect(
-    runtime.update(
-      input(source, "detached", {
-        kind: "blocks",
-        itemIds: [itemId("hidden-4095")],
-      }),
-    ),
-  ).toBe(pinned)
-  expect(notifications).toBe(0)
-  expect(diagnostics.hiddenDamageMerges).toBe(4_097)
-  expect(diagnostics.hiddenDamageInputItemVisits).toBe(4_097)
-  expect(diagnostics.hiddenDamageItemAdditions).toBe(4_096)
-  expect(diagnostics.hiddenDamageSnapshots).toBe(0)
-  expect(diagnostics.hiddenDamageSnapshotItemVisits).toBe(0)
-
-  source = { ...source, transcript: attachTail(source.transcript) }
-  const reattached = runtime.update(input(source, "follow"))
-  expect(reattached).not.toBe(pinned)
-  expect(notifications).toBe(1)
-  expect(diagnostics.hiddenDamageSnapshots).toBe(1)
-  expect(diagnostics.hiddenDamageSnapshotItemVisits).toBe(4_096)
-  expect(reattached.transcript.unseenEntries).toBe(0)
-  expect(reattached.transcript.unseenItemIds).toBe(
-    persistentTranscriptUnseenItemIds(),
-  )
-})
-
-test("detached hidden damage preserves public damage precedence and ordered uniqueness", () => {
-  const first = itemId("damage-first"),
-    second = itemId("damage-second")
-  const cases: readonly Readonly<{
-    damages: readonly TranscriptDamage[]
-    expected: TranscriptDamage
-  }>[] = [
-    {
-      damages: [
-        { kind: "blocks", itemIds: [first] },
-        { kind: "blocks", itemIds: [first, second] },
-      ],
-      expected: { kind: "blocks", itemIds: [first, second] },
-    },
-    {
-      damages: [{ kind: "folds", itemIds: [first] }, { kind: "view" }],
-      expected: { kind: "folds", itemIds: [first] },
-    },
-    {
-      damages: [{ kind: "view" }, { kind: "folds", itemIds: [second] }],
-      expected: { kind: "folds", itemIds: [second] },
-    },
-    {
-      damages: [
-        { kind: "blocks", itemIds: [first] },
-        { kind: "folds", itemIds: [second] },
-      ],
-      expected: { kind: "layout" },
-    },
-    {
-      damages: [{ kind: "view" }, { kind: "blocks", itemIds: [first] }],
-      expected: { kind: "view" },
-    },
-    {
-      damages: [{ kind: "layout" }, { kind: "blocks", itemIds: [first] }],
-      expected: { kind: "layout" },
-    },
-    {
-      damages: [{ kind: "full" }, { kind: "folds", itemIds: [first] }],
-      expected: { kind: "full" },
-    },
-  ]
-
-  for (const { damages, expected } of cases) {
-    let source = fixture()
-    const runtime = new TranscriptRuntime(input(source, "detached"), {
-      windowPolicy: { viewportRows: 12, overscanRows: 12 },
+  const baseline = diagnostics.completePlanBuilds
+  const intent = runtime.getViewportIntentRevision()
+  for (let index = 0; index < 20; index++) {
+    const id = itemId(`live-${index}`)
+    source = apply(source, {
+      type: "item.started",
+      threadId: thread,
+      item: {
+        id,
+        turnId: turn,
+        kind: "assistant",
+        markdown: `New output ${index}`,
+        status: "running",
+      },
     })
-    const pinned = runtime.getSnapshot()
-    for (const damage of damages) {
-      source = { ...source, revision: source.revision + 1 }
-      expect(runtime.update(input(source, "detached", damage))).toBe(pinned)
-    }
-    expect(runtime.update(input(source, "follow")).damage).toEqual(expected)
-    runtime.dispose()
+    const next = runtime.update(
+      input(source, "detached", { kind: "blocks", itemIds: [id] }),
+    )
+    expect(next.transcript.viewport).toEqual(source.transcript.viewport)
+    expect(next.transcript.cursor).toEqual(point)
+    expect(next.displayedCanonicalRevision).toBe(source.revision)
+    expect(next.transcript.order).toEqual(source.transcript.order)
+    expect(runtime.getViewportIntentRevision()).toBe(intent)
   }
+  expect(diagnostics.completePlanBuilds).toBe(baseline)
+  expect(semanticFrame(runtime.getSnapshot()).blocks).toEqual(
+    semanticFrame(createTranscriptFrame(input(source, "detached"))).blocks,
+  )
+  runtime.dispose()
 })
 
 test("detachment atomically includes canonical events ordered before its boundary", () => {
@@ -3108,7 +3019,7 @@ test("detachment atomically includes canonical events ordered before its boundar
   expect(detached.displayedCanonicalRevision).toBe(source.revision)
 })
 
-test("detached presentation damage stays on pinned blocks and explicit missing targets reveal latest content", () => {
+test("detached presentation damage uses current blocks and explicit targets reveal latest content", () => {
   let source = fixture()
   const runtime = new TranscriptRuntime(input(source, "detached"))
   const pinned = runtime.getSnapshot()
@@ -3125,10 +3036,8 @@ test("detached presentation damage stays on pinned blocks and explicit missing t
     ...input(source, "detached"),
     presentationDamage: { kind: "layout" },
   })
-  expect(layout.blocks).toBe(pinned.blocks)
-  expect(layout.displayedCanonicalRevision).toBe(
-    pinned.displayedCanonicalRevision,
-  )
+  expect(layout.blocks).not.toBe(pinned.blocks)
+  expect(layout.displayedCanonicalRevision).toBe(source.revision)
   expect(layout.damage.kind).toBe("layout")
   const revealed = runtime.update({
     ...input(
@@ -3149,7 +3058,7 @@ test("detached presentation damage stays on pinned blocks and explicit missing t
   expect(revealed.damage.kind).toBe("layout")
 })
 
-test("detached reveal distinguishes retained points from hidden append boundaries and rewrites", () => {
+test("detached reveal distinguishes current points across append boundaries and rewrites", () => {
   const appendCase = (offset: (before: Source, after: Source) => number) => {
     const before = fixture()
     const runtime = new TranscriptRuntime(input(before, "detached"), {
@@ -3166,7 +3075,7 @@ test("detached reveal distinguishes retained points from hidden append boundarie
       runtime.update(
         input(after, "detached", { kind: "blocks", itemIds: [answer] }),
       ),
-    ).toBe(pinned)
+    ).not.toBe(pinned)
     const revealed = runtime.update(
       input(
         after,
@@ -3180,9 +3089,9 @@ test("detached reveal distinguishes retained points from hidden append boundarie
   }
 
   const retained = appendCase(() => 0)
-  expect(retained.revealed.blocks).toBe(retained.pinned.blocks)
+  expect(retained.revealed.blocks).not.toBe(retained.pinned.blocks)
   expect(retained.revealed.displayedCanonicalRevision).toBe(
-    retained.before.revision,
+    retained.after.revision,
   )
 
   const firstAppended = appendCase(
@@ -3220,7 +3129,7 @@ test("detached reveal distinguishes retained points from hidden append boundarie
     rewrittenRuntime.update(
       input(rewritten, "detached", { kind: "blocks", itemIds: [answer] }),
     ),
-  ).toBe(rewrittenPinned)
+  ).not.toBe(rewrittenPinned)
   const revealedRewrite = rewrittenRuntime.update(
     input(
       rewritten,
@@ -3277,7 +3186,7 @@ test("explicit targets in new items materialize and activity remains source-less
   expect(activity?.sourceSpan).toBeUndefined()
 })
 
-test("invalid reveals stay frozen and visible semantic changes map onto retained projections", () => {
+test("invalid reveals leave the frame unchanged and semantic changes map onto current projections", () => {
   const source = fixture()
   const runtime = new TranscriptRuntime(input(source, "detached"))
   const pinned = runtime.getSnapshot()
@@ -3345,7 +3254,7 @@ test("same-source completion replaces renderer metadata despite an unchanged pro
   ).toMatchObject({ status: "complete", durationMs: 20 })
 })
 
-test("reattachment adopts the newest canonical revision once and equals a fresh build", () => {
+test("reattachment preserves the current canonical revision and equals a fresh build", () => {
   let source = fixture()
   const runtime = new TranscriptRuntime(input(source, "follow"))
   runtime.update(input(source, "detached"))
@@ -3374,7 +3283,7 @@ test("reattachment adopts the newest canonical revision once and equals a fresh 
   expect(notifications).toBe(1)
 })
 
-test("multi-item detached tail admission reattaches through the exact full-build reference", () => {
+test("multi-item detached tail admission reattaches without rebuilding current content", () => {
   let source = fixture()
   source = {
     ...source,
@@ -3416,7 +3325,7 @@ test("multi-item detached tail admission reattaches through the exact full-build
     runtime.update(
       input(source, "detached", { kind: "blocks", itemIds: [first] }),
     ),
-  ).toBe(pinned)
+  ).not.toBe(pinned)
   source = apply(source, {
     type: "item.started",
     threadId: thread,
@@ -3432,7 +3341,7 @@ test("multi-item detached tail admission reattaches through the exact full-build
     runtime.update(
       input(source, "detached", { kind: "blocks", itemIds: [second] }),
     ),
-  ).toBe(pinned)
+  ).not.toBe(pinned)
   expect(source.transcript.unseenItemIds).toEqual([first, second])
 
   source = { ...source, transcript: attachTail(source.transcript) }
@@ -3449,10 +3358,7 @@ test("multi-item detached tail admission reattaches through the exact full-build
   expect(semanticFrame(attached)).toEqual(
     semanticFrame(referenceRuntime.getSnapshot()),
   )
-  expect(diagnostics.completePlanBuilds - baseline.completePlanBuilds).toBe(1)
-  expect(
-    diagnostics.hiddenDamageSnapshots! - baseline.hiddenDamageSnapshots!,
-  ).toBe(1)
+  expect(diagnostics.completePlanBuilds - baseline.completePlanBuilds).toBe(0)
   expect(attached.transcript.unseenEntries).toBe(0)
   expect(attached.transcript.unseenItemIds).toBe(
     persistentTranscriptUnseenItemIds(),
@@ -3461,7 +3367,7 @@ test("multi-item detached tail admission reattaches through the exact full-build
   runtime.dispose()
 })
 
-test("two presentations over one source retain independent attachment and revisions", () => {
+test("two presentations over one source retain independent attachment with current revisions", () => {
   let source = fixture()
   const following = new TranscriptRuntime(input(source, "follow"))
   const detached = new TranscriptRuntime(input(source, "detached"))
@@ -3481,7 +3387,11 @@ test("two presentations over one source retain independent attachment and revisi
   expect(following.getSnapshot().displayedCanonicalRevision).toBe(
     source.revision,
   )
-  expect(detached.getSnapshot()).toBe(pinned)
+  expect(detached.getSnapshot()).not.toBe(pinned)
+  expect(detached.getSnapshot().mode).toBe("detached")
+  expect(detached.getSnapshot().displayedCanonicalRevision).toBe(
+    source.revision,
+  )
 })
 
 test("listener faults are isolated and reentrant updates settle after publication", () => {

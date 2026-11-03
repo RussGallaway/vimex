@@ -295,9 +295,9 @@ test("empty plans are inert and invalid planning facts take the exact pass-throu
   ).toBe(duplicate)
 })
 
-test("recent tail stays mounted across nearby anchors and releases for older reading", () => {
+test("prepared edges stay mounted across nearby anchors and release for middle reading", () => {
   const blocks = Object.freeze(
-    Array.from({ length: 350 }, (_, index) => item(`hot-${index}`)),
+    Array.from({ length: 1_000 }, (_, index) => item(`hot-${index}`)),
   )
   const heights = heightIndex(blocks)
   const plan = (index: number) =>
@@ -314,14 +314,14 @@ test("recent tail stays mounted across nearby anchors and releases for older rea
       },
     })
 
-  expect(keys(plan(349).blocks)).toEqual(keys(blocks.slice(250)))
-  expect(keys(plan(290).blocks)).toEqual(keys(blocks.slice(250)))
-  const older = plan(30)
-  expect(keys(older.blocks)).toEqual(keys(blocks.slice(26, 38)))
+  expect(keys(plan(999).blocks)).toEqual(keys(blocks.slice(900)))
+  expect(keys(plan(940).blocks)).toEqual(keys(blocks.slice(900)))
+  const older = plan(500)
+  expect(keys(older.blocks)).toEqual(keys(blocks.slice(496, 508)))
   expect(
     older.topSpacerRows + older.blocks.length + older.bottomSpacerRows,
-  ).toBe(350)
-  expect(keys(plan(349).blocks)).toEqual(keys(blocks.slice(250)))
+  ).toBe(1_000)
+  expect(keys(plan(999).blocks)).toEqual(keys(blocks.slice(900)))
 })
 
 test("older look-ahead precedes the tail and the newer edge tapers across its boundary", () => {
@@ -350,7 +350,7 @@ test("older look-ahead precedes the tail and the newer edge tapers across its bo
   expect(keys(plan(146).blocks)).toEqual(keys(blocks.slice(142)))
   expect(keys(plan(145).blocks)).toEqual(keys(blocks.slice(141, 198)))
   expect(keys(plan(140).blocks)).toEqual(keys(blocks.slice(136, 188)))
-  expect(keys(plan(50).blocks)).toEqual(keys(blocks.slice(46, 58)))
+  expect(keys(plan(50).blocks)).toEqual(keys(blocks.slice(0, 58)))
   expect(keys(plan(149, 0).blocks)).toEqual(keys(blocks.slice(145, 157)))
 })
 
@@ -414,6 +414,95 @@ test("recent tail limits selection by block count and indexed rows", () => {
   })
   expect(underestimated.blocks).toHaveLength(100)
   expect(tail.blocks).toHaveLength(80)
+})
+
+test("top and bottom preparation mirror mixed heights, boundaries, and oversized blocks", () => {
+  for (const rows of [
+    Array.from({ length: 150 }, (_, index) => 1 + (index % 7)),
+    [500, ...Array.from({ length: 149 }, () => 3)],
+    Array.from({ length: 150 }, () => 3),
+  ]) {
+    const blocks = Object.freeze(
+      rows.map((height, index) => item(`symmetric-${index}`, height)),
+    )
+    const reversed = Object.freeze([...blocks].reverse())
+    const heights = heightIndex(blocks)
+    const reverseHeights = heightIndex(reversed)
+    const viewportRows = 4
+    const policy = {
+      viewportRows,
+      overscanRows: 4,
+      recentTailBlocks: 50,
+      recentTailRows: 120,
+      olderLookAheadRows: 10,
+    }
+    // Compare every top-relative viewport to its reflected bottom-relative
+    // viewport, including positions inside a block and across tapered edges.
+    for (let row = 0; row <= heights.totalRows - viewportRows; row += 3) {
+      const mirrorRow = heights.totalRows - viewportRows - row
+      const index = heights.blockAtRow(row)!
+      const reverseIndex = reverseHeights.blockAtRow(mirrorRow)!
+      const top = planTranscriptWindow({
+        ...policy,
+        blocks,
+        heights,
+        attachment: {
+          kind: "point",
+          point: point(blocks[index]!),
+          preferredScreenRow: 0,
+          blockLocalRow: row - heights.prefixRows(index),
+        },
+      })
+      const bottom = planTranscriptWindow({
+        ...policy,
+        blocks: reversed,
+        heights: reverseHeights,
+        attachment: {
+          kind: "point",
+          point: point(reversed[reverseIndex]!),
+          preferredScreenRow: 0,
+          blockLocalRow: mirrorRow - reverseHeights.prefixRows(reverseIndex),
+        },
+      })
+      expect(keys(top.blocks)).toEqual(keys([...bottom.blocks].reverse()))
+      expect(top.topSpacerRows).toBe(bottom.bottomSpacerRows)
+      expect(top.bottomSpacerRows).toBe(bottom.topSpacerRows)
+    }
+  }
+})
+
+test("top prepares the same generous paging runway as the tail", () => {
+  const blocks = Object.freeze(
+    Array.from({ length: 2_000 }, (_, index) => item(`paging-${index}`, 3)),
+  )
+  const heights = heightIndex(blocks)
+  const policy = {
+    blocks,
+    heights,
+    viewportRows: 24,
+    overscanRows: 24,
+    recentTailBlocks: 300,
+    recentTailRows: 900,
+    olderLookAheadRows: 48,
+  }
+  const bottom = planTranscriptWindow({
+    ...policy,
+    attachment: { kind: "tail" },
+  })
+  for (let row = 0; row < 600; row += 12) {
+    const top = planTranscriptWindow({
+      ...policy,
+      attachment: {
+        kind: "point",
+        point: point(blocks[row / 3]!),
+        preferredScreenRow: 0,
+      },
+    })
+    expect(top.blocks).toEqual(blocks.slice(0, 316))
+    expect(top.blocks.length).toBe(bottom.blocks.length)
+    expect(top.topSpacerRows).toBe(0)
+    expect(top.bottomSpacerRows).toBe(bottom.topSpacerRows)
+  }
 })
 
 test("half-open row boundaries include only intersecting blocks", () => {

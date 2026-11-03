@@ -642,7 +642,7 @@ test("side quote appends selected text to parent draft without submitting", asyn
   await h.controller.close()
 })
 
-test("side quote reads the detached side presentation instead of hidden canonical tail", async () => {
+test("side quote reads current detached content without changing its anchor", async () => {
   const h = harness()
   await h.controller.initialize("/tmp")
   h.controller.sideChat("open")
@@ -685,7 +685,10 @@ test("side quote reads the detached side presentation instead of hidden canonica
       },
     },
   })
-  expect(runtime.getSnapshot()).toBe(pinned)
+  expect(runtime.getSnapshot().transcript.viewport).toEqual(
+    pinned.transcript.viewport,
+  )
+  expect(runtime.getSnapshot().mode).toBe("detached")
   expect(
     h.controller.getSnapshot().workspaces[side]?.transcript.projectionById[item]
       ?.source,
@@ -695,10 +698,10 @@ test("side quote reads the detached side presentation instead of hidden canonica
   await h.controller.settle()
   expect(h.controller.getSnapshot().activeThreadId).toBe(a)
   expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe(
-    "> visible",
+    "> visible hidden",
   )
   expect(runtime.getSnapshot().transcript.projectionById[item]?.source).toBe(
-    "visible",
+    "visible hidden",
   )
   await h.controller.close()
 })

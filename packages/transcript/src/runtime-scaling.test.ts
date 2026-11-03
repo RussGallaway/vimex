@@ -122,11 +122,6 @@ function scalingRuntimeDiagnostics(): TranscriptRuntimeDiagnostics {
     windowGeometryBlockVisits: 0,
     blockPlanWindowSliceItems: 0,
     changedItemBuilds: 0,
-    hiddenDamageMerges: 0,
-    hiddenDamageInputItemVisits: 0,
-    hiddenDamageItemAdditions: 0,
-    hiddenDamageSnapshots: 0,
-    hiddenDamageSnapshotItemVisits: 0,
   }
 }
 
@@ -341,8 +336,8 @@ test.each([...transcriptScalingBlockCounts])(
           canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
         }),
       ),
-    ).toBe(pinned)
-    expect(publications).toBe(3)
+    ).not.toBe(pinned)
+    expect(publications).toBe(4)
 
     const hiddenTail = hidden.transcript.projectionById[fixture.tailItemId]!
     const revealPoint = Object.freeze({
@@ -367,7 +362,7 @@ test.each([...transcriptScalingBlockCounts])(
         reveal: { id: blockCount, point: revealPoint, reason: "jump" },
       }),
     )
-    expect(publications).toBe(4)
+    expect(publications).toBe(5)
     expect(revealed.displayedCanonicalRevision).toBe(hidden.canonicalRevision)
     expect(revealed.mode).toBe("detached")
     expect(revealed.transcript.cursor).toEqual(revealPoint)
@@ -389,10 +384,10 @@ test.each([...transcriptScalingBlockCounts])(
           canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
         }),
       ),
-    ).toBe(revealed)
-    expect(publications).toBe(4)
+    ).not.toBe(revealed)
+    expect(publications).toBe(6)
     const reattached = runtime.update(runtimeInput(fixture, latest, "follow"))
-    expect(publications).toBe(5)
+    expect(publications).toBe(7)
     expect(reattached.displayedCanonicalRevision).toBe(latest.canonicalRevision)
     expectPassThroughEquivalent(reattached, latest)
     runtime.dispose()
@@ -1275,7 +1270,7 @@ test("oversized completed Markdown and split diffs stay bounded at every histori
   }
 }, 60_000)
 
-test("detached unseen accumulation stays logarithmic and publishes no content frame at every scale", () => {
+test("detached unseen accumulation stays logarithmic while publishing current content at every scale", () => {
   for (const blockCount of transcriptScalingBlockCounts) {
     const fixture = buildTranscriptStructuralScalingFixture(blockCount)
     const anchorItemId = fixture.before.transcript.order[0]!
@@ -1310,43 +1305,7 @@ test("detached unseen accumulation stays logarithmic and publishes no content fr
       },
     )
     const pinned = runtime.getSnapshot()
-    const hiddenDamageBacklog = Array.from(
-      { length: blockCount },
-      (_, index) =>
-        `detached-hidden-damage-${blockCount}-${index}` as import("@vimex/conversation").ItemId,
-    )
-    const seededSnapshot: TranscriptFixtureSnapshot = Object.freeze({
-      ...detachedSnapshot,
-      canonicalRevision: detachedSnapshot.canonicalRevision + 1,
-    })
-    const runtimeBeforeSeed = { ...runtimeCounters }
-    expect(
-      runtime.update(
-        runtimeInput(fixture, seededSnapshot, "detached", {
-          canonicalDamage: { kind: "blocks", itemIds: hiddenDamageBacklog },
-        }),
-      ),
-    ).toBe(pinned)
-    expect(
-      runtimeCounters.hiddenDamageMerges! -
-        runtimeBeforeSeed.hiddenDamageMerges!,
-    ).toBe(1)
-    expect(
-      runtimeCounters.hiddenDamageInputItemVisits! -
-        runtimeBeforeSeed.hiddenDamageInputItemVisits!,
-    ).toBe(blockCount)
-    expect(
-      runtimeCounters.hiddenDamageItemAdditions! -
-        runtimeBeforeSeed.hiddenDamageItemAdditions!,
-    ).toBe(blockCount)
-    expect(
-      runtimeCounters.hiddenDamageSnapshots! -
-        runtimeBeforeSeed.hiddenDamageSnapshots!,
-    ).toBe(0)
-    expect(
-      runtimeCounters.hiddenDamageSnapshotItemVisits! -
-        runtimeBeforeSeed.hiddenDamageSnapshotItemVisits!,
-    ).toBe(0)
+    const seededSnapshot = detachedSnapshot
     const runtimeBaseline = { ...runtimeCounters }
     const semanticCounters = itemSyncDiagnostics()
     const canonicalCounters = createConversationReductionDiagnostics()
@@ -1375,7 +1334,7 @@ test("detached unseen accumulation stays logarithmic and publishes no content fr
           canonicalDamage: { kind: "blocks", itemIds: [] },
         }),
       ),
-    ).toBe(pinned)
+    ).not.toBe(pinned)
 
     const admittedItem = Object.freeze({
       id: fixture.nextItemId,
@@ -1409,7 +1368,7 @@ test("detached unseen accumulation stays logarithmic and publishes no content fr
           canonicalDamage: { kind: "blocks", itemIds: [fixture.nextItemId] },
         }),
       ),
-    ).toBe(pinned)
+    ).not.toBe(pinned)
 
     const deltaConversation = reduceConversationWithDiagnostics(
       itemConversation,
@@ -1438,10 +1397,19 @@ test("detached unseen accumulation stays logarithmic and publishes no content fr
           canonicalDamage: { kind: "blocks", itemIds: [fixture.nextItemId] },
         }),
       ),
-    ).toBe(pinned)
+    ).not.toBe(pinned)
 
-    expect(publications).toBe(0)
-    expect(runtime.getSnapshot()).toBe(pinned)
+    expect(publications).toBe(3)
+    expect(runtime.getSnapshot().displayedCanonicalRevision).toBe(
+      afterDelta.canonicalRevision,
+    )
+    expect(runtime.getSnapshot().transcript.viewport).toEqual(
+      detachedTranscript.viewport,
+    )
+    expect(
+      runtime.getSnapshot().transcript.projectionById[fixture.nextItemId]!
+        .source,
+    ).toBe(repeatedTranscript.projectionById[fixture.nextItemId]!.source)
     expect(repeatedTranscript.unseenEntries).toBe(blockCount + 1)
     expect(repeatedTranscript.unseenItemIds).toBe(itemTranscript.unseenItemIds)
     expect([...repeatedTranscript.unseenItemIds]).toEqual([
@@ -1479,22 +1447,6 @@ test("detached unseen accumulation stays logarithmic and publishes no content fr
       canonicalCounters.conversationItemRecordNormalizationItemVisits,
     ).toBe(0)
     expect(
-      runtimeCounters.hiddenDamageMerges! -
-        (runtimeBaseline.hiddenDamageMerges ?? 0),
-    ).toBe(3)
-    expect(
-      runtimeCounters.hiddenDamageInputItemVisits! -
-        (runtimeBaseline.hiddenDamageInputItemVisits ?? 0),
-    ).toBe(2)
-    expect(
-      runtimeCounters.hiddenDamageItemAdditions! -
-        (runtimeBaseline.hiddenDamageItemAdditions ?? 0),
-    ).toBe(1)
-    expect(
-      runtimeCounters.hiddenDamageSnapshots! -
-        (runtimeBaseline.hiddenDamageSnapshots ?? 0),
-    ).toBe(0)
-    expect(
       runtimeCounters.completePlanBuilds - runtimeBaseline.completePlanBuilds,
     ).toBe(0)
     expect(
@@ -1503,13 +1455,13 @@ test("detached unseen accumulation stays logarithmic and publishes no content fr
     ).toBe(0)
     expect(
       runtimeCounters.blockPlanUpdates - runtimeBaseline.blockPlanUpdates,
-    ).toBe(0)
+    ).toBe(2)
     expect(
       runtimeCounters.heightIndexBuilds - runtimeBaseline.heightIndexBuilds,
     ).toBe(0)
     expect(
       runtimeCounters.heightIndexUpdates - runtimeBaseline.heightIndexUpdates,
-    ).toBe(0)
+    ).toBe(2)
     expect(
       runtimeCounters.completeGeometryBlockVisits -
         runtimeBaseline.completeGeometryBlockVisits,
@@ -1517,19 +1469,19 @@ test("detached unseen accumulation stays logarithmic and publishes no content fr
     expect(
       runtimeCounters.windowGeometryBlockVisits -
         runtimeBaseline.windowGeometryBlockVisits,
-    ).toBe(0)
+    ).toBeLessThanOrEqual(3 * 72)
     expect(
       runtimeCounters.changedItemBuilds - runtimeBaseline.changedItemBuilds,
-    ).toBe(0)
+    ).toBe(2)
 
     const presented = runtime.update({
       ...runtimeInput(fixture, afterDelta, "detached"),
       presentationDamage: { kind: "view" },
     })
-    expect(publications).toBe(1)
-    expect(presented.blocks).toBe(pinned.blocks)
-    expect(presented.window).toBe(pinned.window)
-    expect(presented.geometry).toBe(pinned.geometry)
+    expect(publications).toBe(4)
+    expect(presented.blocks).not.toBe(pinned.blocks)
+    expect(presented.window.blocks).toEqual(pinned.window.blocks)
+    expect(presented.transcript.viewport).toEqual(pinned.transcript.viewport)
     expect(presented.transcript.unseenItemIds).toBe(
       repeatedTranscript.unseenItemIds,
     )
@@ -1673,7 +1625,7 @@ test("production window policy bounds initial, detached, reveal, and measured ma
           canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
         }),
       ),
-    ).toBe(pinned)
+    ).not.toBe(pinned)
     const diagnosticsBeforeReveal = { ...runtimeDiagnostics }
     const tailPoint = Object.freeze({
       itemId: fixture.targets.tail,
@@ -1704,10 +1656,8 @@ test("production window policy bounds initial, detached, reveal, and measured ma
     )
     expect(revealed.window.blocks.length).toBeLessThanOrEqual(72)
     expect(pointIsMaterialized(revealed.window.blocks, tailPoint)).toBe(true)
-    expect(revealed.blocks).toBe(pinned.blocks)
-    expect(revealed.displayedCanonicalRevision).toBe(
-      pinned.displayedCanonicalRevision,
-    )
+    expect(revealed.blocks).not.toBe(pinned.blocks)
+    expect(revealed.displayedCanonicalRevision).toBe(hidden.canonicalRevision)
     expect(revealPublications).toBe(1)
     expect(
       runtimeDiagnostics.completePlanBuilds -
@@ -2036,7 +1986,7 @@ test("unchanged detached history returns to the tail without rebuilding at every
   }
 }, 30_000)
 
-test("hidden same-item output reattaches once with bounded reconciliation at every scale", () => {
+test("live detached output reattaches once without repeating reconciliation at every scale", () => {
   for (const blockCount of transcriptScalingBlockCounts) {
     const fixture = buildTranscriptScalingFixture(blockCount)
     const diagnostics = {
@@ -2115,7 +2065,7 @@ test("hidden same-item output reattaches once with bounded reconciliation at eve
           canonicalDamage: { kind: "blocks", itemIds: [fixture.tailItemId] },
         }),
       ),
-    ).toBe(pinned)
+    ).not.toBe(pinned)
     const latestTranscript = Object.freeze({
       ...hidden.transcript,
       viewport: Object.freeze({ kind: "tail" as const }),
@@ -2149,11 +2099,11 @@ test("hidden same-item output reattaches once with bounded reconciliation at eve
     expect(
       diagnostics.heightIndexBlockVisits - before.heightIndexBlockVisits,
     ).toBe(0)
-    expect(diagnostics.heightIndexUpdates - before.heightIndexUpdates).toBe(1)
+    expect(diagnostics.heightIndexUpdates - before.heightIndexUpdates).toBe(0)
     expect(
       diagnostics.heightIndexNodeVisits - before.heightIndexNodeVisits,
     ).toBeLessThanOrEqual(Math.ceil(Math.log2(blockCount)) + 1)
-    expect(diagnostics.blockPlanUpdates - before.blockPlanUpdates).toBe(1)
+    expect(diagnostics.blockPlanUpdates - before.blockPlanUpdates).toBe(0)
     expect(
       diagnostics.blockPlanNodeVisits - before.blockPlanNodeVisits,
     ).toBeLessThanOrEqual(2 * (Math.ceil(Math.log2(blockCount)) + 1))

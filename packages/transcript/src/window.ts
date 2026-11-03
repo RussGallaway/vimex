@@ -688,11 +688,11 @@ export interface PlanTranscriptWindowInput {
   readonly heights: TranscriptHeightIndex
   readonly viewportRows: number
   readonly overscanRows: number
-  /** Recent blocks kept mounted while the viewport intersects the tail. */
+  /** Shared block budget kept mounted near either transcript edge. */
   readonly recentTailBlocks?: number
-  /** Maximum indexed rows retained for that tail; an individual block stays whole. */
+  /** Shared indexed-row budget for either edge; an individual block stays whole. */
   readonly recentTailRows?: number
-  /** Indexed rows mounted before the recent tail's older boundary. */
+  /** Indexed rows prepared beyond either edge area's inward boundary. */
   readonly olderLookAheadRows?: number
   readonly attachment: TranscriptWindowAttachment
   /** A one-shot target takes planning focus when it is outside the ordinary window. */
@@ -1930,17 +1930,37 @@ export function planTranscriptWindow(
     }
   }
 
-  // Keep the recent tail stable while reading within it. A bounded older
-  // look-ahead is ready before the reader reaches its top. Beyond that top,
-  // taper the newer edge over the tail span rather than evicting it at once.
-  // The ordinary visible window remains authoritative for far-history jumps.
+  // Give both ends the same prepared area: `gg` followed by downward paging
+  // should have as much content ready as upward paging from the tail. Beyond
+  // either area's inward boundary, taper retained content instead of dropping
+  // it all at once. The ordinary visible window still bounds distant history.
+  // The legacy tail-named policy fields deliberately share both edge budgets.
   const recentTailBlocks = input.recentTailBlocks ?? 0
   if (recentTailBlocks > 0) {
+    let headEnd = Math.min(blocks.length, recentTailBlocks)
     let tailStart = Math.max(0, blocks.length - recentTailBlocks)
     if (input.recentTailRows !== undefined) {
+      const lastHeadRow = Math.min(heights.totalRows, input.recentTailRows) - 1
+      const headRowBound = heights.blockAtRow(lastHeadRow)
+      if (headRowBound !== undefined)
+        headEnd = Math.min(headEnd, headRowBound + 1)
       const earliestRow = Math.max(0, heights.totalRows - input.recentTailRows)
       const rowBound = heights.blockAtRow(earliestRow)
       if (rowBound !== undefined) tailStart = Math.max(tailStart, rowBound)
+    }
+    const headEndRow = heights.prefixRows(headEnd)
+    if (visibleStart < headEndRow) {
+      plannedFrom = 0
+      plannedTo = Math.max(
+        plannedTo,
+        Math.min(
+          heights.totalRows,
+          headEndRow + (input.olderLookAheadRows ?? 0),
+        ),
+      )
+    } else {
+      const distanceBelowHead = visibleStart - headEndRow
+      plannedFrom = Math.min(plannedFrom, 2 * distanceBelowHead)
     }
     const tailStartRow = heights.prefixRows(tailStart)
     if (visibleEnd > tailStartRow) {

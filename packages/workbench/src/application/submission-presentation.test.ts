@@ -294,7 +294,7 @@ test("many send/echo cycles retain bounded height overlay depth with a safe rebu
   runtime.dispose()
 })
 
-test("detached pending echo preserves its displayed snapshot until follow resumes", () => {
+test("detached pending echo updates content while preserving the reading anchor", () => {
   const { controller, runtime, thread, event } = controllerWithHistory(100)
   controller.changeDraft("hello", 5)
   controller.submit("next-turn")
@@ -321,14 +321,14 @@ test("detached pending echo preserves its displayed snapshot until follow resume
       status: "complete",
     },
   })
-  expect(runtime.getSnapshot().blocks === detached.blocks).toBe(true)
-  expect(runtime.getSnapshot().displayedCanonicalRevision).toBe(
+  expect(runtime.getSnapshot().blocks).not.toBe(detached.blocks)
+  expect(runtime.getSnapshot().displayedCanonicalRevision).toBeGreaterThan(
     detached.displayedCanonicalRevision,
   )
   expect(runtime.getSnapshot().transcript.viewport).toEqual(
     detached.transcript.viewport,
   )
-  controller.transcript({ type: "viewport.tail" })
+  expect(runtime.getSnapshot().mode).toBe("detached")
   expect(
     runtime.getSnapshot().transcript.projectionById[pending.id],
   ).toBeUndefined()
