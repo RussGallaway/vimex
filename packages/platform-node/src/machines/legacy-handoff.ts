@@ -13,7 +13,7 @@ export interface LegacyHandoffRequest {
   threadId: string
   rolloutPath: string
   destinationMode?: "isolated" | "existing"
-  /** Only after complete native dependency validation by the paginated importer. */
+  /** Only after complete native dependency validation by the history-bundle importer. */
   paginatedHistory?: boolean
 }
 export interface PreparedLegacyHandoff {
@@ -96,7 +96,7 @@ export function validateLegacyRollout(
         )
       if (
         (!allowPaginated && meta?.history_base) ||
-        meta?.subagent_history_start_ordinal != null
+        (!allowPaginated && meta?.subagent_history_start_ordinal != null)
       )
         throw new Error(
           "Session checkpoint depends on another thread's history",
@@ -112,10 +112,21 @@ export function validateLegacyRollout(
         )
       if (
         (!allowPaginated && record.payload?.history_base) ||
-        record.payload?.subagent_history_start_ordinal != null
+        (!allowPaginated &&
+          record.payload?.subagent_history_start_ordinal != null)
       )
         throw new Error(
           "Session checkpoint depends on another thread's history",
+        )
+    }
+    if (
+      record.type === "session_meta" &&
+      record.payload?.subagent_history_start_ordinal != null
+    ) {
+      const ordinal = record.payload.subagent_history_start_ordinal
+      if (!Number.isSafeInteger(ordinal) || ordinal < 0)
+        throw new Error(
+          "Session checkpoint has an invalid subagent history offset",
         )
     }
     const check = (value: unknown): void => {
@@ -136,9 +147,11 @@ export function validateLegacyRollout(
           "This session contains a host-local image attachment; native attachment transfer is not available",
         )
       if (
-        obj.name === "spawn_agent" ||
-        obj.name === "functions.spawn_agent" ||
-        obj.type === "collab_agent_spawn_call"
+        !allowPaginated &&
+        (obj.name === "spawn_agent" ||
+          obj.name === "functions.spawn_agent" ||
+          obj.name === "collaboration.spawn_agent" ||
+          obj.type === "collab_agent_spawn_call")
       )
         throw new Error(
           "This session has subagent history; transfer of the complete session tree is not available",

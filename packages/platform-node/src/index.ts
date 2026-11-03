@@ -26,3 +26,4 @@ export type {
   HistoryBundle,
   StagedHistoryBundle,
 } from "./machines/history-bundle"
+export { assertNoStoredGoals } from "./machines/history-goals"

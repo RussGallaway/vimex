@@ -184,6 +184,44 @@ test("native handoff preserves draft with a different destination thread id", as
   await h.controller.close()
 })
 
+test("same-ID tree handoff preserves the latest draft and adopts each machine on roundtrip", async () => {
+  const commits: string[] = []
+  let h: ReturnType<typeof harness>
+  h = harness(undefined, async ({ targetId, threadId }) => ({
+    ...(targetId === "local" ? h.local.value : h.remote.value),
+    threadId,
+    commit: async () => {
+      commits.push(targetId)
+    },
+  }))
+  await h.controller.initialize("/local", undefined, "same")
+  h.controller.dispatch({ type: "composer.change", text: "outbound draft" })
+  h.controller.executeCommand("handoff devbox")
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().machine?.id).toBe("devbox")
+  expect(h.controller.getSnapshot().activeThreadId).toBe(threadId("same"))
+  expect(h.controller.getSnapshot().workspaces.same?.composer.text).toBe(
+    "outbound draft",
+  )
+  expect(h.controller.getSnapshot().summaries.same?.cwd).toBe("/devbox")
+  h.controller.dispatch({ type: "composer.change", text: "new return draft" })
+  h.controller.executeCommand("handoff local")
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().machine?.id).toBe("local")
+  expect(h.controller.getSnapshot().activeThreadId).toBe(threadId("same"))
+  expect(h.controller.getSnapshot().workspaces.same?.composer.text).toBe(
+    "new return draft",
+  )
+  expect(h.controller.getSnapshot().summaries.same?.cwd).toBe("/local")
+  expect(commits).toEqual(["devbox", "local"])
+  expect(h.local.calls.close).toBe(1)
+  expect(h.remote.calls.close).toBe(1)
+  h.remote.emit({ type: "disconnected", message: "stale remote proxy" })
+  expect(h.controller.getSnapshot().connection).toBe("connected")
+  expect(h.local.calls.sends + h.remote.calls.sends).toBe(0)
+  await h.controller.close()
+})
+
 test("unsupported handoff never silently creates a replacement conversation", async () => {
   const h = harness()
   await h.controller.initialize("/local", undefined, "same")

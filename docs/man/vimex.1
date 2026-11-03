@@ -349,9 +349,14 @@ merge is performed. Ignored dependencies/configuration remain unless
 they collide. Source files remain intact, so commit before leaving if
 returning to that same prepared checkout. Supported paginated history
 includes its native ancestors, retained on the destination after
-verification. Unsupported dependencies, including subagent histories,
-local images, and persisted goals, are refused before transfer; no
-summary substitutes for native history.
+verification. Subagent trees sharing the source working directory
+retain their original native thread IDs and parent/child
+relationships. Every transferred agent must be idle. Returning trees
+can extend an older archived copy only when its history matches
+exactly; divergent or active copies are refused. Local images,
+persisted goals, separate agent workspaces, and agent references owned
+by another parent are refused before transfer; no summary substitutes
+for native history.
 .PP
 Typing, navigation, scrolling, clipboard, and optimistic message
 rendering stay local. Daemon proxy connections use WebSocket framing

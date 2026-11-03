@@ -894,6 +894,158 @@ export function createCodexGateways(
         throw error
       }
     },
+    async isArchived(id: string): Promise<boolean> {
+      let cursor: string | undefined
+      const seen = new Set<string>()
+      do {
+        const page = await client.listThreads({
+          archived: true,
+          cursor,
+          limit: 100,
+          modelProviders: [],
+          useStateDbOnly: false,
+          sourceKinds: [
+            "cli",
+            "vscode",
+            "exec",
+            "appServer",
+            "subAgent",
+            "subAgentReview",
+            "subAgentCompact",
+            "subAgentThreadSpawn",
+            "subAgentOther",
+            "unknown",
+          ],
+        })
+        if (page.raw.data.some((thread) => thread.id === id)) return true
+        cursor = page.nextCursor ?? undefined
+        if (cursor) {
+          if (seen.has(cursor) || seen.size >= 1000)
+            throw new Error("Archived session lookup exceeded its bounded scan")
+          seen.add(cursor)
+        }
+      } while (cursor)
+      return false
+    },
+    async ownedDescendants(id: string): Promise<readonly string[]> {
+      const ids = new Set<string>()
+      for (const archived of [false, true]) {
+        let cursor: string | undefined
+        const seen = new Set<string>()
+        do {
+          const page = await client.listThreads({
+            archived,
+            cursor,
+            limit: 100,
+            ancestorThreadId: id,
+            modelProviders: [],
+            useStateDbOnly: false,
+            sourceKinds: [
+              "subAgent",
+              "subAgentReview",
+              "subAgentCompact",
+              "subAgentThreadSpawn",
+              "subAgentOther",
+            ],
+          })
+          for (const child of page.raw.data) ids.add(child.id)
+          if (ids.size > 64)
+            throw new Error("Native agent subtree exceeds handoff limits")
+          cursor = page.nextCursor ?? undefined
+          if (cursor) {
+            if (seen.has(cursor) || seen.size >= 1000)
+              throw new Error("Native subtree catalog did not advance")
+            seen.add(cursor)
+          }
+        } while (cursor)
+      }
+      return [...ids]
+    },
+    async referencedThreads(id: string): Promise<readonly string[]> {
+      const references = new Set<string>()
+      const add = (value: unknown) => {
+        if (typeof value !== "string" || !value)
+          throw new Error(
+            "Native collaboration history contains an invalid thread reference",
+          )
+        if (value !== id) references.add(value)
+        if (references.size > 64)
+          throw new Error(
+            "Session collaboration graph exceeds the 64-thread handoff limit",
+          )
+      }
+      const thread = (await readNativeThread(id)).thread
+      if (thread.parentThreadId) add(thread.parentThreadId)
+      for (const archived of [false, true]) {
+        let cursor: string | undefined
+        const seen = new Set<string>()
+        do {
+          const page = await client.listThreads({
+            archived,
+            cursor,
+            limit: 100,
+            parentThreadId: id,
+            modelProviders: [],
+            useStateDbOnly: false,
+            sourceKinds: [
+              "subAgent",
+              "subAgentReview",
+              "subAgentCompact",
+              "subAgentThreadSpawn",
+              "subAgentOther",
+            ],
+          })
+          for (const child of page.raw.data) add(child.id)
+          cursor = page.nextCursor ?? undefined
+          if (cursor) {
+            if (seen.has(cursor) || seen.size >= 1000)
+              throw new Error("Native child catalog did not advance")
+            seen.add(cursor)
+          }
+        } while (cursor)
+      }
+      let cursor: string | undefined
+      const seen = new Set<string>()
+      let bytes = 0
+      do {
+        const page = await client.listTurns({
+          threadId: id,
+          cursor,
+          limit: 100,
+          sortDirection: "asc",
+          itemsView: "full",
+        })
+        bytes += Buffer.byteLength(JSON.stringify(page.data))
+        if (bytes > 64 * 1024 * 1024)
+          throw new Error("Collaboration history exceeds handoff limits")
+        for (const turn of page.data)
+          for (const item of turn.items) {
+            if (item.type === "collabAgentToolCall") {
+              item.receiverThreadIds.forEach(add)
+              Object.keys(item.agentsStates ?? {}).forEach(add)
+            } else if (item.type === "subAgentActivity") add(item.agentThreadId)
+          }
+        cursor = page.nextCursor ?? undefined
+        if (cursor) {
+          if (seen.has(cursor) || seen.size >= 10000)
+            throw new Error("Collaboration history pagination did not advance")
+          seen.add(cursor)
+        }
+      } while (cursor)
+      return [...references]
+    },
+    async resumeTree(sourceId: string, path: string, cwd: string) {
+      return observeSession(
+        await client.resumeThread(sourceId, {
+          path,
+          cwd,
+          runtimeWorkspaceRoots: [cwd],
+        }),
+      )
+    },
+    async unarchiveTree(id: string) {
+      return (await client.unarchiveThread(id)).thread.path
+    },
     async assertPortable(id: string, checkGoal = true) {
       const { thread } = await readNativeThread(id)
       if (!["idle", "notLoaded"].includes(thread.status.type))
@@ -988,6 +1140,8 @@ export function createCodexGateways(
         threadId: thread.id,
         rolloutPath: thread.path,
         cwd: thread.cwd,
+        parentThreadId: thread.parentThreadId,
+        sessionId: thread.sessionId,
         historyMode: thread.historyMode,
         status: thread.status,
         model: thread.model,

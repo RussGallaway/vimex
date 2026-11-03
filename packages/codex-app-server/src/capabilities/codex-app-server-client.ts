@@ -490,6 +490,14 @@ export class CodexAppServerClient {
     await this.rpc.request("thread/archive", { threadId: thread })
   }
 
+  async unarchiveThread(
+    thread: string,
+  ): Promise<
+    import("../generated/v0_154_0/v2/ThreadUnarchiveResponse").ThreadUnarchiveResponse
+  > {
+    return this.rpc.request("thread/unarchive", { threadId: thread })
+  }
+
   async unsubscribeThread(thread: string): Promise<void> {
     await this.rpc.request("thread/unsubscribe", { threadId: thread })
   }
