@@ -3110,7 +3110,14 @@ export class VimexController
     }
     this.dispatchInteraction({ type: "overlay.close" })
     this.launch(async () => {
-      this.setState({ ...this.state, machineChanging: true, error: undefined })
+      this.setState({
+        ...this.state,
+        machineChanging: true,
+        machineDestination: machines
+          .list()
+          .find((machine) => machine.id === targetId) ?? { id: targetId },
+        error: undefined,
+      })
       let destination: MachineRuntime | undefined
       let adopted = false
       let stagedDetach: (() => void) | undefined
@@ -3165,7 +3172,11 @@ export class VimexController
         const source = this.state
         const sourceMachine = source.machine?.id ?? "local"
         const sourceLocal = captureLocalState(source, this.localStateSnapshot)
-        const sourceCache = { ...source, machineChanging: false }
+        const sourceCache = {
+          ...source,
+          machineChanging: false,
+          machineDestination: undefined,
+        }
         if (handoff && sourceId) {
           sourceCache.activeThreadId = undefined
           sourceCache.threadOrder = sourceCache.threadOrder.filter(
@@ -3231,6 +3242,7 @@ export class VimexController
           machine: result.machine,
           machines: machines.list(),
           machineChanging: false,
+          machineDestination: undefined,
           cwdPicker: undefined,
           handoffPicker: undefined,
           preferences: source.preferences,
@@ -3263,7 +3275,11 @@ export class VimexController
           await destination?.connection.close().catch(() => {})
         }
         if (!this.closing)
-          this.setState({ ...this.state, machineChanging: false })
+          this.setState({
+            ...this.state,
+            machineChanging: false,
+            machineDestination: undefined,
+          })
       }
     })
   }

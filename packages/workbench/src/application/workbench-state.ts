@@ -77,6 +77,7 @@ export interface WorkbenchState {
     error?: string
     listing?: import("./machines").HandoffDestinationListing
   }
+  machineDestination?: import("./machines").MachineInfo
   machineChanging?: boolean
   machineManagement?: { pending: boolean; error?: string }
   backgroundTerminals: {

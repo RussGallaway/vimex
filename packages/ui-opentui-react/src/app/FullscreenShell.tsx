@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import type { WorkbenchState } from "@vimex/workbench"
+import { machineIcon } from "../machines/machine-icon"
 import { emberTide } from "../theme"
 
 export function FullscreenShell(props: {
@@ -7,6 +8,8 @@ export function FullscreenShell(props: {
   title?: string
   parentTitle?: string
   connection: WorkbenchState["connection"]
+  machine?: WorkbenchState["machine"]
+  destination?: WorkbenchState["machine"]
   working: boolean
   activityLabel?: string
   activityStartedAt?: number
@@ -19,10 +22,18 @@ export function FullscreenShell(props: {
   statusline: ReactNode
   overlay?: ReactNode
 }) {
+  const connection = props.destination ? "connecting" : props.connection
+  const machine = props.destination ?? props.machine
+  const label = machine
+    ? `${machineIcon(machine.id)} ${machine.label ?? machine.id}`
+    : undefined
+  const status = props.destination
+    ? `connecting to ${label}…`
+    : `${connection}${label && connection !== "connected" ? ` · ${label}` : ""}`
   const dot =
-    props.connection === "connected"
+    connection === "connected"
       ? emberTide.sage
-      : props.connection === "connecting"
+      : connection === "connecting"
         ? emberTide.amber
         : emberTide.red
   return (
@@ -77,8 +88,17 @@ export function FullscreenShell(props: {
             {props.title ?? "new session"}
           </text>
         </box>
-        <box id="connection-status" flexDirection="row" gap={1} flexShrink={0}>
-          <text fg={dot}>● {props.connection}</text>
+        <box
+          id="connection-status"
+          flexDirection="row"
+          gap={1}
+          flexShrink={0}
+          maxWidth="65%"
+          minWidth={0}
+        >
+          <text fg={dot} minWidth={0} flexShrink={1} wrapMode="none" truncate>
+            ● {status}
+          </text>
         </box>
       </box>
       {props.parentTitle ? (

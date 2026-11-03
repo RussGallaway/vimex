@@ -1975,6 +1975,8 @@ export function VimexApp({
       title={summary?.title}
       parentTitle={parentTitle}
       connection={state.connection}
+      machine={state.machine}
+      destination={state.machineChanging ? state.machineDestination : undefined}
       working={activity.working}
       activityLabel={activityLabel}
       activityStartedAt={activity.startedAt}

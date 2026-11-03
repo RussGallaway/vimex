@@ -324,3 +324,47 @@ test("slash, Ex, and leader routes open the same machine manager", async () => {
     await controller.close()
   }
 })
+
+test("header identifies connecting destination and keeps connected status compact", async () => {
+  const h = await harness()
+  try {
+    const show = async (patch: Partial<WorkbenchState>) => {
+      await act(async () => {
+        h.update((s) => ({ ...s, ...patch }))
+        await h.flush()
+      })
+      await h.flush()
+    }
+    await show({
+      connection: "connected",
+      machineChanging: true,
+      machineDestination: { id: "devbox", label: "Travel VM" },
+    })
+    expect(h.frame()).toContain("● connecting to ☁︎ Travel VM…")
+    expect(h.frame()).not.toContain("● connected")
+    // A failed switch clears the destination and retains the source connection.
+    await show({ machineChanging: false, machineDestination: undefined })
+    expect(h.frame()).toContain("● connected")
+    expect(h.frame()).not.toContain("● connected ·")
+    await show({ machine: { id: "devbox", label: "Travel VM" } })
+    for (const connection of [
+      "disconnected",
+      "connecting",
+      "error",
+      "connected",
+    ] as const) {
+      await show({ connection })
+      expect(h.frame()).toContain(
+        connection === "connected"
+          ? "● connected"
+          : `● ${connection} · ☁︎ Travel VM`,
+      )
+      if (connection === "connected") {
+        expect(h.frame()).not.toContain("● connected ·")
+        expect(h.frame()).toContain("☁︎ Travel VM · /work")
+      }
+    }
+  } finally {
+    await h.close()
+  }
+})
