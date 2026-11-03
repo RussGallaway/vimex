@@ -5,7 +5,7 @@ Start with [install and run](install.md), then the [user manual](manual.md).
 | Guide                                   | Purpose                                                           |
 | --------------------------------------- | ----------------------------------------------------------------- |
 | [User manual](manual.md)                | Offline guide, also available through `:manual` and as `vimex(1)` |
-| [Keyboard reference](keys.md)           | Detailed modes, motions, focus, selection, and commands           |
+| [Keyboard reference](keys.md)           | Modes, motions, mouse link controls, selection, and commands      |
 | [Configuration](configuration.md)       | Settings, paths, and overrides                                    |
 | [Themes](themes.md)                     | UI and syntax palettes                                            |
 | [Side chats](side-chats.md)             | Forked sidebar lifecycle and navigation                           |

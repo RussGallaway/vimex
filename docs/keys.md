@@ -28,11 +28,11 @@ Press `:help` for the compact in-app reference, or `:manual` (`:man`, `/manual`,
 | `Ctrl-f`, `Ctrl-b`           | Scroll down/up one viewport.                                                      |
 | `{`, `}` (Shift-[ / Shift-]) | Previous/next semantic block.                                                     |
 | `[[`, `]]`                   | Previous/next message.                                                            |
-| `[u`, `]u`                   | Previous/next URL.                                                                |
+| `[u`, `]u`                   | Previous/next web or file link.                                                   |
 | `/`, `?`                     | Search transcript forward/backward; also available from composer Normal mode.     |
 | `n`, `N`                     | Next/previous search match.                                                       |
 | `r`                          | Quote the selected text or current semantic block into the composer.              |
-| `gx`                         | Open the URL at the cursor, or show a URL chooser when needed.                    |
+| `gx`                         | Open the link at the cursor, or show a link chooser when needed.                  |
 | `za`, `zo`, `zc`             | Toggle, open, or close the current fold.                                          |
 | `Shift-Tab`                  | Toggle all tool blocks, leaving file diffs as they are.                           |
 | `zR`, `zM`                   | Open or close all folds.                                                          |
@@ -47,14 +47,30 @@ The transcript shows a precise text cursor in Normal and Visual modes. Move firs
 
 ## Visual mode
 
-| Key                       | Action                                      |
-| ------------------------- | ------------------------------------------- |
-| Normal transcript motions | Extend the selection.                       |
-| `o`                       | Swap selection anchor and head.             |
-| `y`                       | Copy rendered plain text.                   |
-| `Y`                       | Copy canonical Markdown source.             |
-| `gx`                      | Open a URL in the selection/cursor context. |
-| `Esc`                     | Clear selection and return to Normal mode.  |
+| Key                       | Action                                       |
+| ------------------------- | -------------------------------------------- |
+| Normal transcript motions | Extend the selection.                        |
+| `o`                       | Swap selection anchor and head.              |
+| `y`                       | Copy rendered plain text.                    |
+| `Y`                       | Copy canonical Markdown source.              |
+| `gx`                      | Open a link in the selection/cursor context. |
+| `Esc`                     | Clear selection and return to Normal mode.   |
+
+## Mouse and link actions
+
+Left-click a transcript link to open its destination. Web links open in the local browser; file links open a text preview on the active machine. `gx` provides keyboard access to the same destinations, including Markdown links whose URL is hidden behind a label. File destinations support line references such as `./src/app.ts:123` and `./src/app.ts#L123`.
+
+| Mouse action                                        | Result                                                      |
+| --------------------------------------------------- | ----------------------------------------------------------- |
+| Left-click a link                                   | Open its actual destination.                                |
+| Drag transcript text and release                    | Select and copy text without opening a link.                |
+| Hover a link, or move the transcript cursor onto it | Show its destination and link actions in the bottom line.   |
+| Click **Links** in the bottom line                  | Open the conversation link picker without relying on hover. |
+| Click **Copy link**                                 | Copy the destination, including any file line reference.    |
+| Click **Copy text**                                 | Copy the displayed link label.                              |
+| Click **Close**, or press `Esc`, in a file preview  | Return to the conversation.                                 |
+
+Both link-copy actions update the system clipboard and Vimex paste register while preserving the editing mode and draft. Herdr can keep its right-click menu: all link controls use the left mouse button. File previews accept text files up to 2 MiB and show the machine and path. See [troubleshooting](troubleshooting.md#a-link-does-not-open-or-its-destination-is-hidden) if a link or clipboard action is unavailable.
 
 ## Composer
 

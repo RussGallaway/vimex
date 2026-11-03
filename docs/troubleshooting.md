@@ -53,6 +53,10 @@ Local state defaults to `~/.local/state/vimex/views.json`, subject to `XDG_STATE
 
 Try `:theme nord` or `:theme kanagawa`. Use `:syntax theme` to keep code blocks aligned with the UI theme. Set `reducedColor: true`, or set `NO_COLOR` to a nonempty value, to reduce accent colors.
 
-## A URL does not open
+## A link does not open or its destination is hidden
+
+Markdown links display their label. Move the transcript cursor onto the link or hover it to see its destination in the bottom line. If hover is unavailable, click **Links** to open the link picker, then choose **Open**, **Copy link**, or **Copy text**. These controls use left-click and do not require Herdr right-click passthrough. `gx` opens a link from the keyboard. Dragging selects text and intentionally does not open the link.
+
+File links open previews on the active machine, resolving relative paths against the session working directory. A path on devbox does not fall back to a laptop file. Check the displayed machine and path when a file is unavailable. Previews support text files up to 2 MiB; binary or larger files cannot be previewed. Use a destination such as `./src/app.ts:123` or `./src/app.ts#L123` to jump to a line.
 
 Only HTTP and HTTPS URLs are accepted by the Herdr external-action integration. Outside Herdr, Vimex delegates to the platform opener. In Herdr, review `external-actions.json` and verify its command exists; arguments are executed directly without a shell. See the [Herdr plugin guide](../plugins/herdr/README.md).

@@ -64,6 +64,8 @@ Inside Vimex, `i` enters Insert mode and `Esc` returns to Normal mode. `Enter` s
 
 The transcript supports Vim motion, Visual selection and yanking, Flash-style jumps, marks and jump history, mouse scrolling, collapsible tools, expanded diffs, Markdown, syntax highlighting, sessions, subagents, and side chats. See the [keyboard reference](docs/keys.md) and [user manual](docs/manual.md).
 
+Left-click transcript links to open them, or use `gx`. The bottom-line **Links** picker offers **Open**, **Copy link**, and **Copy text** without right-click or hover. Web links open locally; file links preview text on the active machine. Dragging still selects and copies text. See the [mouse and link reference](docs/keys.md#mouse-and-link-actions).
+
 ## Configure
 
 Configuration lives at `$XDG_CONFIG_HOME/vimex/config.json`, defaulting to `~/.config/vimex/config.json`:

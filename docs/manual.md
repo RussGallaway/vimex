@@ -1,6 +1,6 @@
 # Vimex manual
 
-<!-- man-date: September 18, 2026 -->
+<!-- man-date: November 3, 2026 -->
 
 ## NAME
 
@@ -92,7 +92,7 @@ Ctrl-O moves backward through jumps and session visits; Ctrl-I moves forward. Le
 
 In either pane, v starts character selection and V starts line selection. Press the same key again to leave Visual mode, or the other key to change the selection shape. Move to extend; o swaps endpoints. In the transcript, y copies rendered text and Y copies Markdown source. In the composer, y yanks, d/x delete, c changes the selection, and p/P in Normal mode paste the register. Visual D/X delete whole selected lines, and Y yanks whole selected lines; y/Y return the cursor to the start of the copied range. r from the transcript quotes the selection or current block into the draft. gx opens the link under the cursor; [u and ]u navigate links. Web links open in the local browser. File links open a preview on the active machine, with supported :line or #Lline destinations.
 
-Left-click a transcript link to open it. Drag across its text to select and copy normally; a drag does not open the link. Hovering a link or placing the transcript cursor on one exposes its destination and Open, Copy link, and Copy text controls in the bottom line. Copy link copies the destination, while Copy text copies the displayed label. The Links button opens a mouse-accessible picker with the same actions even when passive hover is unavailable. These controls use the left mouse button and do not require Herdr right-click passthrough. Modifier-click remains available to the host terminal. File previews read bounded text files up to 2 MiB, and show the machine and path; Escape or Close dismisses them.
+Left-click a transcript link to open it. Drag across its text to select and copy normally; a drag does not open the link. Hovering a link or placing the transcript cursor on one exposes its destination and Open, Copy link, and Copy text controls in the bottom line. Copy link copies the destination, while Copy text copies the displayed label. Both update the system clipboard and Vimex paste register without changing the editing mode or draft. The Links button opens a mouse-accessible picker with the same actions even when passive hover is unavailable. These controls use the left mouse button and do not require Herdr right-click passthrough. Modifier-click remains available to the host terminal. File previews read bounded text files up to 2 MiB, and show the machine and path; Escape or Close dismisses them. For example, ./src/app.ts:123 or ./src/app.ts#L123 opens line 123 relative to the session working directory on the active machine.
 
 Collapsed tool rows remain closed during word and line-boundary motions. A Visual selection confined to one collapsed tool highlights its visible summary; y copies that summary to the clipboard and Vim register. Expand the tool first to select its details. Cross-item selections and Y source copies retain logical transcript text semantics.
 
