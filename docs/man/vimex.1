@@ -207,7 +207,15 @@ closes the picker. :sessions ID opens an exact thread.
 :rename NAME renames the focused session. Until renamed, the title is
 a short, single\-line excerpt of the first message. :favorite toggles
 its favorite state; :favorite on/off sets it explicitly. :new [PATH]
-starts a session. :cwd [PATH] shows or changes its working directory.
+starts a session. :cwd opens a directory browser on the active
+machine. Enter opens a child directory; b goes up; u uses the
+displayed directory; p edits the path with Tab completion; / filters;
+Escape leaves editing or closes the browser. :cwd PATH changes
+directly, accepting relative paths, ~, and quoted paths with spaces.
+The destination is validated before changing settings; invalid paths
+preserve the previous working directory. Wait for current work to
+finish before changing directories. The same commands are available
+with / in the composer.
 .PP
 Headers show PARENT for an original conversation with children or a
 side chat, CHILD for a delegated conversation, and SIDE for a side

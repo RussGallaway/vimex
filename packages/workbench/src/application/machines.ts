@@ -37,6 +37,7 @@ export interface MachineRuntime {
   connection: RuntimeConnection
   models: ModelCatalog
   cwd: string
+  directories?: import("./directories").DirectoryNavigation
   resolveDirectory?(base: string, path: string): string
   localState?: LocalState
   commit?(): Promise<void>

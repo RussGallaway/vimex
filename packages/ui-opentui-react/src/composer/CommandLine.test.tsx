@@ -32,6 +32,7 @@ async function harness(surface: "composer" | "transcript" = "composer") {
   }).state
   initial = {
     ...initial,
+    machines: [{ id: "local" }, { id: "devbox" }],
     availableModels: [
       { id: "model-a", label: "Model A", efforts: ["low", "high"] },
       { id: "model-b", label: "Model B", efforts: ["high"] },
@@ -347,3 +348,26 @@ test("invalid recognized Ex arguments show usage and preserve Command input", as
     await h.close()
   }
 })
+
+for (const command of ["machine", "handoff", "machine rename"]) {
+  test(`colon ${command} completes configured machine IDs without running`, async () => {
+    const h = await harness()
+    try {
+      await h.keys(":")
+      await h.keys(`${command} dev`)
+      expect(h.captureCharFrame()).toContain(`:${command} devbox`)
+      await act(async () => {
+        h.mockInput.pressKey("TAB")
+        await h.flush()
+      })
+      const input = h.renderer.root.findDescendantById(
+        "command-line",
+      ) as InputRenderable
+      expect(input.value).toBe(`${command} devbox `)
+      expect(h.executed).toEqual([])
+      expect(h.workspace().composer.text).toBe("Keep my unfinished draft")
+    } finally {
+      await h.close()
+    }
+  })
+}

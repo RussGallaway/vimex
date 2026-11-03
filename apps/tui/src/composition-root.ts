@@ -1,3 +1,4 @@
+import { createDirectoryNavigation } from "./directories"
 import {
   createHandoffDestinations,
   parseHandoffDestinationState,
@@ -378,7 +379,10 @@ export async function runApplication(options: CliOptions) {
           machine: target,
         })
         gateways.set(target.id, gateway)
-        return gateway
+        return {
+          ...gateway,
+          directories: createDirectoryNavigation(target.sshHost),
+        }
       },
     })
     const handoffDestinationStore = new JsonStore(

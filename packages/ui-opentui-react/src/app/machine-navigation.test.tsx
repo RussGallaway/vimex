@@ -113,7 +113,7 @@ async function harness() {
 test("machine modal filters, chooses a host, and keeps local status visible", async () => {
   const h = await harness()
   try {
-    expect(h.frame()).toContain("local · current")
+    expect(h.frame()).toContain("⌂ local · current")
     await h.key("i")
     await h.type("travel")
     expect(h.frame()).toContain("Travel VM (devbox)")
@@ -124,7 +124,7 @@ test("machine modal filters, chooses a host, and keeps local status visible", as
     expect(h.frame()).toContain("Machines")
     await h.key("ESCAPE")
     expect(h.frame()).not.toContain("Machines")
-    expect(h.frame()).toContain("local · /work")
+    expect(h.frame()).toContain("⌂ local · /work")
     expect(h.frame()).toContain("disconnected")
   } finally {
     await h.close()
@@ -162,7 +162,7 @@ test("inline rename retains input after failed save and favorite sorting preserv
     await act(async () => {
       await h.flush()
     })
-    expect(h.frame()).toContain("> ★ Travel VM (devbox)")
+    expect(h.frame()).toContain("> ★ ☁︎ Travel VM (devbox)")
     await h.key("RETURN")
     expect(h.commands.at(-1)).toBe("machine devbox")
   } finally {
@@ -209,7 +209,7 @@ test("favoriting a scrolled row keeps the reordered selection visible", async ()
       await h.flush()
     })
     for (let i = 0; i < 15; i++) await h.key("ARROW_DOWN")
-    expect(h.frame()).toContain("> vm-15")
+    expect(h.frame()).toContain("> ☁︎ vm-15")
     await h.key("f", true)
     await act(async () => {
       h.update((s) => ({
@@ -224,7 +224,7 @@ test("favoriting a scrolled row keeps the reordered selection visible", async ()
     await act(async () => {
       await h.flush()
     })
-    expect(h.frame()).toContain("> ★ vm-15")
+    expect(h.frame()).toContain("> ★ ☁︎ vm-15")
   } finally {
     await h.close()
   }

@@ -93,6 +93,8 @@ export type TranscriptAction =
   | { type: "fork"; itemId?: ItemId }
 
 export interface WorkbenchActions {
+  browseCwd(directory?: string): void
+  chooseCwd(directory: string): void
   browseHandoffDestination(directory?: string): void
   chooseHandoffDestination(cwd?: string): void
   favoriteHandoffDestination(cwd: string): void

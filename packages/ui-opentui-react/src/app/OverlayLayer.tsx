@@ -1,3 +1,4 @@
+import { CwdOverlay } from "../cwd/CwdOverlay"
 import { HandoffOverlay } from "../handoff/HandoffOverlay"
 import { MachinesOverlay } from "../machines/MachinesOverlay"
 import { usePaneGeometry } from "../side-chat/pane-geometry"
@@ -130,6 +131,9 @@ export function OverlayLayer(props: {
   machineManagement?: WorkbenchState["machineManagement"]
   onMachineCommand(command: string): void
   onMachineClose(): void
+  cwdPicker?: WorkbenchState["cwdPicker"]
+  onCwdBrowse(directory?: string): void
+  onCwdChoose(directory: string): void
   handoffPicker?: WorkbenchState["handoffPicker"]
   onHandoffBrowse(directory?: string): void
   onHandoffChoose(cwd?: string): void
@@ -186,6 +190,14 @@ export function OverlayLayer(props: {
           machines={props.machines ?? []}
           active={props.activeMachine}
           onCommand={props.onMachineCommand}
+          onClose={props.onMachineClose}
+        />
+      ) : props.overlay === "cwd" && props.cwdPicker ? (
+        <CwdOverlay
+          key={props.cwdPicker.threadId}
+          picker={props.cwdPicker}
+          onBrowse={props.onCwdBrowse}
+          onChoose={props.onCwdChoose}
           onClose={props.onMachineClose}
         />
       ) : props.overlay === "handoff" && props.handoffPicker ? (

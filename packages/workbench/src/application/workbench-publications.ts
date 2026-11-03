@@ -185,6 +185,7 @@ export function workbenchPresentationChanged(
     before.machines !== after.machines ||
     before.machineChanging !== after.machineChanging ||
     before.machineManagement !== after.machineManagement ||
+    before.cwdPicker !== after.cwdPicker ||
     before.handoffPicker !== after.handoffPicker ||
     before.connection !== after.connection
   )

@@ -407,3 +407,56 @@ test("Insert slash filtering keeps j/k as query letters", async () => {
     await h.close()
   }
 })
+
+for (const width of [80, 60]) {
+  test(`machine actions show complete selected help and browse without running at ${width}x24`, async () => {
+    const h = await harness(width, 24)
+    try {
+      await h.keys("/machine")
+      for (const usage of [
+        "machine add <name> <ssh-host>",
+        "machine rename <name> <label>",
+        "machine remove <name>",
+        "machine favorite <name>",
+      ]) {
+        await act(async () => {
+          h.mockInput.pressKey("n", { ctrl: true })
+          await h.flush()
+          await h.renderOnce()
+        })
+        expect(h.captureCharFrame()).toContain(`Usage: /${usage}`)
+        const drawer = h.renderer.root.findDescendantById(
+          "slash-command-drawer",
+        )!
+        const composer = h.renderer.root.findDescendantById("composer-shell")!
+        expect(drawer.y).toBeGreaterThanOrEqual(0)
+        expect(drawer.y + drawer.height).toBeLessThanOrEqual(composer.y)
+        expect(h.executed).toEqual([])
+        expect(h.workspace().composer.text).toBe("/machine")
+      }
+      await act(async () => {
+        h.mockInput.pressKey("TAB")
+        await h.flush()
+      })
+      expect(h.workspace().composer.text).toBe("/machine favorite ")
+    } finally {
+      await h.close()
+    }
+  })
+}
+
+test("machine literal arguments survive completion and Enter", async () => {
+  const h = await harness()
+  try {
+    await h.keys("/machine rename devbox Travel VM")
+    await act(async () => {
+      h.mockInput.pressKey("TAB")
+      await h.flush()
+      h.mockInput.pressKey("RETURN")
+      await h.flush()
+    })
+    expect(h.executed).toEqual(["machine rename devbox Travel VM"])
+  } finally {
+    await h.close()
+  }
+})

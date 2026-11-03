@@ -158,3 +158,33 @@ test("mention picker modes are discoverable in command completion", () => {
   expect(commandCompletions(":skills")).toEqual([":skills"])
   expect(commandCompletions(":plugins")).toEqual([":plugins"])
 })
+
+test("machine completion exposes actions and IDs without rewriting literal arguments", () => {
+  const options = { machineIds: ["local", "devbox"] }
+  expect(commandCompletions(":machine", options)).toEqual([
+    ":machine",
+    ":machine add",
+    ":machine rename",
+    ":machine remove",
+    ":machine favorite",
+    ":machine local",
+    ":machine devbox",
+  ])
+  expect(commandCompletions(":machine re", options)).toEqual([
+    ":machine rename",
+    ":machine remove",
+  ])
+  expect(commandCompletions(":machine rename ", options)).toEqual([
+    ":machine rename devbox",
+  ])
+  expect(commandCompletions(":machine favorite l", options)).toEqual([
+    ":machine favorite local",
+  ])
+  expect(commandCompletions(":handoff d", options)).toEqual([":handoff devbox"])
+  for (const value of [
+    ":machine add devbox ssh-alias",
+    ":machine rename devbox Travel VM",
+    ":handoff devbox --cwd /work path",
+  ])
+    expect(commandCompletions(value, options)).toEqual([])
+})

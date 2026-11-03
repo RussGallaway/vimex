@@ -61,6 +61,13 @@ export interface WorkbenchState {
   power?: import("./power-control").PowerSnapshot
   machine?: import("./machines").MachineInfo
   machines?: readonly import("./machines").MachineInfo[]
+  cwdPicker?: {
+    threadId: string
+    cwd: string
+    loading: boolean
+    error?: string
+    listing?: import("./directories").DirectoryListing
+  }
   handoffPicker?: {
     sourceId: string
     targetId: string

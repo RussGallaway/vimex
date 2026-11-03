@@ -7,6 +7,8 @@ import { OverlayFrame } from "../app/OverlayFrame"
 import { emberTide } from "../theme"
 import { usePaneGeometry } from "../side-chat/pane-geometry"
 
+import { machineIcon } from "./machine-icon"
+
 type Form =
   | { kind: "rename"; id: string; value: string }
   | { kind: "add-name"; value: string }
@@ -345,6 +347,7 @@ export function MachinesOverlay(props: {
                 >
                   {machine.id === selected?.id ? "> " : "  "}
                   {machine.favorite ? "★ " : ""}
+                  {`${machineIcon(machine.id)} `}
                   {machine.label && machine.label !== machine.id
                     ? `${machine.label} (${machine.id})`
                     : machine.id}

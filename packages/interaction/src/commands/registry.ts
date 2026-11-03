@@ -79,7 +79,7 @@ export const commandDescriptions: Readonly<Record<CommandName, string>> = {
   help: "Show keyboard help",
   model: "Choose the model",
   thinking: "Set reasoning effort",
-  cwd: "Change working directory",
+  cwd: "Browse or change working directory",
   new: "Start a new session",
   approve: "Approve the pending request",
   reject: "Reject the pending request",
@@ -123,6 +123,9 @@ export interface CommandDescriptor {
   readonly arguments: "none" | "literal" | "choice" | "model"
   readonly required?: boolean
   readonly choices?: readonly string[]
+  readonly actions?: Readonly<
+    Record<string, { description: string; usage: string }>
+  >
 }
 const themes = themeNames
 const argumentDescriptors: Partial<
@@ -169,6 +172,25 @@ const argumentDescriptors: Partial<
     usage:
       "machine [name | add <name> <ssh-host> | rename <name> <label> | remove <name> | favorite <name>]",
     arguments: "literal",
+    choices: ["add", "rename", "remove", "favorite"],
+    actions: {
+      add: {
+        description: "Add a machine using an SSH host or alias",
+        usage: "machine add <name> <ssh-host>",
+      },
+      rename: {
+        description: "Change a machine’s display name",
+        usage: "machine rename <name> <label>",
+      },
+      remove: {
+        description: "Remove a saved machine",
+        usage: "machine remove <name>",
+      },
+      favorite: {
+        description: "Toggle a machine’s favorite status",
+        usage: "machine favorite <name>",
+      },
+    },
   },
   caffeinate: {
     usage: "caffeinate [on|off|toggle]",
@@ -232,6 +254,7 @@ export const commandDescriptors = Object.fromEntries(
 ) as Readonly<Record<CommandName, CommandDescriptor>>
 
 export interface CommandCompletionOptions {
+  readonly machineIds?: readonly string[]
   readonly sessionIds?: readonly string[]
   readonly models?: readonly string[]
   readonly modelEfforts?: Readonly<Record<string, readonly string[]>>
@@ -241,6 +264,14 @@ export function commandArgumentChoices(
   name: CommandName,
   options: CommandCompletionOptions = {},
 ): readonly string[] | undefined {
+  if (name === "machine")
+    return [
+      ...new Set([
+        ...(commandDescriptors.machine.choices ?? []),
+        ...(options.machineIds ?? []),
+      ]),
+    ]
+  if (name === "handoff") return options.machineIds
   if (name === "sessions") return options.sessionIds
   if (name === "model") return options.models
   if (name === "thinking")

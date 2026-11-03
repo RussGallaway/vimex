@@ -26,6 +26,7 @@ export function CommandLine(props: {
   models?: readonly AvailableModel[]
   currentModel?: string
   sessionIds?: readonly string[]
+  machineIds?: readonly string[]
   inputRef: RefObject<InputRenderable | null>
   controller: VimexUiController
   onSubmit(value: string): void
@@ -49,6 +50,7 @@ export function CommandLine(props: {
     ),
     currentModel: props.currentModel,
     sessionIds: props.sessionIds,
+    machineIds: props.machineIds,
   }
   const choices =
     prompt === ":"

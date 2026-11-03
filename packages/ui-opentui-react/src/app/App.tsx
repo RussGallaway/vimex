@@ -482,6 +482,7 @@ export function VimexApp({
       ),
       currentModel: summary?.model,
       sessionIds: state.threadOrder,
+      machineIds: state.machines?.map((machine) => machine.id),
     },
     onExecute(command) {
       commandHistoryRef.current = recordCommand(
@@ -1823,6 +1824,7 @@ export function VimexApp({
         !interactive ||
         !interaction.overlay ||
         interaction.overlay === "machines" ||
+        interaction.overlay === "cwd" ||
         interaction.overlay === "handoff" ||
         telescopeModal.active
           ? []
@@ -2020,6 +2022,7 @@ export function VimexApp({
           <CommandLine
             currentTitle={summary?.title}
             sessionIds={state.threadOrder}
+            machineIds={state.machines?.map((machine) => machine.id)}
             currentModel={summary?.model}
             models={state.availableModels}
             value={interaction.commandLine}
@@ -2158,6 +2161,7 @@ export function VimexApp({
           mode={interaction.mode}
           power={state.power}
           machine={state.machine?.label ?? state.machine?.id}
+          machineId={state.machine?.id}
           connection={state.machineChanging ? "switching" : state.connection}
           summary={statusSummary}
           pendingKeys={interaction.pendingKeys}
@@ -2309,6 +2313,9 @@ export function VimexApp({
                 controller.executeNamedCommand(command, presentationId)
               }
               onMachineClose={closeOverlay}
+              cwdPicker={state.cwdPicker}
+              onCwdBrowse={controller.browseCwd}
+              onCwdChoose={controller.chooseCwd}
               handoffPicker={state.handoffPicker}
               onHandoffBrowse={controller.browseHandoffDestination}
               onHandoffChoose={controller.chooseHandoffDestination}

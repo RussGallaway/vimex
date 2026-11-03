@@ -4,8 +4,14 @@ import { slashCommandChoices } from "./slash-commands"
 
 test("machine modal and management share slash and Ex command vocabulary", () => {
   expect(slashCommandChoices("/mach")).toEqual(["machine"])
-  for (const body of [
+  expect(slashCommandChoices("/machine")).toEqual([
     "machine",
+    "machine add",
+    "machine rename",
+    "machine remove",
+    "machine favorite",
+  ])
+  for (const body of [
     "machine devbox",
     "machine add travel devbox",
     "machine rename travel Travel VM",

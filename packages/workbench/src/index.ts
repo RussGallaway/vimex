@@ -26,3 +26,10 @@ export type {
 } from "./application/machines"
 
 export type { PowerControl, PowerSnapshot } from "./application/power-control"
+
+export type {
+  DirectoryNavigation,
+  DirectoryListing,
+} from "./application/directories"
+
+export { directoryArgument } from "./application/directories"

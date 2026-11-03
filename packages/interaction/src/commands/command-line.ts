@@ -48,6 +48,13 @@ export function commandCompletions(
   options: CommandCompletionOptions = {},
 ): readonly string[] {
   const prefix = value.replace(/^:/, "").trimStart()
+  if (prefix === "machine")
+    return [
+      ":machine",
+      ...(commandArgumentChoices("machine", options) ?? []).map(
+        (choice) => `:machine ${choice}`,
+      ),
+    ]
   if (!/\s/.test(prefix))
     return commandNames
       .filter((name) => name.startsWith(prefix))
@@ -56,6 +63,19 @@ export function commandCompletions(
     prefix.split(/\s+/)
   const name = resolveCommandName(spelling)
   if (!name || extra.length) return []
+  if (
+    name === "machine" &&
+    ["rename", "remove", "favorite"].includes(argument) &&
+    prefix.split(/\s+/).length === 3
+  ) {
+    return (options.machineIds ?? [])
+      .filter(
+        (choice) =>
+          (argument === "favorite" || choice !== "local") &&
+          choice.startsWith(effort),
+      )
+      .map((choice) => `:${spelling} ${argument} ${choice}`)
+  }
   if (
     name === "side" &&
     argument === "focus" &&

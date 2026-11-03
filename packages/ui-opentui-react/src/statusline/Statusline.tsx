@@ -1,5 +1,6 @@
 import type { ThreadSummary } from "@vimex/conversation"
 import type { VimMode } from "@vimex/interaction"
+import { machineIcon } from "../machines/machine-icon"
 import { emberTide } from "../theme"
 
 const modeColor = (): Record<VimMode, string> => ({
@@ -21,6 +22,7 @@ function contextLabel(summary: ThreadSummary | undefined): string {
 export function Statusline(props: {
   power?: import("@vimex/workbench").PowerSnapshot
   machine?: string
+  machineId?: string
   connection?: string
   mode: VimMode
   summary?: ThreadSummary
@@ -90,7 +92,9 @@ export function Statusline(props: {
           wrapMode="none"
           truncate
         >
-          {props.machine ? `${props.machine} · ${cwd}` : cwd}
+          {props.machine
+            ? `${props.machineId ? `${machineIcon(props.machineId)} ` : ""}${props.machine} · ${cwd}`
+            : cwd}
         </text>
         {branch ? (
           <text

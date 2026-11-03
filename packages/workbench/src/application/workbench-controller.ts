@@ -1,3 +1,4 @@
+import { directoryArgument, type DirectoryNavigation } from "./directories"
 import { needsLocalWakefulness, type PowerControl } from "./power-control"
 import { parseHandoffArgument } from "./handoff-command"
 import type { MachineNavigation, MachineRuntime } from "./machines"
@@ -137,6 +138,7 @@ import {
 } from "./startup-readiness"
 
 export interface ControllerPorts {
+  directories?: DirectoryNavigation
   machines?: MachineNavigation
   conversation: ConversationGateway
   approvals: ApprovalGateway
@@ -429,29 +431,37 @@ export class VimexController
       assertRuntime()
     },
     send: (id, text) => {
-      if (this.state.compactingThreads[id]) {
-        this.notice("Wait for side chat compaction before sending a question")
-        return
-      }
-      if (!this.loaded.has(id)) {
-        this.notice("Open the side chat successfully before sending a question")
-        return
-      }
-      const draft = this.state.workspaces[id]?.composer
-      this.dispatch({ type: "composer.change", threadId: id, text })
-      this.dispatch({
-        type: "composer.submit",
-        threadId: id,
-        intent: "next-turn",
-        clientMessageId: crypto.randomUUID(),
-      })
-      if (draft?.text)
+      const epoch = this.runtimeEpoch
+      const pending = this.launch(async () => {
+        await this.threadMutations.get(id)?.catch(() => {})
+        if (!this.currentRuntime(epoch) || this.state.machineChanging) return
+        if (this.state.compactingThreads[id]) {
+          this.notice("Wait for side chat compaction before sending a question")
+          return
+        }
+        if (!this.loaded.has(id)) {
+          this.notice(
+            "Open the side chat successfully before sending a question",
+          )
+          return
+        }
+        const draft = this.state.workspaces[id]?.composer
+        this.dispatch({ type: "composer.change", threadId: id, text })
         this.dispatch({
-          type: "composer.change",
+          type: "composer.submit",
           threadId: id,
-          text: draft.text,
-          cursorOffset: draft.cursorOffset,
+          intent: "next-turn",
+          clientMessageId: crypto.randomUUID(),
         })
+        if (draft?.text)
+          this.dispatch({
+            type: "composer.change",
+            threadId: id,
+            text: draft.text,
+            cursorOffset: draft.cursorOffset,
+          })
+      })
+      this.trackContinuation(id, pending)
     },
     quote: (id, text) => {
       const previous = this.state.workspaces[id]?.composer.text ?? ""
@@ -1351,6 +1361,16 @@ export class VimexController
         : command.type === "approval.resolve"
           ? this.state.approvals.byId[command.approvalId]?.threadId
           : undefined
+    if (
+      recipient &&
+      this.threadMutations.has(recipient) &&
+      (command.type === "composer.submit" || command.type === "composer.retry")
+    ) {
+      this.notice(
+        "Wait for session settings to finish changing before submitting",
+      )
+      return
+    }
     if (recipient && this.retiringThread(recipient)) {
       this.notice("Side chat is quitting; new work is paused")
       return
@@ -2220,6 +2240,12 @@ export class VimexController
       return false
     }
     const workspace = thread ? this.state.workspaces[thread] : undefined
+    if (thread && this.threadMutations.has(thread)) {
+      this.notice(
+        "Wait for session settings to finish changing before submitting",
+      )
+      return false
+    }
     const draft = workspace?.composer.text ?? ""
     if (draft.startsWith("!") && !draft.startsWith("!!")) {
       const command = draft.slice(1)
@@ -2774,6 +2800,99 @@ export class VimexController
     )
   }
 
+  private cwdRequest = 0
+  browseCwd = (directory?: string): void => {
+    const picker = this.state.cwdPicker
+    const port = this.ports.directories
+    if (!picker) return
+    const request = ++this.cwdRequest
+    const epoch = this.runtimeEpoch
+    const current = () =>
+      this.currentRuntime(epoch) &&
+      request === this.cwdRequest &&
+      this.state.activeThreadId === picker.threadId &&
+      this.state.workspaces[picker.threadId]?.interaction.overlay === "cwd"
+    this.setState({
+      ...this.state,
+      cwdPicker: { ...picker, loading: true, error: undefined },
+    })
+    this.launch(async () => {
+      try {
+        if (!port)
+          throw new Error("Directory browsing is unavailable on this runtime")
+        const listing = await port.list(
+          picker.listing?.directory ?? picker.cwd,
+          directoryArgument(directory ?? picker.cwd),
+        )
+        if (current())
+          this.setState({
+            ...this.state,
+            cwdPicker: { ...picker, loading: false, listing },
+          })
+      } catch (error) {
+        if (current())
+          this.setState({
+            ...this.state,
+            cwdPicker: { ...picker, loading: false, error: String(error) },
+          })
+      }
+    })
+  }
+  chooseCwd = (directory: string): void => {
+    const id = this.state.activeThreadId
+    const summary = id ? this.state.summaries[id] : undefined
+    if (!id || !summary) return
+    const fail = (error: string) => {
+      this.notice(error)
+      if (this.state.cwdPicker?.threadId === id)
+        this.setState({
+          ...this.state,
+          cwdPicker: { ...this.state.cwdPicker, loading: false, error },
+        })
+    }
+    if (
+      this.state.workspaces[id]?.conversation.activeTurnId ||
+      this.threadMutations.has(id) ||
+      this.threadContinuations.has(id)
+    ) {
+      fail(
+        "Wait for the session's current work to finish before changing directory",
+      )
+      return
+    }
+    const port = this.ports.directories
+    if (!port) {
+      fail("Directory validation is unavailable on this runtime")
+      return
+    }
+    if (this.closing || this.state.machineChanging || this.retiringThread(id))
+      return
+    this.launchThreadMutation(id, async (epoch) => {
+      try {
+        const cwd = await port.resolve(
+          summary.cwd,
+          directoryArgument(directory),
+        )
+        if (!this.currentRuntime(epoch)) return
+        await this.ports.conversation.updateSettings(id, { cwd })
+        if (!this.currentRuntime(epoch)) return
+        this.dispatch({
+          type: "thread.summary.patch",
+          threadId: id,
+          patch: { cwd, gitBranch: undefined },
+        })
+        if (
+          this.state.activeThreadId === id &&
+          this.state.workspaces[id]?.interaction.overlay === "cwd"
+        )
+          this.dispatchInteraction({ type: "overlay.close" })
+        this.notice(`Working directory: ${cwd}`)
+      } catch (error) {
+        if (this.currentRuntime(epoch)) fail(String(error))
+      }
+    })
+  }
+
   browseHandoffDestination = (directory?: string): void => {
     const picker = this.state.handoffPicker
     const list = this.ports.machines?.listHandoffDestinations
@@ -3093,6 +3212,7 @@ export class VimexController
         this.ports.approvals = result.approvals
         this.ports.connection = result.connection
         this.ports.models = result.models
+        this.ports.directories = result.directories
         if (result.resolveDirectory)
           this.ports.resolveDirectory = result.resolveDirectory
         this.ports.localState =
@@ -3111,6 +3231,7 @@ export class VimexController
           machine: result.machine,
           machines: machines.list(),
           machineChanging: false,
+          cwdPicker: undefined,
           handoffPicker: undefined,
           preferences: source.preferences,
           connection: "connected",
@@ -4458,9 +4579,23 @@ export class VimexController
         })
         break
       }
-      case "model":
-      case "thinking":
       case "cwd": {
+        const id = this.state.activeThreadId
+        const summary = id ? this.state.summaries[id] : undefined
+        if (!id || !summary) break
+        if (argument) this.chooseCwd(argument)
+        else {
+          this.setState({
+            ...this.state,
+            cwdPicker: { threadId: id, cwd: summary.cwd, loading: false },
+          })
+          this.dispatchInteraction({ type: "overlay.open", overlay: "cwd" })
+          this.browseCwd()
+        }
+        break
+      }
+      case "model":
+      case "thinking": {
         if (command === "model" && !argument) {
           this.dispatchInteraction({ type: "overlay.open", overlay: "models" })
           break
@@ -4470,21 +4605,6 @@ export class VimexController
         this.launchThreadMutation(id, async (epoch) => {
           const summary = this.state.summaries[id]
           if (!summary) return
-          if (command === "cwd") {
-            if (!argument) {
-              this.notice(summary.cwd)
-              return
-            }
-            const cwd = this.ports.resolveDirectory(summary.cwd, argument)
-            await this.ports.conversation.updateSettings(id, { cwd })
-            if (this.currentRuntime(epoch))
-              this.dispatch({
-                type: "thread.summary.patch",
-                threadId: id,
-                patch: { cwd, gitBranch: undefined },
-              })
-            return
-          }
           const models = await this.loadModels()
           if (!this.currentRuntime(epoch)) return
           if (!argument) {
@@ -4710,7 +4830,14 @@ export class VimexController
     switch (effect.type) {
       case "conversation.turn.start":
       case "conversation.turn.steer": {
-        if (this.retiringThread(effect.threadId)) return
+        const mutation = this.threadMutations.get(effect.threadId)
+        if (mutation) await mutation.catch(() => {})
+        if (
+          !this.currentRuntime(epoch) ||
+          this.state.machineChanging ||
+          this.retiringThread(effect.threadId)
+        )
+          return
         this.pendingSubmitActivity.set(effect.threadId, {
           operationId: effect.clientMessageId,
           nextThreadActivity: false,

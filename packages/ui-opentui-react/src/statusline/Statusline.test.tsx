@@ -75,3 +75,33 @@ test("statusline distinguishes active automatic sleep prevention from disabled a
     }
   }
 })
+
+test("machine icon follows stable identity even when a remote is named local", async () => {
+  for (const [machineId, label] of [
+    ["local", "⌂ local"],
+    ["devbox", "☁︎ local"],
+  ]) {
+    const setup = await testRender(
+      <Statusline
+        mode="normal"
+        machine="local"
+        machineId={machineId}
+        pendingKeys=""
+        unseenEntries={0}
+        pendingApprovals={0}
+        pendingQuestions={0}
+        activeTurn={false}
+      />,
+      { width: 80, height: 4 },
+    )
+    try {
+      await act(async () => {
+        await setup.flush()
+        await setup.renderOnce()
+      })
+      expect(setup.captureCharFrame()).toContain(label!)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  }
+})
