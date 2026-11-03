@@ -3,6 +3,7 @@ import {
   CliRenderEvents,
   Selection,
   type ScrollBoxRenderable,
+  type MouseEvent,
   type SyntaxStyle,
 } from "@opentui/core"
 import type { ConversationItem, ThreadSummary } from "@vimex/conversation"
@@ -40,6 +41,11 @@ export interface TranscriptViewportProps {
   activity?: ReactNode
   scrollRef: RefObject<ScrollBoxRenderable | null>
   onMouseCopy?: (text: string) => void
+  onLinkMouseDown?: (event: MouseEvent) => void
+  onLinkMouseUp?: (event: MouseEvent) => void
+  onLinkMouseMove?: (event: MouseEvent) => void
+  onLinkMouseDrag?: (event: MouseEvent) => void
+  onLinkClear?: () => void
   onManualScroll?: (
     rows?: number,
     cursor?: "follow" | "clamp",
@@ -61,6 +67,11 @@ export function sameTranscriptViewportProps(
     before.activity === after.activity &&
     before.scrollRef === after.scrollRef &&
     before.onMouseCopy === after.onMouseCopy &&
+    before.onLinkMouseDown === after.onLinkMouseDown &&
+    before.onLinkMouseUp === after.onLinkMouseUp &&
+    before.onLinkMouseMove === after.onLinkMouseMove &&
+    before.onLinkMouseDrag === after.onLinkMouseDrag &&
+    before.onLinkClear === after.onLinkClear &&
     before.onManualScroll === after.onManualScroll
   )
 }
@@ -122,12 +133,17 @@ export const TranscriptViewport = memo(function TranscriptViewport(
       minHeight={0}
       stickyScroll={props.state.viewport.kind === "tail"}
       scrollAcceleration={scrollAcceleration}
+      onMouseMove={props.onLinkMouseMove}
+      onMouseUp={props.onLinkMouseUp}
+      onMouseDrag={props.onLinkMouseDrag}
       onMouseDown={(event) => {
+        props.onLinkMouseDown?.(event)
         const selection = renderer.getSelection()
         if (event.button === 0 && props.onMouseCopy && selection?.isDragging)
           mouseSelection.current = selection
       }}
       onMouseScroll={(event) => {
+        props.onLinkClear?.()
         if (
           event.scroll?.direction !== "up" &&
           event.scroll?.direction !== "down"

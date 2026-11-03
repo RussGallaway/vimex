@@ -28,7 +28,11 @@ import {
 } from "@vimex/conversation"
 import { createConversation, reduceConversation } from "@vimex/conversation"
 import type { LocalState } from "@vimex/workbench"
-import { pointIsMaterialized, selectedText } from "@vimex/transcript"
+import {
+  pointIsMaterialized,
+  selectedText,
+  urlCandidates,
+} from "@vimex/transcript"
 
 const a = threadId("a"),
   b = threadId("b")
@@ -2276,6 +2280,8 @@ test("off-window URL motion unfolds one target and picker ownership settles atom
   expect(picker.workspaces[a]!.interaction.overlay).toBe("urls")
   expect(picker.urlChoiceOwner).toEqual({
     threadId: a,
+    machineId: "local",
+    canonicalGeneration: frame.canonicalGeneration,
     presentationId: "main",
     displayedCanonicalRevision: frame.displayedCanonicalRevision,
     scope: "current-item",
@@ -5117,5 +5123,210 @@ test("opening agents refreshes descendants and preserves newer live status", asy
       }),
     ]),
   )
+  await h.controller.close()
+})
+
+async function linkHarness(markdown: string) {
+  const h = harness()
+  await h.controller.initialize("/tmp")
+  h.emit({
+    type: "conversation",
+    event: { type: "turn.started", threadId: a, turnId: turnId("links-turn") },
+  })
+  const publish = (content: string) =>
+    h.emit({
+      type: "conversation",
+      event: {
+        type: "item.completed",
+        threadId: a,
+        item: {
+          id: itemId("links-message"),
+          turnId: turnId("links-turn"),
+          kind: "assistant",
+          markdown: content,
+          status: "complete",
+        },
+      },
+    })
+  publish(markdown)
+  await h.controller.settle()
+  const frame = h.controller.transcriptRuntime("main")!.getSnapshot()
+  const candidates = urlCandidates(frame.transcript)
+  const action = (
+    index: number,
+    action: "open" | "copy-address" | "copy-text",
+  ) => ({
+    type: "link.action" as const,
+    presentationId: "main" as const,
+    threadId: a,
+    machineId: "local",
+    canonicalGeneration: frame.canonicalGeneration,
+    displayedCanonicalRevision: frame.displayedCanonicalRevision,
+    candidate: candidates[index]!,
+    action,
+  })
+  return { ...h, publish, candidates, action }
+}
+
+test("mouse link actions open exact destinations and copy canonical address or Unicode text", async () => {
+  const h = await linkHarness(
+    "[👩‍💻 源码](https://example.com/a?q=1#x) and [Other](https://other.test)",
+  )
+  h.controller.dispatchInteraction({ type: "focus.set", surface: "composer" })
+  h.controller.dispatchInteraction({ type: "mode.insert" })
+  const before = h.controller.getSnapshot().workspaces[a]!.interaction
+  h.controller.transcript(h.action(0, "copy-address"))
+  expect(h.controller.getSnapshot().workspaces[a]!.interaction).toEqual({
+    ...before,
+    unnamedRegister: {
+      text: "https://example.com/a?q=1#x",
+      shape: "character",
+    },
+  })
+  h.controller.transcript({
+    ...h.action(0, "copy-text"),
+    candidate: { ...h.candidates[0]!, text: "forged" },
+  })
+  expect(h.controller.getSnapshot().workspaces[a]!.interaction).toEqual({
+    ...before,
+    unnamedRegister: { text: "👩‍💻 源码", shape: "character" },
+  })
+  h.controller.transcript(h.action(1, "open"))
+  await h.controller.settle()
+  expect(h.copied).toEqual(["https://example.com/a?q=1#x", "👩‍💻 源码"])
+  expect(h.opened).toEqual(["https://other.test"])
+  await h.controller.close()
+})
+
+test("mouse link actions refuse stale revisions, forged destinations and another session", async () => {
+  const h = await linkHarness("[Website](https://example.test)")
+  h.controller.transcript({
+    ...h.action(0, "open"),
+    candidate: { ...h.candidates[0]!, url: "https://forged.test" },
+  })
+  h.controller.transcript({ ...h.action(0, "copy-address"), threadId: b })
+  h.controller.transcript({ ...h.action(0, "open"), machineId: "devbox" })
+  h.controller.transcript({
+    ...h.action(0, "copy-text"),
+    canonicalGeneration: -1,
+  })
+  h.emit({
+    type: "conversation",
+    event: {
+      type: "item.completed",
+      threadId: a,
+      item: {
+        id: itemId("new-links-message"),
+        turnId: turnId("links-turn"),
+        kind: "assistant",
+        markdown: "[Website](https://changed.test)",
+        status: "complete",
+      },
+    },
+  })
+  await h.controller.settle()
+  h.controller.transcript(h.action(0, "open"))
+  await h.controller.settle()
+  expect(h.opened).toEqual([])
+  expect(h.copied).toEqual([])
+  await h.controller.close()
+})
+
+test("mouse-only link picker opens even a single link without a transcript cursor", async () => {
+  const h = await linkHarness("[Website](https://example.test)")
+  h.controller.transcript({ type: "link.picker", presentationId: "main" })
+  expect(
+    h.controller.getSnapshot().urlChoices?.map((choice) => choice.url),
+  ).toEqual(["https://example.test"])
+  expect(h.controller.getSnapshot().urlChoiceOwner?.scope).toBe("all")
+  h.controller.transcript({
+    type: "url.open",
+    presentationId: "main",
+    candidate: h.controller.getSnapshot().urlChoices![0],
+  })
+  await h.controller.settle()
+  expect(h.opened).toEqual(["https://example.test"])
+  await h.controller.close()
+})
+
+test("file gx previews resolve session cwd on its gateway and preserve line anchors", async () => {
+  const h = await linkHarness("[File](src/app.ts#L3)")
+  h.controller.dispatch({
+    type: "thread.open",
+    summary: { ...summary(a), cwd: "/remote/project" },
+  })
+  const paths: string[] = []
+  h.backend.readLinkPreview = async (path) => {
+    paths.push(path)
+    return "one\ntwo\nthree"
+  }
+  h.controller.transcript({
+    type: "cursor.move",
+    target: h.candidates[0]!.from,
+    preferredScreenRow: 2,
+    extend: false,
+  })
+  h.controller.transcript({ type: "url.open", presentationId: "main" })
+  await h.controller.settle()
+  expect(paths).toEqual(["/remote/project/src/app.ts"])
+  expect(h.opened).toEqual([])
+  expect(h.controller.getSnapshot().linkPreview).toMatchObject({
+    path: "/remote/project/src/app.ts",
+    line: 3,
+    content: "one\ntwo\nthree",
+    loading: false,
+  })
+  expect(h.controller.getSnapshot().workspaces[a]?.interaction.overlay).toBe(
+    "link-preview",
+  )
+  h.controller.dispatchInteraction({ type: "overlay.close" })
+  expect(h.controller.getSnapshot().linkPreview).toBeUndefined()
+  await h.controller.close()
+})
+
+test("closing file preview cancels a pending read and ignores its late content", async () => {
+  const h = await linkHarness("[File](/project/app.ts:12)")
+  let finish!: (content: string) => void
+  let signal: AbortSignal | undefined
+  h.backend.readLinkPreview = async (_path, abort) => {
+    signal = abort
+    return new Promise<string>((resolve) => {
+      finish = resolve
+    })
+  }
+  h.controller.transcript(h.action(0, "open"))
+  await Bun.sleep(0)
+  expect(h.controller.getSnapshot().linkPreview?.loading).toBe(true)
+  h.controller.dispatchInteraction({ type: "overlay.close" })
+  expect(signal?.aborted).toBe(true)
+  finish("late")
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().linkPreview).toBeUndefined()
+  await h.controller.close()
+})
+
+test("switching sessions closes the prior file preview and ignores its pending gateway result", async () => {
+  const h = await linkHarness("[File](app.ts:12)")
+  let finish!: (content: string) => void
+  let signal: AbortSignal | undefined
+  h.backend.readLinkPreview = async (_path, abort) => {
+    signal = abort
+    return new Promise<string>((resolve) => {
+      finish = resolve
+    })
+  }
+  h.controller.transcript(h.action(0, "open"))
+  await Bun.sleep(0)
+  h.controller.openThread(b)
+  await Bun.sleep(0)
+  expect(h.controller.getSnapshot().activeThreadId).toBe(b)
+  expect(h.controller.getSnapshot().linkPreview).toBeUndefined()
+  expect(
+    h.controller.getSnapshot().workspaces[a]?.interaction.overlay,
+  ).toBeNull()
+  expect(signal?.aborted).toBe(true)
+  finish("old machine/session content")
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().linkPreview).toBeUndefined()
   await h.controller.close()
 })

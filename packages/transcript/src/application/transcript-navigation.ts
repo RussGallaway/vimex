@@ -354,7 +354,7 @@ function candidateInSelection(
 export function urlCandidateInScope(
   state: TranscriptState,
   candidate: UrlCandidate,
-  scope: "selection" | "current-item",
+  scope: "selection" | "current-item" | "all",
 ): boolean {
   if (!transcriptOrderIndex(state.order).has(candidate.itemId)) return false
   const projection = state.projectionById[candidate.itemId]
@@ -367,6 +367,7 @@ export function urlCandidateInScope(
     )
   )
     return false
+  if (scope === "all") return true
   if (scope === "current-item") return state.cursor?.itemId === candidate.itemId
   return Boolean(
     state.selection && candidateInSelection(state, candidate, state.selection),

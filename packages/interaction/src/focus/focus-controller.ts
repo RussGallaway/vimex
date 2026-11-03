@@ -10,6 +10,7 @@ export type Overlay =
   | "agents"
   | "processes"
   | "urls"
+  | "link-preview"
   | "help"
   | "manual"
   | "models"

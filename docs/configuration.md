@@ -91,7 +91,7 @@ Adding saves a connection to an existing SSH host or alias; it does not provisio
 
 SSH must work non-interactively with your existing keys or SSH agent. Codex must be installed and authenticated on the destination, with daemon management available. Remote directory discovery and native handoff require Python 3. Missing commands fail with a connection error rather than opening a local session in their place.
 
-Navigation, selection, composing, and optimistic submission rendering stay local. Connection loss preserves the visible session and draft; reconnect refreshes server state without automatically resending uncertain submissions. A lost client does not intentionally stop the shared daemon. `:restart` rebuilds Vimex's connection, not the shared daemon.
+Navigation, selection, composing, and optimistic submission rendering stay local. Transcript web links also open through the local browser/Herdr action, including when a remote machine is selected. File links resolve against the session working directory and preview files through that machine’s gateway; they do not fall back to laptop files. Mouse link controls use left-click, so Herdr can retain its right-click pane menu. Connection loss preserves the visible session and draft; reconnect refreshes server state without automatically resending uncertain submissions. A lost client does not intentionally stop the shared daemon. `:restart` rebuilds Vimex's connection, not the shared daemon.
 
 Local UI state remains in `views.json`; remote machine state uses `views-NAME.json` in the same state directory. Machine aliases are separate namespaces, even if two aliases point to the same server.
 

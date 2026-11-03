@@ -64,6 +64,11 @@ export interface ConversationGateway {
     path: string,
     signal?: AbortSignal,
   ): Promise<string | undefined>
+  /** Read a complete bounded text file on this gateway's machine for a clicked link. */
+  readLinkPreview?(
+    path: string,
+    signal?: AbortSignal,
+  ): Promise<string | undefined>
   listBackgroundTerminals?(id: ThreadId): Promise<readonly BackgroundTerminal[]>
   terminateBackgroundTerminal?(
     id: ThreadId,

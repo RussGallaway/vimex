@@ -1,3 +1,5 @@
+import { LinkActionButton } from "./LinkActionButton"
+import type { LinkAction } from "./LinkActionsBar"
 import type { ScrollBoxRenderable } from "@opentui/core"
 import type { UrlCandidate } from "@vimex/transcript"
 import { useEffect, useRef } from "react"
@@ -7,6 +9,8 @@ import { emberTide } from "../theme"
 export function UrlsOverlay(props: {
   choices: readonly UrlCandidate[]
   selected: number
+  onAction?(candidate: UrlCandidate, action: LinkAction): void
+  onClose?(): void
 }) {
   const listRef = useRef<ScrollBoxRenderable>(null)
   const selectedChoice = props.choices[props.selected]
@@ -21,13 +25,24 @@ export function UrlsOverlay(props: {
   }, [selectedId])
   return (
     <OverlayFrame title="Links" width={92}>
-      <text fg={emberTide.textMuted}>↑/↓ move · enter open · esc close</text>
+      <box flexDirection="row" gap={2} flexShrink={0}>
+        <text minWidth={0} flexShrink={1} fg={emberTide.textMuted}>
+          ↑/↓ move · enter open · esc close
+        </text>
+        {props.onClose ? (
+          <LinkActionButton
+            id="links-close"
+            label="Close"
+            onActivate={props.onClose}
+          />
+        ) : null}
+      </box>
       <scrollbox ref={listRef} flexGrow={1} minHeight={4} marginTop={1}>
         {props.choices.map((choice, index) => (
           <box
             id={`url-row:${choice.itemId}:${choice.from.graphemeOffset}`}
             key={`${choice.itemId}:${choice.from.graphemeOffset}:${choice.url}`}
-            height={2}
+            minHeight={props.onAction ? 3 : 2}
             flexShrink={0}
             paddingX={1}
             backgroundColor={
@@ -46,9 +61,28 @@ export function UrlsOverlay(props: {
             >
               {choice.text || choice.url}
             </text>
-            <text fg={emberTide.textMuted} wrapMode="none">
+            <text fg={emberTide.textMuted} wrapMode="word">
               {choice.url}
             </text>
+            {props.onAction ? (
+              <box flexDirection="row" flexWrap="wrap" gap={1}>
+                <LinkActionButton
+                  id={`url-open-${index}`}
+                  label="Open"
+                  onActivate={() => props.onAction?.(choice, "open")}
+                />
+                <LinkActionButton
+                  id={`url-copy-address-${index}`}
+                  label="Copy link"
+                  onActivate={() => props.onAction?.(choice, "copy-address")}
+                />
+                <LinkActionButton
+                  id={`url-copy-text-${index}`}
+                  label="Copy text"
+                  onActivate={() => props.onAction?.(choice, "copy-text")}
+                />
+              </box>
+            ) : null}
           </box>
         ))}
         {props.choices.length === 0 ? (

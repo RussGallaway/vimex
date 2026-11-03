@@ -1,3 +1,16 @@
+// A Markdown label may name a web URL or a file on the session's machine.
+// Bare text recognition stays URL-only; relative targets require explicit links.
+function actionableMarkdownLink(value: string): boolean {
+  if (!value || /[\u0000-\u001f\u007f]/.test(value)) return false
+  if (/^(https?|file):\/\//i.test(value)) return true
+  if (/^(?=[^:]*[/.])[^:]+:\d+(?::\d+)?(?:#.*)?$/.test(value)) return true
+  return (
+    !/^[a-z][a-z0-9+.-]*:/i.test(value) &&
+    !value.startsWith("#") &&
+    !value.startsWith("//")
+  )
+}
+
 import type { SourceSpan, TextProjection } from "./transcript-document"
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" })
@@ -332,8 +345,12 @@ function projectInline(
             : undefined
         if (targetEnd >= 0 && url !== undefined) {
           const plainFrom = builder.plain.length
+          const priorLinks = builder.links.length
           projectInline(source, labelOpen + 1, labelEnd, builder, references)
-          if (!image && /^(https?|file):\/\//.test(url)) {
+          // URLs inside a label are display text; the surrounding destination
+          // owns the entire link. Image alt text does not create links either.
+          builder.links.length = priorLinks
+          if (!image && actionableMarkdownLink(url)) {
             builder.links.push({
               fromCodeUnit: plainFrom,
               toCodeUnit: builder.plain.length,
@@ -366,8 +383,12 @@ function projectInline(
         )
         if (reference) {
           const plainFrom = builder.plain.length
+          const priorLinks = builder.links.length
           projectInline(source, labelOpen + 1, labelEnd, builder, references)
-          if (!image && /^(https?|file):\/\//.test(reference.url)) {
+          // URLs inside a label are display text; the surrounding destination
+          // owns the entire link. Image alt text does not create links either.
+          builder.links.length = priorLinks
+          if (!image && actionableMarkdownLink(reference.url)) {
             builder.links.push({
               fromCodeUnit: plainFrom,
               toCodeUnit: builder.plain.length,
@@ -389,7 +410,7 @@ function projectInline(
     if (source[index] === "<") {
       const end = findClosing(source, index, ">", to)
       const url = end > index ? source.slice(index + 1, end) : ""
-      if (end < to && /^(https?|file):\/\//.test(url)) {
+      if (end < to && /^(https?|file):\/\//i.test(url)) {
         const plainFrom = builder.plain.length
         emit(builder, source, index + 1, end)
         builder.links.push({

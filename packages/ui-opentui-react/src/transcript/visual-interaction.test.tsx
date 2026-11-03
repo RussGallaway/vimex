@@ -1,3 +1,5 @@
+import { CliRenderEvents } from "@opentui/core"
+import { setRendererCapabilities } from "@opentui/core/testing"
 import { measureRenderedTranscript, measuredPoint } from "./rendered-layout"
 import { expect, test } from "bun:test"
 import type {
@@ -27,9 +29,12 @@ import { blockNativeRevision } from "./measure-rendered-block"
 const thread = threadId("visual-thread")
 const answer = itemId("visual-answer")
 
-async function visualHarness() {
+async function visualHarness(
+  options: { markdown?: string; preview?: string } = {},
+) {
   let emit: (event: RuntimeEvent) => void = () => {}
   const copied: string[] = []
+  const opened: string[] = []
   const interrupted: { thread: string; turn: string }[] = []
   const summary = {
     id: thread,
@@ -65,19 +70,22 @@ async function visualHarness() {
     renameThread: async () => {},
     resolveApproval: async () => {},
     listModels: async () => [],
+    readLinkPreview: async () => options.preview,
   }
   const controller = new VimexController({
     conversation: runtime,
     approvals: runtime,
     connection: runtime,
     models: runtime,
-    resolveDirectory: (value) => value,
+    resolveDirectory: (cwd, path) => path ?? cwd,
     clipboard: {
       writeText: async (text) => {
         copied.push(text)
       },
     },
-    openUrl: async () => {},
+    openUrl: async (url) => {
+      opened.push(url)
+    },
     quit() {},
   })
   await controller.initialize("/work")
@@ -91,6 +99,7 @@ async function visualHarness() {
         turnId: turnId("visual-turn"),
         kind: "assistant",
         markdown:
+          options.markdown ??
           "Alpha **bold** text.\n\nSecond line with a [link](https://example.com).",
         status: "running",
       },
@@ -139,6 +148,7 @@ async function visualHarness() {
     ...setup,
     controller,
     copied,
+    opened,
     interrupted,
     emit: (event: RuntimeEvent) => {
       emit(event)
@@ -1518,6 +1528,279 @@ test("Visual selection paints a compact tool summary without opening its childre
     expect(h.copied.at(-1)).toBe(summary)
     expect(h.workspace().interaction.unnamedRegister.text).toBe(summary)
     for (const id of ids) expect(h.workspace().transcript.folded[id]).toBe(true)
+  } finally {
+    await h.close()
+  }
+})
+
+test("left-click opens a measured Markdown link while drag only copies its label", async () => {
+  const h = await visualHarness()
+  try {
+    const rows = h.captureCharFrame().split("\n")
+    const y = rows.findIndex((row) => row.includes("Second line with a link"))
+    const x = rows[y]!.indexOf("link")
+    const before = h.workspace().interaction
+    await act(async () => {
+      await h.mockMouse.click(x + 1, y)
+      await h.flush()
+    })
+    await h.controller.settle()
+    expect(h.opened).toEqual(["https://example.com"])
+    expect(h.copied).toEqual([])
+    expect(h.workspace().interaction.surface).toBe(before.surface)
+    await act(async () => {
+      await h.mockMouse.drag(x, y, x + 3, y)
+      await h.flush()
+    })
+    await h.controller.settle()
+    expect(h.opened).toHaveLength(1)
+    expect(h.copied).toEqual(["link"])
+  } finally {
+    await h.close()
+  }
+})
+
+test("mouse-only Links control copies a concealed address without opening it", async () => {
+  const h = await visualHarness()
+  try {
+    const click = async (id: string) => {
+      const target = h.renderer.root.findDescendantById(id) as Renderable
+      expect(target).toBeDefined()
+      await act(async () => {
+        await h.mockMouse.click(target.screenX + 1, target.screenY)
+        await h.flush()
+        await h.renderOnce()
+      })
+      await h.controller.settle()
+    }
+    await click("status-links")
+    expect(h.captureCharFrame()).toContain("Copy link")
+    await click("url-copy-address-0")
+    expect(h.copied).toEqual(["https://example.com"])
+    expect(h.opened).toEqual([])
+    await click("url-copy-text-0")
+    expect(h.copied).toEqual(["https://example.com", "link"])
+    await click("links-close")
+    expect(h.workspace().interaction.overlay).toBeNull()
+  } finally {
+    await h.close()
+  }
+})
+
+test("hover link actions remain reachable by left click without moving keyboard focus", async () => {
+  const h = await visualHarness()
+  try {
+    const rows = h.captureCharFrame().split("\n")
+    const y = rows.findIndex((row) => row.includes("Second line with a link"))
+    const x = rows[y]!.indexOf("link")
+    const before = h.workspace().interaction
+    await act(async () => {
+      await h.mockMouse.moveTo(x + 1, y)
+      await h.flush()
+      await h.renderOnce()
+    })
+    await act(async () => {
+      await h.flush()
+      await h.renderOnce()
+    })
+    const copy = h.renderer.root.findDescendantById(
+      "link-copy-address",
+    ) as Renderable
+    expect(copy).toBeDefined()
+    await act(async () => {
+      await h.mockMouse.moveTo(copy.screenX + 1, copy.screenY)
+      await h.mockMouse.click(copy.screenX + 1, copy.screenY)
+      await h.flush()
+    })
+    await h.controller.settle()
+    expect(h.copied).toEqual(["https://example.com"])
+    expect(h.opened).toEqual([])
+    expect(h.workspace().interaction.surface).toBe(before.surface)
+    expect(h.workspace().interaction.mode).toBe(before.mode)
+  } finally {
+    await h.close()
+  }
+})
+
+test("streaming between mouse press and release never opens a stale link", async () => {
+  const h = await visualHarness()
+  try {
+    const rows = h.captureCharFrame().split("\n")
+    const y = rows.findIndex((row) => row.includes("Second line with a link"))
+    const x = rows[y]!.indexOf("link")
+    await act(async () => {
+      await h.mockMouse.pressDown(x + 1, y)
+      h.emit({
+        type: "conversation",
+        event: {
+          type: "item.delta",
+          threadId: thread,
+          itemId: answer,
+          delta: " More context.",
+        },
+      })
+      await h.flush()
+      await h.renderOnce()
+    })
+    await act(async () => {
+      await h.mockMouse.release(x + 1, y)
+      await h.flush()
+    })
+    await h.controller.settle()
+    expect(h.opened).toEqual([])
+  } finally {
+    await h.close()
+  }
+})
+
+test("file link preview opens at a deep line and keeps explicit bounds feedback", async () => {
+  const preview = Array.from(
+    { length: 350 },
+    (_, i) => `Line ${i + 1} ${"context ".repeat(8)}`,
+  ).join("\n")
+  const h = await visualHarness({
+    markdown:
+      "Alpha **bold** text.\n\n[deep](/work/example.ts:300) and [beyond](/work/example.ts:500)",
+    preview,
+  })
+  try {
+    const click = async (id: string) => {
+      const target = h.renderer.root.findDescendantById(id) as Renderable
+      expect(target).toBeDefined()
+      await act(async () => {
+        await h.mockMouse.click(target.screenX + 1, target.screenY)
+        await h.flush()
+      })
+      await h.controller.settle()
+      for (let i = 0; i < 4; i++)
+        await act(async () => {
+          await h.flush()
+          await h.renderOnce()
+        })
+    }
+    await click("status-links")
+    await click("url-open-0")
+    expect(h.captureCharFrame()).toContain("Line 300")
+    expect(h.captureCharFrame()).not.toContain("Line 1 context")
+    expect(h.opened).toEqual([])
+    await click("link-preview-close")
+    await click("status-links")
+    await click("url-open-1")
+    expect(h.captureCharFrame()).toContain("beyond this file")
+    expect(h.captureCharFrame()).toContain("Line 350")
+  } finally {
+    await h.close()
+  }
+})
+
+test("link picker copy controls remain reachable in a narrow terminal pane", async () => {
+  const h = await visualHarness()
+  try {
+    await act(async () => {
+      h.resize(40, 24)
+      await h.flush()
+      await h.renderOnce()
+    })
+    await act(async () => {
+      await h.flush()
+      await h.renderOnce()
+    })
+    const trigger = h.renderer.root.findDescendantById(
+      "status-links",
+    ) as Renderable
+    await act(async () => {
+      await h.mockMouse.click(trigger.screenX + 1, trigger.screenY)
+      await h.flush()
+    })
+    await act(async () => {
+      await h.flush()
+      await h.renderOnce()
+    })
+    const target = h.renderer.root.findDescendantById(
+      "url-copy-address-0",
+    ) as Renderable
+    expect(target.screenX + target.width).toBeLessThanOrEqual(40)
+    await act(async () => {
+      await h.mockMouse.click(target.screenX + 1, target.screenY)
+      await h.flush()
+    })
+    await h.controller.settle()
+    expect(h.copied).toEqual(["https://example.com"])
+    expect(h.opened).toEqual([])
+  } finally {
+    await h.close()
+  }
+})
+
+test("concealed wrapped links after Unicode text open their real destination", async () => {
+  const h = await visualHarness({
+    markdown:
+      "Alpha **bold** text.\n\n😀 prefix [linked words one two three four wrapped-end](https://example.com/wrapped)",
+  })
+  try {
+    await act(async () => {
+      const caps = setRendererCapabilities(h.renderer, { hyperlinks: true })
+      h.renderer.emit(CliRenderEvents.CAPABILITIES, caps)
+      h.resize(40, 24)
+      await h.flush()
+      await h.renderOnce()
+    })
+    for (let i = 0; i < 3; i++)
+      await act(async () => {
+        await h.flush()
+        await h.renderOnce()
+      })
+    const rows = h.captureCharFrame().split("\n")
+    expect(h.captureCharFrame()).not.toContain("example.com")
+    const y = rows.findIndex((row) => row.includes("wrapped-end"))
+    expect(y).toBeGreaterThan(0)
+    const x = rows[y]!.indexOf("wrapped-end")
+    await act(async () => {
+      await h.mockMouse.click(x + 2, y)
+      await h.flush()
+    })
+    await h.controller.settle()
+    expect(h.opened).toEqual(["https://example.com/wrapped"])
+  } finally {
+    await h.close()
+  }
+})
+
+test("URL-shaped link labels open and copy the actual destination", async () => {
+  const h = await visualHarness({
+    markdown:
+      "Alpha **bold** text.\n\n[https://display.test](https://target.test)",
+  })
+  try {
+    await act(async () => {
+      const caps = setRendererCapabilities(h.renderer, { hyperlinks: true })
+      h.renderer.emit(CliRenderEvents.CAPABILITIES, caps)
+      await h.flush()
+      await h.renderOnce()
+    })
+    const rows = h.captureCharFrame().split("\n")
+    const y = rows.findIndex((row) => row.includes("https://display.test"))
+    expect(y).toBeGreaterThan(0)
+    await act(async () => {
+      await h.mockMouse.click(rows[y]!.indexOf("https://display.test") + 3, y)
+      await h.flush()
+    })
+    await h.controller.settle()
+    expect(h.opened).toEqual(["https://target.test"])
+    for (const id of ["link-copy-address", "link-copy-text"]) {
+      await act(async () => {
+        await h.flush()
+        await h.renderOnce()
+      })
+      const button = h.renderer.root.findDescendantById(id) as Renderable
+      expect(button).toBeDefined()
+      await act(async () => {
+        await h.mockMouse.click(button.screenX + 1, button.screenY)
+        await h.flush()
+      })
+      await h.controller.settle()
+    }
+    expect(h.copied).toEqual(["https://target.test", "https://display.test"])
   } finally {
     await h.close()
   }

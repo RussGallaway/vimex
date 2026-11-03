@@ -212,3 +212,41 @@ test("projects a large formatted response without repeated prefix scans", () => 
   expect(projection.plain).toBe("result with link and details\n".repeat(1000))
   expect(elapsed).toBeLessThan(1000)
 })
+
+test("Markdown file links retain exact destinations and Unicode label offsets", () => {
+  const projection = projectMarkdown(
+    "👩‍💻 [源码](</Users/me/My Project/app.ts:12>) and [relative](../src/a.ts#L3) and [reference][src]\n\n[src]: docs/readme.md",
+  )
+  expect(projection.links.map((link) => link.url)).toEqual([
+    "/Users/me/My Project/app.ts:12",
+    "../src/a.ts#L3",
+    "docs/readme.md",
+  ])
+  expect(projection.links[0]?.from).toBe(graphemeCount("👩‍💻 "))
+  expect(projection.links[0]?.to).toBe(graphemeCount("👩‍💻 源码"))
+  expect(projectMarkdown("[file](app.ts:123)").links[0]?.url).toBe("app.ts:123")
+  expect(
+    projectMarkdown(
+      "[bad](javascript:alert) [mail](mailto:a@b) <tag> [anchor](#section)",
+    ).links,
+  ).toEqual([])
+})
+
+test("URL-shaped labels use only the enclosing Markdown destination", () => {
+  for (const source of [
+    "[https://display.test](https://target.test)",
+    "[https://display.test][target]\n\n[target]: https://target.test",
+    "[read https://display.test docs](https://target.test)",
+  ]) {
+    const projection = projectMarkdown(source)
+    expect(projection.links).toHaveLength(1)
+    expect(projection.links[0]?.url).toBe("https://target.test")
+    expect(projection.links[0]?.from).toBe(0)
+  }
+  expect(projectMarkdown("![https://display.test](/image.png)").links).toEqual(
+    [],
+  )
+  expect(
+    projectMarkdown("[https://display.test](javascript:123)").links,
+  ).toEqual([])
+})

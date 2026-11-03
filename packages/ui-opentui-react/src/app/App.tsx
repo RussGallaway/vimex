@@ -1,3 +1,5 @@
+import { useTranscriptLinks } from "../urls/use-transcript-links"
+import { LinkActionsBar } from "../urls/LinkActionsBar"
 import { NoticeStrip } from "../statusline/NoticeStrip"
 import { usePaneGeometry } from "../side-chat/pane-geometry"
 import { FlashJump } from "../transcript/FlashJump"
@@ -367,6 +369,18 @@ export function VimexApp({
               controller.anchorThread(state.activeThreadId, point, row)
           }
         : undefined,
+  })
+  const links = useTranscriptLinks({
+    machineId: state.machine?.id ?? "local",
+    controller,
+    threadId: state.activeThreadId,
+    presentationId,
+    frame: transcriptFrame,
+    layout: measuredLayout,
+    scrollRef,
+    enabled:
+      interactive && presentationVisible && !interaction.overlay && !jumpActive,
+    keyboardFocused: interaction.surface === "transcript",
   })
   const busy = activeTurn(interaction, workspace?.conversation.activeTurnId)
   const composerBusy =
@@ -2015,6 +2029,11 @@ export function VimexApp({
                 ? copyMouseSelection
                 : undefined
             }
+            onLinkMouseDown={links.onMouseDown}
+            onLinkMouseUp={links.onMouseUp}
+            onLinkMouseMove={links.onMouseMove}
+            onLinkMouseDrag={links.onMouseDrag}
+            onLinkClear={links.clear}
             onManualScroll={onManualScroll}
           />
         ) : undefined
@@ -2159,20 +2178,37 @@ export function VimexApp({
         )
       }
       statusline={
-        <Statusline
-          mode={interaction.mode}
-          power={state.power}
-          machine={state.machine?.label ?? state.machine?.id}
-          machineId={state.machine?.id}
-          connection={state.machineChanging ? "switching" : state.connection}
-          summary={statusSummary}
-          pendingKeys={interaction.pendingKeys}
-          unseenEntries={semanticTranscript.unseenEntries}
-          pendingApprovals={state.approvals.order.length}
-          pendingQuestions={Object.keys(state.questions).length}
-          activeTurn={busy}
-          selectionCount={selectionCount}
-        />
+        links.candidate ? (
+          <LinkActionsBar
+            candidate={links.candidate}
+            onAction={links.onAction}
+            onClose={links.dismiss}
+          />
+        ) : (
+          <Statusline
+            onLinks={
+              interactive && !interaction.overlay
+                ? () =>
+                    controller.transcript({
+                      type: "link.picker",
+                      presentationId,
+                    })
+                : undefined
+            }
+            mode={interaction.mode}
+            power={state.power}
+            machine={state.machine?.label ?? state.machine?.id}
+            machineId={state.machine?.id}
+            connection={state.machineChanging ? "switching" : state.connection}
+            summary={statusSummary}
+            pendingKeys={interaction.pendingKeys}
+            unseenEntries={semanticTranscript.unseenEntries}
+            pendingApprovals={state.approvals.order.length}
+            pendingQuestions={Object.keys(state.questions).length}
+            activeTurn={busy}
+            selectionCount={selectionCount}
+          />
+        )
       }
       overlay={
         interactive ? (
@@ -2328,6 +2364,27 @@ export function VimexApp({
               }
               scopedAgents={Boolean(state.agentPickerTargets)}
               urls={urlChoices ?? []}
+              linkPreview={
+                state.linkPreview?.presentationId === presentationId &&
+                state.linkPreview.threadId === state.activeThreadId
+                  ? state.linkPreview
+                  : undefined
+              }
+              onLinkClose={closeOverlay}
+              onLinkAction={(candidate, action) => {
+                const owner = state.urlChoiceOwner
+                if (!owner || !state.activeThreadId) return
+                controller.transcript({
+                  type: "link.action",
+                  action,
+                  candidate,
+                  presentationId,
+                  threadId: owner.threadId,
+                  displayedCanonicalRevision: owner.displayedCanonicalRevision,
+                  machineId: owner.machineId,
+                  canonicalGeneration: owner.canonicalGeneration,
+                })
+              }}
               selected={overlayIndex}
             />
           </>

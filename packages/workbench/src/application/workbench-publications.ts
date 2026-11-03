@@ -275,6 +275,7 @@ export function workbenchPresentationChanged(
     before.modelCatalogError !== after.modelCatalogError ||
     before.threadOrder !== after.threadOrder ||
     before.pendingFork !== after.pendingFork ||
+    before.linkPreview !== after.linkPreview ||
     leftUrlChoices !== rightUrlChoices
   )
     return true

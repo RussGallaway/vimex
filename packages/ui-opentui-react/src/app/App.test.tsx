@@ -1976,6 +1976,8 @@ describe("Vimex OpenTUI shell", () => {
         ...base,
         urlChoices: [choice],
         urlChoiceOwner: {
+          machineId: "local",
+          canonicalGeneration: 0,
           threadId: base.activeThreadId!,
           presentationId: "main",
           displayedCanonicalRevision:

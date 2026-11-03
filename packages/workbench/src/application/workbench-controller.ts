@@ -1,3 +1,4 @@
+import { linkTarget } from "./link-target"
 import { directoryArgument, type DirectoryNavigation } from "./directories"
 import { needsLocalWakefulness, type PowerControl } from "./power-control"
 import { parseHandoffArgument } from "./handoff-command"
@@ -51,6 +52,7 @@ import {
 } from "./display-preferences"
 import {
   parseCommand,
+  reduceInteraction,
   validateCommand,
   resolveCommandName,
   commandDescriptors,
@@ -294,6 +296,7 @@ export class VimexController
       firstByUrl: ReadonlyMap<string, UrlCandidate>
     }>
   >()
+  private linkPreviewRequest?: AbortController
   private revealRevision = 0
   private readonly sides = new SideChatCoordinator({
     state: () => this.state,
@@ -1035,6 +1038,8 @@ export class VimexController
       if (
         !owner ||
         owner.threadId !== threadId ||
+        owner.machineId !== (this.state.machine?.id ?? "local") ||
+        owner.canonicalGeneration !== workspace.canonicalGeneration ||
         owner.presentationId !== command.presentationId ||
         owner.displayedCanonicalRevision !== displayedCanonicalRevision ||
         !exact
@@ -1042,7 +1047,7 @@ export class VimexController
         this.notice("That URL is no longer available in the active picker")
         return
       }
-      this.dispatch({ type: "url.picker", threadId, url: chosen.url })
+      this.openTranscriptLink(chosen.url, threadId, command.presentationId)
       return
     }
     const selected = transcript.selection
@@ -1056,7 +1061,7 @@ export class VimexController
       (selected.length === 1 ? selected[0]?.url : underCursor) ??
       (candidates.length === 1 ? candidates[0]?.url : undefined)
     if (url) {
-      this.dispatch({ type: "url.picker", threadId, url })
+      this.openTranscriptLink(url, threadId, command.presentationId)
     } else if (candidates.length > 1) {
       const firstByUrl = new Map<string, UrlCandidate>()
       for (const candidate of candidates)
@@ -1075,6 +1080,8 @@ export class VimexController
         choices: candidates,
         owner: {
           threadId,
+          machineId: this.state.machine?.id ?? "local",
+          canonicalGeneration: workspace.canonicalGeneration,
           presentationId: command.presentationId,
           displayedCanonicalRevision,
           scope: selected.length ? "selection" : "current-item",
@@ -1083,11 +1090,223 @@ export class VimexController
     } else this.notice("No URL at this transcript position")
   }
 
+  private openTranscriptLink(
+    destination: string,
+    threadId: ThreadId,
+    presentationId: TranscriptPresentationId,
+  ): void {
+    if (this.state.machineChanging) return
+    let target: ReturnType<typeof linkTarget>
+    try {
+      target = linkTarget(destination)
+    } catch (error) {
+      this.notice(String(error))
+      return
+    }
+    if (target.kind === "web") {
+      this.dispatch({ type: "url.picker", threadId, url: target.url })
+      return
+    }
+    const workspace = this.state.workspaces[threadId]
+    const cwd = this.state.summaries[threadId]?.cwd
+    if (!workspace || !cwd) {
+      this.notice("Session working directory is unavailable for this file link")
+      return
+    }
+    const path = this.ports.resolveDirectory(cwd, target.path)
+    const machineId = this.state.machine?.id ?? "local"
+    const preview: NonNullable<WorkbenchState["linkPreview"]> = {
+      threadId,
+      presentationId,
+      machineId,
+      path,
+      line: target.line,
+      loading: true,
+    }
+    this.linkPreviewRequest?.abort()
+    const request = new AbortController()
+    this.linkPreviewRequest = request
+    const epoch = this.runtimeEpoch
+    const reader = this.ports.conversation.readLinkPreview?.bind(
+      this.ports.conversation,
+    )
+    this.setState({
+      ...this.state,
+      linkPreview: preview,
+      urlChoices: undefined,
+      urlChoiceOwner: undefined,
+      workspaces: {
+        ...this.state.workspaces,
+        [threadId]: {
+          ...workspace,
+          interaction: reduceInteraction(workspace.interaction, {
+            type: "overlay.open",
+            overlay: "link-preview",
+          }),
+        },
+      },
+    })
+    const current = () =>
+      this.currentRuntime(epoch) &&
+      !request.signal.aborted &&
+      this.state.linkPreview === preview &&
+      (this.state.machine?.id ?? "local") === machineId &&
+      this.presentationThread(this.state, presentationId) === threadId &&
+      this.state.workspaces[threadId]?.interaction.overlay === "link-preview"
+    this.launch(async () => {
+      try {
+        const content = await reader?.(path, request.signal)
+        if (current())
+          this.setState({
+            ...this.state,
+            linkPreview: {
+              ...preview,
+              loading: false,
+              content,
+              ...(content === undefined
+                ? {
+                    error:
+                      "Preview unavailable: choose a text file no larger than 2 MiB",
+                  }
+                : {}),
+            },
+          })
+      } catch (error) {
+        if (current())
+          this.setState({
+            ...this.state,
+            linkPreview: { ...preview, loading: false, error: String(error) },
+          })
+      }
+    })
+  }
+
+  private readLinkAction(
+    command: Extract<TranscriptAction, { type: "link.action" }>,
+  ): void {
+    const context = this.presentationContext(command.presentationId)
+    if (
+      this.state.machineChanging ||
+      !context ||
+      context.threadId !== command.threadId ||
+      command.machineId !== (this.state.machine?.id ?? "local") ||
+      command.canonicalGeneration !== context.workspace.canonicalGeneration ||
+      context.displayedCanonicalRevision !==
+        command.displayedCanonicalRevision ||
+      !urlCandidateInScope(context.transcript, command.candidate, "all")
+    ) {
+      this.notice("That link is no longer available in this transcript")
+      return
+    }
+    // The label is derived from the current document, never trusted from a mouse payload.
+    const candidate = urlCandidates(
+      { ...context.transcript, cursor: command.candidate.from },
+      "current-item",
+    ).find(
+      (candidate) =>
+        candidate.itemId === command.candidate.itemId &&
+        candidate.url === command.candidate.url &&
+        candidate.from.graphemeOffset ===
+          command.candidate.from.graphemeOffset &&
+        candidate.to.graphemeOffset === command.candidate.to.graphemeOffset,
+    )
+    if (!candidate) return
+    if (command.action === "open")
+      this.openTranscriptLink(
+        candidate.url,
+        command.threadId,
+        command.presentationId,
+      )
+    else {
+      const text =
+        command.action === "copy-address" ? candidate.url : candidate.text
+      // Mouse copy also feeds Vimex's paste register, without changing focus,
+      // mode, selection, or the link picker's open state.
+      this.dispatch({
+        type: "interaction.command",
+        threadId: command.threadId,
+        command: {
+          type: "register.set",
+          register: { text, shape: "character" },
+        },
+      })
+      this.launch(async () => {
+        await this.ports.clipboard.writeText(text)
+        this.notice(
+          command.action === "copy-address"
+            ? "Link address copied"
+            : "Link text copied",
+        )
+      })
+    }
+  }
+
+  private showLinkPicker(presentationId: TranscriptPresentationId): void {
+    const context = this.presentationContext(presentationId)
+    if (!context || this.state.machineChanging) return
+    const choices = urlCandidates(context.transcript, "all")
+    const firstByUrl = new Map<string, UrlCandidate>()
+    for (const candidate of choices)
+      if (!firstByUrl.has(candidate.url))
+        firstByUrl.set(candidate.url, candidate)
+    this.urlChoiceIndexes.set(choices, {
+      members: new WeakSet(choices),
+      firstByUrl,
+    })
+    this.dispatch({
+      type: "url.picker",
+      threadId: context.threadId,
+      choices,
+      owner: {
+        threadId: context.threadId,
+        presentationId,
+        machineId: this.state.machine?.id ?? "local",
+        canonicalGeneration: context.workspace.canonicalGeneration,
+        displayedCanonicalRevision: context.displayedCanonicalRevision,
+        scope: "all",
+      },
+    })
+  }
+
   private setState(
     state: WorkbenchState,
     hint: TranscriptRuntimeHint = {},
   ): void {
     if (this.closing) return
+    const preview = state.linkPreview
+    if (
+      preview &&
+      ((state.machine?.id ?? "local") !== preview.machineId ||
+        this.presentationThread(state, preview.presentationId) !==
+          preview.threadId ||
+        state.workspaces[preview.threadId]?.interaction.overlay !==
+          "link-preview" ||
+        state.machineChanging)
+    ) {
+      this.linkPreviewRequest?.abort()
+      state = { ...state, linkPreview: undefined }
+    }
+    const previousPreview = this.state.linkPreview
+    if (
+      previousPreview &&
+      (!state.linkPreview ||
+        state.linkPreview.threadId !== previousPreview.threadId)
+    ) {
+      const previousWorkspace = state.workspaces[previousPreview.threadId]
+      if (previousWorkspace?.interaction.overlay === "link-preview")
+        state = {
+          ...state,
+          workspaces: {
+            ...state.workspaces,
+            [previousPreview.threadId]: {
+              ...previousWorkspace,
+              interaction: reduceInteraction(previousWorkspace.interaction, {
+                type: "overlay.close",
+              }),
+            },
+          },
+        }
+    }
     const power = this.ports.power?.getSnapshot()
     if (power && state.power !== power) state = { ...state, power }
     if (this.state === state) return
@@ -3784,6 +4003,14 @@ export class VimexController
     })
   }
   transcript = (command: TranscriptAction): void => {
+    if (command.type === "link.action") {
+      this.readLinkAction(command)
+      return
+    }
+    if (command.type === "link.picker") {
+      this.showLinkPicker(command.presentationId)
+      return
+    }
     if (command.type === "child.open") {
       const read = this.presentationContext(command.presentationId)
       if (!read) return
@@ -5121,6 +5348,7 @@ export class VimexController
   }
   private async runClose(): Promise<void> {
     this.closing = true
+    this.linkPreviewRequest?.abort()
     this.unsubscribePower?.()
     this.ports.power?.dispose()
     this.pendingNavigationInput = undefined

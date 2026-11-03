@@ -1,3 +1,4 @@
+import { LinkActionButton } from "../urls/LinkActionButton"
 import type { ThreadSummary } from "@vimex/conversation"
 import type { VimMode } from "@vimex/interaction"
 import { machineIcon } from "../machines/machine-icon"
@@ -20,6 +21,7 @@ function contextLabel(summary: ThreadSummary | undefined): string {
 }
 
 export function Statusline(props: {
+  onLinks?(): void
   power?: import("@vimex/workbench").PowerSnapshot
   machine?: string
   machineId?: string
@@ -120,6 +122,13 @@ export function Statusline(props: {
       >
         {metadata}
       </text>
+      {props.onLinks ? (
+        <LinkActionButton
+          id="status-links"
+          label="Links"
+          onActivate={props.onLinks}
+        />
+      ) : null}
     </box>
   )
 }

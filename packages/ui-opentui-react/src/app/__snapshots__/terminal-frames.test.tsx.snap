@@ -30,7 +30,7 @@ exports[`terminal frame regressions composer stays anchored through tool streami
 │
 │  Codex · gpt-6 · high                                                                    enter send · shift↵ newline
 
- NORMAL   /work/vimex                                                                               git:main  context —"
+ NORMAL   /work/vimex                                                                      git:main  context —  [Links]"
 `;
 
 exports[`terminal frame regressions composer stays anchored through tool streaming and folding at 96x26: collapsed 96x26 1`] = `
@@ -59,7 +59,7 @@ exports[`terminal frame regressions composer stays anchored through tool streami
 │
 │  Codex · gpt-6 · high                                            enter send · shift↵ newline
 
- NORMAL   /work/vimex                                                       git:main  context —"
+ NORMAL   /work/vimex                                              git:main  context —  [Links]"
 `;
 
 exports[`terminal frame regressions composer stays anchored through tool streaming and folding at 48x18: collapsed 48x18 1`] = `
@@ -80,7 +80,7 @@ exports[`terminal frame regressions composer stays anchored through tool streami
 │
 │  Codex · gpt-6 · high
 
- NORMAL   /work/vimex       git:main  context —"
+ NORMAL   /wo...imexgi...in  context —  [Links]"
 `;
 
 exports[`terminal frame regressions session picker stays inside a 48x18 terminal: sessions 48x18 1`] = `

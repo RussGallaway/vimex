@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { fileLinkPreviewLimit, readLocalLinkPreview } from "./file-link-preview"
 import {
   createCodexAppServerClient,
   type CodexAppServerClient,
@@ -456,6 +457,10 @@ export function createCodexGateways(
     return normalizeConversationInput(text, prepared)
   }
   const conversation: ConversationGateway = {
+    readLinkPreview: (path, signal) =>
+      remote
+        ? readRemoteText(client, path, fileLinkPreviewLimit, signal)
+        : readLocalLinkPreview(path, signal),
     readMentionPreview: (path, signal) =>
       remote
         ? readRemoteText(client, path, 2 * 1024 * 1024, signal).then((text) =>

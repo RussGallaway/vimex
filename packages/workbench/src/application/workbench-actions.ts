@@ -45,6 +45,7 @@ export type TranscriptAction =
   | { type: "selection.swap" }
   | { type: "reference"; presentationId: TranscriptPresentationId }
   | { type: "child.open"; presentationId: TranscriptPresentationId }
+  | { type: "link.picker"; presentationId: TranscriptPresentationId }
   | {
       type: "cursor.move"
       target: LogicalPoint
@@ -89,6 +90,16 @@ export type TranscriptAction =
       url?: string
       candidate?: UrlCandidate
       presentationId: TranscriptPresentationId
+    }
+  | {
+      type: "link.action"
+      machineId: string
+      canonicalGeneration: number
+      action: "open" | "copy-address" | "copy-text"
+      candidate: UrlCandidate
+      presentationId: TranscriptPresentationId
+      threadId: ThreadId
+      displayedCanonicalRevision: number
     }
   | { type: "fork"; itemId?: ItemId }
 

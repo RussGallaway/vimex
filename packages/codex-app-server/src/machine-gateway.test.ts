@@ -499,3 +499,29 @@ test("read-only ancestry checks do not query or reactivate an archived ancestor 
   expect(goalReads).toBe(1)
   await gateway.connection.close()
 })
+
+test("file link preview reads complete bounded text from the remote host", async () => {
+  const requests: Array<{ path: string; limit: number }> = []
+  const contents = "remote line\n".repeat(600)
+  const mock = fakeClient({
+    readHostFile: async (path: string, limit: number) => {
+      requests.push({ path, limit })
+      return { dataBase64: Buffer.from(contents).toString("base64") }
+    },
+  })
+  const gateway = createCodexGateways("/remote", "codex", () => mock.client, {
+    machine: { id: "devbox", sshHost: "devbox" },
+  })
+  expect(await gateway.conversation.readLinkPreview!("/remote/source.ts")).toBe(
+    contents,
+  )
+  expect(requests).toEqual([
+    { path: "/remote/source.ts", limit: 2 * 1024 * 1024 },
+  ])
+  const abort = new AbortController()
+  abort.abort()
+  await expect(
+    gateway.conversation.readLinkPreview!("/remote/source.ts", abort.signal),
+  ).rejects.toThrow()
+  expect(requests).toHaveLength(1)
+})

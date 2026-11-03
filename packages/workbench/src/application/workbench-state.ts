@@ -98,12 +98,24 @@ export interface WorkbenchState {
   modelCatalogError?: string
   preferences?: DisplayPreferences
   pendingFork?: PendingFork
+  linkPreview?: Readonly<{
+    threadId: ThreadId
+    presentationId: import("./workbench-actions").TranscriptPresentationId
+    machineId: string
+    path: string
+    line?: number
+    content?: string
+    loading: boolean
+    error?: string
+  }>
   urlChoices?: readonly UrlCandidate[]
   urlChoiceOwner?: Readonly<{
+    machineId: string
+    canonicalGeneration: number
     threadId: ThreadId
     presentationId: import("./workbench-actions").TranscriptPresentationId
     displayedCanonicalRevision: number
-    scope: "selection" | "current-item"
+    scope: "selection" | "current-item" | "all"
   }>
   activeThreadId?: ThreadId
   /** Locally-created workspaces waiting to bind to a Codex thread. */

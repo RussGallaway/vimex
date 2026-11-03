@@ -1,3 +1,5 @@
+import { LinkPreviewOverlay } from "../urls/LinkPreviewOverlay"
+import type { LinkAction } from "../urls/LinkActionsBar"
 import { CwdOverlay } from "../cwd/CwdOverlay"
 import { HandoffOverlay } from "../handoff/HandoffOverlay"
 import { MachinesOverlay } from "../machines/MachinesOverlay"
@@ -169,6 +171,9 @@ export function OverlayLayer(props: {
   hideFinishedAgents?: boolean
   scopedAgents?: boolean
   urls: readonly UrlCandidate[]
+  onLinkAction?(candidate: UrlCandidate, action: LinkAction): void
+  onLinkClose?(): void
+  linkPreview?: WorkbenchState["linkPreview"]
   selected: number
 }) {
   if (!props.overlay) return null
@@ -259,7 +264,17 @@ export function OverlayLayer(props: {
           selected={props.selected}
         />
       ) : props.overlay === "urls" ? (
-        <UrlsOverlay choices={props.urls} selected={props.selected} />
+        <UrlsOverlay
+          choices={props.urls}
+          selected={props.selected}
+          onAction={props.onLinkAction}
+          onClose={props.onLinkClose}
+        />
+      ) : props.overlay === "link-preview" && props.linkPreview ? (
+        <LinkPreviewOverlay
+          preview={props.linkPreview}
+          onClose={() => props.onLinkClose?.()}
+        />
       ) : props.overlay === "models" ? (
         <ModelsOverlay
           models={props.models}
