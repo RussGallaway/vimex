@@ -1,3 +1,4 @@
+import type { MachineNavigation, MachineRuntime } from "./machines"
 import { threadContext } from "./thread-context"
 import {
   submissionConversation,
@@ -134,6 +135,7 @@ import {
 } from "./startup-readiness"
 
 export interface ControllerPorts {
+  machines?: MachineNavigation
   conversation: ConversationGateway
   approvals: ApprovalGateway
   connection: RuntimeConnection
@@ -148,7 +150,7 @@ export interface ControllerPorts {
   quit(): void
   /** Legacy broad observer retained for compatibility and tests. */
   onState?(state: WorkbenchState): void
-  onLocalState?(state: LocalState): void
+  onLocalState?(state: LocalState, machineId?: string): void
   onLifecycle?(state: WorkbenchLifecycleSnapshot): void
   onPerformanceMark?(mark: {
     kind: "submit" | "navigation"
@@ -517,6 +519,15 @@ export class VimexController
   private historyNavigation?: { queue: ("back" | "forward")[] }
   private navigationRevision = 0
   private initialization?: Promise<void>
+  private initializationSettled = false
+  private initialResume?: string
+  private initialResumeMode?: "picker" | "last"
+  private initialStartAttempted = false
+  private readonly machineStates = new Map<
+    string,
+    { state: WorkbenchState; localState: LocalState }
+  >()
+  private machineManagementPending = false
   private restartPending = false
   private restartBarrier?: Promise<void>
   private runtimeEpoch = 0
@@ -562,6 +573,8 @@ export class VimexController
     )
     this.state = {
       ...this.state,
+      machine: ports.machines?.current,
+      machines: ports.machines?.list(),
       favoriteThreadIds: [
         ...new Set(ports.localState?.favoriteThreadIds ?? []),
       ].map(threadId),
@@ -1147,7 +1160,7 @@ export class VimexController
       if (!sameLocalState(next, this.localStateSnapshot)) {
         this.localStateSnapshot = next
         try {
-          this.ports.onLocalState?.(next)
+          this.ports.onLocalState?.(next, this.state.machine?.id ?? "local")
         } catch {
           /* persistence owns its failure policy */
         }
@@ -1289,6 +1302,17 @@ export class VimexController
   }
   dispatch(command: WorkbenchCommand): void {
     if (this.closing) return
+    if (
+      this.state.machineChanging &&
+      [
+        "composer.submit",
+        "composer.retry",
+        "composer.flush",
+        "approval.resolve",
+        "thread.fork.request",
+      ].includes(command.type)
+    )
+      return
     if (
       "threadId" in command &&
       command.threadId &&
@@ -1529,8 +1553,12 @@ export class VimexController
       }
     }
   }
-  private launch(operation: () => Promise<void>): Promise<void> | undefined {
-    if (this.closing) return undefined
+  private launch(
+    operation: () => Promise<void>,
+    localOnly = false,
+  ): Promise<void> | undefined {
+    if (this.closing || (this.state.machineChanging && !localOnly))
+      return undefined
     const promise = (async () => operation())().catch((error) => {
       if (!this.closing)
         this.notice(error instanceof Error ? error.message : String(error))
@@ -1788,7 +1816,9 @@ export class VimexController
       model,
       resume,
       resumeMode,
-    ))
+    ).finally(() => {
+      this.initializationSettled = true
+    }))
   }
   private async runInitialize(
     cwd: string,
@@ -1800,6 +1830,8 @@ export class VimexController
     const navigation = this.navigationRevision
     this.initialDirectory = cwd
     this.initialModel = model
+    this.initialResume = resume
+    this.initialResumeMode = resumeMode
     this.unsubscribe = this.ports.connection.subscribe((event) =>
       this.receive(event),
     )
@@ -1847,6 +1879,8 @@ export class VimexController
       }
       if (resume && this.state.retiredSideThreadIds.includes(threadId(resume)))
         throw new Error("This side chat was quit and cannot be reopened")
+      this.initialResume = resume
+      if (!resume) this.initialStartAttempted = true
       const snapshot = await this.unlessClosing(
         resume
           ? this.ports.conversation.resumeThread(threadId(resume))
@@ -1971,6 +2005,10 @@ export class VimexController
         this.setState(invalidateRuntimeState(result.state))
         break
       }
+      case "reconnected":
+        if (!this.restartPending && !this.state.machineChanging)
+          this.recoverConnection()
+        break
       case "notice":
         this.notice(event.message)
         break
@@ -2069,7 +2107,7 @@ export class VimexController
     cursorOffset,
   ) => {
     const threadId = this.state.activeThreadId
-    if (!threadId || !this.ports.images) return
+    if (!threadId || !this.ports.images || this.state.machineChanging) return
     const at =
       cursorOffset ?? this.state.workspaces[threadId]?.composer.cursorOffset
     this.importImage(threadId, async () => {
@@ -2091,7 +2129,7 @@ export class VimexController
     cursorOffset,
   ) => {
     const threadId = this.state.activeThreadId
-    if (!threadId || !this.ports.images) return
+    if (!threadId || !this.ports.images || this.state.machineChanging) return
     const at =
       cursorOffset ?? this.state.workspaces[threadId]?.composer.cursorOffset
     this.importImage(threadId, async () => {
@@ -2108,6 +2146,12 @@ export class VimexController
     candidate,
     cursorOffset,
   ) => {
+    if (this.state.machineChanging) {
+      this.notice(
+        "Wait for the machine change before adding file, skill, or plugin references",
+      )
+      return
+    }
     const threadId = this.state.activeThreadId
     if (!threadId) return
     this.dispatch({
@@ -2139,7 +2183,7 @@ export class VimexController
   removeImage: WorkbenchActions["removeImage"] = (id) =>
     this.dispatch({ type: "composer.image.remove", imageId: id })
   submit: WorkbenchActions["submit"] = (intent) => {
-    if (this.closing) return false
+    if (this.closing || this.state.machineChanging) return false
     const thread = this.state.activeThreadId
     if (
       thread &&
@@ -2285,7 +2329,7 @@ export class VimexController
     )
   }
   copyText = (text: string): void => {
-    this.launch(() => this.ports.clipboard.writeText(text))
+    this.launch(() => this.ports.clipboard.writeText(text), true)
   }
   resolveApproval: WorkbenchActions["resolveApproval"] = (
     approvalId,
@@ -2300,6 +2344,7 @@ export class VimexController
     answers: Readonly<Record<string, string | readonly string[]>>,
   ): void => {
     const request = this.state.questions[id]
+    if (this.state.machineChanging) return
     if (!request || this.answering.has(id)) return
     if (this.retiringThread(request.threadId)) {
       this.notice("Side chat is quitting; new work is paused")
@@ -2432,8 +2477,471 @@ export class VimexController
         : next
     this.setState(next)
   }
+  /** Recover a replacement proxy without restarting the shared daemon. */
+  private recoverConnection(): void {
+    this.ingress.flush()
+    const epoch = this.runtimeEpoch
+    const id = this.state.activeThreadId
+    const revision = this.navigationRevision
+    const resumeIds = new Set(this.loaded)
+    if (id) resumeIds.add(id)
+    this.recoveryViews = captureLocalState(
+      this.state,
+      emptyLocalState(),
+    ).threads
+    this.loaded.clear()
+    this.buffered.clear()
+    this.resumes.clear()
+    this.setState({ ...this.state, connection: "connecting", error: undefined })
+    this.launch(async () => {
+      try {
+        const boundIds = [...resumeIds].filter(
+          (resumeId) => !this.state.provisionalThreadIds.includes(resumeId),
+        )
+        if (!boundIds.length && this.initialDirectory) {
+          let resume = this.initialResume
+          if (!resume && this.initialResumeMode) {
+            const summaries = await this.ports.conversation.listThreads()
+            if (!this.currentRuntime(epoch)) return
+            this.registerSummaries(summaries)
+            resume = summaries
+              .filter(
+                (summary) =>
+                  this.ports.resolveDirectory(
+                    this.initialDirectory!,
+                    summary.cwd,
+                  ) ===
+                    this.ports.resolveDirectory(
+                      this.initialDirectory!,
+                      this.initialDirectory!,
+                    ) &&
+                  !summary.parentThreadId &&
+                  !this.state.retiredSideThreadIds.includes(summary.id),
+              )
+              .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0]?.id
+            if (!resume)
+              throw new Error(
+                `No sessions found for ${this.initialDirectory}. Use :new to start a session.`,
+              )
+          }
+          if (resume || !this.initialStartAttempted) {
+            if (!resume) this.initialStartAttempted = true
+            const snapshot = resume
+              ? await this.ports.conversation.resumeThread(threadId(resume))
+              : await this.ports.conversation.startThread(
+                  this.initialDirectory,
+                  this.initialModel,
+                )
+            if (!this.currentRuntime(epoch)) return
+            this.hydrate(snapshot, revision === this.navigationRevision)
+            if (this.initialResumeMode === "picker")
+              this.dispatchInteraction({
+                type: "overlay.open",
+                overlay: "sessions",
+              })
+          } else {
+            this.setState({
+              ...this.state,
+              connection: "connected",
+              error:
+                "Connection restored, but the previous new-session request was not acknowledged. Use :sessions to find it or :new to start another; the request was not replayed.",
+            })
+            return
+          }
+        }
+        for (const resumeId of boundIds) {
+          if (this.state.provisionalThreadIds.includes(resumeId)) continue
+          const snapshot = await this.ports.conversation.resumeThread(resumeId)
+          if (!this.currentRuntime(epoch)) return
+          // Local editing/navigation remains live during the network wait. Restore
+          // the latest view, not the one captured when reconnection began.
+          const latest = captureLocalState(this.state, emptyLocalState())
+            .threads[resumeId]
+          const interaction = this.state.workspaces[resumeId]?.interaction
+          if (latest) this.recoveryViews[resumeId] = latest
+          this.hydrate(
+            snapshot,
+            resumeId === id && revision === this.navigationRevision,
+          )
+          const restored = this.state.workspaces[resumeId]
+          if (interaction && restored)
+            this.setState({
+              ...this.state,
+              workspaces: {
+                ...this.state.workspaces,
+                [resumeId]: {
+                  ...restored,
+                  interaction: {
+                    ...restored.interaction,
+                    mode: interaction.mode,
+                    surface: interaction.surface,
+                    lastNormalSurface: interaction.lastNormalSurface,
+                  },
+                },
+              },
+            })
+        }
+        if (this.currentRuntime(epoch))
+          this.setState({
+            ...this.state,
+            connection: "connected",
+            error: undefined,
+          })
+      } catch (error) {
+        if (this.currentRuntime(epoch))
+          this.setState({
+            ...this.state,
+            connection: "error",
+            error: String(error),
+          })
+      }
+    })
+  }
+
+  private manageMachine(argument: string): boolean {
+    if (this.ports.machines?.list().some((machine) => machine.id === argument))
+      return false
+    const match = /^(add|rename|remove|favorite)(?:\s+(.*))?$/.exec(argument)
+    if (!match) return false
+    const action = match[1]!
+    if (
+      this.closing ||
+      this.machineManagementPending ||
+      this.state.machineChanging
+    ) {
+      this.notice("Wait for the pending machine operation")
+      return true
+    }
+    const fail = (error: string) => {
+      this.setState({
+        ...this.state,
+        machineManagement: { pending: false, error },
+      })
+      this.notice(error)
+    }
+    const rest = match[2]?.trim() ?? ""
+    const fields = rest.split(/\s+/)
+    const id = fields[0] ?? ""
+    const label = rest.slice(id.length).trim()
+    const usage =
+      action === "add"
+        ? "machine add <name> <ssh-host>"
+        : action === "rename"
+          ? "machine rename <name> <display label>"
+          : action === "favorite"
+            ? "machine favorite <name>"
+            : "machine remove <name>"
+    if (
+      !id ||
+      (action === "add" && fields.length !== 2) ||
+      (action === "rename" && !label) ||
+      ((action === "remove" || action === "favorite") && fields.length !== 1)
+    ) {
+      fail(`Usage: :${usage}`)
+      return true
+    }
+    const machines = this.ports.machines
+    if (
+      !machines ||
+      !(action === "favorite"
+        ? machines.setFavorite
+        : machines[action as "add" | "rename" | "remove"])
+    ) {
+      fail("Machine management is unavailable")
+      return true
+    }
+    if (id === "local" && action !== "favorite") {
+      fail("The local machine cannot be changed or removed")
+      return true
+    }
+    if (action === "remove" && id === this.state.machine?.id) {
+      fail("Switch to another machine before removing this connection")
+      return true
+    }
+    const favorite = !machines.list().find((machine) => machine.id === id)
+      ?.favorite
+    this.machineManagementPending = true
+    this.setState({ ...this.state, machineManagement: { pending: true } })
+    this.launch(async () => {
+      try {
+        if (action === "add") await machines.add!({ id, sshHost: fields[1]! })
+        else if (action === "rename") await machines.rename!(id, label)
+        else if (action === "favorite")
+          await machines.setFavorite!(id, favorite)
+        else {
+          await machines.remove!(id)
+          // A later connection may reuse this ID for a different host. Never
+          // resume the removed host's active thread against that new runtime.
+          this.machineStates.delete(id)
+        }
+        if (this.closing) return
+        const list = machines.list()
+        const current = list.find(
+          (machine) => machine.id === this.state.machine?.id,
+        )
+        for (const [cachedId, cached] of this.machineStates) {
+          const machine = list.find((entry) => entry.id === cachedId)
+          if (machine)
+            cached.state = { ...cached.state, machine, machines: list }
+        }
+        this.setState({
+          ...this.state,
+          machines: list,
+          machineManagement: { pending: false },
+          machine: current ?? this.state.machine,
+        })
+        this.notice(
+          action === "add"
+            ? `Added machine ${id}`
+            : action === "rename"
+              ? `Renamed ${id} to ${label}`
+              : action === "favorite"
+                ? `${favorite ? "Favorited" : "Unfavorited"} machine ${id}`
+                : `Removed connection ${id}; the machine and its work are unchanged`,
+        )
+      } catch (error) {
+        if (!this.closing)
+          fail(error instanceof Error ? error.message : String(error))
+      } finally {
+        this.machineManagementPending = false
+      }
+    })
+    return true
+  }
+
+  private changeMachine(targetId: string, handoff: boolean): void {
+    const machines = this.ports.machines
+    if (!machines) {
+      this.notice("Machine connections are unavailable")
+      return
+    }
+    if (targetId === (this.state.machine?.id ?? "local")) {
+      this.dispatchInteraction({ type: "overlay.close" })
+      return
+    }
+    if (
+      this.state.machineChanging ||
+      (this.initialization && !this.initializationSettled) ||
+      this.restartPending ||
+      this.pending.size ||
+      this.pendingImages.size
+    ) {
+      this.notice("Wait for pending operations before changing machines")
+      return
+    }
+    const sourceId = this.state.activeThreadId
+    if (
+      handoff &&
+      (!sourceId || this.state.provisionalThreadIds.includes(sourceId))
+    ) {
+      this.notice("Start a session before handing it off")
+      return
+    }
+    if (handoff && this.state.connection !== "connected") {
+      this.notice("Reconnect the source before handing off")
+      return
+    }
+    const hasHostMentions = () =>
+      Boolean(
+        sourceId && this.state.workspaces[sourceId]?.composer.mentions.length,
+      )
+    const mentionNotice =
+      "Remove draft file, skill, or plugin references before handoff; reselect them on the destination"
+    if (handoff && hasHostMentions()) {
+      this.notice(mentionNotice)
+      return
+    }
+    if (handoff && !machines.handoff) {
+      this.notice(
+        "Native session handoff is not supported by this connection; your session remains here",
+      )
+      return
+    }
+    if (
+      handoff &&
+      Object.values(this.state.workspaces).some(
+        (workspace) => workspace.conversation.activeTurnId,
+      )
+    ) {
+      this.notice("Wait for the active turn to finish before handing off")
+      return
+    }
+    if (
+      handoff &&
+      Object.values(this.state.workspaces).some(
+        (workspace) => workspace.composer.outbox.length > 0,
+      )
+    ) {
+      this.notice("Resolve queued or uncertain messages before handing off")
+      return
+    }
+    if (
+      handoff &&
+      (this.state.approvals.order.length ||
+        Object.keys(this.state.questions).length)
+    ) {
+      this.notice("Resolve pending approvals and questions before handing off")
+      return
+    }
+    this.dispatchInteraction({ type: "overlay.close" })
+    this.launch(async () => {
+      this.setState({ ...this.state, machineChanging: true, error: undefined })
+      let destination: MachineRuntime | undefined
+      let adopted = false
+      let stagedDetach: (() => void) | undefined
+      const stagedEvents: RuntimeEvent[] = []
+      try {
+        const result = handoff
+          ? await machines.handoff!({
+              sourceId: this.state.machine?.id ?? "local",
+              targetId,
+              threadId: sourceId!,
+              cwd:
+                this.state.summaries[sourceId!]?.cwd ??
+                this.initialDirectory ??
+                "",
+            })
+          : await machines.open(targetId)
+        destination = result
+        if (result.machine.id !== targetId)
+          throw new Error("Machine connection returned the wrong destination")
+        stagedDetach = result.connection.subscribe((event) => {
+          if (adopted && this.ports.connection === result.connection)
+            this.receive(event)
+          else stagedEvents.push(event)
+        })
+        await result.connection.connect()
+        if (this.closing) return
+        const cached = this.machineStates.get(targetId)
+        const resumeId =
+          handoff && "threadId" in result
+            ? threadId(result.threadId as string)
+            : cached?.state.activeThreadId
+        const isProvisional =
+          !handoff &&
+          resumeId &&
+          cached?.state.provisionalThreadIds.includes(resumeId)
+        const snapshot =
+          resumeId && !isProvisional
+            ? await result.conversation.resumeThread(resumeId)
+            : await result.conversation.startThread(
+                result.cwd,
+                this.initialModel,
+              )
+        const summaries = await result.conversation.listThreads()
+        if (this.closing) return
+        if (stagedEvents.some((event) => event.type === "disconnected"))
+          throw new Error("Destination disconnected while preparing")
+        if (handoff && hasHostMentions()) throw new Error(mentionNotice)
+        await result.commit?.()
+        if (this.closing) return
+        this.ingress.flush()
+        const source = this.state
+        const sourceMachine = source.machine?.id ?? "local"
+        const sourceLocal = captureLocalState(source, this.localStateSnapshot)
+        const sourceCache = { ...source, machineChanging: false }
+        if (handoff && sourceId) {
+          sourceCache.activeThreadId = undefined
+          sourceCache.threadOrder = sourceCache.threadOrder.filter(
+            (id) => id !== sourceId,
+          )
+          sourceCache.summaries = Object.fromEntries(
+            Object.entries(sourceCache.summaries).filter(
+              ([id]) => id !== sourceId,
+            ),
+          )
+          sourceCache.workspaces = Object.fromEntries(
+            Object.entries(sourceCache.workspaces).filter(
+              ([id]) => id !== sourceId,
+            ),
+          )
+        }
+        this.machineStates.set(sourceMachine, {
+          state: sourceCache,
+          localState: sourceLocal,
+        })
+        try {
+          this.ports.onLocalState?.(sourceLocal, sourceMachine)
+        } catch {
+          // Persistence owns its error policy; a committed handoff must still
+          // adopt the destination instead of exposing the archived source.
+        }
+        const oldConnection = this.ports.connection
+        this.unsubscribe?.()
+        this.unsubscribe = undefined
+        ++this.runtimeEpoch
+        ++this.navigationRevision
+        this.historyNavigation = undefined
+        this.navigationHistory.adopt(new NavigationHistory())
+        this.loaded.clear()
+        this.buffered.clear()
+        this.resumes.clear()
+        this.answering.clear()
+        this.threadMutations.clear()
+        this.catalogThreadIds.clear()
+        this.catalogRequest = undefined
+        this.sessionCatalogRequest = undefined
+        this.pendingSubmitActivity.clear()
+        this.ports.conversation = result.conversation
+        this.ports.approvals = result.approvals
+        this.ports.connection = result.connection
+        this.ports.models = result.models
+        if (result.resolveDirectory)
+          this.ports.resolveDirectory = result.resolveDirectory
+        this.ports.localState =
+          cached?.localState ?? result.localState ?? emptyLocalState()
+        this.localStateSnapshot = this.ports.localState
+        this.recoveryViews = { ...this.localStateSnapshot.threads }
+        if (handoff && sourceId && resumeId)
+          this.recoveryViews[resumeId] = sourceLocal.threads[sourceId]!
+        this.initialDirectory = result.cwd
+        this.initialResume = snapshot?.summary.id
+        this.initialResumeMode = undefined
+        this.initialStartAttempted = true
+        const next = cached?.state ?? initialWorkbench()
+        this.setState({
+          ...invalidateRuntimeState(next),
+          machine: result.machine,
+          machines: machines.list(),
+          machineChanging: false,
+          preferences: source.preferences,
+          connection: "connected",
+          error: undefined,
+        })
+        adopted = true
+        this.unsubscribe = stagedDetach
+        this.registerSummaries(summaries)
+        if (snapshot) this.hydrate(snapshot, true)
+        else if (!this.state.activeThreadId)
+          this.prepareDraft(result.cwd, this.initialModel)
+        for (const event of stagedEvents) this.receive(event)
+        if (!handoff && !cached)
+          this.dispatchInteraction({
+            type: "overlay.open",
+            overlay: "sessions",
+          })
+        await oldConnection.close().catch(() => {})
+      } catch (error) {
+        this.notice(`Machine change failed: ${String(error)}`)
+      } finally {
+        if (!adopted) {
+          stagedDetach?.()
+          await destination
+            ?.rollback?.()
+            .catch((error) =>
+              this.notice(`Handoff rollback failed: ${String(error)}`),
+            )
+          await destination?.connection.close().catch(() => {})
+        }
+        if (!this.closing)
+          this.setState({ ...this.state, machineChanging: false })
+      }
+    })
+  }
+
   restart = (): void => {
-    if (this.restartPending || this.closing) return
+    if (this.restartPending || this.closing || this.state.machineChanging)
+      return
     this.ingress.flush()
     const ephemeralSides = Object.values(this.state.sideChats).filter(
       (side) => side.ephemeral,
@@ -2763,6 +3271,7 @@ export class VimexController
     })
   }
   interrupt = (): void => {
+    if (this.state.machineChanging) return
     const workspace = activeWorkspace(this.state)
     const turn = workspace?.conversation.activeTurnId
     if (
@@ -3222,6 +3731,7 @@ export class VimexController
     id: ThreadId,
     operation: (epoch: number) => Promise<void>,
   ): void {
+    if (this.closing || this.state.machineChanging) return
     if (this.retiringThread(id)) {
       this.notice("Side chat is quitting; new work is paused")
       return
@@ -3231,7 +3741,12 @@ export class VimexController
     const pending = previous
       .catch(() => {})
       .then(async () => {
-        if (!this.currentRuntime(epoch) || this.retiringThread(id)) return
+        if (
+          !this.currentRuntime(epoch) ||
+          this.state.machineChanging ||
+          this.retiringThread(id)
+        )
+          return
         try {
           await operation(epoch)
         } catch (error) {
@@ -3395,7 +3910,36 @@ export class VimexController
     const { name: command, argument } = parsed
     const transcriptPresentation =
       presentationId ?? this.activeTranscriptPresentation()
+    if (this.state.machineChanging) {
+      const error = "Connecting to machine; commands are paused"
+      if (command === "machine")
+        this.setState({
+          ...this.state,
+          machineManagement: { pending: false, error },
+        })
+      this.notice(error)
+      return
+    }
     switch (command) {
+      case "machine":
+        if (!this.ports.machines) {
+          const error = "Machine connections are unavailable"
+          this.setState({
+            ...this.state,
+            machineManagement: { pending: false, error },
+          })
+          this.notice(error)
+        } else if (argument) {
+          if (!this.manageMachine(argument)) this.changeMachine(argument, false)
+        } else
+          this.dispatchInteraction({
+            type: "overlay.open",
+            overlay: "machines",
+          })
+        break
+      case "handoff":
+        this.changeMachine(argument, true)
+        break
       case "compact": {
         const id = this.state.activeThreadId
         if (!id) {

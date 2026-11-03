@@ -8,7 +8,7 @@ vimex - a full-screen, Vim-operated interface for Codex
 
 ## SYNOPSIS
 
-vimex [PATH] [--cwd PATH] [--thread ID] [--model NAME] [--config PATH]
+vimex [PATH] [--cwd PATH] [--machine NAME] [--thread ID] [--model NAME] [--config PATH]
 
 vimex resume [ID] [--cwd PATH]
 
@@ -41,6 +41,8 @@ Codex owns execution, permissions, and conversation history. Vimex owns presenta
 --model NAME: Model for a new thread.
 
 --config PATH: Read an alternate Vimex JSON configuration.
+
+--machine NAME: Select local execution or an SSH machine. Remote --cwd paths are resolved on that machine. Quote tilde paths to prevent your shell expanding them locally.
 
 --demo: Run a local streaming demonstration without Codex credentials.
 
@@ -145,6 +147,16 @@ Submit timing starts when Workbench dispatches the action, after UI key processi
 :goal or /goal shows the current goal. :goal OBJECTIVE sets one; :goal --budget TOKENS OBJECTIVE sets an explicit token budget. pause, resume, complete, and clear manage its lifecycle. Use :goal set pause to set the literal objective 'pause'. Codex owns continuation; pausing a goal does not interrupt an already running turn.
 
 :compact or /compact asks Codex to compact context while idle. The Compacting indicator follows server events; sending is paused until completion and drafts are preserved.
+
+## MACHINES
+
+Space m (leader then m), :machine in command mode, or /machine in the composer opens the machine manager. Machine management and switching commands work with either : or /; both routes and the modal share saved settings. :machine NAME switches to that machine's sessions without transferring the current session. :handoff NAME moves supported idle native history and Git state into an isolated worktree on the destination while preserving the local view. Paginated histories and unsupported dependencies are refused; no summary substitutes for native history.
+
+Typing, navigation, scrolling, clipboard, and optimistic message rendering stay local. Daemon proxy reconnect rehydrates server state without replaying uncertain submissions. Closing Vimex detaches the proxy; it does not intentionally stop the daemon.
+
+The bottom status line shows the active machine name. The machine manager provides search, favorite-first rows, inline rename, add, and removal confirmation. Enter switches to the selected machine. Ctrl+F toggles its favorite; Ctrl+R renames it. Favorites persist across restarts, including local. :machine favorite ID also toggles a favorite. :machine add ID SSH-HOST saves an existing SSH connection. :machine rename ID LABEL changes its display label while preserving its ID and saved views. :machine remove ID forgets a connection; switch away first. Removal does not delete the VM or its sessions. The built-in local connection cannot be renamed or removed.
+
+Configure machines as name-to-settings objects with sshHost, optional label, optional cwd, and optional codexExecutable. localTransport is auto, daemon, or stdio. Auto uses daemon for the default codex executable and stdio for a custom executable. See docs/configuration.md for setup and transfer limits.
 
 ## FILES AND ENVIRONMENT
 

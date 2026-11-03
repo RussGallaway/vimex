@@ -13,7 +13,25 @@ import {
 } from "@vimex/conversation"
 import type { UserInput } from "./generated/v0_154_0/v2/UserInput"
 import { open, readdir, readFile, stat } from "node:fs/promises"
-import { resolve } from "node:path"
+import { resolve, posix } from "node:path"
+import {
+  createMachineCodexClient,
+  type CodexMachine,
+} from "./transport/machine-transport"
+import {
+  remotePath,
+  remoteWorkspaceEntries,
+  readRemoteText,
+} from "./remote-workspace"
+
+export interface CodexGatewayOptions {
+  machine?: CodexMachine
+  reconnect?: {
+    initialDelayMs?: number
+    maxDelayMs?: number
+    maxAttempts?: number
+  }
+}
 
 const mentionPreviewLimit = 4096
 const mentionSearchFileLimit = 2 * 1024 * 1024
@@ -114,16 +132,67 @@ import type {
 export function createCodexGateways(
   cwd: string,
   executable = "codex",
-  createClient: () => CodexAppServerClient = () =>
-    createCodexAppServerClient(
-      { cwd, command: executable },
-      { experimentalApi: true },
-    ),
+  clientFactory?: () => CodexAppServerClient,
+  options: CodexGatewayOptions = {},
 ) {
+  const createClient =
+    clientFactory ??
+    (() =>
+      options.machine
+        ? createMachineCodexClient(cwd, {
+            ...options.machine,
+            executable: options.machine.executable ?? executable,
+          })
+        : createCodexAppServerClient(
+            { cwd, command: executable },
+            { experimentalApi: true },
+          ))
   let client = createClient()
   let detachClient = () => {}
   let closed = false
   let restartPromise: Promise<void> | undefined
+  let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+  let reconnectAttempt = 0
+  let connecting = false
+  let established = false
+  let connectPromise: Promise<void> | undefined
+  let disconnectRevision = 0
+  const remote = Boolean(options.machine?.sshHost)
+  const reconnectEnabled = Boolean(
+    options.machine && options.machine.mode !== "stdio",
+  )
+  const scheduleReconnect = () => {
+    if (
+      closed ||
+      connecting ||
+      restartPromise ||
+      reconnectTimer ||
+      !reconnectEnabled
+    )
+      return
+    const maxAttempts = options.reconnect?.maxAttempts ?? 10
+    if (reconnectAttempt >= maxAttempts) {
+      publish({
+        type: "notice",
+        message:
+          "Unable to reconnect to Codex; use :restart to try again. Unacknowledged submissions were not resent.",
+      })
+      return
+    }
+    const delay = Math.min(
+      options.reconnect?.maxDelayMs ?? 15_000,
+      (options.reconnect?.initialDelayMs ?? 250) * 2 ** reconnectAttempt++,
+    )
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = undefined
+      void restart()
+        .then(() => {
+          reconnectAttempt = 0
+          if (!closed) publish({ type: "reconnected" })
+        })
+        .catch(() => scheduleReconnect())
+    }, delay)
+  }
   const ephemeralSideThreads = new Set<string>()
   const listeners = new Set<(event: RuntimeEvent) => void>()
   const publish = (event: RuntimeEvent) => {
@@ -205,11 +274,15 @@ export function createCodexGateways(
         normalized = { type: "notice", message: event.message }
         break
       case "connection":
-        if (event.status !== "connected")
+        if (event.status !== "connected") {
+          established = false
+          disconnectRevision++
           normalized = {
             type: "disconnected",
             message: event.error ?? "Codex app server disconnected",
           }
+          scheduleReconnect()
+        }
         break
       case "unknown":
         break
@@ -227,9 +300,24 @@ export function createCodexGateways(
   }
   attach()
 
+  const connectClient = async () => {
+    connecting = true
+    const revision = disconnectRevision
+    try {
+      await client.connect()
+      if (closed || revision !== disconnectRevision)
+        throw new Error("Codex disconnected during initialization")
+      established = true
+    } finally {
+      connecting = false
+    }
+  }
   const restart = async () => {
     if (closed) throw new Error("Codex runtime connection is closed")
     if (restartPromise) return restartPromise
+    if (connectPromise) await connectPromise.catch(() => {})
+    if (reconnectTimer) clearTimeout(reconnectTimer)
+    reconnectTimer = undefined
     const operation = (async () => {
       publish({
         type: "disconnected",
@@ -237,6 +325,7 @@ export function createCodexGateways(
         reason: "restart",
       })
       for (const event of approvals.invalidatePending()) publish(event)
+      established = false
       const previous = client
       // Its intentional shutdown must not invalidate the replacement connection.
       detachClient()
@@ -250,13 +339,15 @@ export function createCodexGateways(
       } finally {
         detachClient()
       }
+      if (closed) return
       client = createClient()
-      ephemeralSideThreads.clear()
+      if (!reconnectEnabled) ephemeralSideThreads.clear()
       attach()
-      await client.connect()
+      await connectClient()
     })()
     const tracked = operation.finally(() => {
       if (restartPromise === tracked) restartPromise = undefined
+      if (!established) scheduleReconnect()
     })
     restartPromise = tracked
     return tracked
@@ -265,7 +356,20 @@ export function createCodexGateways(
   const connection: RuntimeConnection = {
     connect: async () => {
       if (closed) throw new Error("Codex runtime connection is closed")
-      await client.connect()
+      if (restartPromise) return restartPromise
+      if (established) return
+      if (!connectPromise) {
+        const pending = connectClient()
+          .then(() => {
+            reconnectAttempt = 0
+          })
+          .finally(() => {
+            if (connectPromise === pending) connectPromise = undefined
+            if (!established) scheduleReconnect()
+          })
+        connectPromise = pending
+      }
+      return connectPromise
     },
     restart,
     subscribe(listener) {
@@ -275,6 +379,8 @@ export function createCodexGateways(
     async close() {
       if (closed) return
       closed = true
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      reconnectTimer = undefined
       await restartPromise?.catch(() => {})
       try {
         await client.close()
@@ -301,8 +407,54 @@ export function createCodexGateways(
       })
     return session
   }
+  const entriesFor = (path: string, signal?: AbortSignal) =>
+    remote
+      ? remoteWorkspaceEntries(client, path, signal)
+      : workspaceEntries(path, signal)
+  const prepareInput = async (
+    text: string,
+    input?: readonly ConversationInput[],
+  ) => {
+    if (!remote || !input?.some((part) => part.type === "image"))
+      return normalizeConversationInput(text, input)
+    const source = client
+    const codexHome = source.serverInfo?.codexHome
+    if (!codexHome)
+      throw new Error("Connect to the remote machine before attaching images")
+    const directory = posix.join(codexHome, "vimex-attachments")
+    await source.createHostDirectory(directory)
+    const prepared: ConversationInput[] = []
+    for (const part of input) {
+      if (part.type !== "image") {
+        prepared.push(part)
+        continue
+      }
+      const metadata = await stat(part.path)
+      if (!metadata.isFile() || metadata.size > 20 * 1024 * 1024)
+        throw new Error("Image attachment must be a file smaller than 20 MiB")
+      const destination = posix.join(
+        directory,
+        `${crypto.randomUUID()}${posix.extname(part.path)}`,
+      )
+      await source.writeHostFile(
+        destination,
+        (await readFile(part.path)).toString("base64"),
+      )
+      if (source !== client)
+        throw new Error(
+          "Connection changed while uploading image; submit again after reconnect",
+        )
+      prepared.push({ ...part, path: destination })
+    }
+    return normalizeConversationInput(text, prepared)
+  }
   const conversation: ConversationGateway = {
-    readMentionPreview,
+    readMentionPreview: (path, signal) =>
+      remote
+        ? readRemoteText(client, path, 2 * 1024 * 1024, signal).then((text) =>
+            text?.slice(0, mentionPreviewLimit),
+          )
+        : readMentionPreview(path, signal),
     async listBackgroundTerminals(id) {
       const terminals = await client.listBackgroundTerminals(id)
       return terminals.map((terminal) => ({
@@ -441,16 +593,27 @@ export function createCodexGateways(
           matcher = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
         }
         const matches = []
-        for (const entry of await workspaceEntries(cwd, signal)) {
+        for (const entry of await entriesFor(cwd, signal)) {
           signal?.throwIfAborted()
           if (entry.match_type !== "file") continue
           const { path } = entry
           if (matches.length >= mentionResultLimit) break
           let contents: string
           try {
-            if ((await stat(path)).size > mentionSearchFileLimit) continue
-            signal?.throwIfAborted()
-            contents = await readFile(path, { encoding: "utf8", signal })
+            if (remote) {
+              const text = await readRemoteText(
+                client,
+                path,
+                mentionSearchFileLimit,
+                signal,
+              )
+              if (text === undefined) continue
+              contents = text
+            } else {
+              if ((await stat(path)).size > mentionSearchFileLimit) continue
+              signal?.throwIfAborted()
+              contents = await readFile(path, { encoding: "utf8", signal })
+            }
           } catch {
             signal?.throwIfAborted()
             continue
@@ -462,7 +625,9 @@ export function createCodexGateways(
             return matcher.test(line)
           })
           if (lineNumber < 0) continue
-          const relativePath = path.slice(resolve(cwd).length + 1)
+          const relativePath = path.slice(
+            (remote ? remotePath(cwd, ".") : resolve(cwd)).length + 1,
+          )
           matches.push({
             kind: "file" as const,
             name: relativePath,
@@ -485,19 +650,19 @@ export function createCodexGateways(
                 cancellationToken: null,
               })
             ).files
-          : (await workspaceEntries(cwd, signal)).map(
-              ({ path, match_type }) => ({
-                root: cwd,
-                path,
-                match_type,
-                file_name: path.split(/[\\/]/u).pop() ?? path,
-                score: 0,
-                indices: null,
-              }),
-            )
+          : (await entriesFor(cwd, signal)).map(({ path, match_type }) => ({
+              root: cwd,
+              path,
+              match_type,
+              file_name: path.split(/[\\/]/u).pop() ?? path,
+              score: 0,
+              indices: null,
+            }))
         signal?.throwIfAborted()
         return files.map((file) => {
-          const path = resolve(file.root, file.path)
+          const path = remote
+            ? remotePath(file.root, file.path)
+            : resolve(file.root, file.path)
           const directory = file.match_type === "directory"
           const candidate = {
             kind,
@@ -565,7 +730,7 @@ export function createCodexGateways(
     async startTurn(id, text, clientMessageId, input, onRequestSent) {
       const response = await client.startTurn(
         id,
-        normalizeConversationInput(text, input),
+        await prepareInput(text, input),
         {
           clientUserMessageId: clientMessageId,
         },
@@ -577,7 +742,7 @@ export function createCodexGateways(
       await client.steerTurn(
         id,
         turn,
-        normalizeConversationInput(text, input),
+        await prepareInput(text, input),
         {
           clientUserMessageId: clientMessageId,
         },
@@ -649,5 +814,63 @@ export function createCodexGateways(
       return all
     },
   }
-  return { connection, conversation, approvals, models, accountStatus }
+  const nativeHandoff = {
+    async accountIdentity(): Promise<string> {
+      const source = client
+      const { account } = await source.readAccount()
+      if (account?.type !== "chatgpt")
+        throw new Error(
+          "Native handoff requires an identifiable ChatGPT account on both machines",
+        )
+      const { accountId } = await source.getAccountRateLimits()
+      if (!accountId || !account.email?.trim())
+        throw new Error("Unable to verify account identity for native handoff")
+      if (source !== client)
+        throw new Error("Connection changed while verifying handoff identity")
+      // Compare only in memory; never write identity into transfer manifests.
+      return JSON.stringify([
+        "chatgpt",
+        accountId,
+        account.email.trim().toLowerCase(),
+      ])
+    },
+    archiveSource: (id: string) => client.archiveThread(id),
+    async inspect(id: string) {
+      const { thread } = await client.readThread(id)
+      if (!thread.path)
+        throw new Error("This conversation has no transferable rollout")
+      return {
+        threadId: thread.id,
+        rolloutPath: thread.path,
+        cwd: thread.cwd,
+        historyMode: thread.historyMode,
+        status: thread.status,
+        model: thread.model,
+        modelProvider: thread.modelProvider,
+        cliVersion: thread.cliVersion,
+        serverUserAgent: client.serverInfo?.userAgent,
+      }
+    },
+    async forkFromPath(sourceId: string, path: string, destinationCwd: string) {
+      // Do not copy raw history through the cloud-only history parameter. Let
+      // Codex read and validate its native checkpoint; no model turn is started.
+      return observeSession(
+        await client.forkThread(sourceId, undefined, {
+          path,
+          cwd: destinationCwd,
+          runtimeWorkspaceRoots: [destinationCwd],
+          deferGoalContinuation: true,
+        }),
+      )
+    },
+  }
+  return {
+    connection,
+    conversation,
+    approvals,
+    models,
+    accountStatus,
+    serverInfo: () => client.serverInfo,
+    nativeHandoff,
+  }
 }

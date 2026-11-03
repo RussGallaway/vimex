@@ -637,14 +637,25 @@ export function restoreThreadView(
       }),
     ),
   })
-  const recoveredOutbox = (saved.outbox ?? []).map((message) => ({
-    ...message,
-    status: "failed" as const,
-    reason:
-      message.status === "failed"
-        ? message.reason
-        : "Delivery was not confirmed before Vimex closed; retry explicitly to resend",
-  }))
+  // A reconnect can discover a user item whose acknowledgement was lost.
+  // Exact client IDs are authoritative; never infer acceptance from message text.
+  const acceptedMessages = new Set(
+    Object.values(workspace.conversation.items)
+      .filter((item) => item.kind === "user")
+      .map((item) =>
+        item.kind === "user" ? (item.clientMessageId ?? item.id) : "",
+      ),
+  )
+  const recoveredOutbox = (saved.outbox ?? [])
+    .filter((message) => !acceptedMessages.has(message.id))
+    .map((message) => ({
+      ...message,
+      status: "failed" as const,
+      reason:
+        message.status === "failed"
+          ? message.reason
+          : "Delivery was not confirmed before Vimex closed; retry explicitly to resend",
+    }))
   const savedImages = saved.images ?? []
   const savedMentions = saved.mentions ?? []
   let composer: ComposerState = {

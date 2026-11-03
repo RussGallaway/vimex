@@ -3,6 +3,13 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 import { JsonStore } from "./persistence/json-store"
 
+export interface MachineConfig {
+  sshHost: string
+  label?: string
+  cwd?: string
+  codexExecutable?: string
+}
+
 export interface VimexConfig {
   version: 1
   theme: ThemeName
@@ -16,6 +23,9 @@ export interface VimexConfig {
   composerMaxHeight: number
   keybindings: Record<string, string>
   codexExecutable: string
+  localTransport: "auto" | "daemon" | "stdio"
+  favoriteMachines: string[]
+  machines: Record<string, MachineConfig>
 }
 export const defaultConfig: VimexConfig = {
   version: 1,
@@ -29,6 +39,9 @@ export const defaultConfig: VimexConfig = {
   composerMaxHeight: 0.33,
   keybindings: {},
   codexExecutable: "codex",
+  localTransport: "auto",
+  machines: {},
+  favoriteMachines: [],
 }
 export function parseConfig(value: unknown): VimexConfig {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -78,6 +91,57 @@ export function parseConfig(value: unknown): VimexConfig {
     !result.codexExecutable.trim()
   )
     throw new Error("codexExecutable must be a nonempty executable path")
+  if (!["auto", "daemon", "stdio"].includes(result.localTransport))
+    throw new Error("localTransport must be auto, daemon, or stdio")
+  if (
+    !result.machines ||
+    typeof result.machines !== "object" ||
+    Array.isArray(result.machines)
+  )
+    throw new Error("machines must map machine names to SSH settings")
+  for (const [id, machine] of Object.entries(result.machines)) {
+    if (id === "local" || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id))
+      throw new Error(`Invalid machine name: ${id}`)
+    if (!machine || typeof machine !== "object" || Array.isArray(machine))
+      throw new Error(`Invalid settings for machine ${id}`)
+    for (const key of Object.keys(machine))
+      if (!["sshHost", "cwd", "codexExecutable", "label"].includes(key))
+        throw new Error(`Unknown machine setting: ${key}`)
+    if (
+      typeof machine.sshHost !== "string" ||
+      !/^[a-zA-Z0-9][a-zA-Z0-9._@:-]*$/.test(machine.sshHost)
+    )
+      throw new Error(`Invalid SSH host for machine ${id}`)
+    if (
+      machine.label !== undefined &&
+      (typeof machine.label !== "string" ||
+        !machine.label.trim() ||
+        machine.label.length > 80 ||
+        /[\x00-\x1f\x7f-\x9f]/.test(machine.label))
+    )
+      throw new Error(`Invalid label for machine ${id}`)
+    for (const key of ["cwd", "codexExecutable"] as const)
+      if (
+        machine[key] !== undefined &&
+        (typeof machine[key] !== "string" ||
+          !machine[key]!.trim() ||
+          /[\x00-\x1f]/.test(machine[key]!))
+      )
+        throw new Error(`Invalid ${key} for machine ${id}`)
+  }
+  if (
+    !Array.isArray(result.favoriteMachines) ||
+    result.favoriteMachines.some(
+      (id) =>
+        typeof id !== "string" ||
+        !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id) ||
+        (id !== "local" && !Object.hasOwn(result.machines, id)),
+    ) ||
+    new Set(result.favoriteMachines).size !== result.favoriteMachines.length
+  )
+    throw new Error(
+      "favoriteMachines must contain unique configured machine names or local",
+    )
   return result
 }
 export function configDirectory(env: NodeJS.ProcessEnv = process.env): string {

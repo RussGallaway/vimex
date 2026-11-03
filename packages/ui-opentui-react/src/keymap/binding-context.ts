@@ -35,6 +35,7 @@ export interface VimBindingContext {
   openOverlay(
     overlay:
       | "sessions"
+      | "machines"
       | "approvals"
       | "questions"
       | "fork"

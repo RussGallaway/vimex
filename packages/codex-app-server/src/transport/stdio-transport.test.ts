@@ -148,3 +148,31 @@ test("throwing error observers cannot interrupt a reentrant shutdown drain", asy
   expect(received).toEqual([0, 1, 2])
   expect(errors).toHaveLength(1)
 })
+
+test("process failure includes bounded daemon setup diagnostics", async () => {
+  let stderr!: (chunk: string | Uint8Array) => void
+  let exit!: (code: number | null, signal: string | null) => void
+  const process: StdioProcess = {
+    write: async () => {},
+    end() {},
+    kill() {},
+    onStdout() {},
+    onError() {},
+    onStderr(listener) {
+      stderr = listener
+    },
+    onExit(listener) {
+      exit = listener
+    },
+  }
+  const transport = new StdioTransport({ processFactory: () => process })
+  let failure: Error | undefined
+  transport.onClose((error) => {
+    failure = error
+  })
+  await transport.start()
+  stderr("x".repeat(10000) + " Run codex app-server daemon bootstrap")
+  exit(1, null)
+  expect(failure?.message).toContain("daemon bootstrap")
+  expect(failure!.message.length).toBeLessThan(4200)
+})

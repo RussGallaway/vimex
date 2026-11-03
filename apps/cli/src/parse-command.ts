@@ -59,7 +59,9 @@ export function parseCommand(
       continue
     }
     flags.push(value)
-    if (["--cwd", "--thread", "--model", "--config"].includes(value)) {
+    if (
+      ["--cwd", "--thread", "--model", "--config", "--machine"].includes(value)
+    ) {
       const next = values[++i]
       if (!next || next.startsWith("-"))
         throw new Error(`${value} requires a value`)
@@ -81,6 +83,8 @@ export function parseCommand(
     if (flags.includes("--cwd"))
       throw new Error("Choose a path or --cwd, not both")
     options.cwd = parseCliOptions(["--cwd", positional], cwd).cwd
+    if (options.machine && options.machine !== "local")
+      options.remoteCwd = positional
   }
   return { kind: "launch", options }
 }

@@ -1,3 +1,4 @@
+import { MachinesOverlay } from "../machines/MachinesOverlay"
 import { usePaneGeometry } from "../side-chat/pane-geometry"
 import type { Approval } from "@vimex/approvals"
 import type { UserQuestionRequest } from "@vimex/approvals"
@@ -123,6 +124,11 @@ function HelpOverlay() {
 }
 
 export function OverlayLayer(props: {
+  machines?: WorkbenchState["machines"]
+  activeMachine?: string
+  machineManagement?: WorkbenchState["machineManagement"]
+  onMachineCommand(command: string): void
+  onMachineClose(): void
   overlay: Overlay
   models?: readonly AvailableModel[]
   modelCatalogError?: string
@@ -169,7 +175,15 @@ export function OverlayLayer(props: {
       zIndex={40}
       backgroundColor={emberTide.overlayBackdrop ?? `${emberTide.background}d8`}
     >
-      {props.overlay === "sessions" ? (
+      {props.overlay === "machines" ? (
+        <MachinesOverlay
+          management={props.machineManagement}
+          machines={props.machines ?? []}
+          active={props.activeMachine}
+          onCommand={props.onMachineCommand}
+          onClose={props.onMachineClose}
+        />
+      ) : props.overlay === "sessions" ? (
         <SessionsOverlay
           scope={props.sessionScope}
           onToggleScope={props.onSessionToggleScope}

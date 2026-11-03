@@ -438,23 +438,26 @@ export function VimexApp({
       ? state.availableModels?.find((model) => model.id === modelPicker.modelId)
       : undefined
   const overlayLength =
-    interaction.overlay === "models"
-      ? modelPicker.stage === "efforts"
-        ? (selectedPickerModel?.efforts.length ?? 0)
-        : (state.availableModels?.length ?? 0)
-      : interaction.overlay === "sessions"
-        ? sessionRows.length
-        : interaction.overlay === "approvals"
-          ? (pendingApproval?.choices.length ?? 0)
-          : interaction.overlay === "questions"
-            ? (pendingQuestion?.questions[questionIndex]?.options?.length ?? 1)
-            : interaction.overlay === "agents"
-              ? agentRows.length
-              : interaction.overlay === "processes"
-                ? state.backgroundTerminals.rows.length
-                : interaction.overlay === "urls"
-                  ? (urlChoices?.length ?? 0)
-                  : 1
+    interaction.overlay === "machines"
+      ? (state.machines?.length ?? 0)
+      : interaction.overlay === "models"
+        ? modelPicker.stage === "efforts"
+          ? (selectedPickerModel?.efforts.length ?? 0)
+          : (state.availableModels?.length ?? 0)
+        : interaction.overlay === "sessions"
+          ? sessionRows.length
+          : interaction.overlay === "approvals"
+            ? (pendingApproval?.choices.length ?? 0)
+            : interaction.overlay === "questions"
+              ? (pendingQuestion?.questions[questionIndex]?.options?.length ??
+                1)
+              : interaction.overlay === "agents"
+                ? agentRows.length
+                : interaction.overlay === "processes"
+                  ? state.backgroundTerminals.rows.length
+                  : interaction.overlay === "urls"
+                    ? (urlChoices?.length ?? 0)
+                    : 1
   const activeQuestion =
     pendingQuestion?.questions[
       Math.min(
@@ -1265,6 +1268,7 @@ export function VimexApp({
   const openOverlay = useCallback(
     (
       overlay:
+        | "machines"
         | "sessions"
         | "approvals"
         | "questions"
@@ -1280,7 +1284,11 @@ export function VimexApp({
 
   const activateOverlay = useCallback(() => {
     const activeIndex = overlayIndexRef.current
-    if (interaction.overlay === "models") {
+    if (interaction.overlay === "machines") {
+      const machine = state.machines?.[activeIndex]
+      if (machine)
+        controller.executeCommand(`machine ${machine.id}`, presentationId)
+    } else if (interaction.overlay === "models") {
       if (modelPicker.stage === "models") {
         const model = state.availableModels?.[activeIndex]
         if (!model) return
@@ -1399,6 +1407,7 @@ export function VimexApp({
     questionIndex,
     sessionQuery,
     sessionRows,
+    state.machines,
     state.availableModels,
     state.backgroundTerminals.rows,
     state.favoriteThreadIds,
@@ -1811,7 +1820,10 @@ export function VimexApp({
     () => ({
       priority: 200,
       bindings:
-        !interactive || !interaction.overlay || telescopeModal.active
+        !interactive ||
+        !interaction.overlay ||
+        interaction.overlay === "machines" ||
+        telescopeModal.active
           ? []
           : [
               {
@@ -2143,6 +2155,8 @@ export function VimexApp({
       statusline={
         <Statusline
           mode={interaction.mode}
+          machine={state.machine?.label ?? state.machine?.id}
+          connection={state.machineChanging ? "switching" : state.connection}
           summary={statusSummary}
           pendingKeys={interaction.pendingKeys}
           unseenEntries={semanticTranscript.unseenEntries}
@@ -2286,6 +2300,13 @@ export function VimexApp({
               onActivate={activateOverlay}
               pendingFork={state.pendingFork}
               agents={agentRows}
+              machines={state.machines}
+              activeMachine={state.machine?.id}
+              machineManagement={state.machineManagement}
+              onMachineCommand={(command) =>
+                controller.executeNamedCommand(command, presentationId)
+              }
+              onMachineClose={closeOverlay}
               processes={state.backgroundTerminals}
               hideFinishedAgents={
                 hideFinishedAgents && !state.agentPickerTargets

@@ -180,6 +180,10 @@ export function workbenchPresentationChanged(
   if (leftId !== rightId) return true
   if (
     before.preferences !== after.preferences ||
+    before.machine !== after.machine ||
+    before.machines !== after.machines ||
+    before.machineChanging !== after.machineChanging ||
+    before.machineManagement !== after.machineManagement ||
     before.connection !== after.connection
   )
     return true

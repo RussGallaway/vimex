@@ -50,3 +50,10 @@ export type { ToolRequestUserInputParams } from "./generated/v0_154_0/v2/ToolReq
 export type { ToolRequestUserInputResponse } from "./generated/v0_154_0/v2/ToolRequestUserInputResponse"
 export type { ThreadSettingsUpdateParams } from "./generated/v0_154_0/v2/ThreadSettingsUpdateParams"
 export type { ModelListParams } from "./generated/v0_154_0/v2/ModelListParams"
+
+export type { CodexGatewayOptions } from "./codex-gateway"
+export {
+  createMachineCodexClient,
+  machineStdioOptions,
+} from "./transport/machine-transport"
+export type { CodexMachine } from "./transport/machine-transport"

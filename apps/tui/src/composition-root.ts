@@ -1,6 +1,10 @@
 import { join, resolve } from "node:path"
 import { version } from "../../../package.json"
-import { emptyLocalState, parseLocalState } from "@vimex/workbench"
+import {
+  emptyLocalState,
+  parseLocalState,
+  type LocalState,
+} from "@vimex/workbench"
 import {
   CliRenderEvents,
   createCliRenderer,
@@ -21,6 +25,8 @@ import {
   loadConfig,
   parseConfig,
   openUrl,
+  resolveMachineDirectory,
+  prepareLegacyHandoff,
 } from "@vimex/platform-node"
 import {
   createHerdrExternalActions,
@@ -39,6 +45,8 @@ import { createCodexGateways } from "@vimex/codex-app-server"
 import { createDemoGateway } from "./demo-gateway"
 import { VimexController } from "@vimex/workbench"
 import { imageInput } from "./images"
+import { nativeHandoff } from "./native-handoff"
+import { createMachineNavigation } from "./machine-navigation"
 import { PerformanceProfileRecorder } from "./performance-profile"
 
 export async function runApplication(options: CliOptions) {
@@ -129,24 +137,54 @@ export async function runApplication(options: CliOptions) {
     options.config ?? join(configDirectory(), "config.json"),
     parseConfig,
   )
-  const localStore = options.demo
-    ? undefined
-    : new JsonStore(join(stateDirectory(), "views.json"), parseLocalState)
-  let localState = localStore
-    ? await localStore.read(emptyLocalState())
-    : emptyLocalState()
-  let savedJson = JSON.stringify(localState)
+  let configWrites = Promise.resolve()
+  const updateConfig = (patch: Partial<typeof config>) => {
+    const operation = configWrites
+      .catch(() => {})
+      .then(async () => {
+        const next = { ...config, ...patch }
+        await configStore.write(next)
+        config = next
+      })
+    configWrites = operation
+    return operation
+  }
+  const initialMachine = options.machine ?? "local"
+  const localStores = new Map<string, JsonStore<LocalState>>()
+  const machineViews = new Map<string, LocalState>()
+  const savedViews = new Map<string, string>()
+  const loadMachineState = async (id: string) => {
+    if (machineViews.has(id)) return machineViews.get(id)!
+    const store = new JsonStore(
+      join(
+        stateDirectory(),
+        id === "local" ? "views.json" : `views-${id}.json`,
+      ),
+      parseLocalState,
+    )
+    const state = options.demo
+      ? emptyLocalState()
+      : await store.read(emptyLocalState())
+    if (!options.demo) localStores.set(id, store)
+    machineViews.set(id, state)
+    savedViews.set(id, JSON.stringify(state))
+    return state
+  }
+  let localState = await loadMachineState(initialMachine)
   let saveTimer: ReturnType<typeof setTimeout> | undefined
   let persistenceError: unknown
   const persistenceNotice = new FailureNotice()
   const save = async () => {
     saveTimer = undefined
-    if (!localStore) return
-    const json = JSON.stringify(localState)
-    if (json === savedJson) return
     try {
-      await localStore.write(localState)
-      savedJson = json
+      for (const [id, state] of machineViews) {
+        const store = localStores.get(id)
+        if (!store) continue
+        const json = JSON.stringify(state)
+        if (json === savedViews.get(id)) continue
+        await store.write(state)
+        savedViews.set(id, json)
+      }
       persistenceError = undefined
       persistenceNotice.clear()
     } catch (error) {
@@ -251,7 +289,14 @@ export async function runApplication(options: CliOptions) {
     lifecycle.add(() => clipboard.dispose())
     const images = imageInput(clipboard)
     lifecycle.add(async () => {
-      if (!persistenceError) await images.cleanup(localState)
+      if (!persistenceError) {
+        // Retain image snapshots referenced by drafts on any visited machine.
+        const combined = emptyLocalState()
+        for (const [id, state] of machineViews)
+          for (const [threadId, view] of Object.entries(state.threads))
+            combined.threads[`${id}:${threadId}`] = view
+        await images.cleanup(combined)
+      }
     })
     const herdr = new HerdrReporter(options.demo ? undefined : detectHerdr())
     lifecycle.add(() => herdr.dispose())
@@ -264,9 +309,7 @@ export async function runApplication(options: CliOptions) {
       preferences: {
         initial: { theme: config.theme, syntaxTheme: config.syntaxTheme },
         async save(preferences: import("@vimex/workbench").DisplayPreferences) {
-          const next = { ...config, ...preferences }
-          await configStore.write(next)
-          config = next
+          await updateConfig(preferences)
         },
       },
       clipboard: {
@@ -284,9 +327,10 @@ export async function runApplication(options: CliOptions) {
         await performanceProfile.exportTo(path)
         return path
       },
-      onLocalState(state: import("@vimex/workbench").LocalState) {
+      onLocalState(state: LocalState, machineId = initialMachine) {
         localState = state
-        if (localStore && !saveTimer)
+        machineViews.set(machineId, state)
+        if (localStores.size && !saveTimer)
           saveTimer = setTimeout(() => {
             void save()
           }, 200)
@@ -307,6 +351,40 @@ export async function runApplication(options: CliOptions) {
       },
     }
     const demo = options.demo ? createDemoGateway() : undefined
+    const gateways = new Map<string, ReturnType<typeof createCodexGateways>>()
+    const machineManager = createMachineNavigation({
+      config,
+      saveMachines: (machines, favoriteMachines) =>
+        updateConfig({ machines, favoriteMachines }),
+      initialMachine,
+      localCwd: initialMachine === "local" ? options.cwd : process.cwd(),
+      remoteCwd: options.remoteCwd,
+      loadState: loadMachineState,
+      resolveRemoteDirectory: resolveMachineDirectory,
+      createRuntime(target, cwd) {
+        const gateway = createCodexGateways(cwd, target.executable, undefined, {
+          machine: target,
+        })
+        gateways.set(target.id, gateway)
+        return gateway
+      },
+    })
+    machineManager.navigation.handoff = nativeHandoff({
+      navigation: machineManager.navigation,
+      gateways,
+      target: machineManager.target,
+      prepare: prepareLegacyHandoff,
+      notice: (message) => controller.notice(message),
+    })
+    root = createRoot(renderer)
+    if (!demo && initialMachine !== "local")
+      root.render(
+        createElement("text", null, `Connecting to ${initialMachine}…`),
+      )
+    const initialRuntime = demo
+      ? undefined
+      : await machineManager.navigation.open(initialMachine)
+    const initialCwd = initialRuntime?.cwd ?? options.cwd
     controller = demo
       ? new VimexController({
           ...ports,
@@ -317,20 +395,20 @@ export async function runApplication(options: CliOptions) {
           resolveDirectory: resolve,
         })
       : new VimexController({
-          ...createCodexGateways(options.cwd, config.codexExecutable),
+          ...initialRuntime!,
+          machines: machineManager.navigation,
           ...ports,
-          resolveDirectory: resolve,
+          resolveDirectory: initialRuntime?.resolveDirectory ?? resolve,
         })
     if (!options.thread && !options.resumeMode)
-      controller.prepareDraft(options.cwd, options.model)
+      controller.prepareDraft(initialCwd, options.model)
     lifecycle.add(async () => {
       if (saveTimer) clearTimeout(saveTimer)
       await save()
-      await localStore?.flush()
+      await Promise.all([...localStores.values()].map((store) => store.flush()))
       if (persistenceError) throw persistenceError
     })
     lifecycle.add(() => controller.close())
-    root = createRoot(renderer)
     const stop = () => finish()
     for (const signal of signals) process.on(signal, stop)
     process.on("uncaughtException", onFailure)
@@ -365,12 +443,7 @@ export async function runApplication(options: CliOptions) {
     }, 0)
     lifecycle.add(() => clearTimeout(syntaxTimer))
     void controller
-      .initialize(
-        options.cwd,
-        options.model,
-        options.thread,
-        options.resumeMode,
-      )
+      .initialize(initialCwd, options.model, options.thread, options.resumeMode)
       .catch((error) => {
         if (options.resumeMode) onFailure(error)
         else controller.notice(String(error))

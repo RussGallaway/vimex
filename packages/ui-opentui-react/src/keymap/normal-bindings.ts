@@ -100,6 +100,7 @@ export function normalBindings(ctx: VimBindingContext): UiBinding[] {
       },
     },
     { key: "<leader>s", cmd: () => ctx.openOverlay("sessions") },
+    { key: "<leader>m", cmd: () => ctx.openOverlay("machines") },
     { key: "<leader>q", cmd: () => ctx.openOverlay("questions") },
     { key: "<leader>?", cmd: () => ctx.openOverlay("help") },
     ...(ctx.interaction.surface === "transcript"

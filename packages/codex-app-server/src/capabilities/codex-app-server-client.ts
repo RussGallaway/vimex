@@ -150,6 +150,7 @@ export class CodexAppServerClient {
   >()
   private readonly approvalWireIds = new Map<string, RequestId>()
   private connected = false
+  serverInfo?: InitializeResponse
 
   constructor(
     transport: CodexTransport,
@@ -183,9 +184,62 @@ export class CodexAppServerClient {
       },
     })
     await this.rpc.notify("initialized")
+    this.serverInfo = result
     this.connected = true
     this.emit({ type: "connection", status: "connected" })
     return result
+  }
+
+  /** Host filesystem operations stay inside the Codex adapter. */
+  async readHostFile(
+    path: string,
+    limit?: number,
+  ): Promise<{ dataBase64: string }> {
+    if (limit === undefined) return this.rpc.request("fs/readFile", { path })
+    if (!Number.isSafeInteger(limit) || limit < 0 || limit > 20 * 1024 * 1024)
+      throw new Error("Invalid remote read limit")
+    // fs/readFile has no range or byte cap, and metadata has no size. Bound
+    // reads on the host rather than allocating an entire large file in the UI.
+    const result = await this.rpc.request<
+      import("../generated/v0_154_0/v2/CommandExecResponse").CommandExecResponse
+    >("command/exec", {
+      command: [
+        "python3",
+        "-c",
+        "import sys,base64; f=open(sys.argv[1],'rb'); b=f.read(int(sys.argv[2])+1); f.close(); sys.stdout.write(base64.b64encode(b).decode())",
+        path,
+        String(limit),
+      ],
+      timeoutMs: 10_000,
+      outputBytesCap: Math.ceil((limit + 1) / 3) * 4 + 16,
+    })
+    if (result.exitCode !== 0)
+      throw new Error("Unable to read remote file preview")
+    return { dataBase64: result.stdout }
+  }
+
+  readHostDirectory(
+    path: string,
+  ): Promise<
+    import("../generated/v0_154_0/v2/FsReadDirectoryResponse").FsReadDirectoryResponse
+  > {
+    return this.rpc.request("fs/readDirectory", { path })
+  }
+
+  getHostMetadata(
+    path: string,
+  ): Promise<
+    import("../generated/v0_154_0/v2/FsGetMetadataResponse").FsGetMetadataResponse
+  > {
+    return this.rpc.request("fs/getMetadata", { path })
+  }
+
+  async writeHostFile(path: string, dataBase64: string): Promise<void> {
+    await this.rpc.request("fs/writeFile", { path, dataBase64 })
+  }
+
+  async createHostDirectory(path: string): Promise<void> {
+    await this.rpc.request("fs/createDirectory", { path, recursive: true })
   }
 
   onEvent(listener: (event: CodexAdapterEvent) => void): () => void {
@@ -346,6 +400,20 @@ export class CodexAppServerClient {
 
   listItems(params: ThreadItemsListParams): Promise<ThreadItemsListResponse> {
     return this.rpc.request("thread/items/list", params)
+  }
+
+  readAccount(): Promise<
+    import("../generated/v0_154_0/v2/GetAccountResponse").GetAccountResponse
+  > {
+    return this.rpc.request("account/read", { refreshToken: false })
+  }
+
+  readThread(
+    threadId: string,
+  ): Promise<
+    import("../generated/v0_154_0/v2/ThreadReadResponse").ThreadReadResponse
+  > {
+    return this.rpc.request("thread/read", { threadId, includeTurns: false })
   }
 
   async forkThread(

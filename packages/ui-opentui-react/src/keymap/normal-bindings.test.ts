@@ -42,3 +42,13 @@ describe("normal picker bindings", () => {
     expect(opened).toEqual(["grep"])
   })
 })
+
+test("leader m opens machine manager without editing the composer", () => {
+  const opened: string[] = []
+  const bindings = normalBindings({
+    ...(context() as unknown as object),
+    openOverlay: (overlay: string) => opened.push(overlay),
+  } as never)
+  bindings.find((binding) => binding.key === "<leader>m")!.cmd()
+  expect(opened).toEqual(["machines"])
+})

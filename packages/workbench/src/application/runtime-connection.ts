@@ -22,6 +22,7 @@ export type RuntimeEvent =
   | { type: "approval"; approval: Approval }
   | { type: "approval.resolved"; id: string }
   | { type: "disconnected"; message: string; reason?: "restart" }
+  | { type: "reconnected" }
   | { type: "notice"; message: string }
 
 export interface RuntimeConnection {

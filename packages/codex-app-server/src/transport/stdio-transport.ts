@@ -64,6 +64,7 @@ export class StdioTransport implements CodexTransport {
   private process?: StdioProcess
   private buffer = ""
   private readonly decoder = new TextDecoder()
+  private stderrTail = ""
   private started = false
   private closed = false
   private finished = false
@@ -85,14 +86,18 @@ export class StdioTransport implements CodexTransport {
     )
     this.process = process
     process.onStdout((chunk) => this.acceptChunk(chunk))
-    process.onStderr((chunk) => this.options.onStderr?.(decode(chunk)))
+    process.onStderr((chunk) => {
+      const text = decode(chunk)
+      this.stderrTail = (this.stderrTail + text).slice(-4096)
+      this.options.onStderr?.(text)
+    })
     process.onError((error) => this.emitError(error))
     process.onExit((code, signal) => {
       const error =
         this.closed || code === 0
           ? undefined
           : new Error(
-              `codex app-server exited with code ${String(code)}${signal ? ` (${signal})` : ""}`,
+              `codex app-server exited with code ${String(code)}${signal ? ` (${signal})` : ""}${this.stderrTail.trim() ? `: ${this.stderrTail.trim()}` : ""}`,
             )
       this.finish(error)
     })

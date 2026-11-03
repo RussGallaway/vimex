@@ -9,6 +9,7 @@ Usage:
 
 Options:
   --cwd PATH       Working directory
+  --machine NAME   Run against local or an SSH machine
   --thread ID      Resume a Codex thread (legacy spelling)
   --model NAME     Model for a new thread
   --config PATH    Alternate Vimex JSON configuration

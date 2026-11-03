@@ -110,7 +110,9 @@ try:
         # OpenTUI emits differential cells; the second line may not be contiguous in the byte stream.
         wait_for(b"38", offset)
         send(b"\r")
-        wait_for(b"approval")
+        # The statusline is diff-painted and may split "approval" across ANSI runs.
+        # The activity label changes atomically when the approval arrives.
+        wait_for(b"Approval needed")
     offset = send(b"\x1b")
     wait_for(b"NORMAL", offset)
     if scenario == "server":

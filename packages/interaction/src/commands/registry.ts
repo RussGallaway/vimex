@@ -3,6 +3,8 @@ import { themeNames } from "./theme-names"
 export const commandNames = [
   "quit",
   "sessions",
+  "machine",
+  "handoff",
   "approvals",
   "status",
   "permission",
@@ -67,6 +69,8 @@ export function resolveCommandName(value: string): CommandName | undefined {
 export const commandDescriptions: Readonly<Record<CommandName, string>> = {
   quit: "Quit Vimex",
   sessions: "Switch or create a session",
+  machine: "Choose or manage machines running your agent",
+  handoff: "Continue this session on another machine",
   approvals: "Review pending approvals",
   status: "Show account usage and rate limits",
   permission: "Choose Ask for approval, Approve for me, or Full access",
@@ -159,6 +163,12 @@ const argumentDescriptors: Partial<
     required: true,
     choices: ["ask", "approve", "full"],
   },
+  machine: {
+    usage:
+      "machine [name | add <name> <ssh-host> | rename <name> <label> | remove <name> | favorite <name>]",
+    arguments: "literal",
+  },
+  handoff: { usage: "handoff <name>", arguments: "literal", required: true },
   sessions: { usage: "sessions [thread-id]", arguments: "literal" },
   stop: { usage: "stop [process-id]", arguments: "literal" },
   help: {

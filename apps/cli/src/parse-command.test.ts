@@ -49,3 +49,18 @@ test("CLI aliases upgrades, parses doctor config, and rejects conflicting target
   ])
     expect(() => parseCommand(args)).toThrow()
 })
+
+test("machine selection works for launch and resume with remote paths", () => {
+  expect(
+    parseCommand(["--machine", "devbox", "~/work"], "/local"),
+  ).toMatchObject({
+    kind: "launch",
+    options: { machine: "devbox", remoteCwd: "~/work" },
+  })
+  expect(
+    parseCommand(["resume", "id", "--machine", "devbox"], "/local"),
+  ).toMatchObject({
+    kind: "launch",
+    options: { machine: "devbox", thread: "id" },
+  })
+})

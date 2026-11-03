@@ -6,7 +6,7 @@ export const manualSections = [
   },
   {
     "title": "SYNOPSIS",
-    "body": "vimex [PATH] [--cwd PATH] [--thread ID] [--model NAME] [--config PATH]\n\nvimex resume [ID] [--cwd PATH]\n\nvimex resume --last [--cwd PATH]\n\nvimex doctor [--config PATH]\n\nvimex upgrade [--version VERSION]\n\nvimex update [--version VERSION]\n\nvimex --demo\n\nvimex --help | --version\n\nFrom a source checkout, use bun run start followed by these arguments. Published releases provide native bundles and the same command surface."
+    "body": "vimex [PATH] [--cwd PATH] [--machine NAME] [--thread ID] [--model NAME] [--config PATH]\n\nvimex resume [ID] [--cwd PATH]\n\nvimex resume --last [--cwd PATH]\n\nvimex doctor [--config PATH]\n\nvimex upgrade [--version VERSION]\n\nvimex update [--version VERSION]\n\nvimex --demo\n\nvimex --help | --version\n\nFrom a source checkout, use bun run start followed by these arguments. Published releases provide native bundles and the same command surface."
   },
   {
     "title": "DESCRIPTION",
@@ -14,7 +14,7 @@ export const manualSections = [
   },
   {
     "title": "OPTIONS",
-    "body": "--cwd PATH: Working directory; defaults to the launch directory.\n\n--thread ID: Resume an existing Codex thread.\n\n--model NAME: Model for a new thread.\n\n--config PATH: Read an alternate Vimex JSON configuration.\n\n--demo: Run a local streaming demonstration without Codex credentials.\n\n-h, --help: Print CLI usage without starting a session.\n\n-V, --version: Print the Vimex version."
+    "body": "--cwd PATH: Working directory; defaults to the launch directory.\n\n--thread ID: Resume an existing Codex thread.\n\n--model NAME: Model for a new thread.\n\n--config PATH: Read an alternate Vimex JSON configuration.\n\n--machine NAME: Select local execution or an SSH machine. Remote --cwd paths are resolved on that machine. Quote tilde paths to prevent your shell expanding them locally.\n\n--demo: Run a local streaming demonstration without Codex credentials.\n\n-h, --help: Print CLI usage without starting a session.\n\n-V, --version: Print the Vimex version."
   },
   {
     "title": "CLI COMMANDS",
@@ -43,6 +43,10 @@ export const manualSections = [
   {
     "title": "GOALS AND COMPACTION",
     "body": ":goal or /goal shows the current goal. :goal OBJECTIVE sets one; :goal --budget TOKENS OBJECTIVE sets an explicit token budget. pause, resume, complete, and clear manage its lifecycle. Use :goal set pause to set the literal objective 'pause'. Codex owns continuation; pausing a goal does not interrupt an already running turn.\n\n:compact or /compact asks Codex to compact context while idle. The Compacting indicator follows server events; sending is paused until completion and drafts are preserved."
+  },
+  {
+    "title": "MACHINES",
+    "body": "Space m (leader then m), :machine in command mode, or /machine in the composer opens the machine manager. Machine management and switching commands work with either : or /; both routes and the modal share saved settings. :machine NAME switches to that machine's sessions without transferring the current session. :handoff NAME moves supported idle native history and Git state into an isolated worktree on the destination while preserving the local view. Paginated histories and unsupported dependencies are refused; no summary substitutes for native history.\n\nTyping, navigation, scrolling, clipboard, and optimistic message rendering stay local. Daemon proxy reconnect rehydrates server state without replaying uncertain submissions. Closing Vimex detaches the proxy; it does not intentionally stop the daemon.\n\nThe bottom status line shows the active machine name. The machine manager provides search, favorite-first rows, inline rename, add, and removal confirmation. Enter switches to the selected machine. Ctrl+F toggles its favorite; Ctrl+R renames it. Favorites persist across restarts, including local. :machine favorite ID also toggles a favorite. :machine add ID SSH-HOST saves an existing SSH connection. :machine rename ID LABEL changes its display label while preserving its ID and saved views. :machine remove ID forgets a connection; switch away first. Removal does not delete the VM or its sessions. The built-in local connection cannot be renamed or removed.\n\nConfigure machines as name-to-settings objects with sshHost, optional label, optional cwd, and optional codexExecutable. localTransport is auto, daemon, or stdio. Auto uses daemon for the default codex executable and stdio for a custom executable. See docs/configuration.md for setup and transfer limits."
   },
   {
     "title": "FILES AND ENVIRONMENT",

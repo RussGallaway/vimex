@@ -19,6 +19,8 @@ function contextLabel(summary: ThreadSummary | undefined): string {
 }
 
 export function Statusline(props: {
+  machine?: string
+  connection?: string
   mode: VimMode
   summary?: ThreadSummary
   pendingKeys: string
@@ -31,6 +33,9 @@ export function Statusline(props: {
   const cwd = props.summary?.cwd ?? "No thread"
   const branch = props.summary?.gitBranch
   const metadata = [
+    props.connection && props.connection !== "connected"
+      ? props.connection
+      : undefined,
     props.pendingApprovals > 0
       ? `${props.pendingApprovals} approval${props.pendingApprovals === 1 ? "" : "s"}`
       : undefined,
@@ -81,7 +86,7 @@ export function Statusline(props: {
           wrapMode="none"
           truncate
         >
-          {cwd}
+          {props.machine ? `${props.machine} · ${cwd}` : cwd}
         </text>
         {branch ? (
           <text

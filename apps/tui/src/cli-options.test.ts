@@ -22,3 +22,17 @@ test("CLI rejects ambiguous or missing options", () => {
   )
   expect(() => parseCliOptions(["--surprise"])).toThrow("Unknown argument")
 })
+
+test("remote cwd stays remote regardless of argument order", () => {
+  for (const args of [
+    ["--machine", "devbox", "--cwd", "~/work"],
+    ["--cwd", "~/work", "--machine", "devbox"],
+  ]) {
+    expect(parseCliOptions(args, "/laptop")).toMatchObject({
+      machine: "devbox",
+      remoteCwd: "~/work",
+    })
+  }
+  expect(() => parseCliOptions(["--machine", "../host"])).toThrow()
+  expect(() => parseCliOptions(["--machine", "devbox", "--demo"])).toThrow()
+})

@@ -58,6 +58,10 @@ export interface PendingFork {
   preview: string
 }
 export interface WorkbenchState {
+  machine?: import("./machines").MachineInfo
+  machines?: readonly import("./machines").MachineInfo[]
+  machineChanging?: boolean
+  machineManagement?: { pending: boolean; error?: string }
   backgroundTerminals: {
     loading: boolean
     rows: readonly BackgroundTerminal[]

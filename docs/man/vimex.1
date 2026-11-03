@@ -3,7 +3,8 @@
 .SH NAME
 vimex \- a full\-screen, Vim\-operated interface for Codex
 .SH SYNOPSIS
-vimex [PATH] [\-\-cwd PATH] [\-\-thread ID] [\-\-model NAME] [\-\-config PATH]
+vimex [PATH] [\-\-cwd PATH] [\-\-machine NAME] [\-\-thread ID] [\-\-model
+NAME] [\-\-config PATH]
 .PP
 vimex resume [ID] [\-\-cwd PATH]
 .PP
@@ -41,6 +42,10 @@ execution requires Bun 1.3.6 or later.
 \-\-model NAME: Model for a new thread.
 .PP
 \-\-config PATH: Read an alternate Vimex JSON configuration.
+.PP
+\-\-machine NAME: Select local execution or an SSH machine. Remote \-\-cwd
+paths are resolved on that machine. Quote tilde paths to prevent your
+shell expanding them locally.
 .PP
 \-\-demo: Run a local streaming demonstration without Codex credentials.
 .PP
@@ -315,6 +320,38 @@ a goal does not interrupt an already running turn.
 :compact or /compact asks Codex to compact context while idle. The
 Compacting indicator follows server events; sending is paused until
 completion and drafts are preserved.
+.SH MACHINES
+Space m (leader then m), :machine in command mode, or /machine in the
+composer opens the machine manager. Machine management and switching
+commands work with either : or /; both routes and the modal share
+saved settings. :machine NAME switches to that machine's sessions
+without transferring the current session. :handoff NAME moves
+supported idle native history and Git state into an isolated worktree
+on the destination while preserving the local view. Paginated
+histories and unsupported dependencies are refused; no summary
+substitutes for native history.
+.PP
+Typing, navigation, scrolling, clipboard, and optimistic message
+rendering stay local. Daemon proxy reconnect rehydrates server state
+without replaying uncertain submissions. Closing Vimex detaches the
+proxy; it does not intentionally stop the daemon.
+.PP
+The bottom status line shows the active machine name. The machine
+manager provides search, favorite\-first rows, inline rename, add, and
+removal confirmation. Enter switches to the selected machine. Ctrl+F
+toggles its favorite; Ctrl+R renames it. Favorites persist across
+restarts, including local. :machine favorite ID also toggles a
+favorite. :machine add ID SSH\-HOST saves an existing SSH connection.
+:machine rename ID LABEL changes its display label while preserving
+its ID and saved views. :machine remove ID forgets a connection;
+switch away first. Removal does not delete the VM or its sessions. The
+built\-in local connection cannot be renamed or removed.
+.PP
+Configure machines as name\-to\-settings objects with sshHost, optional
+label, optional cwd, and optional codexExecutable. localTransport is
+auto, daemon, or stdio. Auto uses daemon for the default codex
+executable and stdio for a custom executable. See
+docs/configuration.md for setup and transfer limits.
 .SH FILES AND ENVIRONMENT
 $XDG_CONFIG_HOME/vimex/config.json stores configuration, defaulting to
 ~/.config/vimex/config.json. \-\-config overrides this path. Unknown

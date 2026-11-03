@@ -15,3 +15,9 @@ export * from "./application/thread-context"
 export * from "./application/agent-roster"
 export * from "./application/workbench-observation"
 export * from "./application/workbench-publications"
+
+export type {
+  MachineInfo,
+  MachineRuntime,
+  MachineNavigation,
+} from "./application/machines"
