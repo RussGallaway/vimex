@@ -4,7 +4,11 @@ import type {
   MachineRuntime,
   LocalState,
 } from "@vimex/workbench"
-import { parseConfig, type VimexConfig } from "@vimex/platform-node"
+import {
+  hostOperation,
+  parseConfig,
+  type VimexConfig,
+} from "@vimex/platform-node"
 
 export interface MachineTarget {
   id: string
@@ -91,6 +95,20 @@ export function createMachineNavigation(options: MachineNavigationOptions) {
     if (id === "local") throw new Error("The local machine cannot be changed")
     if (!known.has(id)) throw new Error(`Unknown machine: ${id}`)
   }
+  async function directory(id: string, cwdOverride?: string): Promise<string> {
+    const selected = target(id)
+    if (selected.sshHost)
+      return options.resolveRemoteDirectory(
+        selected.sshHost,
+        cwdOverride ??
+          (id === options.initialMachine ? options.remoteCwd : undefined) ??
+          configured(id)?.cwd,
+      )
+    if (cwdOverride !== undefined)
+      return (await hostOperation({}, { action: "resolve", path: cwdOverride }))
+        .path as string
+    return options.localCwd
+  }
   const navigation: MachineNavigation = {
     current: info(options.initialMachine),
     list: () => [...known].map(info),
@@ -149,16 +167,9 @@ export function createMachineNavigation(options: MachineNavigationOptions) {
             }),
         }
       : {}),
-    async open(id) {
+    async open(id, cwdOverride) {
       const selected = target(id)
-      const machineConfig = configured(id)
-      const cwd = selected.sshHost
-        ? await options.resolveRemoteDirectory(
-            selected.sshHost,
-            (id === options.initialMachine ? options.remoteCwd : undefined) ??
-              machineConfig?.cwd,
-          )
-        : options.localCwd
+      const cwd = await directory(id, cwdOverride)
       const localState = await options.loadState(id)
       const ports = options.createRuntime(selected, cwd)
       known.add(id)
@@ -179,5 +190,5 @@ export function createMachineNavigation(options: MachineNavigationOptions) {
       }
     },
   }
-  return { navigation, target, targets }
+  return { navigation, target, targets, directory }
 }

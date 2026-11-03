@@ -4,6 +4,7 @@ export const commandNames = [
   "quit",
   "sessions",
   "machine",
+  "caffeinate",
   "handoff",
   "approvals",
   "status",
@@ -70,6 +71,7 @@ export const commandDescriptions: Readonly<Record<CommandName, string>> = {
   quit: "Quit Vimex",
   sessions: "Switch or create a session",
   machine: "Choose or manage machines running your agent",
+  caffeinate: "Toggle automatic idle-sleep prevention for local turns",
   handoff: "Continue this session on another machine",
   approvals: "Review pending approvals",
   status: "Show account usage and rate limits",
@@ -168,7 +170,16 @@ const argumentDescriptors: Partial<
       "machine [name | add <name> <ssh-host> | rename <name> <label> | remove <name> | favorite <name>]",
     arguments: "literal",
   },
-  handoff: { usage: "handoff <name>", arguments: "literal", required: true },
+  caffeinate: {
+    usage: "caffeinate [on|off|toggle]",
+    arguments: "literal",
+    choices: ["on", "off", "toggle"],
+  },
+  handoff: {
+    usage: "handoff <name> [--cwd <path> | --isolated]",
+    arguments: "literal",
+    required: true,
+  },
   sessions: { usage: "sessions [thread-id]", arguments: "literal" },
   stop: { usage: "stop [process-id]", arguments: "literal" },
   help: {

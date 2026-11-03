@@ -124,3 +124,58 @@ test("uncertain source retirement preserves the prepared destination for recover
   expect(h.events).not.toContain("archive-devbox")
   expect(h.events).not.toContain("cleanup")
 })
+
+test("selected destination is prepared in existing mode and remembered only after source retirement", async () => {
+  const h = harness()
+  let opened: string | undefined
+  let mode: string | undefined
+  const originalOpen = h.options.navigation.open
+  h.options.navigation.open = async (id, cwd) => {
+    opened = cwd
+    return originalOpen(id, cwd)
+  }
+  const originalPrepare = h.options.prepare
+  h.options.prepare = async (request) => {
+    mode = request.destinationMode
+    return originalPrepare(request)
+  }
+  h.options.rememberDestination = async () => {
+    h.events.push("remember")
+  }
+  const result = await nativeHandoff(h.options)({
+    sourceId: "local",
+    targetId: "devbox",
+    threadId: "old",
+    cwd: "/source",
+    destinationCwd: "/prepared",
+  })
+  expect(opened).toBe("/prepared")
+  expect(mode).toBe("existing")
+  expect(h.events).not.toContain("remember")
+  await result.commit!()
+  expect(h.events.indexOf("remember")).toBeGreaterThan(
+    h.events.indexOf("archive-local"),
+  )
+})
+
+test("destination preference failure cannot roll back a committed handoff", async () => {
+  const h = harness()
+  const notices: string[] = []
+  h.options.rememberDestination = async () => {
+    throw new Error("disk full")
+  }
+  h.options.notice = (message) => {
+    notices.push(message)
+  }
+  const result = await nativeHandoff(h.options)({
+    sourceId: "local",
+    targetId: "devbox",
+    threadId: "old",
+    cwd: "/source",
+    destinationCwd: "/prepared",
+  })
+  await result.commit!()
+  await result.rollback!()
+  expect(notices.join(" ")).toContain("preference could not be saved")
+  expect(h.events).not.toContain("cleanup")
+})

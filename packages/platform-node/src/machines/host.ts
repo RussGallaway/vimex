@@ -18,12 +18,27 @@ r=json.load(sys.stdin)
 try:
  a=r['action']; p=r.get('path','')
  if a=='exec':
-  e=os.environ.copy();e.update(r.get('env',{}));v=subprocess.run(r['argv'],cwd=r.get('cwd'),env=e,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=110)
+  e=os.environ.copy();e.update(r.get('env',{}));v=subprocess.run(r['argv'],cwd=r.get('cwd'),env=e,input=base64.b64decode(r['stdin']) if 'stdin' in r else None,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=110)
   out={'code':v.returncode,'stdout':base64.b64encode(v.stdout).decode(),'stderr':base64.b64encode(v.stderr).decode()}
  elif a=='resolve':
   p=os.path.abspath(os.path.expanduser(p or '~'))
   if not os.path.isdir(p): raise Exception('Working directory does not exist: '+p)
   out={'path':os.path.realpath(p)}
+ elif a=='lock':
+  os.mkdir(p,448);out={}
+ elif a=='unlock':
+  os.rmdir(p);out={}
+ elif a=='transferPaths':
+  root=os.path.realpath(r['cwd']);tracked=set(r['tracked'])
+  for rel in r['paths']:
+   if os.path.isabs(rel) or any(v in ('..','.git') for v in rel.split('/')):raise Exception('Invalid transfer path')
+   parts=rel.split('/');full=os.path.join(root,*parts)
+   for i in range(1,len(parts)):
+    ancestor=os.path.join(root,*parts[:i])
+    if os.path.islink(ancestor):raise Exception('Transfer path has a symlink ancestor: '+rel)
+    if os.path.lexists(ancestor) and not os.path.isdir(ancestor):raise Exception('Transfer path collides with a file: '+rel)
+   if os.path.lexists(full) and rel not in tracked:raise Exception('Transfer would overwrite an existing untracked or ignored path: '+rel)
+  out={}
  elif a=='read':
   if os.path.islink(p) or not os.path.isfile(p): raise Exception('Expected regular file: '+p)
   if os.path.getsize(p)>67108864: raise Exception('File exceeds 64 MiB transfer limit: '+p)

@@ -68,12 +68,14 @@ function harness(
   open?: MachineNavigation["open"],
   handoff?: MachineNavigation["handoff"],
   management: Partial<MachineNavigation> = {},
+  power?: import("./power-control").PowerControl,
 ) {
   const local = runtime("local"),
     remote = runtime("devbox")
   const saved: string[] = []
   const controller = new VimexController({
     ...local.value,
+    power,
     resolveDirectory: (_base, path) => path,
     clipboard: { writeText: async () => {} },
     openUrl: async () => {},
@@ -737,4 +739,228 @@ test("a machine command during connection reports completion instead of hanging 
   gate.resolve(h.remote.value)
   await h.controller.settle()
   await h.controller.close()
+})
+
+test("handoff picker discovers destinations and passes selected directory to transfer", async () => {
+  const remote = runtime("devbox")
+  let destination: string | undefined
+  const h = harness(
+    undefined,
+    async (input) => {
+      destination = input.destinationCwd
+      return { ...remote.value, threadId: "continued" }
+    },
+    {
+      listHandoffDestinations: async () => ({
+        directory: "/ready",
+        entries: [{ cwd: "/ready", label: "ready", kind: "worktree" }],
+        preferredCwd: "/ready",
+      }),
+    },
+  )
+  await h.controller.initialize("/local", undefined, "same")
+  h.controller.executeCommand("handoff devbox")
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().workspaces.same?.interaction.overlay).toBe(
+    "handoff",
+  )
+  expect(h.controller.getSnapshot().handoffPicker?.listing?.preferredCwd).toBe(
+    "/ready",
+  )
+  expect(destination).toBeUndefined()
+  h.controller.chooseHandoffDestination("/ready")
+  await h.controller.settle()
+  expect(destination).toBe("/ready")
+  expect(h.controller.getSnapshot().machine?.id).toBe("devbox")
+  expect(h.controller.getSnapshot().handoffPicker).toBeUndefined()
+  await h.controller.close()
+})
+
+test("handoff directory browse ignores older and dismissed requests", async () => {
+  const old =
+    Promise.withResolvers<import("./machines").HandoffDestinationListing>()
+  const h = harness(undefined, undefined, {
+    listHandoffDestinations: async (input) =>
+      input.directory === "/new"
+        ? { directory: "/new", entries: [] }
+        : old.promise,
+  })
+  await h.controller.initialize("/local", undefined, "same")
+  h.controller.executeCommand("handoff devbox")
+  h.controller.browseHandoffDestination("/new")
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(h.controller.getSnapshot().handoffPicker?.listing?.directory).toBe(
+    "/new",
+  )
+  h.controller.dispatchInteraction({ type: "overlay.close" })
+  old.resolve({ directory: "/old", entries: [] })
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().handoffPicker?.listing?.directory).toBe(
+    "/new",
+  )
+  expect(
+    h.controller.getSnapshot().workspaces.same?.interaction.overlay,
+  ).toBeNull()
+  await h.controller.close()
+})
+
+test("explicit handoff directory and isolated options bypass picker", async () => {
+  for (const [argument, expected] of [
+    ["devbox --cwd '/ready worktree'", "/ready worktree"],
+    ["devbox --isolated", undefined],
+  ] as const) {
+    const remote = runtime("devbox")
+    let actual: string | undefined = "not called"
+    const h = harness(
+      undefined,
+      async (input) => {
+        actual = input.destinationCwd
+        return { ...remote.value, threadId: "continued" }
+      },
+      {
+        listHandoffDestinations: async () => {
+          throw new Error("Unexpected picker")
+        },
+      },
+    )
+    await h.controller.initialize("/local", undefined, "same")
+    h.controller.executeCommand(`handoff ${argument}`)
+    await h.controller.settle()
+    if (expected === undefined) expect(actual).toBeUndefined()
+    else expect(actual).toBe(expected)
+    expect(h.controller.getSnapshot().machine?.id).toBe("devbox")
+    await h.controller.close()
+  }
+})
+
+test("destination favorite errors stay visible and preserve choices", async () => {
+  const h = harness(undefined, undefined, {
+    listHandoffDestinations: async () => ({
+      directory: "/ready",
+      entries: [{ cwd: "/ready", label: "ready", kind: "worktree" }],
+    }),
+    setHandoffDestinationFavorite: async () => {
+      throw new Error("disk full")
+    },
+  })
+  await h.controller.initialize("/local", undefined, "same")
+  h.controller.executeCommand("handoff devbox")
+  await h.controller.settle()
+  h.controller.favoriteHandoffDestination("/ready")
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().handoffPicker?.error).toContain("disk full")
+  expect(
+    h.controller.getSnapshot().handoffPicker?.listing?.entries,
+  ).toHaveLength(1)
+  expect(h.controller.getSnapshot().handoffPicker?.loading).toBe(false)
+  await h.controller.close()
+})
+
+test("handoff preflight failures remain visible inside the destination picker", async () => {
+  const h = harness(
+    undefined,
+    async () => {
+      throw new Error("must not transfer")
+    },
+    {
+      listHandoffDestinations: async () => ({
+        directory: "/ready",
+        entries: [],
+      }),
+    },
+  )
+  await h.controller.initialize("/local", undefined, "same")
+  h.controller.executeCommand("handoff devbox")
+  await h.controller.settle()
+  h.local.emit({
+    type: "conversation",
+    event: {
+      type: "turn.started",
+      threadId: threadId("same"),
+      turnId: turnId("busy"),
+      startedAt: 1,
+    },
+  })
+  await h.controller.settle()
+  h.controller.chooseHandoffDestination("/ready")
+  expect(h.controller.getSnapshot().handoffPicker?.error).toContain(
+    "active turn",
+  )
+  await h.controller.close()
+})
+
+test("automatic wakefulness follows local turns, toggles, remote switching, and shutdown", async () => {
+  let snapshot = { enabled: true, supported: true, active: false }
+  const listeners = new Set<() => void>()
+  const requirements: boolean[] = []
+  let disposed = false
+  const power: import("./power-control").PowerControl = {
+    getSnapshot: () => snapshot,
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+    setRequired(value) {
+      requirements.push(value)
+      const active = value && snapshot.enabled
+      if (active === snapshot.active) return
+      snapshot = { ...snapshot, active }
+      for (const listener of listeners) listener()
+    },
+    async setEnabled(enabled) {
+      snapshot = { ...snapshot, enabled }
+      for (const listener of listeners) listener()
+    },
+    dispose() {
+      disposed = true
+    },
+  }
+  const h = harness(undefined, undefined, {}, power)
+  await h.controller.initialize("/local", undefined, "same")
+  h.local.emit({
+    type: "conversation",
+    event: {
+      type: "turn.started",
+      threadId: threadId("same"),
+      turnId: turnId("busy"),
+      startedAt: 1,
+    },
+  })
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().power?.active).toBe(true)
+  h.controller.executeCommand("caffeinate off")
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().power?.enabled).toBe(false)
+  expect(h.controller.getSnapshot().power?.active).toBe(false)
+  h.controller.executeCommand("caffeinate")
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().power?.active).toBe(true)
+  h.local.emit({
+    type: "conversation",
+    event: {
+      type: "turn.completed",
+      threadId: threadId("same"),
+      turnId: turnId("busy"),
+      outcome: "complete",
+    },
+  })
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().power?.active).toBe(false)
+  h.controller.executeCommand("machine devbox")
+  await h.controller.settle()
+  h.remote.emit({
+    type: "conversation",
+    event: {
+      type: "turn.started",
+      threadId: threadId("same"),
+      turnId: turnId("remote"),
+      startedAt: 2,
+    },
+  })
+  await h.controller.settle()
+  expect(requirements.at(-1)).toBe(false)
+  await h.controller.close()
+  expect(disposed).toBe(true)
 })

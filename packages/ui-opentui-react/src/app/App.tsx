@@ -1823,6 +1823,7 @@ export function VimexApp({
         !interactive ||
         !interaction.overlay ||
         interaction.overlay === "machines" ||
+        interaction.overlay === "handoff" ||
         telescopeModal.active
           ? []
           : [
@@ -2155,6 +2156,7 @@ export function VimexApp({
       statusline={
         <Statusline
           mode={interaction.mode}
+          power={state.power}
           machine={state.machine?.label ?? state.machine?.id}
           connection={state.machineChanging ? "switching" : state.connection}
           summary={statusSummary}
@@ -2307,6 +2309,10 @@ export function VimexApp({
                 controller.executeNamedCommand(command, presentationId)
               }
               onMachineClose={closeOverlay}
+              handoffPicker={state.handoffPicker}
+              onHandoffBrowse={controller.browseHandoffDestination}
+              onHandoffChoose={controller.chooseHandoffDestination}
+              onHandoffFavorite={controller.favoriteHandoffDestination}
               processes={state.backgroundTerminals}
               hideFinishedAgents={
                 hideFinishedAgents && !state.agentPickerTargets

@@ -24,6 +24,7 @@ export interface VimexConfig {
   keybindings: Record<string, string>
   codexExecutable: string
   localTransport: "auto" | "daemon" | "stdio"
+  caffeinate: boolean
   favoriteMachines: string[]
   machines: Record<string, MachineConfig>
 }
@@ -42,6 +43,7 @@ export const defaultConfig: VimexConfig = {
   localTransport: "auto",
   machines: {},
   favoriteMachines: [],
+  caffeinate: true,
 }
 export function parseConfig(value: unknown): VimexConfig {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -55,6 +57,8 @@ export function parseConfig(value: unknown): VimexConfig {
   if (!themeNames.includes(result.theme)) throw new Error("Unknown theme")
   if (!["theme", ...themeNames].includes(result.syntaxTheme))
     throw new Error("Unknown syntax theme")
+  if (typeof result.caffeinate !== "boolean")
+    throw new Error("caffeinate must be a boolean")
   if (typeof result.reducedColor !== "boolean")
     throw new Error("reducedColor must be a boolean")
   if (!["newline", "submit"].includes(result.insertEnter))

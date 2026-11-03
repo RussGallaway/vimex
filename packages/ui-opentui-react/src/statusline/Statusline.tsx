@@ -19,6 +19,7 @@ function contextLabel(summary: ThreadSummary | undefined): string {
 }
 
 export function Statusline(props: {
+  power?: import("@vimex/workbench").PowerSnapshot
   machine?: string
   connection?: string
   mode: VimMode
@@ -33,6 +34,9 @@ export function Statusline(props: {
   const cwd = props.summary?.cwd ?? "No thread"
   const branch = props.summary?.gitBranch
   const metadata = [
+    props.power
+      ? `awake:${!props.power.supported ? "n/a" : props.power.error ? "error" : !props.power.enabled ? "off" : props.power.active ? "on" : "auto"}`
+      : undefined,
     props.connection && props.connection !== "connected"
       ? props.connection
       : undefined,

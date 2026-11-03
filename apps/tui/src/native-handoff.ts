@@ -13,6 +13,12 @@ export interface NativeHandoffOptions {
   target(id: string): MachineTarget
   prepare(request: LegacyHandoffRequest): Promise<PreparedLegacyHandoff>
   notice(message: string): void
+  rememberDestination?(input: {
+    sourceId: string
+    targetId: string
+    cwd: string
+    destinationCwd: string
+  }): Promise<void>
 }
 function requireIdle(status: { type: string }) {
   if (status.type !== "idle" && status.type !== "notLoaded")
@@ -61,7 +67,10 @@ export function nativeHandoff(
       cleaned = true
     }
     try {
-      destination = await options.navigation.open(input.targetId)
+      destination = await options.navigation.open(
+        input.targetId,
+        input.destinationCwd,
+      )
       await destination.connection.connect()
       const targetGateway = options.gateways.get(input.targetId)!
       if (
@@ -78,6 +87,8 @@ export function nativeHandoff(
           sshHost: destinationTarget.sshHost,
           cwd: destination.cwd,
         },
+        destinationMode:
+          input.destinationCwd === undefined ? "isolated" : "existing",
         threadId: input.threadId,
         rolloutPath: info.rolloutPath,
       })
@@ -120,6 +131,19 @@ export function nativeHandoff(
                 `Session moved; temporary handoff files need cleanup: ${String(error)}`,
               ),
             )
+          if (input.destinationCwd !== undefined)
+            await options
+              .rememberDestination?.({
+                sourceId: input.sourceId,
+                targetId: input.targetId,
+                cwd: info.cwd,
+                destinationCwd: destination!.cwd,
+              })
+              .catch((error) =>
+                options.notice(
+                  `Session moved; destination preference could not be saved: ${String(error)}`,
+                ),
+              )
         },
         rollback: cleanup,
       }

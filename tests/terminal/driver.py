@@ -20,7 +20,7 @@ temporary = tempfile.TemporaryDirectory(prefix="vimex-terminal-")
 trace = os.path.join(temporary.name, "trace.jsonl")
 config = os.path.join(temporary.name, "config.json")
 with open(config, "w") as file:
-    json.dump({"codexExecutable": os.path.join(root, "tests/terminal/fixtures/app-server.ts")}, file)
+    json.dump({"caffeinate": False, "codexExecutable": os.path.join(root, "tests/terminal/fixtures/app-server.ts")}, file)
 arguments = ["--demo"] if scenario in ("demo", "signal", "picker", "grep") else ["--config", config, "--cwd", temporary.name]
 master, slave = pty.openpty()
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 28, 100, 0, 0))

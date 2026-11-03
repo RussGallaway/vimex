@@ -189,6 +189,7 @@ export function MachinesOverlay(props: {
               "a",
               "r",
               "d",
+              "h",
               "i",
               "/",
             ].map((key) => ({ key, cmd: () => {} }))
@@ -235,6 +236,16 @@ export function MachinesOverlay(props: {
                       },
                       { key: "r", cmd: rename },
                       { key: "d", cmd: remove },
+                      {
+                        key: "h",
+                        cmd: () => {
+                          if (!selected) return
+                          // Validation may reject before opening the destination
+                          // picker; close this modal so its notice stays visible.
+                          props.onClose()
+                          props.onCommand(`handoff ${selected.id}`)
+                        },
+                      },
                     ]
                   : []),
               ]),
@@ -352,7 +363,7 @@ export function MachinesOverlay(props: {
           </text>
           {!form ? (
             <text fg={emberTide.textMuted}>
-              j/k move · i search · a add · d remove · Esc close
+              j/k move · i search · a add · d remove · h handoff · Esc close
             </text>
           ) : null}
         </>

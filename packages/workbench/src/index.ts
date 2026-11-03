@@ -17,7 +17,12 @@ export * from "./application/workbench-observation"
 export * from "./application/workbench-publications"
 
 export type {
+  HandoffDestination,
+  HandoffDestinationListing,
+  HandoffDestinationQuery,
   MachineInfo,
   MachineRuntime,
   MachineNavigation,
 } from "./application/machines"
+
+export type { PowerControl, PowerSnapshot } from "./application/power-control"

@@ -42,6 +42,9 @@ export const defaultVimexUiSettings: VimexUiSettings = {
 }
 
 export const inertController: VimexUiController = {
+  browseHandoffDestination() {},
+  chooseHandoffDestination() {},
+  favoriteHandoffDestination() {},
   async searchMentions() {
     return []
   },

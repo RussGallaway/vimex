@@ -41,3 +41,37 @@ test("statusline shows authoritative goal state and explicit budget usage", asyn
     await act(async () => setup.renderer.destroy())
   }
 })
+
+test("statusline distinguishes active automatic sleep prevention from disabled and failed", async () => {
+  for (const [power, label] of [
+    [{ supported: true, enabled: true, active: true }, "awake:on"],
+    [{ supported: true, enabled: true, active: false }, "awake:auto"],
+    [{ supported: true, enabled: false, active: false }, "awake:off"],
+    [
+      { supported: true, enabled: true, active: false, error: "failed" },
+      "awake:error",
+    ],
+  ] as const) {
+    const setup = await testRender(
+      <Statusline
+        mode="normal"
+        power={power}
+        pendingKeys=""
+        unseenEntries={0}
+        pendingApprovals={0}
+        pendingQuestions={0}
+        activeTurn={false}
+      />,
+      { width: 80, height: 4 },
+    )
+    try {
+      await act(async () => {
+        await setup.flush()
+        await setup.renderOnce()
+      })
+      expect(setup.captureCharFrame()).toContain(label)
+    } finally {
+      await act(async () => setup.renderer.destroy())
+    }
+  }
+})

@@ -4,9 +4,16 @@ export * from "./urls/url-opener"
 export { createDistributionCommands } from "./distribution/distribution-commands"
 export type { DistributionCommandOptions } from "./distribution/distribution-commands"
 
-export { resolveMachineDirectory } from "./machines/host"
+export {
+  resolveMachineDirectory,
+  hostOperation,
+  runHostCommand,
+} from "./machines/host"
+export type { MachineHost } from "./machines/host"
 export { prepareLegacyHandoff } from "./machines/legacy-handoff"
 export type {
   LegacyHandoffRequest,
   PreparedLegacyHandoff,
 } from "./machines/legacy-handoff"
+
+export { createCaffeinate } from "./power/caffeinate"

@@ -95,8 +95,28 @@ Navigation, selection, composing, and optimistic submission rendering stay local
 
 Local UI state remains in `views.json`; remote machine state uses `views-NAME.json` in the same state directory. Machine aliases are separate namespaces, even if two aliases point to the same server.
 
-`:handoff devbox` moves supported native session history and Git work into an isolated destination worktree while preserving the local Vimex view. It requires an idle session with no outstanding approvals. Paginated histories and unsupported external history dependencies are rejected before transfer. This follows the current native desktop limitation; Vimex does not replace a session with a generated summary. Existing background programs and external services do not move with the conversation.
+`:handoff devbox` or `/handoff devbox` opens a destination picker while preserving the local Vimex view. The machine manager's `h` shortcut opens handoff for its selected machine. Choose a prepared worktree, browse directories, or create an isolated worktree. Favorites and the last successfully used destination are remembered per machine and repository origin. `Enter` chooses a worktree or browses a directory, `p` edits a path, Tab completes from remote directories, `u` uses the current directory, Ctrl+F toggles a favorite, `b` opens the parent, `w` returns to worktrees, and `n` creates an isolated worktree.
+
+Explicit command equivalents work through both slash and command mode:
+
+```vim
+/handoff devbox --cwd ~/worktrees/app-travel
+:handoff local --cwd "/Users/me/Prepared Worktrees/app"
+/handoff devbox --isolated
+```
+
+Select an existing **worktree root**. Handoff restores the source session's relative subdirectory beneath it. The destination must have no staged, unstaged, or nonignored untracked files; ignored dependencies and local configuration can remain unless they collide with incoming files. Vimex imports the exact source commit, including unpushed commits, switches to the source branch when possible, and accepts only a fast-forward of an existing branch. It refuses divergence, branches already checked out elsewhere, sparse checkouts, and hidden index changes. A detached source remains detached. Handoff does not run `pull`, merge unrelated work, install dependencies, or start services.
+
+Existing source files are left intact. If you hand off uncommitted changes, the original checkout remains dirty and cannot receive a return handoff until you reconcile those changes. Commit before leaving for a clean prepared-workspace round trip, or choose a fresh isolated destination. Do not edit a destination while its transfer is in progress. Vimex detects destination changes before rollback and retains uncertain state for recovery instead of discarding it.
+
+Handoff transfers supported native history and Git state. It requires an idle session with no outstanding approvals. Paginated histories and unsupported external history dependencies are rejected before transfer. This follows the current native desktop limitation; Vimex does not replace a session with a generated summary. Existing background programs and external services do not move with the conversation.
 
 Handoff currently requires the same identifiable ChatGPT account/workspace on both hosts and matching Git origin URLs. API-key identity cannot be verified by this path. Remove structured file, skill, or plugin references from an unsent draft before handoff and reselect them on the destination; source-host paths are not silently reused. It also rejects active Git clean/smudge filters, submodules, merge conflicts, dependent/subagent histories, local image history, and oversized artifacts. These checks protect fidelity; the original session remains on its host when preflight fails. Do not concurrently drive the same source session from another client during handoff: Codex does not expose an exclusive cross-client migration lock. Independent sessions can run concurrently, preferably in separate worktrees.
 
-Successful handoff archives the old backend thread after validating the imported destination; it does not delete it. The destination is a detached worktree. Keep that worktree while using the session, and create a named branch there when you want to publish its commits.
+Successful handoff archives the old backend thread after validating the imported destination; it does not delete it. A newly created isolated destination is a detached worktree; keep it while using the session and create a named branch there when publishing commits. Existing destinations retain their machine-specific ignored environment and dependencies, which may need updating when source manifests change.
+
+## Automatic sleep prevention
+
+On macOS, Vimex defaults to preventing idle system sleep while its connected local runtime has an active agent turn or a pending submission. The display may still sleep. The status line shows `awake:on` while the assertion is active, `awake:auto` while enabled but idle, or `awake:off` when disabled. Errors are reported rather than showing an active assertion.
+
+Use `/caffeinate` or `:caffeinate` to toggle; `on`, `off`, and `toggle` are also accepted. The `caffeinate` boolean configuration setting persists your preference. Finishing local work releases the assertion automatically. Disconnecting, switching to another machine, and closing Vimex also release it; remote work does not keep the laptop awake. Detached local daemon work is not monitored after switching away. Other operating systems do not launch the macOS utility.

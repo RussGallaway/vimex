@@ -12,6 +12,7 @@ export interface LegacyHandoffRequest {
   destination: MachineHost
   threadId: string
   rolloutPath: string
+  destinationMode?: "isolated" | "existing"
 }
 export interface PreparedLegacyHandoff {
   cwd: string
@@ -19,7 +20,7 @@ export interface PreparedLegacyHandoff {
   verifySourceUnchanged(): Promise<void>
   /** Call only after destination resume and UI ownership switch succeeded. */
   finalize(): Promise<void>
-  /** Removes only this operation's isolated destination worktree and staging. */
+  /** Rolls back only this operation; existing destination work is never force-cleaned. */
   cleanup(): Promise<void>
 }
 interface Snapshot {
@@ -206,11 +207,14 @@ async function snapshot(
  * Mirrors Codex Desktop's legacy rollout-path fork route with a fresh worktree.
  * Caller owns stopping submissions, checking live source idle state and matching
  * accounts, and forking the copied native checkpoint through the destination API.
- * No source Git branch/index or existing destination checkout is changed.
+ * Source Git state is never changed. Isolated mode leaves existing checkouts alone;
+ * explicit existing mode stages first and updates only a clean selected checkout.
  */
 export async function prepareLegacyHandoff(
   request: LegacyHandoffRequest,
 ): Promise<PreparedLegacyHandoff> {
+  if (request.destinationMode === "existing")
+    return prepareExistingHandoff(request)
   if (!request.threadId || !posix.isAbsolute(request.rolloutPath))
     throw new Error("A native session checkpoint is required")
   const sourceRoot: MachineHost = {
@@ -383,6 +387,429 @@ export async function prepareLegacyHandoff(
       throw new AggregateError(
         [error, cleanupError],
         "Handoff failed; temporary worktree cleanup also failed",
+      )
+    }
+    throw error
+  }
+}
+
+const paths = (buffer: Buffer) =>
+  buffer.toString("utf8").split("\0").filter(Boolean)
+async function branch(host: MachineHost): Promise<string | undefined> {
+  const result = await hostOperation(host, {
+    action: "exec",
+    cwd: host.cwd,
+    argv: ["git", "symbolic-ref", "--quiet", "--short", "HEAD"],
+  })
+  if (result.code === 1) return undefined
+  if (result.code !== 0) throw new Error("Could not inspect checkout branch")
+  return Buffer.from(result.stdout, "base64").toString("utf8").trim()
+}
+
+/** Stage and verify first, then update only a clean explicitly selected checkout. */
+async function prepareExistingHandoff(
+  request: LegacyHandoffRequest,
+): Promise<PreparedLegacyHandoff> {
+  const destination = {
+    ...request.destination,
+    cwd: (
+      await hostOperation(request.destination, {
+        action: "resolve",
+        path: request.destination.cwd,
+      })
+    ).path as string,
+  }
+  const root = text(await git(destination, ["rev-parse", "--show-toplevel"]))
+  if (root !== destination.cwd)
+    throw new Error("Select the destination worktree root, not a subdirectory")
+  const sourceRoot = text(
+    await git(request.source, ["rev-parse", "--show-toplevel"]),
+  )
+  if (request.source.sshHost === destination.sshHost && sourceRoot === root)
+    throw new Error("Source and destination must be different worktrees")
+  const gitDir = text(
+    await git(destination, ["rev-parse", "--absolute-git-dir"]),
+  )
+  const lock = posix.join(gitDir, "vimex-handoff.lock")
+  await hostOperation(destination, { action: "lock", path: lock })
+  let locked = true
+  const unlock = async () => {
+    if (!locked) return
+    await hostOperation(destination, { action: "unlock", path: lock })
+    locked = false
+  }
+  let staged: PreparedLegacyHandoff | undefined
+  let mutated = false
+  let finished = false
+  let expected: string | undefined
+  let sourceBranch: string | undefined
+  let originalBranch: string | undefined
+  let originalHead = ""
+  let previousSourceHead: string | undefined
+  let desiredHead = ""
+  let branchTouched = false
+  let state: Snapshot | undefined
+  const applied: Array<{ path: string; index: boolean }> = []
+  const createdFiles: string[] = []
+  const fingerprint = async () => {
+    const snap = await snapshot(
+      { ...request, source: destination, rolloutPath: staged!.rolloutPath },
+      destination,
+    )
+    return `${(await branch(destination)) ?? "detached"}:${snap.fingerprint}`
+  }
+  const checkpoint = async () => {
+    expected = await fingerprint()
+  }
+  const verifyDestination = async () => {
+    if (expected !== (await fingerprint()))
+      throw new Error(
+        `Destination changed during handoff; retained ${destination.cwd} for recovery`,
+      )
+  }
+  const cleanStaging = async () => {
+    try {
+      await staged?.cleanup()
+    } finally {
+      await unlock()
+    }
+  }
+  const cleanup = async () => {
+    if (finished) return
+    try {
+      if (mutated) {
+        await verifyDestination()
+        if (
+          originalBranch &&
+          originalBranch !== sourceBranch &&
+          text(
+            await git(destination, [
+              "rev-parse",
+              `refs/heads/${originalBranch}`,
+            ]),
+          ) !== originalHead
+        )
+          throw new Error("Original destination branch changed during handoff")
+        for (const file of createdFiles) await remove(destination, file)
+        for (const patch of [...applied].reverse()) {
+          if (patch.index) await git(destination, ["update-index", "--refresh"])
+          await git(destination, [
+            "apply",
+            "--reverse",
+            "--binary",
+            ...(patch.index ? ["--index"] : []),
+            patch.path,
+          ])
+        }
+        // Non-forced checkout protects any unrelated files that appeared meanwhile.
+        await git(destination, [
+          "checkout",
+          "--no-overwrite-ignore",
+          "--detach",
+          originalHead,
+        ])
+        if (sourceBranch && branchTouched) {
+          const ref = `refs/heads/${sourceBranch}`
+          if (previousSourceHead)
+            await git(destination, [
+              "update-ref",
+              ref,
+              previousSourceHead,
+              desiredHead,
+            ])
+          else await git(destination, ["update-ref", "-d", ref, desiredHead])
+        }
+        if (originalBranch)
+          await git(destination, [
+            "checkout",
+            "--no-overwrite-ignore",
+            originalBranch,
+            "--",
+          ])
+        mutated = false
+      }
+      await cleanStaging()
+      finished = true
+    } catch (error) {
+      // Preserve both checkouts and checkpoint if concurrent edits prevent safe rollback.
+      await unlock()
+      throw new Error(
+        `Existing destination recovery needs attention at ${destination.cwd}; staging retained at ${staged?.cwd ?? "not created"}`,
+        { cause: error },
+      )
+    }
+  }
+  try {
+    if (
+      text(
+        await git(destination, [
+          "status",
+          "--porcelain",
+          "--untracked-files=all",
+        ]),
+      )
+    )
+      throw new Error(
+        "Existing destination must be clean, including untracked files; ignored dependencies and local configuration may remain",
+      )
+    const sparse = await hostOperation(destination, {
+      action: "exec",
+      cwd: destination.cwd,
+      argv: ["git", "config", "--bool", "core.sparseCheckout"],
+    })
+    if (Buffer.from(sparse.stdout, "base64").toString("utf8").trim() === "true")
+      throw new Error("Existing sparse checkouts are not supported for handoff")
+    const indexFlags = paths(await git(destination, ["ls-files", "-v", "-z"]))
+    if (indexFlags.some((entry) => /^[a-zS] /.test(entry)))
+      throw new Error(
+        "Clear assume-unchanged and skip-worktree flags before handoff",
+      )
+    if (text(await git(destination, ["submodule", "status", "--recursive"])))
+      throw new Error("Existing destinations with submodules are not supported")
+    originalHead = text(await git(destination, ["rev-parse", "HEAD"]))
+    originalBranch = await branch(destination)
+    sourceBranch = await branch(request.source)
+    const originalFiles = paths(await git(destination, ["ls-files", "-z"]))
+    for (let offset = 0; offset < originalFiles.length; offset += 128) {
+      const attrs = paths(
+        await git(destination, [
+          "check-attr",
+          "-z",
+          "filter",
+          "--",
+          ...originalFiles.slice(offset, offset + 128),
+        ]),
+      )
+      for (let index = 2; index < attrs.length; index += 3)
+        if (attrs[index] !== "unspecified" && attrs[index] !== "unset")
+          throw new Error(
+            "Existing destination uses active Git checkout filters",
+          )
+    }
+    const ignored = paths(
+      await git(destination, [
+        "ls-files",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "--directory",
+        "-z",
+      ]),
+    )
+    // The isolated path already verifies exact history, patches, filters and source stability.
+    staged = await prepareLegacyHandoff({
+      ...request,
+      destination,
+      destinationMode: "isolated",
+    })
+    const stagedRoot = text(
+      await git({ ...destination, cwd: staged.cwd }, [
+        "rev-parse",
+        "--show-toplevel",
+      ]),
+    )
+    const stagedHost = { ...destination, cwd: stagedRoot }
+    state = await snapshot(
+      { ...request, source: stagedHost, rolloutPath: staged.rolloutPath },
+      stagedHost,
+    )
+    desiredHead = state.head
+    // Ignored environment files stay local, but must remain ignored by the arriving tree.
+    // Otherwise verification could scan dependencies and the prepared checkout would no longer be clean.
+    for (let offset = 0; offset < ignored.length; offset += 128) {
+      const batch = ignored.slice(offset, offset + 128)
+      const checked = await hostOperation(stagedHost, {
+        action: "exec",
+        cwd: stagedHost.cwd,
+        argv: ["git", "check-ignore", "--no-index", "-z", "--stdin"],
+        stdin: Buffer.from(`${batch.join("\0")}\0`).toString("base64"),
+      })
+      if (checked.code !== 0 && checked.code !== 1)
+        throw new Error("Could not check preserved ignored files")
+      const stillIgnored = new Set(paths(Buffer.from(checked.stdout, "base64")))
+      for (const path of batch)
+        if (!stillIgnored.has(path))
+          throw new Error(
+            `Source ignore rules would expose destination environment path: ${path}`,
+          )
+    }
+    const incoming = new Set([
+      ...paths(
+        await git(stagedHost, ["ls-tree", "-r", "--name-only", "-z", "HEAD"]),
+      ),
+      ...paths(await git(stagedHost, ["ls-files", "-z"])),
+      ...state.untracked.map((file) => file.path),
+    ])
+    await hostOperation(destination, {
+      action: "transferPaths",
+      cwd: destination.cwd,
+      paths: [...incoming],
+      tracked: originalFiles,
+    })
+    if (sourceBranch) {
+      const ref = `refs/heads/${sourceBranch}`
+      const refs = paths(
+        await git(destination, [
+          "for-each-ref",
+          "--format=%(refname)%00%(objectname)%00",
+          ref,
+        ]),
+      )
+      // Resolve the exact ref rather than prefix-matching similarly named branches.
+      const match = refs.findIndex((value) => value.trim() === ref)
+      if (match >= 0) previousSourceHead = refs[match + 1]?.trim()
+      if (previousSourceHead) {
+        await git(destination, [
+          "merge-base",
+          "--is-ancestor",
+          previousSourceHead,
+          desiredHead,
+        ]).catch(() => {
+          throw new Error(
+            `Destination branch ${sourceBranch} has diverged or is ahead; resolve it before handoff`,
+          )
+        })
+      }
+      const worktrees = text(
+        await git(destination, ["worktree", "list", "--porcelain"]),
+      )
+      for (const entry of worktrees.split("\n\n")) {
+        const lines = entry.split("\n")
+        if (
+          lines.includes(`branch ${ref}`) &&
+          !lines.includes(`worktree ${destination.cwd}`)
+        )
+          throw new Error(
+            `Branch ${sourceBranch} is already checked out in another worktree`,
+          )
+      }
+    }
+    // Recheck after potentially slow staging, immediately before touching the checkout.
+    if (
+      text(
+        await git(destination, [
+          "status",
+          "--porcelain",
+          "--untracked-files=all",
+        ]),
+      ) ||
+      text(await git(destination, ["rev-parse", "HEAD"])) !== originalHead ||
+      (await branch(destination)) !== originalBranch
+    )
+      throw new Error("Destination changed while preparing handoff")
+    await staged.verifySourceUnchanged()
+    if ((await branch(request.source)) !== sourceBranch)
+      throw new Error("Source branch changed during handoff")
+    await checkpoint()
+    // Mark unknown before each mutation. An ambiguous command failure retains the checkout.
+    const mutate = async (operation: () => Promise<unknown>) => {
+      mutated = true
+      expected = undefined
+      await operation()
+      await checkpoint()
+    }
+    if (sourceBranch) {
+      if (previousSourceHead) {
+        await mutate(() =>
+          git(destination, [
+            "checkout",
+            "--no-overwrite-ignore",
+            sourceBranch!,
+            "--",
+          ]),
+        )
+        await mutate(async () => {
+          await git(destination, [
+            "merge",
+            "--ff-only",
+            "--no-overwrite-ignore",
+            desiredHead,
+          ])
+          branchTouched = true
+        })
+      } else
+        await mutate(async () => {
+          await git(destination, [
+            "checkout",
+            "--no-overwrite-ignore",
+            "-b",
+            sourceBranch!,
+            desiredHead,
+            "--",
+          ])
+          branchTouched = true
+        })
+    } else
+      await mutate(() =>
+        git(destination, [
+          "checkout",
+          "--no-overwrite-ignore",
+          "--detach",
+          desiredHead,
+        ]),
+      )
+    for (const [name, patch, index] of [
+      ["existing-index.patch", state.indexPatch, true],
+      ["existing-working.patch", state.worktreePatch, false],
+    ] as const) {
+      if (!patch.length) continue
+      const path = posix.join(posix.dirname(staged.rolloutPath), name)
+      await write(destination, path, patch.toString("base64"))
+      await mutate(async () => {
+        await git(destination, [
+          "apply",
+          "--binary",
+          ...(index ? ["--index"] : []),
+          path,
+        ])
+        applied.push({ path, index })
+      })
+    }
+    for (const file of state.untracked) {
+      const path = posix.join(destination.cwd, file.path)
+      await mutate(async () => {
+        await write(destination, path, file.data, file.mode)
+        createdFiles.push(path)
+      })
+    }
+    const restored = await snapshot(
+      { ...request, source: destination, rolloutPath: staged.rolloutPath },
+      destination,
+    )
+    if (restored.fingerprint !== state.fingerprint)
+      throw new Error(
+        "Existing destination did not match the source checkpoint",
+      )
+    const stagedCwd = (
+      await hostOperation(destination, { action: "resolve", path: staged.cwd })
+    ).path as string
+    const relativeCwd = posix.relative(stagedRoot, stagedCwd)
+    const cwd = posix.join(destination.cwd, relativeCwd)
+    await hostOperation(destination, { action: "resolve", path: cwd })
+    return {
+      cwd,
+      rolloutPath: staged.rolloutPath,
+      async verifySourceUnchanged() {
+        await staged!.verifySourceUnchanged()
+        if ((await branch(request.source)) !== sourceBranch)
+          throw new Error("Source branch changed during handoff")
+        await verifyDestination()
+      },
+      cleanup,
+      async finalize() {
+        if (finished) return
+        // Once source retirement commits, cleanup must never roll back active destination work.
+        finished = true
+        await cleanStaging()
+      },
+    }
+  } catch (error) {
+    try {
+      await cleanup()
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        `Handoff failed; existing checkout retained for recovery at ${destination.cwd}`,
       )
     }
     throw error

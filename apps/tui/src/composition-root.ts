@@ -1,3 +1,7 @@
+import {
+  createHandoffDestinations,
+  parseHandoffDestinationState,
+} from "./handoff-destinations"
 import { join, resolve } from "node:path"
 import { version } from "../../../package.json"
 import {
@@ -19,6 +23,7 @@ import {
   registerSyntaxParsers,
 } from "@vimex/ui-opentui-react"
 import {
+  createCaffeinate,
   JsonStore,
   stateDirectory,
   configDirectory,
@@ -303,7 +308,14 @@ export async function runApplication(options: CliOptions) {
     const externalActions = createHerdrExternalActions({
       fallbackOpenUrl: openUrl,
     })
+    const power = createCaffeinate({
+      platform: options.demo ? "demo" : undefined,
+      enabled: config.caffeinate,
+      saveEnabled: (caffeinate) => updateConfig({ caffeinate }),
+    })
+    lifecycle.add(() => power.dispose())
     const ports = {
+      power,
       localState,
       busySubmit: config.busySubmit,
       preferences: {
@@ -369,11 +381,24 @@ export async function runApplication(options: CliOptions) {
         return gateway
       },
     })
+    const handoffDestinationStore = new JsonStore(
+      join(stateDirectory(), "handoff-destinations.json"),
+      parseHandoffDestinationState,
+    )
+    const handoffDestinations = createHandoffDestinations({
+      target: machineManager.target,
+      directory: machineManager.directory,
+      store: handoffDestinationStore,
+    })
+    machineManager.navigation.listHandoffDestinations = handoffDestinations.list
+    machineManager.navigation.setHandoffDestinationFavorite =
+      handoffDestinations.setFavorite
     machineManager.navigation.handoff = nativeHandoff({
       navigation: machineManager.navigation,
       gateways,
       target: machineManager.target,
       prepare: prepareLegacyHandoff,
+      rememberDestination: handoffDestinations.remember,
       notice: (message) => controller.notice(message),
     })
     root = createRoot(renderer)

@@ -181,9 +181,11 @@ export function workbenchPresentationChanged(
   if (
     before.preferences !== after.preferences ||
     before.machine !== after.machine ||
+    before.power !== after.power ||
     before.machines !== after.machines ||
     before.machineChanging !== after.machineChanging ||
     before.machineManagement !== after.machineManagement ||
+    before.handoffPicker !== after.handoffPicker ||
     before.connection !== after.connection
   )
     return true

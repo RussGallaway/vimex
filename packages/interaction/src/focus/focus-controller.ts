@@ -2,6 +2,7 @@ export type Surface = "transcript" | "composer"
 export type Overlay =
   | "sessions"
   | "machines"
+  | "handoff"
   | "approvals"
   | "questions"
   | "fork"

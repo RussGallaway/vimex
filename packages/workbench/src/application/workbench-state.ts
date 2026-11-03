@@ -58,8 +58,18 @@ export interface PendingFork {
   preview: string
 }
 export interface WorkbenchState {
+  power?: import("./power-control").PowerSnapshot
   machine?: import("./machines").MachineInfo
   machines?: readonly import("./machines").MachineInfo[]
+  handoffPicker?: {
+    sourceId: string
+    targetId: string
+    threadId: string
+    cwd: string
+    loading: boolean
+    error?: string
+    listing?: import("./machines").HandoffDestinationListing
+  }
   machineChanging?: boolean
   machineManagement?: { pending: boolean; error?: string }
   backgroundTerminals: {

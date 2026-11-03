@@ -150,13 +150,17 @@ Submit timing starts when Workbench dispatches the action, after UI key processi
 
 ## MACHINES
 
-Space m (leader then m), :machine in command mode, or /machine in the composer opens the machine manager. Machine management and switching commands work with either : or /; both routes and the modal share saved settings. :machine NAME switches to that machine's sessions without transferring the current session. :handoff NAME moves supported idle native history and Git state into an isolated worktree on the destination while preserving the local view. Paginated histories and unsupported dependencies are refused; no summary substitutes for native history.
+Space m (leader then m), :machine in command mode, or /machine in the composer opens the machine manager. Machine management and switching commands work with either : or /; both routes and the modal share saved settings. :machine NAME switches to that machine's sessions without transferring the current session. :handoff NAME (or /handoff NAME) opens the destination picker for native history and Git state. Choose a prepared worktree, browse directories with p and Tab, favorite with Ctrl+F, or press n for a new isolated worktree. The machine manager h shortcut starts handoff. :handoff NAME --cwd PATH uses an explicit existing worktree root; --isolated creates a detached worktree. Both forms also work as slash commands. Existing destinations must be clean, including nonignored untracked files. Matching branches advance only by fast-forward; no pull or automatic merge is performed. Ignored dependencies/configuration remain unless they collide. Source files remain intact, so commit before leaving if returning to that same prepared checkout. Paginated histories and unsupported dependencies are refused; no summary substitutes for native history.
 
 Typing, navigation, scrolling, clipboard, and optimistic message rendering stay local. Daemon proxy reconnect rehydrates server state without replaying uncertain submissions. Closing Vimex detaches the proxy; it does not intentionally stop the daemon.
 
 The bottom status line shows the active machine name. The machine manager provides search, favorite-first rows, inline rename, add, and removal confirmation. Enter switches to the selected machine. Ctrl+F toggles its favorite; Ctrl+R renames it. Favorites persist across restarts, including local. :machine favorite ID also toggles a favorite. :machine add ID SSH-HOST saves an existing SSH connection. :machine rename ID LABEL changes its display label while preserving its ID and saved views. :machine remove ID forgets a connection; switch away first. Removal does not delete the VM or its sessions. The built-in local connection cannot be renamed or removed.
 
 Configure machines as name-to-settings objects with sshHost, optional label, optional cwd, and optional codexExecutable. localTransport is auto, daemon, or stdio. Auto uses daemon for the default codex executable and stdio for a custom executable. See docs/configuration.md for setup and transfer limits.
+
+## SLEEP PREVENTION
+
+On macOS, Vimex automatically prevents idle system sleep during connected local agent turns and pending submissions. Display sleep remains allowed. The awake status indicates active, automatic-idle, disabled, or failed sleep prevention. :caffeinate or /caffeinate toggles this preference; on, off, and toggle are accepted. Completion, disconnect, switching machines, and exit release the assertion. Remote work does not hold local sleep prevention; detached local work is not monitored after switching away. The caffeinate boolean configuration option defaults to true. Other operating systems do not run the macOS utility.
 
 ## FILES AND ENVIRONMENT
 

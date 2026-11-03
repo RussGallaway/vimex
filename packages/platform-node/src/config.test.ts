@@ -60,3 +60,9 @@ test("favorite machine config permits local and configured IDs only", () => {
   ])
     expect(() => parseConfig({ favoriteMachines })).toThrow("favoriteMachines")
 })
+
+test("automatic caffeinate defaults enabled and validates persisted toggles", () => {
+  expect(parseConfig({}).caffeinate).toBe(true)
+  expect(parseConfig({ caffeinate: false }).caffeinate).toBe(false)
+  expect(() => parseConfig({ caffeinate: "off" })).toThrow("boolean")
+})

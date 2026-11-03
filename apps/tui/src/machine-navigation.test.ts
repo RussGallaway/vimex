@@ -239,3 +239,11 @@ test("failed favorite saves preserve registry and later writes recover", async (
     "Unknown machine",
   )
 })
+
+test("explicit handoff directory overrides configured machine cwd", async () => {
+  const s = setup({
+    machines: { devbox: { sshHost: "devbox", cwd: "/missing" } },
+  })
+  await s.navigation.open("devbox", "/prepared/worktree")
+  expect(s.remote.at(-1)).toEqual({ host: "devbox", cwd: "/prepared/worktree" })
+})

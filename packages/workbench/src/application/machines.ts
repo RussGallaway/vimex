@@ -9,6 +9,26 @@ export interface MachineInfo {
   label?: string
   favorite?: boolean
 }
+export interface HandoffDestination {
+  cwd: string
+  label: string
+  kind: "worktree" | "directory"
+  branch?: string
+  dirty?: boolean
+  favorite?: boolean
+}
+export interface HandoffDestinationListing {
+  directory: string
+  parent?: string
+  entries: readonly HandoffDestination[]
+  preferredCwd?: string
+}
+export interface HandoffDestinationQuery {
+  sourceId: string
+  targetId: string
+  cwd: string
+  directory?: string
+}
 /** A prepared connection. Opening it must not destroy the source runtime. */
 export interface MachineRuntime {
   machine: MachineInfo
@@ -25,16 +45,26 @@ export interface MachineRuntime {
 export interface MachineNavigation {
   current: MachineInfo
   list(): readonly MachineInfo[]
-  open(id: string): Promise<MachineRuntime>
+  open(id: string, cwdOverride?: string): Promise<MachineRuntime>
   add?(input: { id: string; sshHost: string }): Promise<void>
   rename?(id: string, label: string): Promise<void>
   remove?(id: string): Promise<void>
   setFavorite?(id: string, value: boolean): Promise<void>
+  listHandoffDestinations?(
+    input: HandoffDestinationQuery,
+  ): Promise<HandoffDestinationListing>
+  setHandoffDestinationFavorite?(
+    input: HandoffDestinationQuery & {
+      destinationCwd: string
+      favorite: boolean
+    },
+  ): Promise<void>
   /** Must preserve native history or reject; a summary is not a handoff. */
   handoff?(input: {
     sourceId: string
     targetId: string
     threadId: string
     cwd: string
+    destinationCwd?: string
   }): Promise<MachineRuntime & { threadId: string }>
 }

@@ -1,3 +1,4 @@
+import { HandoffOverlay } from "../handoff/HandoffOverlay"
 import { MachinesOverlay } from "../machines/MachinesOverlay"
 import { usePaneGeometry } from "../side-chat/pane-geometry"
 import type { Approval } from "@vimex/approvals"
@@ -129,6 +130,10 @@ export function OverlayLayer(props: {
   machineManagement?: WorkbenchState["machineManagement"]
   onMachineCommand(command: string): void
   onMachineClose(): void
+  handoffPicker?: WorkbenchState["handoffPicker"]
+  onHandoffBrowse(directory?: string): void
+  onHandoffChoose(cwd?: string): void
+  onHandoffFavorite(cwd: string): void
   overlay: Overlay
   models?: readonly AvailableModel[]
   modelCatalogError?: string
@@ -181,6 +186,15 @@ export function OverlayLayer(props: {
           machines={props.machines ?? []}
           active={props.activeMachine}
           onCommand={props.onMachineCommand}
+          onClose={props.onMachineClose}
+        />
+      ) : props.overlay === "handoff" && props.handoffPicker ? (
+        <HandoffOverlay
+          key={props.handoffPicker.targetId}
+          picker={props.handoffPicker}
+          onBrowse={props.onHandoffBrowse}
+          onChoose={props.onHandoffChoose}
+          onFavorite={props.onHandoffFavorite}
           onClose={props.onMachineClose}
         />
       ) : props.overlay === "sessions" ? (

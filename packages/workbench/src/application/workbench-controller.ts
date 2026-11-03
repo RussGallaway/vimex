@@ -1,3 +1,5 @@
+import { needsLocalWakefulness, type PowerControl } from "./power-control"
+import { parseHandoffArgument } from "./handoff-command"
 import type { MachineNavigation, MachineRuntime } from "./machines"
 import { threadContext } from "./thread-context"
 import {
@@ -178,6 +180,7 @@ export interface ControllerPorts {
   exportPerformance?(): Promise<string>
   accountStatus?(): Promise<string>
   localState?: LocalState
+  power?: PowerControl
   preferences?: PreferenceStore
   busySubmit?: "queue" | "steer"
   conversationIngressScheduler?: ConversationIngressScheduler
@@ -527,6 +530,8 @@ export class VimexController
     string,
     { state: WorkbenchState; localState: LocalState }
   >()
+  private handoffBrowseRequest = 0
+  private unsubscribePower?: () => void
   private machineManagementPending = false
   private restartPending = false
   private restartBarrier?: Promise<void>
@@ -598,6 +603,19 @@ export class VimexController
       retiredSideThreadIds: (ports.localState?.retiredSideThreadIds ?? []).map(
         threadId,
       ),
+    }
+    if (ports.power) {
+      this.state = { ...this.state, power: ports.power.getSnapshot() }
+      this.unsubscribePower = ports.power.subscribe(() => {
+        const power = ports.power!.getSnapshot()
+        this.setState({
+          ...this.state,
+          power,
+          ...(power.error
+            ? { error: `Caffeinate unavailable: ${power.error}` }
+            : {}),
+        })
+      })
     }
     if (ports.preferences) {
       this.desiredPreferences = ports.preferences.initial
@@ -1056,6 +1074,8 @@ export class VimexController
     hint: TranscriptRuntimeHint = {},
   ): void {
     if (this.closing) return
+    const power = this.ports.power?.getSnapshot()
+    if (power && state.power !== power) state = { ...state, power }
     if (this.state === state) return
     const before = this.state
     this.state = state
@@ -1145,6 +1165,7 @@ export class VimexController
     before: WorkbenchState,
     changedThreadIds?: readonly ThreadId[],
   ): void {
+    this.ports.power?.setRequired(needsLocalWakefulness(this.state))
     try {
       this.ports.onState?.(this.state)
     } catch {
@@ -2709,7 +2730,192 @@ export class VimexController
     return true
   }
 
-  private changeMachine(targetId: string, handoff: boolean): void {
+  private openHandoffPicker(targetId: string): void {
+    const machines = this.ports.machines
+    if (!machines?.listHandoffDestinations) {
+      this.changeMachine(targetId, true)
+      return
+    }
+    const threadId = this.state.activeThreadId
+    const sourceId = this.state.machine?.id ?? "local"
+    if (!threadId || this.state.provisionalThreadIds.includes(threadId)) {
+      this.notice("Start a session before handing it off")
+      return
+    }
+    if (sourceId === targetId) {
+      this.notice("Choose another machine for handoff")
+      return
+    }
+    this.setState({
+      ...this.state,
+      handoffPicker: {
+        sourceId,
+        targetId,
+        threadId,
+        cwd: this.state.summaries[threadId]?.cwd ?? this.initialDirectory ?? "",
+        loading: true,
+      },
+    })
+    this.dispatchInteraction({ type: "overlay.open", overlay: "handoff" })
+    this.browseHandoffDestination()
+  }
+
+  private currentHandoffPicker(
+    picker: NonNullable<WorkbenchState["handoffPicker"]>,
+  ): boolean {
+    const id = this.state.activeThreadId
+    return (
+      !this.closing &&
+      !this.state.machineChanging &&
+      id === picker.threadId &&
+      (this.state.machine?.id ?? "local") === picker.sourceId &&
+      this.state.handoffPicker?.targetId === picker.targetId &&
+      this.state.workspaces[id!]?.interaction.overlay === "handoff"
+    )
+  }
+
+  browseHandoffDestination = (directory?: string): void => {
+    const picker = this.state.handoffPicker
+    const list = this.ports.machines?.listHandoffDestinations
+    if (!picker || !list || !this.currentHandoffPicker(picker)) return
+    const request = ++this.handoffBrowseRequest
+    const epoch = this.runtimeEpoch
+    this.setState({
+      ...this.state,
+      handoffPicker: { ...picker, loading: true, error: undefined },
+    })
+    this.launch(async () => {
+      try {
+        const listing = await list.call(this.ports.machines, {
+          sourceId: picker.sourceId,
+          targetId: picker.targetId,
+          cwd: picker.cwd,
+          directory,
+        })
+        if (
+          request !== this.handoffBrowseRequest ||
+          !this.currentRuntime(epoch) ||
+          !this.currentHandoffPicker(picker)
+        )
+          return
+        this.setState({
+          ...this.state,
+          handoffPicker: {
+            ...picker,
+            listing,
+            loading: false,
+            error: undefined,
+          },
+        })
+      } catch (error) {
+        if (
+          request !== this.handoffBrowseRequest ||
+          !this.currentRuntime(epoch) ||
+          !this.currentHandoffPicker(picker)
+        )
+          return
+        this.setState({
+          ...this.state,
+          handoffPicker: { ...picker, loading: false, error: String(error) },
+        })
+      }
+    })
+  }
+
+  chooseHandoffDestination = (cwd?: string): void => {
+    const picker = this.state.handoffPicker
+    if (!picker || !this.currentHandoffPicker(picker)) return
+    if (picker.loading) return
+    const sourceCwd =
+      this.state.summaries[this.state.activeThreadId!]?.cwd ??
+      this.initialDirectory ??
+      ""
+    if (sourceCwd !== picker.cwd) {
+      const error = "The source directory changed; reopen handoff"
+      this.setState({
+        ...this.state,
+        handoffPicker: { ...picker, loading: false, error },
+      })
+      this.notice(error)
+      return
+    }
+    this.changeMachine(picker.targetId, true, cwd)
+    if (this.currentHandoffPicker(picker) && this.state.error)
+      this.setState({
+        ...this.state,
+        handoffPicker: { ...picker, loading: false, error: this.state.error },
+      })
+  }
+
+  favoriteHandoffDestination = (destinationCwd: string): void => {
+    const picker = this.state.handoffPicker
+    const save = this.ports.machines?.setHandoffDestinationFavorite
+    if (
+      !picker ||
+      picker.loading ||
+      !save ||
+      !this.currentHandoffPicker(picker)
+    )
+      return
+    const favorite = !picker.listing?.entries.find(
+      (entry) => entry.cwd === destinationCwd,
+    )?.favorite
+    const request = ++this.handoffBrowseRequest
+    this.setState({
+      ...this.state,
+      handoffPicker: { ...picker, loading: true, error: undefined },
+    })
+    this.launch(async () => {
+      try {
+        await save.call(this.ports.machines, {
+          sourceId: picker.sourceId,
+          targetId: picker.targetId,
+          cwd: picker.cwd,
+          destinationCwd,
+          favorite,
+        })
+        if (
+          request !== this.handoffBrowseRequest ||
+          !this.currentHandoffPicker(picker)
+        )
+          return
+        this.setState({
+          ...this.state,
+          handoffPicker: {
+            ...picker,
+            loading: false,
+            error: undefined,
+            listing: picker.listing
+              ? {
+                  ...picker.listing,
+                  entries: picker.listing.entries.map((entry) =>
+                    entry.cwd === destinationCwd
+                      ? { ...entry, favorite }
+                      : entry,
+                  ),
+                }
+              : undefined,
+          },
+        })
+      } catch (error) {
+        if (
+          request !== this.handoffBrowseRequest ||
+          !this.currentHandoffPicker(picker)
+        )
+          return
+        this.setState({
+          ...this.state,
+          handoffPicker: { ...picker, loading: false, error: String(error) },
+        })
+      }
+    })
+  }
+
+  private changeMachine(
+    targetId: string,
+    handoff: boolean,
+    destinationCwd?: string,
+  ): void {
     const machines = this.ports.machines
     if (!machines) {
       this.notice("Machine connections are unavailable")
@@ -2795,6 +3001,7 @@ export class VimexController
           ? await machines.handoff!({
               sourceId: this.state.machine?.id ?? "local",
               targetId,
+              destinationCwd,
               threadId: sourceId!,
               cwd:
                 this.state.summaries[sourceId!]?.cwd ??
@@ -2904,6 +3111,7 @@ export class VimexController
           machine: result.machine,
           machines: machines.list(),
           machineChanging: false,
+          handoffPicker: undefined,
           preferences: source.preferences,
           connection: "connected",
           error: undefined,
@@ -3921,6 +4129,27 @@ export class VimexController
       return
     }
     switch (command) {
+      case "caffeinate": {
+        const power = this.ports.power
+        if (!power) {
+          this.notice("Caffeinate is unavailable in this runtime")
+          break
+        }
+        if (!["", "on", "off", "toggle"].includes(argument)) {
+          this.notice("Usage: :caffeinate [on|off|toggle]")
+          break
+        }
+        const enabled =
+          argument === "on"
+            ? true
+            : argument === "off"
+              ? false
+              : !power.getSnapshot().enabled
+        this.launch(async () => {
+          await power.setEnabled(enabled)
+        })
+        break
+      }
       case "machine":
         if (!this.ports.machines) {
           const error = "Machine connections are unavailable"
@@ -3938,7 +4167,18 @@ export class VimexController
           })
         break
       case "handoff":
-        this.changeMachine(argument, true)
+        try {
+          const selection = parseHandoffArgument(argument)
+          if (selection.isolated || selection.destinationCwd !== undefined)
+            this.changeMachine(
+              selection.targetId,
+              true,
+              selection.destinationCwd,
+            )
+          else this.openHandoffPicker(selection.targetId)
+        } catch (error) {
+          this.notice(String(error))
+        }
         break
       case "compact": {
         const id = this.state.activeThreadId
@@ -4598,6 +4838,8 @@ export class VimexController
   }
   private async runClose(): Promise<void> {
     this.closing = true
+    this.unsubscribePower?.()
+    this.ports.power?.dispose()
     this.pendingNavigationInput = undefined
     this.activeNavigationBurst = undefined
     this.pendingSubmitActivity.clear()
