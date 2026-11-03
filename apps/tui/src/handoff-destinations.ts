@@ -16,7 +16,7 @@ type Request = {
   cwd: string
   directory?: string
 }
-type Profile = { favorites: string[]; last?: string }
+type Profile = { favorites: string[]; last?: string; recent?: string[] }
 export type HandoffDestinationState = Record<string, Profile>
 export function parseHandoffDestinationState(
   value: unknown,
@@ -40,7 +40,11 @@ export function parseHandoffDestinationState(
       !Array.isArray(profile.favorites) ||
       profile.favorites.length > 100 ||
       !profile.favorites.every(validPath) ||
-      (profile.last !== undefined && !validPath(profile.last))
+      (profile.last !== undefined && !validPath(profile.last)) ||
+      (profile.recent !== undefined &&
+        (!Array.isArray(profile.recent) ||
+          profile.recent.length > 8 ||
+          !profile.recent.every(validPath)))
     )
       throw new Error("Invalid handoff destination paths")
   }
@@ -64,11 +68,12 @@ def info(path):
  if same:
   branch=git(path,'symbolic-ref','--quiet','--short','HEAD')
   if branch: v['branch']=branch
-  v['dirty']=bool(git(path,'status','--porcelain','--untracked-files=normal'))
+  status=git(path,'status','--porcelain','--untracked-files=normal')
+  if status is not None: v['dirty']=bool(status)
  return v
 paths=[]
-if r['browse']:
- paths=[base]
+def children_of(base):
+ paths=[]
  count=0
  with os.scandir(base) as children:
   for child in children:
@@ -78,6 +83,9 @@ if r['browse']:
     if child.is_dir(): paths.append(child.path)
    except OSError: pass
  if len(paths)>501: raise Exception('Directory has too many subdirectories; enter a more specific path')
+ return paths
+if r['browse']:
+ paths=[base]+children_of(base)
 else:
  paths=[base]+r['saved']
  for candidate in list(paths):
@@ -92,6 +100,13 @@ for path in paths:
  seen.add(path)
  v=info(path)
  if v and (r['browse'] or v['kind']=='worktree'): entries.append(v)
+if not r['browse'] and not entries:
+ for path in children_of(base):
+  path=os.path.realpath(path)
+  if path in seen: continue
+  seen.add(path)
+  v=info(path)
+  if v: entries.append(v)
 entries.sort(key=lambda v:(v['kind']!='worktree',v['label'].casefold(),v['cwd']))
 print(json.dumps({'directory':base,'parent':os.path.dirname(base) if base!='/' else None,'entries':entries}))`
 
@@ -201,6 +216,7 @@ export function createHandoffDestinations(options: {
               ctx.profile.last,
               configured,
               ...ctx.profile.favorites,
+              ...(ctx.profile.recent ?? []),
               "~",
             ].filter((path): path is string => path !== undefined),
           ),
@@ -226,11 +242,15 @@ export function createHandoffDestinations(options: {
         [
           ...ctx.profile.favorites,
           ...(ctx.profile.last ? [ctx.profile.last] : []),
+          ...(ctx.profile.recent ?? []),
         ],
         input.directory !== undefined,
       )
       const entries: HandoffDestination[] = result.entries.map((entry) => ({
         ...entry,
+        ...((ctx.profile.recent ?? [ctx.profile.last]).includes(entry.cwd)
+          ? { recent: true }
+          : {}),
         ...(ctx.profile.favorites.includes(entry.cwd)
           ? { favorite: true }
           : {}),
@@ -266,7 +286,17 @@ export function createHandoffDestinations(options: {
         const ctx = await canonicalExisting(input)
         const next = {
           ...(await load()),
-          [ctx.key]: { ...ctx.profile, last: ctx.path },
+          [ctx.key]: {
+            ...ctx.profile,
+            last: ctx.path,
+            recent: [
+              ctx.path,
+              ...(ctx.profile.recent ??
+                (ctx.profile.last ? [ctx.profile.last] : [])),
+            ]
+              .filter((path, index, all) => all.indexOf(path) === index)
+              .slice(0, 8),
+          },
         }
         parseHandoffDestinationState(next)
         await options.store.write(next)

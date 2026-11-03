@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile, rm, readFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { expect, test } from "bun:test"
 import { nativeHandoff, type NativeHandoffOptions } from "./native-handoff"
 
@@ -8,6 +11,7 @@ function harness() {
   const gateway = (host: string) => ({
     conversation: { listBackgroundTerminals: async () => [] },
     nativeHandoff: {
+      assertPortable: async () => {},
       inspect: async () => ({
         historyMode,
         status: { type: "idle" },
@@ -26,6 +30,11 @@ function harness() {
     },
   })
   const options = {
+    captureHistory: async () => ({
+      files: [],
+      threadId: "old",
+      verifySourceUnchanged: async () => {},
+    }),
     gateways: new Map([
       ["local", gateway("local")],
       ["devbox", gateway("devbox")],
@@ -95,8 +104,8 @@ test("native transfer does not retire source until destination validation commit
 })
 test("unsupported history and mismatched accounts never transfer files", async () => {
   const h = harness()
-  h.setHistory("paginated")
-  await expect(h.run()).rejects.toThrow("Paginated")
+  h.setHistory("future-format")
+  await expect(h.run()).rejects.toThrow("not supported")
   expect(h.events).toEqual([])
   h.setHistory("legacy")
   h.setAccount("different")
@@ -178,4 +187,99 @@ test("destination preference failure cannot roll back a committed handoff", asyn
   await result.rollback!()
   expect(notices.join(" ")).toContain("preference could not be saved")
   expect(h.events).not.toContain("cleanup")
+})
+
+test("paginated handoff imports native ancestry and verifies it before source retirement", async () => {
+  const root = await mkdtemp(join(tmpdir(), "vimex-native-paginated-"))
+  try {
+    const h = harness()
+    h.setHistory("paginated")
+    h.options.captureHistory = undefined
+    const path = join(root, "source.jsonl")
+    await writeFile(
+      path,
+      JSON.stringify({
+        type: "session_meta",
+        payload: { id: "old", history_mode: "paginated" },
+      }) +
+        "\n" +
+        JSON.stringify({
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: "exact history" }],
+          },
+        }) +
+        "\n",
+    )
+    h.options.target = (id) => ({
+      id,
+      cwd: root,
+      executable: "codex",
+      mode: "stdio",
+    })
+    const source = h.options.gateways.get("local")!.nativeHandoff
+    const target = h.options.gateways.get("devbox")!.nativeHandoff
+    source.inspect = async () =>
+      ({
+        threadId: "old",
+        historyMode: "paginated",
+        status: { type: "idle" },
+        cwd: root,
+        rolloutPath: path,
+      }) as never
+    for (const native of [source, target]) {
+      native.serverDetails = () => ({
+        version: "0.166.0",
+        codexHome: join(root, "home"),
+      })
+      native.historyDigest = async () => "1:exact"
+      native.assertPortable = async () => {}
+    }
+    target.locate = async () => undefined
+    target.archiveSource = async (id) => {
+      h.events.push(`archive-dependency-${id}`)
+    }
+    target.hydrateHistory = async (id) => {
+      h.events.push(`hydrate-${id}`)
+    }
+    const phases: string[] = []
+    const result = await nativeHandoff(h.options)({
+      sourceId: "local",
+      targetId: "devbox",
+      threadId: "old",
+      cwd: root,
+      onProgress: (phase) => phases.push(phase),
+    })
+    expect(h.events.indexOf("hydrate-old")).toBeLessThan(
+      h.events.indexOf("fork"),
+    )
+    expect(h.events).not.toContain("archive-local")
+    await result.commit!()
+    expect(h.events.indexOf("archive-dependency-old")).toBeGreaterThan(
+      h.events.indexOf("archive-local"),
+    )
+    expect(phases).toEqual(["checking", "preparing", "restoring", "switching"])
+    const retained = join(
+      root,
+      "home/sessions/2000/01/01/rollout-2000-01-01T00-00-00-old.jsonl",
+    )
+    expect(await readFile(retained, "utf8")).toContain("exact history")
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("uncertain fork result retains the prepared workspace instead of deleting a possibly live destination", async () => {
+  const h = harness()
+  h.options.gateways.get("devbox")!.nativeHandoff.forkFromPath = async () => {
+    throw new Error("connection lost after request")
+  }
+  await expect(h.run()).rejects.toThrow("connection lost")
+  expect(h.events).not.toContain("cleanup")
+  expect(h.events).not.toContain("archive-local")
+  expect(
+    h.events.some((event) => event.includes("fork could not be confirmed")),
+  ).toBe(true)
 })

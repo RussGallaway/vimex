@@ -198,3 +198,54 @@ test("destination preference loading retries after a transient read failure", as
     await f.close()
   }
 })
+
+test("unconfigured home discovers child repositories and ordinary folders", async () => {
+  const f = await fixture()
+  try {
+    await mkdir(join(f.dir, "projects"))
+    const listing = await f.create(f.dir).list(f.input)
+    expect(listing.entries.find((e) => e.cwd === f.repo)?.kind).toBe("worktree")
+    expect(
+      listing.entries.find((e) => e.cwd === join(f.dir, "projects"))?.kind,
+    ).toBe("directory")
+  } finally {
+    await f.close()
+  }
+})
+
+test("recent destinations retain multiple paths and malformed recent profiles fail", async () => {
+  const f = await fixture()
+  try {
+    const destinations = f.create()
+    await destinations.remember({ ...f.input, destinationCwd: f.repo })
+    await destinations.remember({ ...f.input, destinationCwd: f.worktree })
+    const listing = await f.create().list(f.input)
+    expect(
+      listing.entries
+        .filter((e) => e.recent)
+        .map((e) => e.cwd)
+        .sort(),
+    ).toEqual([f.repo, f.worktree].sort())
+    expect(listing.preferredCwd).toBe(f.worktree)
+    expect(() =>
+      parseHandoffDestinationState({
+        ["a".repeat(64)]: { favorites: [], recent: ["relative"] },
+      }),
+    ).toThrow()
+  } finally {
+    await f.close()
+  }
+})
+
+test("failed Git status is unknown rather than falsely clean", async () => {
+  const f = await fixture()
+  try {
+    await writeFile(join(f.repo, ".git", "index"), "invalid index")
+    const listing = await f.create().list(f.input)
+    const entry = listing.entries.find((e) => e.cwd === f.repo)
+    expect(entry?.kind).toBe("worktree")
+    expect(entry?.dirty).toBeUndefined()
+  } finally {
+    await f.close()
+  }
+})

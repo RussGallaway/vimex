@@ -2,7 +2,7 @@ import type { InputRenderable, ScrollBoxRenderable } from "@opentui/core"
 import { useBindings } from "@opentui/keymap/react"
 import { flushSync } from "@opentui/react"
 import { useEffect, useMemo, useRef, useState } from "react"
-import type { WorkbenchState } from "@vimex/workbench"
+import { directoryArgument, type WorkbenchState } from "@vimex/workbench"
 import { OverlayFrame } from "../app/OverlayFrame"
 import { usePaneGeometry } from "../side-chat/pane-geometry"
 import { emberTide } from "../theme"
@@ -10,12 +10,13 @@ import { emberTide } from "../theme"
 export function HandoffOverlay(props: {
   picker: NonNullable<WorkbenchState["handoffPicker"]>
   onBrowse(directory?: string): void
-  onChoose(cwd?: string): void
+  onChoose(cwd?: string, isolated?: boolean): void
   onFavorite(cwd: string): void
   onClose(): void
 }) {
   const { picker } = props
   const geometry = usePaneGeometry()
+  const busy = Boolean(picker.transferring)
   const [editing, setEditing] = useState<"filter" | "path">()
   const [query, setQuery] = useState("")
   const [path, setPath] = useState("")
@@ -23,6 +24,7 @@ export function HandoffOverlay(props: {
   const [feedback, setFeedback] = useState("")
   const inputRef = useRef<InputRenderable>(null)
   const listRef = useRef<ScrollBoxRenderable>(null)
+  const errorRef = useRef<ScrollBoxRenderable>(null)
   const initialized = useRef(false)
   const completion = useRef<
     | {
@@ -41,7 +43,9 @@ export function HandoffOverlay(props: {
         )
         .slice()
         .sort(
-          (a, b) => Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)),
+          (a, b) =>
+            Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)) ||
+            Number(Boolean(b.recent)) - Number(Boolean(a.recent)),
         ),
     [picker.listing, query],
   )
@@ -51,6 +55,35 @@ export function HandoffOverlay(props: {
       ? rows.find((row) => row.cwd === picker.listing?.preferredCwd)
       : undefined) ??
     rows[0]
+  const pathRows = Math.min(
+    2,
+    Math.max(
+      1,
+      Math.ceil(
+        (selected?.cwd.length ?? 0) /
+          Math.max(1, Math.min(82, geometry.width - 14)),
+      ),
+    ),
+  )
+  const ready = selected?.kind === "worktree" && selected.dirty === false
+  const readiness =
+    selected?.kind !== "worktree"
+      ? "Browse to a matching repository root"
+      : selected.dirty === true
+        ? "Modified — commit or stash before handoff"
+        : selected.dirty === undefined
+          ? "Status unavailable — refresh before handoff"
+          : "Ready — handoff will use this workspace"
+  const choose = () => {
+    if (editing === "path") {
+      setFeedback(
+        "Enter browses this path; Esc returns to workspace selection.",
+      )
+      return
+    }
+    if (!busy && !picker.loading && !picker.preflightError && ready && selected)
+      props.onChoose(selected.cwd)
+  }
   useEffect(() => {
     if (!picker.listing) return
     if (!initialized.current) {
@@ -87,10 +120,23 @@ export function HandoffOverlay(props: {
       }
       setFeedback("")
     } else {
+      const names = matches.map((row) => row.cwd.split("/").at(-1)!)
+      let common = names[0] ?? ""
+      for (const name of names.slice(1)) {
+        while (!name.startsWith(common)) common = common.slice(0, -1)
+      }
+      if (common.length > request.prefix.length) {
+        const value = `${picker.listing.directory.replace(/\/$/, "")}/${common}`
+        setPath(value)
+        if (inputRef.current) {
+          inputRef.current.value = value
+          inputRef.current.cursorOffset = value.length
+        }
+      }
       setQuery(request.prefix)
       setFeedback(
         matches.length
-          ? "Several matches; Esc then choose a directory."
+          ? "Several matches; Esc to browse matching folders."
           : "No matching directories.",
       )
     }
@@ -108,10 +154,12 @@ export function HandoffOverlay(props: {
     })
     focus()
   }
-  const resolveDirectory = (value: string) =>
-    value.startsWith("/") || value.startsWith("~")
+  const resolveDirectory = (input: string) => {
+    const value = directoryArgument(input)
+    return value.startsWith("/") || value.startsWith("~")
       ? value
       : `${picker.listing?.directory ?? "."}/${value}`
+  }
   const browse = (directory?: string) => {
     setQuery("")
     setFeedback("")
@@ -119,20 +167,24 @@ export function HandoffOverlay(props: {
     props.onBrowse(directory)
   }
   const activate = () => {
-    if (picker.loading || !selected) return
-    if (selected.kind === "worktree") props.onChoose(selected.cwd)
-    else browse(selected.cwd)
+    if (busy || picker.loading || picker.preflightError || !selected) return
+    browse(selected.cwd)
   }
   const submit = () => {
-    if (picker.loading) return
+    if (busy || picker.loading || picker.preflightError) return
     if (editing === "path") {
       const value = (inputRef.current?.value ?? path).trim()
       completion.current = undefined
-      if (value) browse(resolveDirectory(value))
+      if (value) {
+        const resolved = resolveDirectory(value)
+        setPath(resolved)
+        if (inputRef.current) inputRef.current.value = resolved
+        browse(resolved)
+      }
     } else activate()
   }
   const completePath = () => {
-    if (picker.loading) return
+    if (busy || picker.loading || picker.preflightError) return
     const value = resolveDirectory((inputRef.current?.value ?? path).trim())
     const slash = value.lastIndexOf("/")
     const parent = slash < 0 ? "." : value.slice(0, slash) || "/"
@@ -155,6 +207,11 @@ export function HandoffOverlay(props: {
         {
           key: "escape",
           cmd: () => {
+            if (busy) return
+            if (picker.preflightError) {
+              props.onClose()
+              return
+            }
             if (editing) {
               setEditing(undefined)
               completion.current = undefined
@@ -162,57 +219,122 @@ export function HandoffOverlay(props: {
             } else props.onClose()
           },
         },
-        ...["down", "ctrl+n"].map((key) => ({ key, cmd: () => move(1) })),
-        ...["up", "ctrl+p"].map((key) => ({ key, cmd: () => move(-1) })),
-        ...(editing
+        { key: "ctrl+return", cmd: choose },
+        ...(busy
           ? [
-              {
-                key: "tab",
-                cmd: () => (editing === "path" ? completePath() : undefined),
-              },
-              { key: "ctrl+f", cmd: () => {} },
-            ]
-          : [
-              { key: "return", cmd: activate },
-              { key: "j", cmd: () => move(1) },
-              { key: "k", cmd: () => move(-1) },
-              { key: "/", cmd: () => edit("filter") },
-              { key: "i", cmd: () => edit("filter") },
-              { key: "p", cmd: () => edit("path") },
-              {
-                key: "b",
-                cmd: () => {
-                  if (!picker.loading && picker.listing?.parent)
-                    browse(picker.listing.parent)
+              "return",
+              "tab",
+              "up",
+              "down",
+              "ctrl+n",
+              "ctrl+p",
+              "j",
+              "k",
+              "i",
+              "/",
+              "p",
+              "b",
+              "w",
+              "u",
+              "n",
+              "ctrl+f",
+            ].map((key) => ({ key, cmd: () => {} }))
+          : picker.preflightError
+            ? [
+                {
+                  key: "w",
+                  cmd: () => {
+                    if (!picker.loading) browse()
+                  },
                 },
-              },
-              {
-                key: "w",
-                cmd: () => {
-                  if (!picker.loading) browse()
-                },
-              },
-              {
-                key: "u",
-                cmd: () => {
-                  if (!picker.loading && picker.listing?.directory)
-                    props.onChoose(picker.listing.directory)
-                },
-              },
-              {
-                key: "n",
-                cmd: () => {
-                  if (!picker.loading) props.onChoose()
-                },
-              },
-              {
-                key: "ctrl+f",
-                cmd: () => {
-                  if (!picker.loading && selected?.kind === "worktree")
-                    props.onFavorite(selected.cwd)
-                },
-              },
-            ]),
+                ...["j", "down", "ctrl+n"].map((key) => ({
+                  key,
+                  cmd: () => errorRef.current?.scrollBy(1, "step"),
+                })),
+                ...["k", "up", "ctrl+p"].map((key) => ({
+                  key,
+                  cmd: () => errorRef.current?.scrollBy(-1, "step"),
+                })),
+                ...[
+                  "return",
+                  "tab",
+                  "i",
+                  "/",
+                  "p",
+                  "b",
+                  "u",
+                  "n",
+                  "ctrl+f",
+                ].map((key) => ({ key, cmd: () => {} })),
+              ]
+            : [
+                ...["down", "ctrl+n"].map((key) => ({
+                  key,
+                  cmd: () => move(1),
+                })),
+                ...["up", "ctrl+p"].map((key) => ({
+                  key,
+                  cmd: () => move(-1),
+                })),
+                ...(editing
+                  ? [
+                      {
+                        key: "tab",
+                        cmd: () =>
+                          editing === "path" ? completePath() : undefined,
+                      },
+                      { key: "ctrl+f", cmd: () => {} },
+                    ]
+                  : [
+                      { key: "return", cmd: activate },
+                      { key: "j", cmd: () => move(1) },
+                      { key: "k", cmd: () => move(-1) },
+                      { key: "/", cmd: () => edit("filter") },
+                      { key: "i", cmd: () => edit("filter") },
+                      { key: "p", cmd: () => edit("path") },
+                      {
+                        key: "b",
+                        cmd: () => {
+                          if (
+                            !picker.loading &&
+                            !picker.preflightError &&
+                            picker.listing?.parent
+                          )
+                            browse(picker.listing.parent)
+                        },
+                      },
+                      {
+                        key: "w",
+                        cmd: () => {
+                          if (!picker.loading) browse()
+                        },
+                      },
+                      {
+                        key: "u",
+                        cmd: () => {
+                          choose()
+                        },
+                      },
+                      {
+                        key: "n",
+                        cmd: () => {
+                          if (
+                            !picker.loading &&
+                            !picker.preflightError &&
+                            selected?.kind === "worktree"
+                          )
+                            props.onChoose(selected.cwd, true)
+                        },
+                      },
+                      {
+                        key: "ctrl+f",
+                        cmd: () => {
+                          if (!picker.loading && selected?.kind === "worktree")
+                            props.onFavorite(selected.cwd)
+                        },
+                      },
+                    ]),
+              ]),
       ],
     }),
     [
@@ -221,12 +343,34 @@ export function HandoffOverlay(props: {
       rows,
       path,
       picker,
+      busy,
+      ready,
       props.onBrowse,
       props.onChoose,
       props.onFavorite,
       props.onClose,
     ],
   )
+  if (picker.preflightError)
+    return (
+      <OverlayFrame title={`Handoff to ${picker.targetId}`} width={96}>
+        <text height={1} flexShrink={0} fg={emberTide.amber}>
+          Handoff unavailable
+        </text>
+        <scrollbox
+          ref={errorRef}
+          maxHeight={Math.max(2, Math.floor(geometry.height * 0.85) - 6)}
+          flexShrink={1}
+        >
+          <text fg={emberTide.amber} wrapMode="word" flexShrink={0}>
+            {picker.error}
+          </text>
+        </scrollbox>
+        <text height={1} flexShrink={0} fg={emberTide.textMuted}>
+          w retry · j/k scroll · Esc close
+        </text>
+      </OverlayFrame>
+    )
   return (
     <OverlayFrame title={`Handoff to ${picker.targetId}`} width={96}>
       <text
@@ -236,7 +380,7 @@ export function HandoffOverlay(props: {
         wrapMode="none"
         truncate
       >
-        Choose an existing workspace or create an isolated worktree.
+        Browse, then hand off to a clean workspace.
       </text>
       <box height={1} flexShrink={0} flexDirection="row">
         <text fg={emberTide.amber}>{editing === "path" ? "Path: " : "/ "}</text>
@@ -245,7 +389,7 @@ export function HandoffOverlay(props: {
             id="handoff-input"
             key={editing}
             ref={inputRef}
-            focused
+            focused={!busy}
             flexGrow={1}
             value={editing === "path" ? path : query}
             onInput={(value) => {
@@ -283,7 +427,17 @@ export function HandoffOverlay(props: {
       </text>
       <scrollbox
         ref={listRef}
-        maxHeight={Math.max(2, Math.min(12, geometry.height - 14))}
+        maxHeight={Math.max(
+          1,
+          Math.min(
+            12,
+            geometry.height -
+              17 -
+              (pathRows - 1) -
+              (picker.error || feedback ? 2 : 0) -
+              (busy || picker.loading ? 1 : 0),
+          ),
+        )}
         flexShrink={1}
       >
         {rows.map((row) => (
@@ -309,13 +463,16 @@ export function HandoffOverlay(props: {
               {row.cwd === selected?.cwd ? "> " : "  "}
               {row.favorite ? "★ " : ""}
               {row.label}
+              {row.recent && !row.favorite ? " · recent" : ""}
               {row.kind === "directory" ? "/" : ""}
               {row.branch ? ` · ${row.branch}` : ""}
               {row.dirty === true
                 ? " · modified"
                 : row.dirty === false
                   ? " · clean"
-                  : ""}
+                  : row.kind === "worktree"
+                    ? " · status unknown"
+                    : ""}
             </text>
           </box>
         ))}
@@ -332,14 +489,38 @@ export function HandoffOverlay(props: {
         ) : null}
       </scrollbox>
       <text
+        height={pathRows}
+        flexShrink={0}
+        fg={emberTide.text}
+        wrapMode="char"
+      >
+        {selected?.cwd ?? "Select a destination"}
+      </text>
+      <text
         height={1}
         flexShrink={0}
-        fg={emberTide.blueBright}
+        fg={ready ? emberTide.sage : emberTide.amber}
         wrapMode="none"
         truncate
       >
-        n Create new isolated worktree
+        {selected?.branch ? `${selected.branch} · ` : ""}
+        {readiness}
       </text>
+      {!busy && editing !== "path" && (!editing || ready) ? (
+        <text
+          height={1}
+          flexShrink={0}
+          fg={emberTide.blueBright}
+          wrapMode="none"
+          truncate
+        >
+          {editing === "filter"
+            ? "Esc, then u to hand off"
+            : selected?.kind === "worktree"
+              ? `${ready ? "u Handoff here · " : ""}n New isolated`
+              : "Select a repository for a new worktree"}
+        </text>
+      ) : null}
       <text
         height={1}
         flexShrink={0}
@@ -350,8 +531,8 @@ export function HandoffOverlay(props: {
         {editing === "path"
           ? "Enter browse · Tab complete · Esc finish editing"
           : editing
-            ? "Enter choose · Esc finish searching"
-            : "Enter choose/browse · u use directory · Ctrl-F favorite"}
+            ? "Enter browse · Esc finish searching"
+            : "Enter browse · Ctrl-F favorite"}
       </text>
       {!editing ? (
         <text
@@ -361,10 +542,10 @@ export function HandoffOverlay(props: {
           wrapMode="none"
           truncate
         >
-          p path · / search · b parent · w workspaces · Esc close
+          p path · / find · b up · w saved · Esc close
         </text>
       ) : null}
-      {picker.loading ? (
+      {picker.loading || busy ? (
         <text
           height={1}
           flexShrink={0}
@@ -372,17 +553,15 @@ export function HandoffOverlay(props: {
           wrapMode="none"
           truncate
         >
-          Loading destinations…
+          {busy
+            ? `${picker.phase ?? "Preparing"} handoff…`
+            : picker.phase === "checking"
+              ? "Checking handoff support…"
+              : "Loading destinations…"}
         </text>
       ) : null}
       {picker.error || feedback ? (
-        <text
-          height={1}
-          flexShrink={0}
-          fg={emberTide.amber}
-          wrapMode="none"
-          truncate
-        >
+        <text height={2} flexShrink={0} fg={emberTide.amber} wrapMode="word">
           {picker.error ?? feedback}
         </text>
       ) : null}

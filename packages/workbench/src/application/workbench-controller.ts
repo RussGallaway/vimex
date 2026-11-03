@@ -1,7 +1,11 @@
 import { directoryArgument, type DirectoryNavigation } from "./directories"
 import { needsLocalWakefulness, type PowerControl } from "./power-control"
 import { parseHandoffArgument } from "./handoff-command"
-import type { MachineNavigation, MachineRuntime } from "./machines"
+import type {
+  HandoffPhase,
+  MachineNavigation,
+  MachineRuntime,
+} from "./machines"
 import { threadContext } from "./thread-context"
 import {
   submissionConversation,
@@ -2783,7 +2787,73 @@ export class VimexController
       },
     })
     this.dispatchInteraction({ type: "overlay.open", overlay: "handoff" })
-    this.browseHandoffDestination()
+    this.preflightHandoffPicker()
+  }
+
+  private preflightHandoffPicker(): void {
+    const picker = this.state.handoffPicker
+    if (!picker || !this.currentHandoffPicker(picker)) return
+    const preflight = this.ports.machines?.preflightHandoff
+    if (!preflight) {
+      this.browseHandoffDestination()
+      return
+    }
+    const request = ++this.handoffBrowseRequest
+    const epoch = this.runtimeEpoch
+    this.setState({
+      ...this.state,
+      handoffPicker: {
+        ...picker,
+        loading: true,
+        phase: "checking",
+        error: undefined,
+        preflightError: false,
+      },
+    })
+    this.launch(async () => {
+      try {
+        await preflight({
+          sourceId: picker.sourceId,
+          targetId: picker.targetId,
+          threadId: picker.threadId,
+          cwd: picker.cwd,
+        })
+        if (
+          request !== this.handoffBrowseRequest ||
+          !this.currentRuntime(epoch) ||
+          !this.currentHandoffPicker(picker)
+        )
+          return
+        this.setState({
+          ...this.state,
+          handoffPicker: {
+            ...picker,
+            loading: false,
+            phase: undefined,
+            preflightError: false,
+            error: undefined,
+          },
+        })
+        this.browseHandoffDestination()
+      } catch (error) {
+        if (
+          request !== this.handoffBrowseRequest ||
+          !this.currentRuntime(epoch) ||
+          !this.currentHandoffPicker(picker)
+        )
+          return
+        this.setState({
+          ...this.state,
+          handoffPicker: {
+            ...picker,
+            loading: false,
+            phase: undefined,
+            preflightError: true,
+            error: String(error),
+          },
+        })
+      }
+    })
   }
 
   private currentHandoffPicker(
@@ -2897,6 +2967,11 @@ export class VimexController
     const picker = this.state.handoffPicker
     const list = this.ports.machines?.listHandoffDestinations
     if (!picker || !list || !this.currentHandoffPicker(picker)) return
+    if (picker.phase === "checking" || picker.transferring) return
+    if (picker.preflightError) {
+      this.preflightHandoffPicker()
+      return
+    }
     const request = ++this.handoffBrowseRequest
     const epoch = this.runtimeEpoch
     this.setState({
@@ -2941,10 +3016,10 @@ export class VimexController
     })
   }
 
-  chooseHandoffDestination = (cwd?: string): void => {
+  chooseHandoffDestination = (cwd?: string, isolated = false): void => {
     const picker = this.state.handoffPicker
     if (!picker || !this.currentHandoffPicker(picker)) return
-    if (picker.loading) return
+    if (picker.loading || picker.transferring || picker.preflightError) return
     const sourceCwd =
       this.state.summaries[this.state.activeThreadId!]?.cwd ??
       this.initialDirectory ??
@@ -2958,7 +3033,7 @@ export class VimexController
       this.notice(error)
       return
     }
-    this.changeMachine(picker.targetId, true, cwd)
+    this.changeMachine(picker.targetId, true, cwd, isolated)
     if (this.currentHandoffPicker(picker) && this.state.error)
       this.setState({
         ...this.state,
@@ -3034,6 +3109,7 @@ export class VimexController
     targetId: string,
     handoff: boolean,
     destinationCwd?: string,
+    isolated = false,
   ): void {
     const machines = this.ports.machines
     if (!machines) {
@@ -3108,10 +3184,55 @@ export class VimexController
       this.notice("Resolve pending approvals and questions before handing off")
       return
     }
-    this.dispatchInteraction({ type: "overlay.close" })
+    const picker =
+      handoff &&
+      this.state.handoffPicker &&
+      this.currentHandoffPicker(this.state.handoffPicker)
+        ? this.state.handoffPicker
+        : undefined
+    const epoch = this.runtimeEpoch
+    let progressActive = true
+    if (!picker) this.dispatchInteraction({ type: "overlay.close" })
+    const fail = (message: string) => {
+      this.notice(message)
+      if (picker && this.state.handoffPicker?.targetId === picker.targetId)
+        this.setState({
+          ...this.state,
+          handoffPicker: { ...this.state.handoffPicker, error: message },
+        })
+    }
+    const progress = (phase: HandoffPhase) => {
+      if (
+        !progressActive ||
+        !picker ||
+        !this.currentRuntime(epoch) ||
+        !this.state.machineChanging ||
+        this.state.handoffPicker?.targetId !== picker.targetId
+      )
+        return
+      this.setState({
+        ...this.state,
+        handoffPicker: {
+          ...this.state.handoffPicker,
+          transferring: true,
+          phase,
+          error: undefined,
+        },
+      })
+    }
     this.launch(async () => {
       this.setState({
         ...this.state,
+        ...(picker
+          ? {
+              handoffPicker: {
+                ...picker,
+                transferring: true,
+                phase: "checking" as const,
+                error: undefined,
+              },
+            }
+          : {}),
         machineChanging: true,
         machineDestination: machines
           .list()
@@ -3128,6 +3249,8 @@ export class VimexController
               sourceId: this.state.machine?.id ?? "local",
               targetId,
               destinationCwd,
+              isolated,
+              onProgress: progress,
               threadId: sourceId!,
               cwd:
                 this.state.summaries[sourceId!]?.cwd ??
@@ -3136,6 +3259,8 @@ export class VimexController
             })
           : await machines.open(targetId)
         destination = result
+        if (!this.currentRuntime(epoch))
+          throw new Error("Source connection changed while preparing handoff")
         if (result.machine.id !== targetId)
           throw new Error("Machine connection returned the wrong destination")
         stagedDetach = result.connection.subscribe((event) => {
@@ -3166,6 +3291,9 @@ export class VimexController
         if (stagedEvents.some((event) => event.type === "disconnected"))
           throw new Error("Destination disconnected while preparing")
         if (handoff && hasHostMentions()) throw new Error(mentionNotice)
+        if (!this.currentRuntime(epoch))
+          throw new Error("Source connection changed while preparing handoff")
+        progress("switching")
         await result.commit?.()
         if (this.closing) return
         this.ingress.flush()
@@ -3263,15 +3391,14 @@ export class VimexController
           })
         await oldConnection.close().catch(() => {})
       } catch (error) {
-        this.notice(`Machine change failed: ${String(error)}`)
+        fail(`Machine change failed: ${String(error)}`)
       } finally {
+        progressActive = false
         if (!adopted) {
           stagedDetach?.()
           await destination
             ?.rollback?.()
-            .catch((error) =>
-              this.notice(`Handoff rollback failed: ${String(error)}`),
-            )
+            .catch((error) => fail(`Handoff rollback failed: ${String(error)}`))
           await destination?.connection.close().catch(() => {})
         }
         if (!this.closing)
@@ -3279,6 +3406,18 @@ export class VimexController
             ...this.state,
             machineChanging: false,
             machineDestination: undefined,
+            ...(picker &&
+            !adopted &&
+            this.state.handoffPicker?.targetId === picker.targetId
+              ? {
+                  handoffPicker: {
+                    ...this.state.handoffPicker,
+                    loading: false,
+                    transferring: false,
+                    phase: undefined,
+                  },
+                }
+              : {}),
           })
       }
     })
@@ -4311,6 +4450,7 @@ export class VimexController
               selection.targetId,
               true,
               selection.destinationCwd,
+              selection.isolated,
             )
           else this.openHandoffPicker(selection.targetId)
         } catch (error) {

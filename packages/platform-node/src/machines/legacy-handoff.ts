@@ -13,6 +13,8 @@ export interface LegacyHandoffRequest {
   threadId: string
   rolloutPath: string
   destinationMode?: "isolated" | "existing"
+  /** Only after complete native dependency validation by the paginated importer. */
+  paginatedHistory?: boolean
 }
 export interface PreparedLegacyHandoff {
   cwd: string
@@ -52,6 +54,7 @@ const text = (data: Buffer) => data.toString("utf8").trim()
 export function validateLegacyRollout(
   contents: string,
   threadId: string,
+  allowPaginated = false,
 ): void {
   if (!contents.endsWith("\n"))
     throw new Error("Session checkpoint has an incomplete final record")
@@ -83,24 +86,32 @@ export function validateLegacyRollout(
           "Session checkpoint identity does not match the selected thread",
         )
       meta = record.payload
-      if (meta?.history_mode && meta.history_mode !== "legacy")
+      if (
+        meta?.history_mode &&
+        meta.history_mode !== "legacy" &&
+        !(allowPaginated && meta.history_mode === "paginated")
+      )
         throw new Error(
           "Paginated chats cannot be continued on another host yet",
         )
-      if (meta?.history_base || meta?.subagent_history_start_ordinal != null)
+      if (
+        (!allowPaginated && meta?.history_base) ||
+        meta?.subagent_history_start_ordinal != null
+      )
         throw new Error(
           "Session checkpoint depends on another thread's history",
         )
     } else if (record.type === "session_meta") {
       if (
         record.payload?.history_mode &&
-        record.payload.history_mode !== "legacy"
+        record.payload.history_mode !== "legacy" &&
+        !(allowPaginated && record.payload.history_mode === "paginated")
       )
         throw new Error(
           "Paginated chats cannot be continued on another host yet",
         )
       if (
-        record.payload?.history_base ||
+        (!allowPaginated && record.payload?.history_base) ||
         record.payload?.subagent_history_start_ordinal != null
       )
         throw new Error(
@@ -188,6 +199,7 @@ async function snapshot(
   validateLegacyRollout(
     Buffer.from(rollout, "base64").toString("utf8"),
     request.threadId,
+    request.paginatedHistory,
   )
   const fingerprint = createHash("sha256")
     .update(

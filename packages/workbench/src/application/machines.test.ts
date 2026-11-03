@@ -970,3 +970,199 @@ test("automatic wakefulness follows local turns, toggles, remote switching, and 
   await h.controller.close()
   expect(disposed).toBe(true)
 })
+
+test("handoff checks source eligibility before discovering destinations and retries inline", async () => {
+  const gate = Promise.withResolvers<void>()
+  let calls = 0
+  let checks = 0
+  const h = harness(undefined, undefined, {
+    preflightHandoff: async () => {
+      checks++
+      if (checks === 1) await gate.promise
+    },
+    listHandoffDestinations: async () => {
+      calls++
+      return { directory: "/ready", entries: [] }
+    },
+  })
+  await h.controller.initialize("/local", undefined, "same")
+  h.controller.executeCommand("handoff devbox")
+  expect(h.controller.getSnapshot().handoffPicker?.phase).toBe("checking")
+  expect(calls).toBe(0)
+  h.controller.browseHandoffDestination("/bypass")
+  expect(calls).toBe(0)
+  gate.reject(new Error("Unsupported history dependency"))
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().handoffPicker?.preflightError).toBe(true)
+  expect(h.controller.getSnapshot().handoffPicker?.error).toContain(
+    "Unsupported history",
+  )
+  expect(calls).toBe(0)
+  h.controller.browseHandoffDestination()
+  await h.controller.settle()
+  expect(checks).toBe(2)
+  expect(calls).toBe(1)
+  expect(h.controller.getSnapshot().handoffPicker?.preflightError).toBe(false)
+  expect(h.controller.getSnapshot().handoffPicker?.listing?.directory).toBe(
+    "/ready",
+  )
+  await h.controller.close()
+})
+
+test("dismissed handoff preflight cannot open a destination listing", async () => {
+  const gate = Promise.withResolvers<void>()
+  let listed = false
+  const h = harness(undefined, undefined, {
+    preflightHandoff: () => gate.promise,
+    listHandoffDestinations: async () => {
+      listed = true
+      return { directory: "/ready", entries: [] }
+    },
+  })
+  await h.controller.initialize("/local", undefined, "same")
+  h.controller.executeCommand("handoff devbox")
+  h.controller.dispatchInteraction({ type: "overlay.close" })
+  gate.resolve()
+  await h.controller.settle()
+  expect(listed).toBe(false)
+  expect(
+    h.controller.getSnapshot().workspaces.same?.interaction.overlay,
+  ).toBeNull()
+  await h.controller.close()
+})
+
+test("handoff progress retains picker and failure keeps destination for retry", async () => {
+  const remote = runtime("devbox")
+  const first = Promise.withResolvers<MachineRuntime & { threadId: string }>()
+  let progress: ((phase: import("./machines").HandoffPhase) => void) | undefined
+  let transfers = 0
+  const listing = {
+    directory: "/ready",
+    entries: [
+      {
+        cwd: "/ready",
+        label: "ready",
+        kind: "worktree" as const,
+        dirty: false,
+      },
+    ],
+  }
+  const h = harness(
+    undefined,
+    async (input) => {
+      transfers++
+      progress = input.onProgress
+      if (transfers === 1) return first.promise
+      return { ...remote.value, threadId: "continued" }
+    },
+    { listHandoffDestinations: async () => listing },
+  )
+  await h.controller.initialize("/local", undefined, "same")
+  h.controller.dispatch({ type: "composer.change", text: "source draft" })
+  h.controller.executeCommand("handoff devbox")
+  await h.controller.settle()
+  h.controller.chooseHandoffDestination("/ready")
+  expect(h.controller.getSnapshot().workspaces.same?.interaction.overlay).toBe(
+    "handoff",
+  )
+  expect(h.controller.getSnapshot().handoffPicker?.transferring).toBe(true)
+  progress?.("restoring")
+  expect(h.controller.getSnapshot().handoffPicker?.phase).toBe("restoring")
+  first.reject(new Error("Restore failed"))
+  await h.controller.settle()
+  expect(h.controller.getSnapshot().handoffPicker?.listing).toBe(listing)
+  expect(h.controller.getSnapshot().handoffPicker?.error).toContain(
+    "Restore failed",
+  )
+  expect(h.controller.getSnapshot().handoffPicker?.transferring).toBe(false)
+  expect(h.controller.getSnapshot().machine?.id).toBe("local")
+  expect(h.controller.getSnapshot().workspaces.same?.composer.text).toBe(
+    "source draft",
+  )
+  const oldProgress = progress
+  oldProgress?.("switching")
+  expect(h.controller.getSnapshot().handoffPicker?.phase).toBeUndefined()
+  h.controller.chooseHandoffDestination("/ready")
+  await h.controller.settle()
+  expect(transfers).toBe(2)
+  expect(h.controller.getSnapshot().machine?.id).toBe("devbox")
+  expect(h.controller.getSnapshot().handoffPicker).toBeUndefined()
+  await h.controller.close()
+})
+
+test("source disconnect during destination connection rolls back before handoff commit", async () => {
+  const gate = Promise.withResolvers<void>()
+  const remote = runtime("devbox")
+  let commits = 0
+  let rollbacks = 0
+  remote.value.connection.connect = () => gate.promise
+  const h = harness(
+    undefined,
+    async () => ({
+      ...remote.value,
+      threadId: "continued",
+      commit: async () => {
+        commits++
+      },
+      rollback: async () => {
+        rollbacks++
+      },
+    }),
+    {
+      listHandoffDestinations: async () => ({
+        directory: "/ready",
+        entries: [],
+      }),
+    },
+  )
+  await h.controller.initialize("/local", undefined, "same")
+  h.controller.executeCommand("handoff devbox")
+  await h.controller.settle()
+  h.controller.chooseHandoffDestination("/ready")
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  h.local.emit({ type: "disconnected", message: "network lost" })
+  gate.resolve()
+  await h.controller.settle()
+  expect(commits).toBe(0)
+  expect(rollbacks).toBe(1)
+  expect(h.controller.getSnapshot().machine?.id).toBe("local")
+  expect(h.controller.getSnapshot().handoffPicker?.error).toContain(
+    "Source connection changed",
+  )
+  expect(h.controller.getSnapshot().machineChanging).toBe(false)
+  await h.controller.close()
+})
+
+test("isolated handoff uses the selected repository as its base without choosing existing mode", async () => {
+  const remote = runtime("devbox")
+  let selected: { destinationCwd?: string; isolated?: boolean } | undefined
+  const h = harness(
+    undefined,
+    async (input) => {
+      selected = input
+      return { ...remote.value, threadId: "continued" }
+    },
+    {
+      listHandoffDestinations: async () => ({
+        directory: "/home/dev/projects",
+        entries: [
+          {
+            cwd: "/home/dev/projects/repo",
+            label: "repo",
+            kind: "worktree",
+            dirty: true,
+          },
+        ],
+      }),
+    },
+  )
+  await h.controller.initialize("/local", undefined, "same")
+  h.controller.executeCommand("handoff devbox")
+  await h.controller.settle()
+  h.controller.chooseHandoffDestination("/home/dev/projects/repo", true)
+  await h.controller.settle()
+  expect(selected?.destinationCwd).toBe("/home/dev/projects/repo")
+  expect(selected?.isolated).toBe(true)
+  expect(h.controller.getSnapshot().machine?.id).toBe("devbox")
+  await h.controller.close()
+})

@@ -136,7 +136,7 @@ export function OverlayLayer(props: {
   onCwdChoose(directory: string): void
   handoffPicker?: WorkbenchState["handoffPicker"]
   onHandoffBrowse(directory?: string): void
-  onHandoffChoose(cwd?: string): void
+  onHandoffChoose(cwd?: string, isolated?: boolean): void
   onHandoffFavorite(cwd: string): void
   overlay: Overlay
   models?: readonly AvailableModel[]

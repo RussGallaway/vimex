@@ -9,12 +9,14 @@ export interface MachineInfo {
   label?: string
   favorite?: boolean
 }
+export type HandoffPhase = "checking" | "preparing" | "restoring" | "switching"
 export interface HandoffDestination {
   cwd: string
   label: string
   kind: "worktree" | "directory"
   branch?: string
   dirty?: boolean
+  recent?: boolean
   favorite?: boolean
 }
 export interface HandoffDestinationListing {
@@ -60,6 +62,13 @@ export interface MachineNavigation {
       favorite: boolean
     },
   ): Promise<void>
+  /** Read-only source eligibility check before destination selection. */
+  preflightHandoff?(input: {
+    sourceId: string
+    targetId: string
+    threadId: string
+    cwd: string
+  }): Promise<void>
   /** Must preserve native history or reject; a summary is not a handoff. */
   handoff?(input: {
     sourceId: string
@@ -67,5 +76,8 @@ export interface MachineNavigation {
     threadId: string
     cwd: string
     destinationCwd?: string
+    /** Create a fresh worktree using destinationCwd as the repository base. */
+    isolated?: boolean
+    onProgress?(phase: HandoffPhase): void
   }): Promise<MachineRuntime & { threadId: string }>
 }

@@ -69,6 +69,9 @@ export interface WorkbenchState {
     listing?: import("./directories").DirectoryListing
   }
   handoffPicker?: {
+    phase?: import("./machines").HandoffPhase
+    transferring?: boolean
+    preflightError?: boolean
     sourceId: string
     targetId: string
     threadId: string

@@ -51,7 +51,11 @@ import { createCodexGateways } from "@vimex/codex-app-server"
 import { createDemoGateway } from "./demo-gateway"
 import { VimexController } from "@vimex/workbench"
 import { imageInput } from "./images"
-import { nativeHandoff } from "./native-handoff"
+import {
+  nativeHandoff,
+  nativeHandoffPreflight,
+  type NativeHandoffOptions,
+} from "./native-handoff"
 import { createMachineNavigation } from "./machine-navigation"
 import { PerformanceProfileRecorder } from "./performance-profile"
 
@@ -397,14 +401,17 @@ export async function runApplication(options: CliOptions) {
     machineManager.navigation.listHandoffDestinations = handoffDestinations.list
     machineManager.navigation.setHandoffDestinationFavorite =
       handoffDestinations.setFavorite
-    machineManager.navigation.handoff = nativeHandoff({
+    const handoffOptions: NativeHandoffOptions = {
       navigation: machineManager.navigation,
       gateways,
       target: machineManager.target,
       prepare: prepareLegacyHandoff,
       rememberDestination: handoffDestinations.remember,
       notice: (message) => controller.notice(message),
-    })
+    }
+    machineManager.navigation.handoff = nativeHandoff(handoffOptions)
+    machineManager.navigation.preflightHandoff = (input) =>
+      nativeHandoffPreflight(handoffOptions, input)
     root = createRoot(renderer)
     if (!demo && initialMachine !== "local")
       root.render(

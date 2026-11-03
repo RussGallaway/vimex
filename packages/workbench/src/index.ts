@@ -17,6 +17,7 @@ export * from "./application/workbench-observation"
 export * from "./application/workbench-publications"
 
 export type {
+  HandoffPhase,
   HandoffDestination,
   HandoffDestinationListing,
   HandoffDestinationQuery,

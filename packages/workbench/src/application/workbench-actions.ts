@@ -96,7 +96,7 @@ export interface WorkbenchActions {
   browseCwd(directory?: string): void
   chooseCwd(directory: string): void
   browseHandoffDestination(directory?: string): void
-  chooseHandoffDestination(cwd?: string): void
+  chooseHandoffDestination(cwd?: string, isolated?: boolean): void
   favoriteHandoffDestination(cwd: string): void
   searchMentions(
     query: string,

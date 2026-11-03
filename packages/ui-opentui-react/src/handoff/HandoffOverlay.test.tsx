@@ -17,6 +17,7 @@ async function harness(
   const browse: Array<string | undefined> = []
   const choose: Array<string | undefined> = []
   const favorites: string[] = []
+  const isolated: string[] = []
   const commands: string[] = []
   let update!: (fn: (state: WorkbenchState) => WorkbenchState) => void
   let initial = transitionWorkbench(initialWorkbench(), {
@@ -78,8 +79,9 @@ async function harness(
         browseHandoffDestination(directory) {
           browse.push(directory)
         },
-        chooseHandoffDestination(cwd) {
+        chooseHandoffDestination(cwd, createIsolated) {
           choose.push(cwd)
+          if (createIsolated && cwd) isolated.push(cwd)
         },
         favoriteHandoffDestination(cwd) {
           favorites.push(cwd)
@@ -140,6 +142,7 @@ async function harness(
     browse,
     choose,
     favorites,
+    isolated,
     commands,
     frame: () => h.captureCharFrame(),
     close: async () => {
@@ -148,24 +151,32 @@ async function harness(
   }
 }
 
-test("handoff picker remembers destination, distinguishes browsing, and exposes isolated worktrees", async () => {
+test("handoff separates browsing from explicit ready destination selection", async () => {
   const h = await harness()
   try {
     expect(h.frame()).toContain("Handoff to devbox")
     expect(h.frame()).toContain("> travel · feature/login · clean")
+    expect(h.frame()).toContain("/work/travel")
     await h.key("f", true)
     expect(h.favorites).toEqual(["/work/travel"])
-    await h.key("RETURN")
-    expect(h.choose).toEqual(["/work/travel"])
-    await h.key("ARROW_DOWN")
-    await h.key("RETURN")
-    expect(h.browse).toEqual(["/work/more"])
-    expect(h.choose).toHaveLength(1)
     await h.key("u")
-    expect(h.choose.at(-1)).toBe("/work")
+    expect(h.choose).toEqual(["/work/travel"])
+    await h.key("RETURN")
+    expect(h.browse).toEqual(["/work/travel"])
+    expect(h.choose).toHaveLength(1)
+    await h.key("ARROW_DOWN")
+    await h.key("ARROW_DOWN")
+    await h.key("u")
+    expect(h.choose).toHaveLength(1)
     await h.key("n")
-    expect(h.choose.at(-1)).toBeUndefined()
-    expect(h.choose).toHaveLength(3)
+    expect(h.choose).toHaveLength(1)
+    await h.key("RETURN")
+    expect(h.browse.at(-1)).toBe("/work/more")
+    await h.key("ARROW_DOWN")
+    await h.key("n")
+    expect(h.choose.at(-1)).toBe("/work/travel")
+    expect(h.isolated).toEqual(["/work/travel"])
+    expect(h.choose).toHaveLength(2)
   } finally {
     await h.close()
   }
@@ -208,7 +219,7 @@ test("path completion browses on the destination and retains input after failure
   }
 })
 
-test("search remains local and listing failures retain the isolated fallback", async () => {
+test("search remains local and listing failures cannot create worktrees in an unknown base", async () => {
   const h = await harness()
   try {
     await h.key("/")
@@ -216,7 +227,8 @@ test("search remains local and listing failures retain the isolated fallback", a
     expect(h.frame()).not.toContain("feature/login")
     expect(h.browse).toEqual([])
     await h.key("RETURN")
-    expect(h.choose).toEqual(["/work/review"])
+    expect(h.browse).toEqual(["/work/review"])
+    expect(h.choose).toEqual([])
     await h.key("ESCAPE")
     await h.state((s) => ({
       ...s,
@@ -227,8 +239,7 @@ test("search remains local and listing failures retain the isolated fallback", a
       },
     }))
     await h.key("n")
-    expect(h.choose.at(-1)).toBeUndefined()
-    expect(h.choose).toHaveLength(2)
+    expect(h.choose).toEqual([])
   } finally {
     await h.close()
   }
@@ -331,7 +342,12 @@ test("slash handoff picker and command-mode cwd handoff reach the same transfer 
           directory: "/remote",
           preferredCwd: "/remote/prepared",
           entries: [
-            { cwd: "/remote/prepared", label: "prepared", kind: "worktree" },
+            {
+              cwd: "/remote/prepared",
+              label: "prepared",
+              kind: "worktree",
+              dirty: false,
+            },
           ],
         }),
         handoff: async (input) => {
@@ -387,7 +403,7 @@ test("slash handoff picker and command-mode cwd handoff reach the same transfer 
         await key("RETURN")
         expect(h.captureCharFrame()).toContain("Handoff to devbox")
         expect(transferred).toEqual([])
-        await key("RETURN")
+        await key("u")
       } else {
         await type(':handoff devbox --cwd "/remote/prepared"')
         await key("RETURN")
@@ -414,14 +430,15 @@ test("compact destination list reveals the selected workspace after long navigat
             cwd: `/work/slot-${i}`,
             label: `slot-${i}`,
             kind: "worktree" as const,
+            dirty: false,
           })),
         },
       },
     }))
     for (let i = 0; i < 19; i++) await h.key("ARROW_DOWN")
     expect(h.frame()).toContain("> slot-19")
-    expect(h.frame()).toContain("n Create new isolated worktree")
-    await h.key("RETURN")
+    expect(h.frame()).toContain("n New isolated")
+    await h.key("u")
     expect(h.choose).toEqual(["/work/slot-19"])
   } finally {
     await h.close()
@@ -437,5 +454,197 @@ test("machine handoff closes the modal before current-machine validation", async
     expect(h.frame()).not.toContain("Machines")
   } finally {
     await h.close()
+  }
+})
+
+test("quoted paths and repeated relative browsing resolve from displayed directory once", async () => {
+  const h = await harness()
+  try {
+    await h.key("p")
+    await h.key("u", true)
+    await h.type('"/prepared space"')
+    await h.key("RETURN")
+    expect(h.browse.at(-1)).toBe("/prepared space")
+    await h.key("u", true)
+    await h.type("child")
+    await h.key("RETURN")
+    expect(h.browse.at(-1)).toBe("/work/child")
+    await h.state((s) => ({
+      ...s,
+      handoffPicker: {
+        ...s.handoffPicker!,
+        listing: { directory: "/work/child", entries: [] },
+      },
+    }))
+    await h.key("RETURN")
+    expect(h.browse.at(-1)).toBe("/work/child")
+  } finally {
+    await h.close()
+  }
+})
+
+test("multiple completion matches extend common prefix and in-flight transfer blocks actions", async () => {
+  const h = await harness()
+  try {
+    await h.key("p")
+    await h.key("u", true)
+    await h.type("tr")
+    await h.key("TAB")
+    await h.state((s) => ({
+      ...s,
+      handoffPicker: {
+        ...s.handoffPicker!,
+        listing: {
+          directory: "/work",
+          entries: [
+            {
+              cwd: "/work/travel-a",
+              label: "travel-a",
+              kind: "worktree",
+              dirty: true,
+            },
+            { cwd: "/work/travel-b", label: "travel-b", kind: "worktree" },
+          ],
+        },
+      },
+    }))
+    expect(h.frame()).toContain("Path: /work/travel-")
+    await h.key("ESCAPE")
+    await h.key("u")
+    await h.key("ARROW_DOWN")
+    await h.key("u")
+    expect(h.choose).toEqual([])
+    expect(h.frame()).toContain("status unknown")
+    await h.state((s) => ({
+      ...s,
+      handoffPicker: {
+        ...s.handoffPicker!,
+        transferring: true,
+        phase: "preparing",
+      },
+    }))
+    await h.key("n")
+    await h.key("ESCAPE")
+    expect(h.choose).toEqual([])
+    expect(h.frame()).toContain("Handoff to devbox")
+  } finally {
+    await h.close()
+  }
+})
+
+test("narrow failed preflight keeps retry and close discoverable without allowing transfer", async () => {
+  const h = await harness("handoff", { width: 60, height: 18 })
+  try {
+    await h.state((s) => ({
+      ...s,
+      handoffPicker: {
+        ...s.handoffPicker!,
+        preflightError: true,
+        error:
+          "Error: This session has subagent history; transfer of the complete session tree is not available. Your source session remains unchanged.",
+        listing: undefined,
+      },
+    }))
+    expect(h.frame()).toContain("This session has subagent history")
+    expect(h.frame()).toContain("unchanged.")
+    expect(h.frame()).not.toContain("n New isolated")
+    expect(h.frame()).not.toContain("w saved")
+    expect(h.frame()).toContain("w retry")
+    await h.key("u")
+    await h.key("n")
+    expect(h.choose).toEqual([])
+    await h.key("w")
+    expect(h.browse).toEqual([undefined])
+    await h.key("ESCAPE")
+    expect(h.frame()).not.toContain("Handoff to devbox")
+  } finally {
+    await h.close()
+  }
+})
+
+test("editing hints advertise only executable handoff shortcuts", async () => {
+  const h = await harness()
+  try {
+    await h.key("/")
+    expect(h.frame()).toContain("Esc, then u to hand off")
+    expect(h.frame()).not.toContain("u Handoff here")
+    expect(h.frame()).not.toContain("n New isolated")
+    await h.key("ESCAPE")
+    await h.key("u")
+    expect(h.choose).toEqual(["/work/travel"])
+    await h.key("/")
+    await h.type("n")
+    expect(h.choose).toHaveLength(1)
+    await h.key("ESCAPE")
+    await h.key("p")
+    expect(h.frame()).not.toContain("n New isolated")
+    expect(h.frame()).not.toContain("Handoff here")
+    expect(h.frame()).toContain("Tab complete")
+  } finally {
+    await h.close()
+  }
+})
+
+test("new isolated worktree uses selected matching repository even when modified", async () => {
+  const h = await harness()
+  try {
+    await h.state((s) => ({
+      ...s,
+      handoffPicker: {
+        ...s.handoffPicker!,
+        listing: {
+          directory: "/home",
+          entries: [
+            {
+              cwd: "/home/project",
+              label: "project",
+              kind: "worktree",
+              dirty: true,
+            },
+          ],
+        },
+      },
+    }))
+    await h.key("u")
+    expect(h.choose).toEqual([])
+    await h.key("n")
+    expect(h.choose).toEqual(["/home/project"])
+    expect(h.isolated).toEqual(["/home/project"])
+  } finally {
+    await h.close()
+  }
+})
+
+test("Esc closes failed preflight after hiding a path or filter editor", async () => {
+  for (const editor of ["p", "/"]) {
+    const h = await harness()
+    try {
+      await h.state((s) => ({
+        ...s,
+        handoffPicker: {
+          ...s.handoffPicker!,
+          loading: true,
+          phase: "checking",
+        },
+      }))
+      await h.key(editor)
+      await h.type("pending input")
+      await h.state((s) => ({
+        ...s,
+        handoffPicker: {
+          ...s.handoffPicker!,
+          loading: false,
+          preflightError: true,
+          error: "Cannot transfer this source yet",
+          listing: undefined,
+        },
+      }))
+      expect(h.frame()).toContain("w retry")
+      await h.key("ESCAPE")
+      expect(h.frame()).not.toContain("Handoff to devbox")
+      expect(h.choose).toEqual([])
+    } finally {
+      await h.close()
+    }
   }
 })

@@ -17,3 +17,12 @@ export type {
 } from "./machines/legacy-handoff"
 
 export { createCaffeinate } from "./power/caffeinate"
+
+export {
+  captureHistoryBundle,
+  stageHistoryBundle,
+} from "./machines/history-bundle"
+export type {
+  HistoryBundle,
+  StagedHistoryBundle,
+} from "./machines/history-bundle"

@@ -379,3 +379,123 @@ test("disconnect during handshake does not produce false reconnected state", asy
   expect(reconnectCreations).toEqual([3])
   await gateway.connection.close()
 })
+
+test("native history verification reads every page and rejects repeated cursors", async () => {
+  const cursors: unknown[] = []
+  let repeat = false
+  const mock = fakeClient({
+    listTurns: async (params: { cursor?: string }) => {
+      cursors.push(params.cursor)
+      return {
+        data: [{ id: params.cursor ? "second" : "first", items: [] }],
+        nextCursor: !params.cursor || repeat ? "next" : null,
+      }
+    },
+  })
+  const gateway = createCodexGateways("/repo", "codex", () => mock.client)
+  expect(await gateway.nativeHandoff.historyDigest("source")).toStartWith("2:")
+  expect(cursors).toEqual([undefined, "next"])
+  repeat = true
+  await expect(gateway.nativeHandoff.historyDigest("source")).rejects.toThrow(
+    "did not advance",
+  )
+  await gateway.connection.close()
+})
+
+test("native portability checks refuse active sessions and persisted goals before hydration", async () => {
+  let status = "active"
+  let goal: unknown = undefined
+  const mock = fakeClient({
+    readThread: async () => ({ thread: { status: { type: status } } }),
+    getGoal: async () => goal,
+  })
+  const gateway = createCodexGateways("/repo", "codex", () => mock.client)
+  await expect(gateway.nativeHandoff.assertPortable("source")).rejects.toThrow(
+    "active",
+  )
+  status = "idle"
+  goal = { status: "complete" }
+  await expect(gateway.nativeHandoff.assertPortable("source")).rejects.toThrow(
+    "persisted goal",
+  )
+  goal = undefined
+  await gateway.nativeHandoff.assertPortable("source")
+  await gateway.connection.close()
+})
+
+test("unloaded native IDs are resolved through normal and archived native listings before declaring absence", async () => {
+  const requests: Array<{ archived?: boolean; cursor?: string }> = []
+  const mock = fakeClient({
+    readThread: async () => {
+      throw new Error("thread/read: thread not loaded")
+    },
+    listThreads: async (params: { archived?: boolean; cursor?: string }) => {
+      requests.push(params)
+      const data = params.archived
+        ? [
+            {
+              id: "saved",
+              path: "/archive/saved.jsonl",
+              status: { type: "notLoaded" },
+            },
+          ]
+        : []
+      return { raw: { data }, nextCursor: null }
+    },
+  })
+  const gateway = createCodexGateways("/repo", "codex", () => mock.client)
+  expect(await gateway.nativeHandoff.locate("saved")).toBe(
+    "/archive/saved.jsonl",
+  )
+  expect(requests.map((r) => r.archived)).toEqual([false, true])
+  expect(await gateway.nativeHandoff.locate("missing")).toBeUndefined()
+  await gateway.connection.close()
+})
+
+test("native hydration uses a disposable ephemeral fork without rewriting source settings", async () => {
+  const calls: unknown[] = []
+  const mock = fakeClient({
+    forkThread: async (...args: unknown[]) => {
+      calls.push(args)
+      return { summary: { id: "temporary" } }
+    },
+    unsubscribeThread: async (id: string) => {
+      calls.push(["unsubscribe", id])
+    },
+  })
+  const gateway = createCodexGateways("/repo", "codex", () => mock.client)
+  await gateway.nativeHandoff.hydrateHistory("source", "/destination")
+  expect(calls).toEqual([
+    [
+      "source",
+      undefined,
+      {
+        cwd: "/destination",
+        runtimeWorkspaceRoots: ["/destination"],
+        ephemeral: true,
+        excludeTurns: true,
+      },
+    ],
+    ["unsubscribe", "temporary"],
+  ])
+  await gateway.connection.close()
+})
+
+test("read-only ancestry checks do not query or reactivate an archived ancestor goal", async () => {
+  let goalReads = 0
+  const mock = fakeClient({
+    readThread: async () => ({ thread: { status: { type: "notLoaded" } } }),
+    getGoal: async () => {
+      goalReads++
+      throw new Error("thread not found")
+    },
+  })
+  const gateway = createCodexGateways("/repo", "codex", () => mock.client)
+  await gateway.nativeHandoff.assertPortable("archived-ancestor", false)
+  expect(goalReads).toBe(0)
+  await expect(
+    gateway.nativeHandoff.assertPortable("selected-thread"),
+  ).rejects.toThrow("thread not found")
+  expect(goalReads).toBe(1)
+  await gateway.connection.close()
+})

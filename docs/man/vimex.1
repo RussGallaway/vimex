@@ -335,8 +335,11 @@ commands work with either : or /; both routes and the modal share
 saved settings. :machine NAME switches to that machine's sessions
 without transferring the current session. :handoff NAME (or /handoff
 NAME) opens the destination picker for native history and Git state.
-Choose a prepared worktree, browse directories with p and Tab,
-favorite with Ctrl+F, or press n for a new isolated worktree. The
+Source compatibility is checked first. Enter browses folders; u or
+Ctrl+Enter explicitly chooses a clean matching worktree. Browse paths
+with p and Tab, favorite with Ctrl+F, or press n for a new isolated
+worktree. Full paths, readiness, favorites, and recent destinations
+help selection. Progress and retryable errors stay in the picker. The
 machine manager h shortcut starts handoff. :handoff NAME \-\-cwd PATH
 uses an explicit existing worktree root; \-\-isolated creates a detached
 worktree. Both forms also work as slash commands. Existing
@@ -344,9 +347,11 @@ destinations must be clean, including nonignored untracked files.
 Matching branches advance only by fast\-forward; no pull or automatic
 merge is performed. Ignored dependencies/configuration remain unless
 they collide. Source files remain intact, so commit before leaving if
-returning to that same prepared checkout. Paginated histories and
-unsupported dependencies are refused; no summary substitutes for
-native history.
+returning to that same prepared checkout. Supported paginated history
+includes its native ancestors, retained on the destination after
+verification. Unsupported dependencies, including subagent histories,
+local images, and persisted goals, are refused before transfer; no
+summary substitutes for native history.
 .PP
 Typing, navigation, scrolling, clipboard, and optimistic message
 rendering stay local. Daemon proxy connections use WebSocket framing

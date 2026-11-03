@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import {
   createCodexAppServerClient,
   type CodexAppServerClient,
@@ -820,7 +821,145 @@ export function createCodexGateways(
       return all
     },
   }
+  const readNativeThread = async (id: string) => {
+    try {
+      return await client.readThread(id)
+    } catch (error) {
+      if (!/thread not loaded/i.test(String(error))) throw error
+      // A metadata-only read in 0.166 cannot always distinguish an unloaded
+      // rollout from a missing ID. Ask the native listing scanner to repair
+      // metadata; do not mistake an unloaded existing thread for a free ID.
+      for (const archived of [false, true]) {
+        let cursor: string | undefined
+        const seen = new Set<string>()
+        do {
+          const page = await client.listThreads({
+            archived,
+            cursor,
+            limit: 100,
+            modelProviders: [],
+            useStateDbOnly: false,
+            sourceKinds: [
+              "cli",
+              "vscode",
+              "exec",
+              "appServer",
+              "subAgent",
+              "subAgentReview",
+              "subAgentCompact",
+              "subAgentThreadSpawn",
+              "subAgentOther",
+              "unknown",
+            ],
+          })
+          const thread = page.raw.data.find((thread) => thread.id === id)
+          if (thread) return { thread }
+          cursor = page.nextCursor ?? undefined
+          if (cursor) {
+            if (seen.has(cursor) || seen.size >= 1000)
+              throw new Error("Native session lookup exceeded its bounded scan")
+            seen.add(cursor)
+          }
+        } while (cursor)
+      }
+      throw new Error(`No rollout found for thread id ${id}`)
+    }
+  }
   const nativeHandoff = {
+    serverDetails() {
+      const info = client.serverInfo
+      if (!info?.codexHome)
+        throw new Error(
+          "App server did not report its native session directory",
+        )
+      const version = /(?:^|\/)(\d+\.\d+\.\d+)(?:\s|$)/.exec(
+        info.userAgent,
+      )?.[1]
+      if (!version)
+        throw new Error(
+          "Unable to determine the running app-server version for native handoff",
+        )
+      return { codexHome: info.codexHome, version }
+    },
+    async locate(id: string): Promise<string | undefined> {
+      try {
+        return (await readNativeThread(id)).thread.path ?? undefined
+      } catch (error) {
+        if (
+          /no rollout found|thread[^\n]*not found|thread[^\n]*does not exist/i.test(
+            String(error),
+          )
+        )
+          return undefined
+        throw error
+      }
+    },
+    async assertPortable(id: string, checkGoal = true) {
+      const { thread } = await readNativeThread(id)
+      if (!["idle", "notLoaded"].includes(thread.status.type))
+        throw new Error(
+          `Session ${id} is active; wait for its work to finish before handoff`,
+        )
+      if (checkGoal && (await client.getGoal(id)))
+        throw new Error(
+          `Session ${id} has a persisted goal. Clear its goal before handoff; native goal usage cannot yet be transferred exactly`,
+        )
+    },
+    async hydrateHistory(id: string, cwd: string) {
+      // A persistent resume appends destination context to the imported
+      // bytes, breaking future ancestry-prefix identity on a round trip.
+      // An ephemeral fork builds Codex's native projections without rewriting
+      // the imported checkpoint or leaving another persisted conversation.
+      const fork = await client.forkThread(id, undefined, {
+        cwd,
+        runtimeWorkspaceRoots: [cwd],
+        ephemeral: true,
+        excludeTurns: true,
+      })
+      await client.unsubscribeThread(fork.summary.id)
+    },
+    async historyDigest(id: string): Promise<string> {
+      const normalize = (value: unknown): unknown => {
+        if (Array.isArray(value)) return value.map(normalize)
+        if (value && typeof value === "object")
+          return Object.fromEntries(
+            Object.entries(value)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([key, item]) => [key, normalize(item)]),
+          )
+        return value
+      }
+      const digest = createHash("sha256")
+      const seen = new Set<string>()
+      let cursor: string | undefined
+      let bytes = 0
+      let count = 0
+      do {
+        const page = await client.listTurns({
+          threadId: id,
+          cursor,
+          limit: 100,
+          sortDirection: "asc",
+          itemsView: "full",
+        })
+        for (const turn of page.data) {
+          const value = JSON.stringify(normalize(turn))
+          bytes += Buffer.byteLength(value)
+          if (++count > 100000 || bytes > 64 * 1024 * 1024)
+            throw new Error(
+              "Session history exceeds handoff verification limits",
+            )
+          digest.update(value).update("\n")
+        }
+        cursor = page.nextCursor ?? undefined
+        if (cursor) {
+          if (seen.has(cursor) || seen.size > 10000)
+            throw new Error("Native history pagination did not advance")
+          seen.add(cursor)
+        }
+      } while (cursor)
+      return `${count}:${digest.digest("hex")}`
+    },
     async accountIdentity(): Promise<string> {
       const source = client
       const { account } = await source.readAccount()
@@ -842,7 +981,7 @@ export function createCodexGateways(
     },
     archiveSource: (id: string) => client.archiveThread(id),
     async inspect(id: string) {
-      const { thread } = await client.readThread(id)
+      const { thread } = await readNativeThread(id)
       if (!thread.path)
         throw new Error("This conversation has no transferable rollout")
       return {
