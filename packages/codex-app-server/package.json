@@ -7,6 +7,7 @@
   "dependencies": {
     "@vimex/approvals": "workspace:*",
     "@vimex/conversation": "workspace:*",
-    "@vimex/workbench": "workspace:*"
+    "@vimex/workbench": "workspace:*",
+    "ws-node": "npm:ws@8.22.1"
   }
 }

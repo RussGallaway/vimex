@@ -62,6 +62,20 @@ test("daemon reconnect rebuilds client and never replays an ambiguous mutation",
   first.emit({ type: "connection", status: "disconnected" })
   first.emit({ type: "connection", status: "error", error: "duplicate close" })
   await eventually(() => events.some((event) => event.type === "reconnected"))
+  expect(
+    events.some(
+      (event) =>
+        event.type === "disconnected" &&
+        event.message === "Reconnecting to Codex app server",
+    ),
+  ).toBe(true)
+  expect(
+    events.some(
+      (event) =>
+        event.type === "disconnected" &&
+        event.message === "Restarting Codex app server",
+    ),
+  ).toBe(false)
   expect(creations).toBe(2)
   expect(sends).toBe(1)
   await gateway.connection.close()
@@ -102,6 +116,13 @@ test("failed reconnect handshakes retry with bounded attempts and shutdown cance
         event.message.includes("Unable to reconnect"),
     ),
   )
+  expect(
+    events.some(
+      (event) =>
+        event.type === "notice" &&
+        event.message.includes("Unable to reconnect to Codex: Error: offline"),
+    ),
+  ).toBe(true)
   expect(creations).toBe(3)
   await gateway.connection.close()
 })

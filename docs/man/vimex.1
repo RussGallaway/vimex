@@ -341,9 +341,11 @@ unsupported dependencies are refused; no summary substitutes for
 native history.
 .PP
 Typing, navigation, scrolling, clipboard, and optimistic message
-rendering stay local. Daemon proxy reconnect rehydrates server state
-without replaying uncertain submissions. Closing Vimex detaches the
-proxy; it does not intentionally stop the daemon.
+rendering stay local. Daemon proxy connections use WebSocket framing
+over the control socket. Reconnect replaces only the proxy connection
+and rehydrates server state without replaying uncertain submissions or
+restarting the daemon. Closing Vimex detaches the proxy; it does not
+intentionally stop the daemon.
 .PP
 The bottom status line shows the active machine name. The machine
 manager provides search, favorite\-first rows, inline rename, add, and

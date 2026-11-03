@@ -1,4 +1,8 @@
-import { createCodexAppServerClient } from "../capabilities/codex-app-server-client"
+import { ProxyWebSocketTransport } from "./proxy-websocket-transport"
+import {
+  CodexAppServerClient,
+  createCodexAppServerClient,
+} from "../capabilities/codex-app-server-client"
 import type { StdioTransportOptions } from "./stdio-transport"
 
 export interface CodexMachine {
@@ -71,7 +75,15 @@ exec "$vimex_codex" app-server proxy`
 }
 
 export function createMachineCodexClient(cwd: string, machine: CodexMachine) {
-  return createCodexAppServerClient(machineStdioOptions(cwd, machine), {
-    experimentalApi: true,
-  })
+  const options = machineStdioOptions(cwd, machine)
+  if (machine.mode === "stdio")
+    return createCodexAppServerClient(options, { experimentalApi: true })
+  return new CodexAppServerClient(
+    new ProxyWebSocketTransport({
+      command: options.command!,
+      args: options.args,
+      cwd: options.cwd,
+    }),
+    { experimentalApi: true },
+  )
 }

@@ -42,3 +42,62 @@ test("shell quoting treats quotes, substitutions, and whitespace as data", () =>
   for (const sshHost of ["-oProxyCommand=bad", "host\ncommand", " host"])
     expect(() => machineStdioOptions("/repo", { id: "bad", sshHost })).toThrow()
 })
+
+test("machine client uses WebSocket for daemon proxy and JSONL for explicit stdio", async () => {
+  const { mkdtemp, writeFile, rm } = await import("node:fs/promises")
+  const { tmpdir } = await import("node:os")
+  const { join } = await import("node:path")
+  const { createMachineCodexClient } = await import("./machine-transport")
+  const directory = await mkdtemp(join(tmpdir(), "vimex proxy fixture "))
+  const executable = join(directory, "codex")
+  const fixture = join(directory, "server.mjs")
+  await writeFile(
+    executable,
+    `#!/bin/sh\nif [ "$2" = "daemon" ]; then exit 0; fi\nexec ${quoteShell(process.execPath)} ${quoteShell(fixture)} "$@"\n`,
+    { mode: 0o755 },
+  )
+  await writeFile(
+    fixture,
+    `
+import {WebSocketServer} from ${JSON.stringify(import.meta.resolve("ws-node"))};
+import {Duplex} from 'node:stream';
+import {IncomingMessage} from 'node:http';
+import {Socket} from 'node:net';
+import {createInterface} from 'node:readline';
+const answer=(message,send)=>{const request=JSON.parse(message);if(request.method==='initialize')send(JSON.stringify({id:request.id,result:{userAgent:'fixture'}}))};
+if(process.argv.includes('--listen'))createInterface({input:process.stdin}).on('line',line=>answer(line,value=>process.stdout.write(value+'\\n')));
+else {
+ const server=new WebSocketServer({noServer:true,perMessageDeflate:false});
+ let header=Buffer.alloc(0),ready=false;
+ const socket=new Duplex({read(){process.stdin.resume()},write(chunk,encoding,done){process.stdout.write(chunk,encoding,done)},final(done){process.stdout.end();done()}});
+ Object.assign(socket,{setNoDelay(){},setTimeout(){}});
+ process.stdin.on('data',chunk=>{
+  if(ready){socket.push(chunk);return}
+  header=Buffer.concat([header,chunk]);const end=header.indexOf('\\r\\n\\r\\n');if(end===-1)return;
+  const lines=header.subarray(0,end).toString().split('\\r\\n');lines.shift();
+  const request=new IncomingMessage(new Socket());request.method='GET';request.url='/rpc';
+  request.headers=Object.fromEntries(lines.map(line=>{const i=line.indexOf(':');return [line.slice(0,i).toLowerCase(),line.slice(i+1).trim()]}));
+  ready=true;server.handleUpgrade(request,socket,Buffer.alloc(0),peer=>peer.on('message',data=>answer(data.toString(),value=>peer.send(value))));
+  if(header.length>end+4)socket.push(header.subarray(end+4));
+ });
+ process.stdin.on('end',()=>process.exit(0));
+}
+`,
+  )
+  try {
+    for (const mode of ["daemon", "stdio"] as const) {
+      const client = createMachineCodexClient(directory, {
+        id: "local",
+        mode,
+        executable,
+      })
+      try {
+        expect((await client.connect()).userAgent).toBe("fixture")
+      } finally {
+        await client.close()
+      }
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})

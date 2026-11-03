@@ -153,6 +153,7 @@ export function createCodexGateways(
   let restartPromise: Promise<void> | undefined
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
   let reconnectAttempt = 0
+  let reconnectError: string | undefined
   let connecting = false
   let established = false
   let connectPromise: Promise<void> | undefined
@@ -174,8 +175,7 @@ export function createCodexGateways(
     if (reconnectAttempt >= maxAttempts) {
       publish({
         type: "notice",
-        message:
-          "Unable to reconnect to Codex; use :restart to try again. Unacknowledged submissions were not resent.",
+        message: `Unable to reconnect to Codex${reconnectError ? `: ${reconnectError}` : ""}; use :restart to try again. Unacknowledged submissions were not resent.`,
       })
       return
     }
@@ -188,9 +188,13 @@ export function createCodexGateways(
       void restart()
         .then(() => {
           reconnectAttempt = 0
+          reconnectError = undefined
           if (!closed) publish({ type: "reconnected" })
         })
-        .catch(() => scheduleReconnect())
+        .catch((error) => {
+          reconnectError = String(error).slice(0, 1000)
+          scheduleReconnect()
+        })
     }, delay)
   }
   const ephemeralSideThreads = new Set<string>()
@@ -321,7 +325,9 @@ export function createCodexGateways(
     const operation = (async () => {
       publish({
         type: "disconnected",
-        message: "Restarting Codex app server",
+        message: reconnectEnabled
+          ? "Reconnecting to Codex app server"
+          : "Restarting Codex app server",
         reason: "restart",
       })
       for (const event of approvals.invalidatePending()) publish(event)
