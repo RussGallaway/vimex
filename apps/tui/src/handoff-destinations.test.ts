@@ -1,3 +1,5 @@
+// These integration fixtures spawn real Git/Python processes. Allow bounded
+// headroom for slower native CI runners without changing semantic assertions.
 import { expect, test } from "bun:test"
 import { mkdtemp, mkdir, rm, writeFile, realpath } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -76,7 +78,7 @@ test("handoff destinations discover worktrees and browse canonical directories w
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 
 test("favorites and committed destination persist per machine and origin across restart", async () => {
   const f = await fixture()
@@ -112,7 +114,7 @@ test("favorites and committed destination persist per machine and origin across 
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 
 test("favorite persistence fails without changing listed preferences and rejects non-worktree roots", async () => {
   const f = await fixture()
@@ -152,7 +154,7 @@ test("favorite persistence fails without changing listed preferences and rejects
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 
 test("saved favorite remains usable when configured directory disappears before first handoff", async () => {
   const f = await fixture()
@@ -168,7 +170,7 @@ test("saved favorite remains usable when configured directory disappears before 
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 
 test("destination preference loading retries after a transient read failure", async () => {
   const f = await fixture()
@@ -197,7 +199,7 @@ test("destination preference loading retries after a transient read failure", as
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 
 test("unconfigured home discovers child repositories and ordinary folders", async () => {
   const f = await fixture()
@@ -211,7 +213,7 @@ test("unconfigured home discovers child repositories and ordinary folders", asyn
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 
 test("recent destinations retain multiple paths and malformed recent profiles fail", async () => {
   const f = await fixture()
@@ -235,7 +237,7 @@ test("recent destinations retain multiple paths and malformed recent profiles fa
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 
 test("failed Git status is unknown rather than falsely clean", async () => {
   const f = await fixture()
@@ -248,4 +250,4 @@ test("failed Git status is unknown rather than falsely clean", async () => {
   } finally {
     await f.close()
   }
-})
+}, 60_000)

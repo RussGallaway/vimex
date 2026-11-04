@@ -1,3 +1,5 @@
+// These integration fixtures spawn real Git/Python processes. Allow bounded
+// headroom for slower native CI runners without changing semantic assertions.
 import { afterEach, expect, test } from "bun:test"
 import {
   mkdtemp,
@@ -111,7 +113,7 @@ test("native handoff preserves full history, staging, unstaged edits, and untrac
   expect(await readFile(join(prepared.cwd, "tracked.txt"), "utf8")).toBe(
     "working\n",
   )
-})
+}, 60_000)
 test("source edits invalidate prepared handoff; cleanup removes only the fresh worktree", async () => {
   const f = await fixture()
   const prepared = await prepareLegacyHandoff(f)
@@ -124,7 +126,7 @@ test("source edits invalidate prepared handoff; cleanup removes only the fresh w
     "base\n",
   )
   await expect(readFile(join(prepared.cwd, "tracked.txt"))).rejects.toThrow()
-})
+}, 60_000)
 test("paginated and dependent transcripts fail closed", () => {
   expect(() => validateLegacyRollout(rollout("paginated"), "thread-1")).toThrow(
     "Paginated",
@@ -153,12 +155,12 @@ test("wrong repository refuses before preparing a destination", async () => {
     "https://example.test/other.git",
   )
   await expect(prepareLegacyHandoff(f)).rejects.toThrow("matching repository")
-})
+}, 60_000)
 test("remote host validation rejects SSH option injection before spawning", async () => {
   await expect(
     hostOperation({ sshHost: "-oProxyCommand=evil" }, { action: "resolve" }),
   ).rejects.toThrow("Invalid SSH host")
-})
+}, 60_000)
 
 test("native fork history permits preserved ancestral metadata and compaction", () => {
   const ancestor =
@@ -205,7 +207,7 @@ test("textconv configuration cannot transform the transferred patch", async () =
     "working\n",
   )
   await prepared.cleanup()
-})
+}, 60_000)
 
 test("active checkout filters refuse before destination worktree creation", async () => {
   const f = await fixture()
@@ -219,7 +221,7 @@ test("active checkout filters refuse before destination worktree creation", asyn
       /^worktree /gm,
     ),
   ).toHaveLength(1)
-})
+}, 60_000)
 
 test("destination reconstruction mismatch rolls back its isolated worktree", async () => {
   const f = await fixture()
@@ -237,7 +239,7 @@ test("destination reconstruction mismatch rolls back its isolated worktree", asy
   expect(await readFile(join(f.source.cwd, "new.txt"), "utf8")).toBe(
     "must remain visible\n",
   )
-})
+}, 60_000)
 
 test("existing destination preserves prepared environment and exact dirty source state", async () => {
   const f = await fixture()
@@ -279,7 +281,7 @@ test("existing destination preserves prepared environment and exact dirty source
   expect(
     await readFile(join(prepared.cwd, "node_modules", "installed"), "utf8"),
   ).toBe("deps")
-}, 30000)
+}, 60_000)
 
 test("existing destination rollback restores original branch and removes only imported changes", async () => {
   const f = await fixture()
@@ -306,7 +308,7 @@ test("existing destination rollback restores original branch and removes only im
     "base\n",
   )
   expect(await f.git(f.destination, "branch", "--list", "feature/new")).toBe("")
-}, 30000)
+}, 60_000)
 
 test("existing handoff refuses dirty checkout and ignored path collisions without modifying files", async () => {
   const f = await fixture()
@@ -329,7 +331,7 @@ test("existing handoff refuses dirty checkout and ignored path collisions withou
   expect(await readFile(join(f.destination.cwd, "secret.txt"), "utf8")).toBe(
     "destination secret",
   )
-}, 30000)
+}, 60_000)
 
 test("existing handoff refuses diverged or occupied source branch", async () => {
   const f = await fixture()
@@ -355,7 +357,7 @@ test("existing handoff refuses diverged or occupied source branch", async () => 
   await expect(
     prepareLegacyHandoff({ ...f, destinationMode: "existing" }),
   ).rejects.toThrow("already checked out")
-}, 30000)
+}, 60_000)
 
 test("existing rollback retains concurrent destination edits and releases its handoff lock", async () => {
   const f = await fixture()
@@ -374,7 +376,7 @@ test("existing rollback retains concurrent destination edits and releases its ha
   await expect(
     readFile(join(f.destination.cwd, ".git", "vimex-handoff.lock")),
   ).rejects.toThrow()
-}, 30000)
+}, 60_000)
 
 test("existing source branch fast-forwards exactly and rollback restores its ref", async () => {
   const f = await fixture()
@@ -399,7 +401,7 @@ test("existing source branch fast-forwards exactly and rollback restores its ref
   expect(await f.git(f.destination, "branch", "--show-current")).toBe(
     originalBranch,
   )
-}, 30000)
+}, 60_000)
 
 test("existing destination rejects changed ignore rules before exposing its environment", async () => {
   const f = await fixture()
@@ -419,7 +421,7 @@ test("existing destination rejects changed ignore rules before exposing its envi
   expect(await readFile(join(f.destination.cwd, ".env"), "utf8")).toBe(
     "local secret",
   )
-}, 30000)
+}, 60_000)
 
 test("existing handoff preserves files outside an ignored symlink ancestor", async () => {
   const f = await fixture()
@@ -444,7 +446,7 @@ test("existing handoff preserves files outside an ignored symlink ancestor", asy
     await realpath(outside),
   )
   expect(await f.git(f.destination, "rev-parse", "HEAD")).toBe(originalHead)
-}, 30000)
+}, 60_000)
 
 test("existing handoff lock refuses simultaneous transfer without releasing the owner lock", async () => {
   const f = await fixture()
@@ -462,7 +464,7 @@ test("existing handoff lock refuses simultaneous transfer without releasing the 
   await prepared.verifySourceUnchanged()
   await prepared.cleanup()
   await expect(realpath(join(gitDir, "vimex-handoff.lock"))).rejects.toThrow()
-}, 30000)
+}, 60_000)
 
 test("existing fast-forward refuses ignored files appearing after preflight", async () => {
   const f = await fixture()
@@ -504,4 +506,4 @@ test("existing fast-forward refuses ignored files appearing after preflight", as
   expect(await readFile(join(f.destination.cwd, "incoming.env"), "utf8")).toBe(
     "local process configuration",
   )
-}, 30000)
+}, 60_000)

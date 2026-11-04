@@ -272,7 +272,11 @@ for (const input of ["wheel", "keyboard"] as const)
                 ctrl: true,
               })
           }
-          await h.flush()
+          // Long keyboard bursts intentionally span multiple bounded layout
+          // frames. Give every requested row a frame plus settling headroom;
+          // the exact position, intermediate output and tail assertions below
+          // still verify that no moves are lost or skipped.
+          await h.flush({ maxPasses: Math.max(20, count * 2 + 20) })
           await h.renderOnce()
         })
         await act(async () => {

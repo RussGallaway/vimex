@@ -1,3 +1,5 @@
+// These integration fixtures spawn real Git/Python processes. Allow bounded
+// headroom for slower native CI runners without changing semantic assertions.
 import { expect, test } from "bun:test"
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -63,7 +65,7 @@ test("bounded ancestry import preserves native bytes, order, and retained depend
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 test("matching longer ancestor prefixes reuse IDs, divergent collisions never overwrite", async () => {
   const f = await fixture()
   try {
@@ -89,7 +91,7 @@ test("matching longer ancestor prefixes reuse IDs, divergent collisions never ov
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 test("bad cutoffs, cycles and unavailable child dependencies fail before import", async () => {
   const f = await fixture()
   try {
@@ -120,7 +122,7 @@ test("bad cutoffs, cycles and unavailable child dependencies fail before import"
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 test("exclusive staging refuses collisions and rollback retains changed imports", async () => {
   const f = await fixture()
   try {
@@ -142,7 +144,7 @@ test("exclusive staging refuses collisions and rollback retains changed imports"
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 
 test("repeated ancestor references validate every cutoff instead of trusting the first", async () => {
   const f = await fixture()
@@ -164,7 +166,7 @@ test("repeated ancestor references validate every cutoff instead of trusting the
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 
 test("nested fork cutoffs use logical inherited ordinals and preserve all ancestor bytes", async () => {
   const f = await fixture()
@@ -189,7 +191,7 @@ test("nested fork cutoffs use logical inherited ordinals and preserve all ancest
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 
 test("subagent collaboration graph closes over nested children without treating parent links as ancestry cycles", async () => {
   const f = await fixture()
@@ -263,7 +265,7 @@ test("subagent collaboration graph closes over nested children without treating 
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 
 test("complete child histories refuse longer ID collisions instead of silently reusing only an ancestor prefix", async () => {
   const f = await fixture()
@@ -290,7 +292,7 @@ test("complete child histories refuse longer ID collisions instead of silently r
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 
 test("missing referenced children and invalid subagent offsets fail during capture", async () => {
   const f = await fixture()
@@ -322,7 +324,7 @@ test("missing referenced children and invalid subagent offsets fail during captu
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 
 test("text mentioning agent tools is not a child reference", async () => {
   const f = await fixture()
@@ -348,7 +350,7 @@ test("text mentioning agent tools is not a child reference", async () => {
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 
 test("inactive complete histories extend exact prefixes and roll back owned changes", async () => {
   const f = await fixture()
@@ -384,7 +386,7 @@ test("inactive complete histories extend exact prefixes and roll back owned chan
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 
 test("prefix reconciliation refuses active copies and concurrent file edits", async () => {
   const f = await fixture()
@@ -417,7 +419,7 @@ test("prefix reconciliation refuses active copies and concurrent file edits", as
   } finally {
     await f.close()
   }
-})
+}, 60_000)
 
 test("changed or activated extended histories retain the entire imported closure", async () => {
   for (const activate of [false, true]) {
@@ -448,4 +450,4 @@ test("changed or activated extended histories retain the entire imported closure
       await f.close()
     }
   }
-})
+}, 60_000)
