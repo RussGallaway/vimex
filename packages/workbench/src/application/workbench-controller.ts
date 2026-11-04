@@ -442,10 +442,6 @@ export class VimexController
       const pending = this.launch(async () => {
         await this.threadMutations.get(id)?.catch(() => {})
         if (!this.currentRuntime(epoch) || this.state.machineChanging) return
-        if (this.state.compactingThreads[id]) {
-          this.notice("Wait for side chat compaction before sending a question")
-          return
-        }
         if (!this.loaded.has(id)) {
           this.notice(
             "Open the side chat successfully before sending a question",

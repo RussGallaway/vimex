@@ -38,8 +38,13 @@ export function transitionWorkbench(
   command: WorkbenchCommand,
 ): WorkbenchTransition {
   switch (command.type) {
-    case "compaction.observed":
-      return done(observeCompaction(state, command.observation))
+    case "compaction.observed": {
+      const next = observeCompaction(state, command.observation)
+      const id = command.observation.threadId
+      return state.compactingThreads[id] && !next.compactingThreads[id]
+        ? transitionWorkbench(next, { type: "composer.flush", threadId: id })
+        : done(next)
+    }
     case "turn.interrupt.requested":
       return state.workspaces[command.threadId]?.conversation.activeTurnId ===
         command.turnId
@@ -201,10 +206,22 @@ export function transitionWorkbench(
       })
     }
     case "conversation.event": {
-      const result = applyConversationEvent(
+      let result = applyConversationEvent(
         observeCompactionTurn(state, command.event),
         command.event,
       )
+      const id = command.event.threadId
+      // A completion may arrive without its turn.started notification. Release
+      // the queue even when the projector has no running turn to settle.
+      if (
+        state.compactingThreads[id] &&
+        !result.state.compactingThreads[id] &&
+        !result.effects.length
+      )
+        result = transitionWorkbench(result.state, {
+          type: "composer.flush",
+          threadId: id,
+        })
       if (
         command.event.type !== "turn.completed" ||
         result.state.interruptingTurns[command.event.threadId] !==
@@ -389,23 +406,19 @@ export function transitionWorkbench(
       const id = targetThread(state, command.threadId)
       const workspace = id ? state.workspaces[id] : undefined
       if (!id || !workspace) return done(state)
-      if (state.compactingThreads[id])
-        return done({
-          ...state,
-          error:
-            "Wait for compaction to finish before sending; your draft is preserved",
-        })
       const activeTurnId = workspace.conversation.activeTurnId
       const startingTurn =
         !activeTurnId &&
         workspace.composer.outbox.some(
           (message) => message.status === "sending",
         )
-      const queued = state.provisionalThreadIds.includes(id)
-        ? true
-        : command.intent === "next-turn"
-          ? Boolean(activeTurnId) || startingTurn
-          : !activeTurnId && startingTurn
+      const queued =
+        Boolean(state.compactingThreads[id]) ||
+        state.provisionalThreadIds.includes(id)
+          ? true
+          : command.intent === "next-turn"
+            ? Boolean(activeTurnId) || startingTurn
+            : !activeTurnId && startingTurn
       const composer = submitDraft(
         workspace.composer,
         command.intent,
@@ -433,6 +446,7 @@ export function transitionWorkbench(
         workspace.composer,
         command.threadId,
         workspace.conversation.activeTurnId,
+        Boolean(state.compactingThreads[command.threadId]),
       )
       const next = updateWorkspace(state, command.threadId, (current) => ({
         ...current,
@@ -472,6 +486,7 @@ export function transitionWorkbench(
             settled,
             command.threadId,
             workspace.conversation.activeTurnId,
+            Boolean(state.compactingThreads[command.threadId]),
           )
       const next = updateWorkspace(state, command.threadId, (current) => ({
         ...current,
@@ -487,12 +502,6 @@ export function transitionWorkbench(
       )
       if (!id || !workspace || !outgoing || outgoing.status !== "failed")
         return done(state)
-      if (state.compactingThreads[id])
-        return done({
-          ...state,
-          error:
-            "Wait for compaction to finish before sending; your draft is preserved",
-        })
       const activeTurnId = workspace.conversation.activeTurnId
       const startingTurn =
         !activeTurnId &&
@@ -501,9 +510,10 @@ export function transitionWorkbench(
             message.id !== outgoing.id && message.status === "sending",
         )
       const queued =
-        outgoing.intent === "next-turn"
+        Boolean(state.compactingThreads[id]) ||
+        (outgoing.intent === "next-turn"
           ? Boolean(activeTurnId) || startingTurn
-          : !activeTurnId && startingTurn
+          : !activeTurnId && startingTurn)
       const composer = retryOutgoing(workspace.composer, outgoing.id, queued)
       const next = updateWorkspace(state, id, (current) => ({
         ...current,
@@ -526,6 +536,7 @@ export function transitionWorkbench(
         composer,
         id,
         workspace.conversation.activeTurnId,
+        Boolean(state.compactingThreads[id]),
       )
       const next = updateWorkspace(state, id, (current) => ({
         ...current,

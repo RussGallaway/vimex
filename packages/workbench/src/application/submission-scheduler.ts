@@ -51,7 +51,9 @@ export function scheduleQueued(
   composer: ComposerState,
   thread: ThreadId,
   activeTurnId?: TurnId,
+  paused = false,
 ): { composer: ComposerState; effect?: WorkbenchEffect } {
+  if (paused) return { composer }
   const queued = activeTurnId
     ? firstQueuedMessage(composer, "steer")
     : firstQueuedMessage(composer)

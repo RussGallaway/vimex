@@ -115,7 +115,12 @@ export function applyConversationEvent(
     event.type === "turn.started" &&
     conversation.activeTurnId === event.turnId
   ) {
-    const scheduled = scheduleQueued(composer, event.threadId, event.turnId)
+    const scheduled = scheduleQueued(
+      composer,
+      event.threadId,
+      event.turnId,
+      Boolean(state.compactingThreads[event.threadId]),
+    )
     composer = scheduled.composer
     if (scheduled.effect) effects.push(scheduled.effect)
   }
@@ -124,6 +129,7 @@ export function applyConversationEvent(
       composer,
       event.threadId,
       conversation.activeTurnId,
+      Boolean(state.compactingThreads[event.threadId]),
     )
     composer = scheduled.composer
     if (scheduled.effect) effects.push(scheduled.effect)

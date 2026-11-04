@@ -26,7 +26,8 @@ const summary = (value = id): ThreadSummary => ({
 async function harness() {
   let listener: (event: RuntimeEvent) => void = () => {}
   const requests: string[] = [],
-    sends: string[] = []
+    sends: string[] = [],
+    steers: string[] = []
   const runtime: ConversationGateway & RuntimeConnection = {
     connect: async () => {},
     restart: async () => {},
@@ -46,7 +47,9 @@ async function harness() {
       sends.push(text)
       return []
     },
-    steerTurn: async () => {},
+    steerTurn: async (_, __, text) => {
+      steers.push(text)
+    },
     interruptTurn: async () => {},
     renameThread: async () => {},
     updateSettings: async () => {},
@@ -67,11 +70,12 @@ async function harness() {
     runtime,
     requests,
     sends,
+    steers,
     emit: (event: RuntimeEvent) => listener(event),
   }
 }
 
-test("compaction ack stays animated, deduplicates, preserves drafts and settles on completion", async () => {
+test("compaction queues submissions without sending before its turn completes", async () => {
   const h = await harness()
   h.controller.executeNamedCommand("compact")
   h.controller.executeNamedCommand("compact")
@@ -82,19 +86,26 @@ test("compaction ack stays animated, deduplicates, preserves drafts and settles 
     label: "Compacting",
   })
   h.controller.changeDraft("keep this draft", 5)
-  h.controller.submit("next-turn")
-  h.controller.submit("steer")
+  expect(h.controller.submit("next-turn")).toBe(true)
+  h.controller.changeDraft("steer after compaction", 0)
+  expect(h.controller.submit("steer")).toBe(true)
   await h.controller.settle()
   expect(h.sends).toEqual([])
-  expect(h.controller.getSnapshot().workspaces[id]?.composer.text).toBe(
-    "keep this draft",
-  )
+  expect(h.controller.getSnapshot().workspaces[id]?.composer.text).toBe("")
+  expect(
+    h.controller
+      .getSnapshot()
+      .workspaces[id]?.composer.outbox.map((message) => message.status),
+  ).toEqual(["queued", "queued"])
   h.emit({
     type: "conversation",
     event: { type: "turn.started", threadId: id, turnId: turn },
   })
   h.emit({ type: "compaction", phase: "started", threadId: id, turnId: turn })
   expect(liveActivity(h.controller.getSnapshot()).label).toBe("Compacting")
+  await h.controller.settle()
+  expect(h.sends).toEqual([])
+  expect(h.steers).toEqual([])
   h.emit({
     type: "conversation",
     event: {
@@ -104,8 +115,16 @@ test("compaction ack stays animated, deduplicates, preserves drafts and settles 
       outcome: "complete",
     },
   })
-  expect(liveActivity(h.controller.getSnapshot()).working).toBe(false)
+  expect(liveActivity(h.controller.getSnapshot()).label).not.toBe("Compacting")
   expect(h.controller.getSnapshot().compactingThreads).toEqual({})
+  await h.controller.settle()
+  expect(h.sends).toEqual(["keep this draft"])
+  h.emit({
+    type: "conversation",
+    event: { type: "turn.started", threadId: id, turnId: turnId("next-turn") },
+  })
+  await h.controller.settle()
+  expect(h.steers).toEqual(["steer after compaction"])
   await h.controller.close()
 })
 
@@ -275,5 +294,113 @@ test("stale turn failures and starts cannot settle or replace a newer compaction
     },
   })
   expect(liveActivity(h.controller.getSnapshot()).working).toBe(false)
+  await h.controller.close()
+})
+
+for (const phase of ["completed", "failed"] as const) {
+  test(`compaction ${phase} without a turn releases the queue exactly once`, async () => {
+    const h = await harness()
+    h.controller.executeNamedCommand("compact")
+    await h.controller.settle()
+    h.controller.changeDraft("after compaction", 0)
+    expect(h.controller.submit("next-turn")).toBe(true)
+    h.controller.changeDraft("new unsent draft", 0)
+    h.emit({ type: "compaction", phase, threadId: id })
+    h.emit({ type: "compaction", phase, threadId: id })
+    await h.controller.settle()
+    expect(h.sends).toEqual(["after compaction"])
+    expect(h.controller.getSnapshot().workspaces[id]?.composer.text).toBe(
+      "new unsent draft",
+    )
+    await h.controller.close()
+  })
+}
+
+test("automatic compaction holds steering and queue edits until the matching completion", async () => {
+  const h = await harness()
+  h.emit({
+    type: "conversation",
+    event: { type: "turn.started", threadId: id, turnId: turn },
+  })
+  h.emit({ type: "compaction", phase: "started", threadId: id, turnId: turn })
+  for (const text of ["remove me", "edit me", "steer later"]) {
+    h.controller.changeDraft(text, 0)
+    expect(h.controller.submit("steer")).toBe(true)
+  }
+  const queued = h.controller.getSnapshot().workspaces[id]!.composer.outbox
+  expect(h.controller.removeQueuedOutgoing(queued[0]!.id)).toBe(true)
+  expect(h.controller.unqueueOutgoing(queued[1]!.id)).toBe(true)
+  h.emit({
+    type: "compaction",
+    phase: "completed",
+    threadId: id,
+    turnId: turnId("stale"),
+  })
+  await h.controller.settle()
+  expect(h.steers).toEqual([])
+  expect(h.sends).toEqual([])
+  h.emit({ type: "compaction", phase: "completed", threadId: id, turnId: turn })
+  await h.controller.settle()
+  expect(h.steers).toEqual(["steer later"])
+  expect(h.controller.getSnapshot().workspaces[id]?.composer.text).toBe(
+    "edit me",
+  )
+  await h.controller.close()
+})
+
+test("in-flight send failure and retry cannot drain messages during compaction", async () => {
+  const h = await harness()
+  let rejectSend!: (error: Error) => void
+  h.runtime.startTurn = () =>
+    new Promise((_, reject) => {
+      rejectSend = reject
+    })
+  h.controller.changeDraft("retry me", 0)
+  h.controller.submit("next-turn")
+  await Promise.resolve()
+  h.emit({ type: "compaction", phase: "started", threadId: id, turnId: turn })
+  h.controller.changeDraft("later", 0)
+  h.controller.submit("steer")
+  rejectSend(new Error("send rejected"))
+  await h.controller.settle()
+  const failed = h.controller
+    .getSnapshot()
+    .workspaces[id]!.composer.outbox.find(
+      (message) => message.status === "failed",
+    )!
+  expect(failed).toBeDefined()
+  h.controller.retryOutgoing(failed.id)
+  await h.controller.settle()
+  expect(
+    h.controller
+      .getSnapshot()
+      .workspaces[id]!.composer.outbox.map((message) => message.status),
+  ).toEqual(["queued", "queued"])
+  h.runtime.startTurn = async (_, text) => {
+    h.sends.push(text)
+    return []
+  }
+  h.emit({ type: "compaction", phase: "completed", threadId: id, turnId: turn })
+  await h.controller.settle()
+  expect(h.sends).toEqual(["retry me"])
+  await h.controller.close()
+})
+
+test("compaction turn completion without a turn-start notification releases queued input", async () => {
+  const h = await harness()
+  h.emit({ type: "compaction", phase: "started", threadId: id, turnId: turn })
+  h.controller.changeDraft("continue", 8)
+  expect(h.controller.submit("next-turn")).toBe(true)
+  h.emit({
+    type: "conversation",
+    event: {
+      type: "turn.completed",
+      threadId: id,
+      turnId: turn,
+      outcome: "complete",
+    },
+  })
+  await h.controller.settle()
+  expect(h.sends).toEqual(["continue"])
   await h.controller.close()
 })

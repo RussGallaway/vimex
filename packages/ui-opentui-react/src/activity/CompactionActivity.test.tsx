@@ -19,6 +19,7 @@ const parent = threadId("compact-parent"),
 async function harness() {
   let emit: (event: RuntimeEvent) => void = () => {}
   let acknowledge!: () => void
+  const sends: string[] = []
   const summary = (id = parent): ThreadSummary => ({
     id,
     title: id === parent ? "Parent" : "Side",
@@ -45,7 +46,10 @@ async function harness() {
     forkSideThread: async () => ({ summary: summary(child), events: [] }),
     forkThread: async () => ({ summary: summary(child), events: [] }),
     retireThread: async () => {},
-    startTurn: async () => [],
+    startTurn: async (_, text) => {
+      sends.push(text)
+      return []
+    },
     steerTurn: async () => {},
     interruptTurn: async () => {},
     renameThread: async () => {},
@@ -90,6 +94,7 @@ async function harness() {
   return {
     ...setup,
     controller,
+    sends,
     update,
     compact,
     ack,
@@ -196,6 +201,35 @@ test("parent compaction remains visible and animated while side chat is focused"
       }),
     )
     expect(h.captureCharFrame()).not.toContain("Compacting")
+  } finally {
+    await h.close()
+  }
+})
+
+test("Enter accepts a message into the visible queue during compaction", async () => {
+  const h = await harness()
+  try {
+    await h.compact()
+    await h.ack()
+    await h.update(() => {
+      h.controller.changeDraft("continue after compacting", 25)
+      h.mockInput.pressKey("i")
+    })
+    await h.update(() => h.mockInput.pressKey("RETURN"))
+    expect(h.controller.getSnapshot().workspaces[parent]?.composer.text).toBe(
+      "",
+    )
+    expect(
+      h.controller.getSnapshot().workspaces[parent]?.composer.outbox[0]?.status,
+    ).toBe("queued")
+    expect(h.captureCharFrame()).toContain("continue after compacting")
+    expect(h.captureCharFrame()).toContain("Compacting")
+    expect(h.sends).toEqual([])
+    await h.update(() =>
+      h.emit({ type: "compaction", phase: "completed", threadId: parent }),
+    )
+    await h.controller.settle()
+    expect(h.sends).toEqual(["continue after compacting"])
   } finally {
     await h.close()
   }

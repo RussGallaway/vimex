@@ -186,10 +186,31 @@ test("double bang sends a literal bang to the agent", async () => {
     turnId: turnId("compacting"),
   })
   h.controller.changeDraft("!!stay literal", 14)
-  expect(h.controller.submit("next-turn")).toBe(false)
-  expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe(
-    "!!stay literal",
-  )
+  expect(h.controller.submit("next-turn")).toBe(true)
+  expect(h.controller.getSnapshot().workspaces[a]?.composer.text).toBe("")
+  expect(
+    h.controller.getSnapshot().workspaces[a]?.composer.outbox.at(-1),
+  ).toMatchObject({ text: "!stay literal", status: "queued" })
+  await h.controller.settle()
+  expect(h.starts).toEqual(["!important"])
+  h.emit({
+    type: "compaction",
+    phase: "completed",
+    threadId: a,
+    turnId: turnId("compacting"),
+  })
+  h.emit({
+    type: "conversation",
+    event: {
+      type: "turn.completed",
+      threadId: a,
+      turnId: turnId("turn-1"),
+      outcome: "complete",
+    },
+  })
+  await h.controller.settle()
+  expect(h.starts).toEqual(["!important", "!stay literal"])
+  expect(h.shellCommands).toEqual([])
 })
 
 test("invalid or failed shell commands preserve a recoverable draft", async () => {

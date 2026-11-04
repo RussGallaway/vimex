@@ -42,7 +42,7 @@ export const manualSections = [
   },
   {
     "title": "GOALS AND COMPACTION",
-    "body": ":goal or /goal shows the current goal. :goal OBJECTIVE sets one; :goal --budget TOKENS OBJECTIVE sets an explicit token budget. pause, resume, complete, and clear manage its lifecycle. Use :goal set pause to set the literal objective 'pause'. Codex owns continuation; pausing a goal does not interrupt an already running turn.\n\n:compact or /compact asks Codex to compact context while idle. The Compacting indicator follows server events; sending is paused until completion and drafts are preserved."
+    "body": ":goal or /goal shows the current goal. :goal OBJECTIVE sets one; :goal --budget TOKENS OBJECTIVE sets an explicit token budget. pause, resume, complete, and clear manage its lifecycle. Use :goal set pause to set the literal objective 'pause'. Codex owns continuation; pausing a goal does not interrupt an already running turn.\n\n:compact or /compact asks Codex to compact context while idle. The Compacting indicator follows server events; messages submitted during compaction are queued and sent automatically when compaction finishes. Steering waits for compaction too, then targets the active turn or starts a new turn if none remains."
   },
   {
     "title": "MACHINES",
