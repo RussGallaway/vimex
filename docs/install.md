@@ -1,6 +1,6 @@
 # Install and run
 
-The CLI, native packaging, Homebrew formula, and curl installer are published for macOS and Linux on ARM64 and x64. Source execution and local bundles remain available for development. See [distribution and releases](releasing.md).
+The CLI, native packaging, Homebrew formula, and curl installer are released for macOS ARM64 and Linux ARM64/x64 (new releases no longer build for Intel Macs). Source execution and local bundles remain available for development. See [distribution and releases](releasing.md).
 
 Use `:manual` inside Vimex or `man ./docs/man/vimex.1` from the checkout to read the offline manual.
 

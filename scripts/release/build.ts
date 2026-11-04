@@ -8,7 +8,8 @@ const { version } = JSON.parse(
 )
 if (
   !["darwin", "linux"].includes(process.platform) ||
-  !["arm64", "x64"].includes(process.arch)
+  !["arm64", "x64"].includes(process.arch) ||
+  (process.platform === "darwin" && process.arch !== "arm64")
 )
   throw new Error("Unsupported release target")
 if (process.platform === "linux" && process.env.OPENTUI_LIBC === "musl")

@@ -25,6 +25,7 @@ async function fixture() {
   const artifacts = []
   for (const platform of ["darwin", "linux"] as const)
     for (const arch of ["arm64", "x64"] as const) {
+      if (platform === "darwin" && arch === "x64") continue
       const name = `vimex-v${version}-${platform}-${arch}.tar.gz`
       const bytes = Buffer.from(`fixture ${platform}/${arch}`)
       const artifact = {
@@ -95,7 +96,7 @@ test("packaging a custom output directory includes runtime assets and records th
     await rm(directory, { recursive: true, force: true })
   }
 })
-test("release generator verifies four archives and emits matching manifest, sums and Homebrew formula", async () => {
+test("release generator verifies three archives and emits matching manifest, sums and Homebrew formula", async () => {
   const f = await fixture()
   try {
     const result = await execute("manifest.ts", f.directory)
@@ -119,6 +120,8 @@ test("release generator verifies four archives and emits matching manifest, sums
     }
     expect(source).toContain('system "gzip", "-n", native_libraries.first')
     expect(source).toContain("post_install_steps do")
+    expect(source).not.toContain("darwin-x64.tar.gz")
+    expect(source).toContain("depends_on arch: :arm64")
     expect(source).toContain("if_path_exists native_library do")
     expect(source).toContain(
       'run "/usr/bin/gzip", args: ["-d", native_library]',
@@ -153,7 +156,7 @@ test("release generator rejects tampered bytes and missing platforms before emit
       const result = await execute("manifest.ts", f.directory)
       expect(result.code).not.toBe(0)
       expect(result.stderr).toContain(
-        failure === "checksum" ? "Checksum mismatch" : "all four",
+        failure === "checksum" ? "Checksum mismatch" : "all three",
       )
       expect(
         await Bun.file(join(f.directory, "vimex-release.json")).exists(),

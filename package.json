@@ -34,6 +34,7 @@
     "build": "bun scripts/release/build.ts",
     "install:dev": "bun scripts/install-dev.ts",
     "package": "bun scripts/release/package.ts",
+    "release:ready": "bun scripts/release/select-candidate.ts --check",
     "release:manifest": "bun scripts/release/manifest.ts",
     "release:formula": "bun scripts/release/update-homebrew.ts",
     "prepare": "bun --bun run husky",

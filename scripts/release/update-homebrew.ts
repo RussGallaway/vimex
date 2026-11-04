@@ -5,11 +5,13 @@ import { parseRelease } from "@vimex/distribution"
 const file = process.argv[2]
 if (!file) throw new Error("Usage: update-homebrew.ts MANIFEST [OUTPUT]")
 const release = parseRelease(JSON.parse(await readFile(file, "utf8")))
-if (release.artifacts.length !== 4)
-  throw new Error("Homebrew publication requires four platform artifacts")
+if (release.artifacts.length !== 3)
+  throw new Error(
+    "Homebrew publication requires three supported platform artifacts",
+  )
 const stanza = (platform: "darwin" | "linux") =>
   `  on_${platform === "darwin" ? "macos" : "linux"} do\n` +
-  ["arm64", "x64"]
+  (platform === "darwin" ? ["arm64"] : ["arm64", "x64"])
     .map((arch) => {
       const asset = release.artifacts.find(
         (value) => value.platform === platform && value.arch === arch,
@@ -32,6 +34,10 @@ class Vimex < Formula
 
 ${stanza("darwin")}
 ${stanza("linux")}
+  on_macos do
+    depends_on arch: :arm64
+  end
+
   head do
     url "https://github.com/RussGallaway/vimex.git", branch: "main"
     depends_on "oven-sh/bun/bun" => :build

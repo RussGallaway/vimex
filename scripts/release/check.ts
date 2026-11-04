@@ -20,9 +20,10 @@ if (packageManager !== `bun@${Bun.version}`)
 if (
   !["darwin", "linux"].includes(process.platform) ||
   !["arm64", "x64"].includes(process.arch) ||
+  (process.platform === "darwin" && process.arch !== "arm64") ||
   (process.platform === "linux" && process.env.OPENTUI_LIBC === "musl")
 )
-  throw new Error("Release checks require macOS or glibc Linux on ARM64 or x64")
+  throw new Error("Release checks require macOS ARM64 or glibc Linux ARM64/x64")
 
 const env = {
   ...process.env,

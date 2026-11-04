@@ -14,6 +14,7 @@ case "$root:$bin" in /*:/*) ;; *) fail 'Install root and bin directory must be a
 for command in curl tar awk sed mktemp; do command -v "$command" >/dev/null 2>&1 || fail "Missing dependency: $command"; done
 case "$(uname -s)" in Darwin) platform=darwin;; Linux) platform=linux;; *) fail 'Supported platforms: macOS and Linux';; esac
 case "$(uname -m)" in arm64|aarch64) arch=arm64;; x86_64|amd64) arch=x64;; *) fail 'Supported architectures: arm64 and x64';; esac
+if [ "$platform/$arch" = darwin/x64 ]; then fail "New Vimex releases require Apple Silicon on macOS; Intel Mac builds are retired"; fi
 if [ -z "$version" ]; then
   version=$(curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 60 "https://api.github.com/repos/$repository/releases/latest" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 fi

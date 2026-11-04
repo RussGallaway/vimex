@@ -29,8 +29,13 @@ for (const file of (await readdir(directory))
   }
 }
 const release = parseRelease({ version, artifacts })
-if (release.artifacts.length !== 4)
-  throw new Error("Publishing requires all four native platform artifacts")
+if (
+  release.artifacts.length !== 3 ||
+  release.artifacts.some((a) => a.platform === "darwin" && a.arch === "x64")
+)
+  throw new Error(
+    "Publishing requires all three supported native platform artifacts",
+  )
 await writeFile(
   join(directory, "vimex-release.json"),
   JSON.stringify(release, null, 2) + "\n",
