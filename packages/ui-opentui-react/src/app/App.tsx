@@ -2124,7 +2124,7 @@ export function VimexApp({
               textareaRef={textareaRef}
               submitRef={composerSubmitRef}
               onChange={(text, cursor) => {
-                slashCommands.changeDraft(text, cursor)
+                return slashCommands.changeDraft(text, cursor)
               }}
               drawer={
                 mentionPicker.active ? (

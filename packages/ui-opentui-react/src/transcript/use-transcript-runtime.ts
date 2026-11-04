@@ -1,3 +1,8 @@
+import { useRenderer } from "@opentui/react"
+import {
+  composerPaintPending,
+  subscribeComposerPaint,
+} from "../composer/input-paint"
 import { createConversation, threadId } from "@vimex/conversation"
 import {
   createTranscriptFrame,
@@ -9,7 +14,13 @@ import type {
   TranscriptPresentationHost,
   TranscriptPresentationId,
 } from "@vimex/workbench"
-import { useCallback, useMemo, useRef, useSyncExternalStore } from "react"
+import {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react"
 
 const emptyThread = threadId("__vimex_empty_transcript__")
 const emptyRuntimeInput: TranscriptRuntimeInput = {
@@ -32,6 +43,7 @@ export function useTranscriptRuntime(
   input: TranscriptRuntimeInput | undefined,
   visible = true,
 ): TranscriptFrame {
+  const renderer = useRenderer()
   const owned = host.transcriptRuntime(presentationId)
   const fallbackFrame = useMemo(
     () =>
@@ -50,18 +62,40 @@ export function useTranscriptRuntime(
   const retained = useRef<
     { store: typeof store; frame: TranscriptFrame } | undefined
   >(undefined)
-  if (!retained.current || retained.current.store !== store || visible) {
+  if (!retained.current || retained.current.store !== store) {
     retained.current = { store, frame: store.getSnapshot() }
   }
   const getSnapshot = useCallback(() => {
     if (!visible) return retained.current!.frame
     const frame = store.getSnapshot()
-    retained.current = { store, frame }
+    if (
+      composerPaintPending(renderer) &&
+      retained.current?.store === store &&
+      retained.current.frame.threadId === frame.threadId
+    )
+      return retained.current.frame
     return frame
-  }, [store, visible])
-  return useSyncExternalStore(
-    visible ? store.subscribe : suspendedSubscription,
+  }, [store, visible, renderer])
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      const unsubscribe = store.subscribe(() => {
+        if (!composerPaintPending(renderer)) listener()
+      })
+      const unsubscribePaint = subscribeComposerPaint(renderer, listener)
+      return () => {
+        unsubscribe()
+        unsubscribePaint()
+      }
+    },
+    [store, renderer],
+  )
+  const frame = useSyncExternalStore(
+    visible ? subscribe : suspendedSubscription,
     getSnapshot,
     getSnapshot,
   )
+  useLayoutEffect(() => {
+    retained.current = { store, frame }
+  }, [store, frame])
+  return frame
 }

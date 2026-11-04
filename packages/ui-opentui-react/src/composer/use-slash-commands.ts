@@ -1,5 +1,6 @@
 import { useBindings } from "@opentui/keymap/react"
-import { flushSync } from "@opentui/react"
+import { flushSync, useRenderer } from "@opentui/react"
+import { requestComposerPaint } from "./input-paint"
 import type { TextareaRenderable } from "@opentui/core"
 import type { SubmissionIntent } from "@vimex/composer"
 import { useRef, useState, type RefObject } from "react"
@@ -23,6 +24,7 @@ export function useSlashCommands(options: {
   onExecute(command: string): void
 }) {
   const { interaction, controller } = options
+  const renderer = useRenderer()
   const active =
     !options.suspended &&
     interaction.mode === "insert" &&
@@ -45,8 +47,11 @@ export function useSlashCommands(options: {
       : 0
   const liveSelection = useRef(selected)
   liveSelection.current = selected
-  const changeDraft = (text: string, cursor: number) =>
-    flushSync(() => controller.changeDraft(text, cursor))
+  const changeDraft = (text: string, cursor: number) => {
+    const revision = controller.changeDraft(text, cursor, "deferred")
+    requestComposerPaint(renderer, controller.flushDraft)
+    return revision
+  }
   const move = (delta: number) =>
     flushSync(() => {
       const index = Math.max(

@@ -1,3 +1,4 @@
+import { requestComposerPaint } from "./input-paint"
 import { usePaneGeometry } from "../side-chat/pane-geometry"
 import { useKeyboard, useRenderer } from "@opentui/react"
 import {
@@ -38,7 +39,7 @@ export function Composer(props: {
   busySubmit: "queue" | "steer"
   textareaRef: RefObject<TextareaRenderable | null>
   submitRef: MutableRefObject<((intent: SubmissionIntent) => void) | null>
-  onChange(text: string, cursorOffset: number): void
+  onChange(text: string, cursorOffset: number): number | void
   onSubmit(intent: SubmissionIntent): void | boolean
   onEscape?(): void
   onMouseActivate?(): void | boolean
@@ -50,6 +51,12 @@ export function Composer(props: {
   const renderer = useRenderer()
   const [wrappedRows, setWrappedRows] = useState(1)
   const synchronizing = useRef(false)
+  const nativeRevision = useRef(props.state.revision)
+  const nativeInputPending = useRef(false)
+  const publishedDraft = useRef({
+    text: props.state.text,
+    cursorOffset: props.state.cursorOffset,
+  })
   const committedMode = useRef(props.mode)
   const nativeSubmitIntent = useRef<SubmissionIntent | undefined>(undefined)
   const submittedClearPending = useRef(false)
@@ -125,6 +132,20 @@ export function Composer(props: {
     if (submittedClearPending.current) {
       submittedClearPending.current = false
       if (props.state.text === "") return
+    }
+    // React may commit an older echo after another native key has arrived.
+    // Such echoes must never replace the newer buffer or move its cursor back.
+    if (
+      props.state.revision < nativeRevision.current ||
+      (nativeInputPending.current &&
+        props.state.revision <= nativeRevision.current)
+    )
+      return
+    nativeRevision.current = props.state.revision
+    nativeInputPending.current = false
+    publishedDraft.current = {
+      text: props.state.text,
+      cursorOffset: props.state.cursorOffset,
     }
     synchronizing.current = true
     try {
@@ -250,10 +271,13 @@ export function Composer(props: {
       textarea.cursorOffset,
     )
     if (
-      textarea.plainText !== props.state.text ||
-      cursorOffset !== props.state.cursorOffset
+      textarea.plainText !== publishedDraft.current.text ||
+      cursorOffset !== publishedDraft.current.cursorOffset
     ) {
-      props.onChange(textarea.plainText, cursorOffset)
+      publishedDraft.current = { text: textarea.plainText, cursorOffset }
+      const revision = props.onChange(textarea.plainText, cursorOffset)
+      if (typeof revision === "number") nativeRevision.current = revision
+      nativeInputPending.current = false
     }
   }
 
@@ -262,6 +286,7 @@ export function Composer(props: {
       explicitIntent ??
       (props.activeTurn && props.busySubmit === "steer" ? "steer" : "next-turn")
     const textarea = props.textareaRef.current
+    publishNativeDraft()
     if (!textarea || textarea.plainText.trim().length === 0) {
       props.onSubmit(intent)
       return
@@ -270,7 +295,6 @@ export function Composer(props: {
     // The native textarea can receive the next terminal bytes before React
     // renders the cleared domain draft. Publish its current value first so the
     // submission captures it, then clear the native buffer in the same event.
-    publishNativeDraft()
     submittedClearPending.current = true
     if (props.onSubmit(intent) === false) {
       submittedClearPending.current = false
@@ -281,6 +305,7 @@ export function Composer(props: {
       textarea.setText("")
       textarea.cursorOffset = 0
       textarea.clearSelection()
+      publishedDraft.current = { text: "", cursorOffset: 0 }
     } finally {
       synchronizing.current = false
     }
@@ -362,6 +387,17 @@ export function Composer(props: {
           { name: "return", shift: true, action: "newline" },
         ]}
         onKeyDown={(event) => {
+          if (
+            props.interactive !== false &&
+            committedMode.current === "insert"
+          ) {
+            nativeInputPending.current = true
+            nativeRevision.current = Math.max(
+              nativeRevision.current,
+              props.state.revision,
+            )
+            requestComposerPaint(renderer)
+          }
           if (
             event.ctrl &&
             (event.name.toLowerCase() === "return" ||

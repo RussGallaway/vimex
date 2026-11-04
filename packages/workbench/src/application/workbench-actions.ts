@@ -144,7 +144,13 @@ export interface WorkbenchActions {
     preferredScreenRow: number,
   ): void
   dispatchInteraction(command: InteractionCommand): void
-  changeDraft(text: string, cursorOffset: number): void
+  changeDraft(
+    text: string,
+    cursorOffset: number,
+    publication?: "deferred",
+  ): number | void
+  /** Publish native edits after their input frame, or before an explicit boundary. */
+  flushDraft?(): void
   attachImageFromClipboard(cursorOffset?: number): void
   attachImageFromPath(path: string, cursorOffset?: number): void
   attachMention(candidate: MentionCandidate, cursorOffset?: number): void

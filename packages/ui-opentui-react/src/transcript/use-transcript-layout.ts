@@ -1,3 +1,4 @@
+import { composerPaintPending } from "../composer/input-paint"
 import { type ScrollBoxRenderable } from "@opentui/core"
 import { flushSync, useRenderer } from "@opentui/react"
 import { prepareNativeTranscriptLayout } from "./scroll-preparation"
@@ -971,7 +972,9 @@ export function useTranscriptLayout(options: {
         renderer.requestRender()
       }
     }
-    const frameCallback = async () => prepare()
+    const frameCallback = async () => {
+      if (!composerPaintPending(renderer)) prepare()
+    }
     prepareScroll.current = prepare
     renderer.setFrameCallback(frameCallback)
     renderer.requestRender()

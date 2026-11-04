@@ -281,6 +281,20 @@ export class VimexController
     WorkbenchPublicationHost
 {
   private state = initialWorkbench()
+  private draftPublicationBefore?: WorkbenchState
+  private draftPublicationTimer?: ReturnType<typeof setTimeout>
+
+  flushDraft = (): void => {
+    if (this.draftPublicationBefore) this.setState(this.state)
+  }
+
+  private takeDraftPublication(): WorkbenchState | undefined {
+    const before = this.draftPublicationBefore
+    this.draftPublicationBefore = undefined
+    if (this.draftPublicationTimer) clearTimeout(this.draftPublicationTimer)
+    this.draftPublicationTimer = undefined
+    return before
+  }
   private backgroundTerminalRequest = 0
   private readonly ingress: ConversationIngress
   private readonly transcriptRuntimes = new Map<
@@ -1305,8 +1319,8 @@ export class VimexController
     }
     const power = this.ports.power?.getSnapshot()
     if (power && state.power !== power) state = { ...state, power }
-    if (this.state === state) return
-    const before = this.state
+    if (this.state === state && !this.draftPublicationBefore) return
+    const before = this.takeDraftPublication() ?? this.state
     this.state = state
     const viewChanges = this.prepareWorkbenchViews(before)
     this.syncTranscriptRuntimes(before, state, hint)
@@ -1453,6 +1467,7 @@ export class VimexController
   }
   /** Applies one ingress cadence as one canonical publication. */
   private commitConversationEvents(events: readonly ConversationEvent[]): void {
+    this.flushDraft()
     const beforeBatch = this.state
     let state = beforeBatch
     const navigationHistory = this.navigationHistory.clone()
@@ -1828,6 +1843,7 @@ export class VimexController
     return promise
   }
   async settle(): Promise<void> {
+    this.flushDraft()
     do {
       this.ingress.flush()
       if (this.pending.size) await Promise.all([...this.pending])
@@ -2339,12 +2355,33 @@ export class VimexController
       })
     }
   }
-  changeDraft: WorkbenchActions["changeDraft"] = (text, cursorOffset) => {
-    this.dispatch({ type: "composer.change", text, cursorOffset })
+  changeDraft: WorkbenchActions["changeDraft"] = (
+    text,
+    cursorOffset,
+    publication,
+  ) => {
+    if (this.closing) return
+    if (publication === "deferred") {
+      // Keep the authoritative buffer current for commands and submissions,
+      // without waking pane subscribers, transcript layout or persistence on
+      // the native input stack. The UI flushes after painting the character.
+      const next = transitionWorkbench(this.state, {
+        type: "composer.change",
+        text,
+        cursorOffset,
+      }).state
+      if (next !== this.state) {
+        this.draftPublicationBefore ??= this.state
+        this.state = next
+        this.draftPublicationTimer ??= setTimeout(this.flushDraft, 50)
+      }
+    } else this.dispatch({ type: "composer.change", text, cursorOffset })
     if (/^\/(?:models?|thinking)(?:\s|$)/.test(text) && !this.catalogRequest)
       this.launch(async () => {
         await this.loadModels()
       })
+    const id = this.state.activeThreadId
+    return id ? this.state.workspaces[id]?.composer.revision : undefined
   }
   searchMentions = async (
     query: string,
@@ -5343,6 +5380,7 @@ export class VimexController
     return (this.closePromise ??= this.runClose())
   }
   private async runClose(): Promise<void> {
+    this.flushDraft()
     this.closing = true
     this.linkPreviewRequest?.abort()
     this.unsubscribePower?.()
