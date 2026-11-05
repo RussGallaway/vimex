@@ -252,16 +252,27 @@ test("half-page scroll keeps the native cursor row through a split multi-file di
     await h.key("up")
     const before = h.cursor()
     expect(before.itemId).toBe(itemId("navigation-mixed-24"))
-    expect(before.graphemeOffset).toBe(769)
+    expect(before.graphemeOffset).toBe(735)
+    const source = h.frame().transcript.projectionById[before.itemId]!.plain
+    expect(source.slice(before.graphemeOffset).split("\n")[0]).toBe(
+      '+  state: "after-item-24-file-2",',
+    )
+    // Check the source destination against painted native content rather than
+    // accepting a cached point map as its own placement oracle.
+    expect(h.paintedRow(before.row)).toContain(
+      '+   state: "after-item-24-file-2",',
+    )
     expect(before.blockId).toBe("edit:file:556")
     expect(before.row).toBeGreaterThanOrEqual(0)
     expect(before.row).toBeLessThan(h.scroll.viewport.height)
     await h.key("up")
     const after = h.cursor()
     expect(after.itemId).toBe(before.itemId)
-    expect(after.graphemeOffset).toBe(484)
+    expect(after.graphemeOffset).toBe(553)
+    expect(source.slice(after.graphemeOffset).split("\n")[0]).toBe(" }")
+    expect(h.paintedRow(after.row)).toMatch(/3\s+\}\s*$/u)
     expect(after.blockId).toBe("edit:file:272")
-    expect(after.localRow).toBe(2)
+    expect(after.localRow).toBe(4)
     expect(after.row).toBe(before.row)
   } finally {
     await h.close()

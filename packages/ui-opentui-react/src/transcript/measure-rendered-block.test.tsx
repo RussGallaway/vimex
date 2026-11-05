@@ -645,3 +645,49 @@ test("prepaint measurement never borrows semantic cells from the previous screen
     await act(async () => setup.renderer.destroy())
   }
 })
+
+test("measurement ignores stale ancestor screen caches and retains geometry during scrolling", async () => {
+  const block = blockFor("alpha\n\nbeta")
+  const setup = await testRender(
+    <box id="block" height={6}>
+      <text id="first">alpha</text>
+      <text id="second" marginTop={2}>
+        beta
+      </text>
+    </box>,
+    { width: 30, height: 10 },
+  )
+  try {
+    await act(async () => {
+      await setup.flush()
+      await setup.renderOnce()
+    })
+    const root = setup.renderer.root.findDescendantById("block") as Renderable
+    const child = setup.renderer.root.findDescendantById("second") as Renderable
+    const input = {
+      renderer: setup.renderer,
+      renderable: root,
+      block,
+      width: 30,
+      styleRevision: "test",
+      folded: false,
+    }
+    const finalY = child.y - root.y
+    expect(finalY).toBeGreaterThan(0)
+    // Culled ancestry can retain old absolute screen placement even though
+    // Yoga's local offsets and the owning block's height are already final.
+    const nativeRoot = root as unknown as { _y: number; _screenY: number }
+    const finalScreenY = nativeRoot._screenY
+    nativeRoot._screenY = -100
+    const before = measureRenderedBlock(input)
+    const end = block.projection.sourceSpans.length - 1
+    expect(before.points[end]?.row).toBe(finalY)
+    nativeRoot._screenY = finalScreenY
+    expect(measureRenderedBlock(input)).toBe(before)
+    nativeRoot._y += 2
+    nativeRoot._screenY += 2
+    expect(measureRenderedBlock(input)).toBe(before)
+  } finally {
+    await act(async () => setup.renderer.destroy())
+  }
+})

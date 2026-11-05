@@ -192,6 +192,9 @@ function observeNativeTree(state: RenderedBlockState, root: Renderable): void {
   visit(root)
 }
 
+// Native screen coordinates depend on cached ancestor placement, which may
+// lag for culled children. Recursive x/y coordinates derive from local layout
+// and remain coherent before paint; every geometry helper uses that basis.
 function cellsIn(
   renderable: Renderable,
   includeDecoration = false,
@@ -200,6 +203,8 @@ function cellsIn(
   const visit = (current: Renderable) => {
     if (!includeDecoration && current.id.startsWith("decoration:")) return
     if (current instanceof TextBufferRenderable) {
+      const originX = current.x
+      const originY = current.y
       const lines = current.plainText.split("\n")
       const info = current.lineInfo
       const visualsBySource = new Map<number, number[]>()
@@ -227,11 +232,9 @@ function cellsIn(
             measured.push({
               char: [...part][0] ?? part,
               x:
-                current.screenX +
+                originX +
                 Math.max(0, Math.min(column - start, current.width - 1)),
-              y:
-                current.screenY +
-                Math.max(0, Math.min(visual, current.height - 1)),
+              y: originY + Math.max(0, Math.min(visual, current.height - 1)),
             })
           column += graphemeCellWidth(part)
         }
@@ -422,6 +425,8 @@ function measureTable(
   const cells = runtime._cells
   if (!layout || !cells) return {}
   const result: Record<number, NativePoint> = {}
+  const tableX = table.x
+  const tableY = table.y
   const outer = table.outerBorder ? 1 : 0
   let logicalLineStart = 0
   const logicalLines = text.split("\n")
@@ -436,14 +441,11 @@ function measureTable(
       if (part === "|") pipes.push(index)
     })
     const rowY =
-      table.screenY +
-      outer +
-      (layout.rowOffsets[row] ?? row) +
-      table.cellPaddingY
+      tableY + outer + (layout.rowOffsets[row] ?? row) + table.cellPaddingY
     for (let boundary = 0; boundary < pipes.length; boundary += 1) {
       const graphemeOffset = logicalLineStart + pipes[boundary]!
       const x =
-        table.screenX +
+        tableX +
         (layout.columnOffsets[
           Math.min(boundary, layout.columnOffsets.length - 1)
         ] ?? 0)
@@ -464,7 +466,7 @@ function measureTable(
       const view = cells[row]![columnIndex]!.textBufferView
       const source = graphemes(view.getPlainText())
       const originX =
-        table.screenX +
+        tableX +
         outer +
         (layout.columnOffsets[columnIndex] ?? 0) +
         table.cellPaddingX
@@ -606,8 +608,8 @@ function measureDiff(
       (side.side && visualRow >= 0
         ? {
             graphemeOffset: base,
-            x: side.side.screenX,
-            y: side.side.screenY + visualRow,
+            x: side.side.x,
+            y: side.side.y + visualRow,
           }
         : undefined)
     if (first) result[at] = { ...first, graphemeOffset: at }
@@ -825,15 +827,15 @@ export function measureRenderedBlock(
   if ("item" in input.block && textLength === 0 && !hidden && !activityLead)
     nativePoints[0] ??= {
       graphemeOffset: 0,
-      x: input.renderable.screenX,
-      y: input.renderable.screenY,
+      x: input.renderable.x,
+      y: input.renderable.y,
     }
   if (input.folded && !hidden) {
     if (!Object.keys(nativePoints).length)
       nativePoints[0] = {
         graphemeOffset: 0,
-        x: input.renderable.screenX,
-        y: input.renderable.screenY,
+        x: input.renderable.x,
+        y: input.renderable.y,
       }
     nativePoints = foldedPointFallback(textLength, nativePoints)
   }
@@ -857,10 +859,12 @@ export function measureRenderedBlock(
       hidden?: boolean
     }
   > = {}
+  const rootX = input.renderable.x
+  const rootY = input.renderable.y
   for (const [offset, point] of Object.entries(nativePoints)) {
     const graphemeOffset = range.from + Number(offset)
-    const x = Math.max(0, point.x - input.renderable.screenX)
-    const y = Math.max(0, point.y - input.renderable.screenY)
+    const x = Math.max(0, point.x - rootX)
+    const y = Math.max(0, point.y - rootY)
     points[graphemeOffset] = {
       graphemeOffset,
       x,
