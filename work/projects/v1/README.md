@@ -22,6 +22,9 @@ This directory is the design authority for v1.
 - [transcript-windowing-dogfooding.md](./transcript-windowing-dogfooding.md) maps observed windowing UX symptoms to architectural boundaries and provides the evidence and triage workflow for fix-forward dogfooding.
 - [transcript-navigation-benchmark.md](./transcript-navigation-benchmark.md) defines the dirty mixed-content navigation baseline and separates input latency from scaling-test duration.
 - [transcript-navigation-decoupling.md](./transcript-navigation-decoupling.md) records a deferred proposal for responsive navigation with selectively prepared geometry and rendering.
+- [transcript-navigation-detail-experiment.md](./transcript-navigation-detail-experiment.md) records held-navigation diagnostics, the stale-coordinate repair, and the unpromoted highlighting experiment.
+- [transcript-offscreen-measurement-experiment.md](./transcript-offscreen-measurement-experiment.md) records the optional measurement-budget experiment and its unresolved destination disagreement.
+- [Responsive transcript navigation project](../transcript-navigation/README.md) collects the external research, durable evidence summaries, and architectural prototype plan; it does not supersede the v1 product contract.
 
 ## Document ownership
 

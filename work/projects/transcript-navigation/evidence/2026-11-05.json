@@ -1,0 +1,1590 @@
+{
+  "schemaVersion": 1,
+  "recordedOn": "2026-11-05",
+  "qualification": "Selected summaries of synthetic headless runs, not raw traces or physical-terminal latency. Run status checks blank frames and applicable monotonicity; it does not certify cross-run destination equality. Up/down equality uses logical anchor and native cursor position, not global estimated scrollTop. Each pair is exploratory, not an independent-trial latency distribution.",
+  "sourceState": "Same-session uncommitted navigation changes on main before the documentation checkpoint; fixture and runtime versions retained per run.",
+  "runs": [
+    {
+      "artifact": "vimex-nav-local-coords-off.json",
+      "artifactSha256": "4457bcd3f5e67a04435a0063be25d8b1555d9fc1a1adc33ac444185d6dff40ec",
+      "benchmark": "connected-transcript-navigation",
+      "workload": "held",
+      "experiment": {
+        "deferCodeDetail": false,
+        "idleMs": 120
+      },
+      "status": "diagnostic",
+      "failureReason": null,
+      "machine": {
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpus": 14,
+        "bun": "1.3.6",
+        "opentui": "0.5.11"
+      },
+      "fixture": {
+        "version": "transcript-navigation-v1",
+        "shape": "mixed",
+        "canonicalItems": 1000,
+        "transcriptItems": 876,
+        "actualRenderBlocks": 1142,
+        "connectedRenderBlocks": 1114,
+        "hash": "788e1224",
+        "denseOracle": false,
+        "renderBlockTarget": null
+      },
+      "viewport": {
+        "width": 80,
+        "height": 24
+      },
+      "windowPolicy": {
+        "overscanRows": "viewport-default",
+        "recentTailBlocks": 300,
+        "recentTailRows": 900,
+        "olderLookAheadRows": 48,
+        "overrideIsBenchmarkOnly": false
+      },
+      "rendererCadence": {
+        "targetFps": 60,
+        "maxFps": 60
+      },
+      "requestedIntervalMs": 33,
+      "actions": [
+        {
+          "name": "first-traversal-held-up",
+          "group": "queued-paced-up",
+          "semanticDirection": "up",
+          "semanticMonotonic": true,
+          "blankFrames": 0,
+          "mountedWindowTransitions": 0,
+          "nativeFrames": 164,
+          "detailRequests": {
+            "motions": 0,
+            "deferredRequests": 0,
+            "releasedRequests": 0
+          },
+          "keyToNextChangedPaintDistributionMs": {
+            "n": 100,
+            "p50": 23.6,
+            "p95": 36.399,
+            "max": 41.621
+          },
+          "movementPaintGapDistributionMs": {
+            "n": 99,
+            "p50": 34.134,
+            "p95": 48.091,
+            "max": 52.921
+          },
+          "firstPaintMs": 32.904,
+          "firstChangedPaintMs": 32.904,
+          "lastKeyToFinalPaintMs": 21.008,
+          "lastKeyToDetailReleaseMs": null,
+          "finalSettlementMs": 3304.204,
+          "nativeLayoutPasses": 546,
+          "nativeLayoutMs": 34.124,
+          "keysDispatched": 100,
+          "actualKeyIntervalsMs": {
+            "n": 99,
+            "min": 15.21,
+            "p50": 32.876,
+            "p95": 40.305,
+            "max": 55.883
+          },
+          "before": {
+            "top": 5092,
+            "cursor": "{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":0}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":0},\"preferredScreenRow\":0}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-999:root",
+              "row": 0,
+              "column": 3,
+              "viewportRow": 10,
+              "blockRows": 2
+            }
+          },
+          "after": {
+            "top": 4409,
+            "cursor": "{\"itemId\":\"navigation-mixed-903\",\"graphemeOffset\":3009}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-903\",\"graphemeOffset\":3003},\"preferredScreenRow\":1}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-903:markdown:3046",
+              "row": 16,
+              "column": 9,
+              "viewportRow": 1,
+              "blockRows": 36
+            },
+            "measuredBlocks": 141,
+            "materializedBlocks": 141,
+            "roots": 141,
+            "descendants": 1370
+          }
+        },
+        {
+          "name": "reset-before-warm-reversal",
+          "group": "setup",
+          "semanticDirection": null,
+          "semanticMonotonic": true,
+          "blankFrames": 0,
+          "mountedWindowTransitions": 0,
+          "nativeFrames": 6,
+          "detailRequests": {
+            "motions": 0,
+            "deferredRequests": 0,
+            "releasedRequests": 0
+          },
+          "keyToNextChangedPaintDistributionMs": {
+            "n": 1,
+            "p50": 20.254,
+            "p95": 20.254,
+            "max": 20.254
+          },
+          "movementPaintGapDistributionMs": null,
+          "firstPaintMs": 24.974,
+          "firstChangedPaintMs": 24.974,
+          "lastKeyToFinalPaintMs": 20.254,
+          "lastKeyToDetailReleaseMs": null,
+          "finalSettlementMs": 32.445,
+          "nativeLayoutPasses": 6,
+          "nativeLayoutMs": 0.054,
+          "keysDispatched": 1,
+          "before": {
+            "top": 4409,
+            "cursor": "{\"itemId\":\"navigation-mixed-903\",\"graphemeOffset\":3009}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-903\",\"graphemeOffset\":3003},\"preferredScreenRow\":1}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-903:markdown:3046",
+              "row": 16,
+              "column": 9,
+              "viewportRow": 1,
+              "blockRows": 36
+            }
+          },
+          "after": {
+            "top": 5092,
+            "cursor": "{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":59}",
+            "viewport": "{\"kind\":\"tail\"}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-999:root",
+              "row": 0,
+              "column": 62,
+              "viewportRow": 10,
+              "blockRows": 2
+            },
+            "measuredBlocks": 141,
+            "materializedBlocks": 141,
+            "roots": 141,
+            "descendants": 1370
+          }
+        },
+        {
+          "name": "warm-route-held-reversal",
+          "group": "queued-reversal",
+          "semanticDirection": null,
+          "semanticMonotonic": true,
+          "blankFrames": 0,
+          "mountedWindowTransitions": 0,
+          "nativeFrames": 356,
+          "detailRequests": {
+            "motions": 0,
+            "deferredRequests": 0,
+            "releasedRequests": 0
+          },
+          "keyToNextChangedPaintDistributionMs": {
+            "n": 200,
+            "p50": 17.982,
+            "p95": 29.565,
+            "max": 42.943
+          },
+          "movementPaintGapDistributionMs": {
+            "n": 199,
+            "p50": 35.866,
+            "p95": 44.461,
+            "max": 61.261
+          },
+          "firstPaintMs": 30.008,
+          "firstChangedPaintMs": 30.008,
+          "lastKeyToFinalPaintMs": 33.502,
+          "lastKeyToDetailReleaseMs": null,
+          "finalSettlementMs": 6606.298,
+          "nativeLayoutPasses": 896,
+          "nativeLayoutMs": 18.592,
+          "keysDispatched": 200,
+          "actualKeyIntervalsMs": {
+            "n": 199,
+            "min": 12.676,
+            "p50": 32.838,
+            "p95": 37.306,
+            "max": 45.847
+          },
+          "before": {
+            "top": 5092,
+            "cursor": "{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":59}",
+            "viewport": "{\"kind\":\"tail\"}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-999:root",
+              "row": 0,
+              "column": 62,
+              "viewportRow": 10,
+              "blockRows": 2
+            }
+          },
+          "after": {
+            "top": 5092,
+            "cursor": "{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":59}",
+            "viewport": "{\"kind\":\"tail\"}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-999:root",
+              "row": 0,
+              "column": 62,
+              "viewportRow": 10,
+              "blockRows": 2
+            },
+            "measuredBlocks": 141,
+            "materializedBlocks": 141,
+            "roots": 141,
+            "descendants": 1370
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "vimex-nav-local-coords-on.json",
+      "artifactSha256": "71469b16f5403e06e476ee0a33e1056e3047a7effb2262da75492484c7421fad",
+      "benchmark": "connected-transcript-navigation",
+      "workload": "held",
+      "experiment": {
+        "deferCodeDetail": true,
+        "idleMs": 120
+      },
+      "status": "diagnostic",
+      "failureReason": null,
+      "machine": {
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpus": 14,
+        "bun": "1.3.6",
+        "opentui": "0.5.11"
+      },
+      "fixture": {
+        "version": "transcript-navigation-v1",
+        "shape": "mixed",
+        "canonicalItems": 1000,
+        "transcriptItems": 876,
+        "actualRenderBlocks": 1142,
+        "connectedRenderBlocks": 1114,
+        "hash": "788e1224",
+        "denseOracle": false,
+        "renderBlockTarget": null
+      },
+      "viewport": {
+        "width": 80,
+        "height": 24
+      },
+      "windowPolicy": {
+        "overscanRows": "viewport-default",
+        "recentTailBlocks": 300,
+        "recentTailRows": 900,
+        "olderLookAheadRows": 48,
+        "overrideIsBenchmarkOnly": false
+      },
+      "rendererCadence": {
+        "targetFps": 60,
+        "maxFps": 60
+      },
+      "requestedIntervalMs": 33,
+      "actions": [
+        {
+          "name": "first-traversal-held-up",
+          "group": "queued-paced-up",
+          "semanticDirection": "up",
+          "semanticMonotonic": true,
+          "blankFrames": 0,
+          "mountedWindowTransitions": 0,
+          "nativeFrames": 172,
+          "detailRequests": {
+            "motions": 100,
+            "deferredRequests": 1,
+            "releasedRequests": 1
+          },
+          "keyToNextChangedPaintDistributionMs": {
+            "n": 100,
+            "p50": 22.913,
+            "p95": 33.42,
+            "max": 43.026
+          },
+          "movementPaintGapDistributionMs": {
+            "n": 99,
+            "p50": 33.96,
+            "p95": 49.91,
+            "max": 54.717
+          },
+          "firstPaintMs": 32.306,
+          "firstChangedPaintMs": 32.306,
+          "lastKeyToFinalPaintMs": 28.246,
+          "lastKeyToDetailReleaseMs": 126.711,
+          "finalSettlementMs": 3429.161,
+          "nativeLayoutPasses": 554,
+          "nativeLayoutMs": 31.484,
+          "keysDispatched": 100,
+          "actualKeyIntervalsMs": {
+            "n": 99,
+            "min": 21.277,
+            "p50": 32.516,
+            "p95": 40.439,
+            "max": 44.218
+          },
+          "before": {
+            "top": 5092,
+            "cursor": "{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":0}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":0},\"preferredScreenRow\":0}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-999:root",
+              "row": 0,
+              "column": 3,
+              "viewportRow": 10,
+              "blockRows": 2
+            }
+          },
+          "after": {
+            "top": 4409,
+            "cursor": "{\"itemId\":\"navigation-mixed-903\",\"graphemeOffset\":3009}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-903\",\"graphemeOffset\":3003},\"preferredScreenRow\":1}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-903:markdown:3046",
+              "row": 16,
+              "column": 9,
+              "viewportRow": 1,
+              "blockRows": 36
+            },
+            "measuredBlocks": 141,
+            "materializedBlocks": 141,
+            "roots": 141,
+            "descendants": 1370
+          }
+        },
+        {
+          "name": "reset-before-warm-reversal",
+          "group": "setup",
+          "semanticDirection": null,
+          "semanticMonotonic": true,
+          "blankFrames": 0,
+          "mountedWindowTransitions": 0,
+          "nativeFrames": 6,
+          "detailRequests": {
+            "motions": 0,
+            "deferredRequests": 0,
+            "releasedRequests": 0
+          },
+          "keyToNextChangedPaintDistributionMs": {
+            "n": 1,
+            "p50": 21.049,
+            "p95": 21.049,
+            "max": 21.049
+          },
+          "movementPaintGapDistributionMs": null,
+          "firstPaintMs": 27.023,
+          "firstChangedPaintMs": 27.023,
+          "lastKeyToFinalPaintMs": 21.049,
+          "lastKeyToDetailReleaseMs": null,
+          "finalSettlementMs": 35.626,
+          "nativeLayoutPasses": 6,
+          "nativeLayoutMs": 0.063,
+          "keysDispatched": 1,
+          "before": {
+            "top": 4409,
+            "cursor": "{\"itemId\":\"navigation-mixed-903\",\"graphemeOffset\":3009}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-903\",\"graphemeOffset\":3003},\"preferredScreenRow\":1}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-903:markdown:3046",
+              "row": 16,
+              "column": 9,
+              "viewportRow": 1,
+              "blockRows": 36
+            }
+          },
+          "after": {
+            "top": 5092,
+            "cursor": "{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":59}",
+            "viewport": "{\"kind\":\"tail\"}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-999:root",
+              "row": 0,
+              "column": 62,
+              "viewportRow": 10,
+              "blockRows": 2
+            },
+            "measuredBlocks": 141,
+            "materializedBlocks": 141,
+            "roots": 141,
+            "descendants": 1370
+          }
+        },
+        {
+          "name": "warm-route-held-reversal",
+          "group": "queued-reversal",
+          "semanticDirection": null,
+          "semanticMonotonic": true,
+          "blankFrames": 0,
+          "mountedWindowTransitions": 0,
+          "nativeFrames": 306,
+          "detailRequests": {
+            "motions": 200,
+            "deferredRequests": 0,
+            "releasedRequests": 0
+          },
+          "keyToNextChangedPaintDistributionMs": {
+            "n": 200,
+            "p50": 21.309,
+            "p95": 177.284,
+            "max": 224.967
+          },
+          "movementPaintGapDistributionMs": {
+            "n": 177,
+            "p50": 35.773,
+            "p95": 57.88,
+            "max": 225.531
+          },
+          "firstPaintMs": 32.571,
+          "firstChangedPaintMs": 32.571,
+          "lastKeyToFinalPaintMs": 124.681,
+          "lastKeyToDetailReleaseMs": 125.11,
+          "finalSettlementMs": 6698.623,
+          "nativeLayoutPasses": 846,
+          "nativeLayoutMs": 23.262,
+          "keysDispatched": 200,
+          "actualKeyIntervalsMs": {
+            "n": 199,
+            "min": 0.012,
+            "p50": 32.661,
+            "p95": 45.371,
+            "max": 225.909
+          },
+          "before": {
+            "top": 5092,
+            "cursor": "{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":59}",
+            "viewport": "{\"kind\":\"tail\"}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-999:root",
+              "row": 0,
+              "column": 62,
+              "viewportRow": 10,
+              "blockRows": 2
+            }
+          },
+          "after": {
+            "top": 5092,
+            "cursor": "{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":59}",
+            "viewport": "{\"kind\":\"tail\"}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-999:root",
+              "row": 0,
+              "column": 62,
+              "viewportRow": 10,
+              "blockRows": 2
+            },
+            "measuredBlocks": 141,
+            "materializedBlocks": 141,
+            "roots": 141,
+            "descendants": 1370
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "vimex-budget-long-off.json",
+      "artifactSha256": "a0f3d0aff200204651510eb297fb5933b95112691c470e41b76722ae4a1923af",
+      "benchmark": "connected-transcript-navigation",
+      "workload": "held",
+      "experiment": {
+        "deferCodeDetail": false,
+        "budgetMeasurements": false,
+        "idleMs": 120
+      },
+      "status": "diagnostic",
+      "failureReason": null,
+      "machine": {
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpus": 14,
+        "bun": "1.3.6",
+        "opentui": "0.5.11"
+      },
+      "fixture": {
+        "version": "transcript-navigation-v1",
+        "shape": "mixed",
+        "canonicalItems": 10000,
+        "transcriptItems": 8750,
+        "actualRenderBlocks": 11435,
+        "connectedRenderBlocks": 11141,
+        "hash": "b31de65d",
+        "denseOracle": false,
+        "renderBlockTarget": null
+      },
+      "viewport": {
+        "width": 80,
+        "height": 24
+      },
+      "windowPolicy": {
+        "overscanRows": "viewport-default",
+        "recentTailBlocks": 300,
+        "recentTailRows": 900,
+        "olderLookAheadRows": 48,
+        "overrideIsBenchmarkOnly": false
+      },
+      "rendererCadence": {
+        "targetFps": 60,
+        "maxFps": 60
+      },
+      "requestedIntervalMs": 33,
+      "actions": [
+        {
+          "name": "first-traversal-held-up",
+          "group": "queued-paced-up",
+          "semanticDirection": "up",
+          "semanticMonotonic": true,
+          "blankFrames": 0,
+          "mountedWindowTransitions": 122,
+          "nativeFrames": 399,
+          "measurementWork": {
+            "motions": 0,
+            "requiredMeasurements": 617,
+            "backgroundMeasurements": 647,
+            "deferredAttempts": 0,
+            "measurementMs": 588.9807410000503,
+            "backgroundMeasurementMs": 304.5473300000481,
+            "pending": 0
+          },
+          "detailRequests": {
+            "motions": 0,
+            "deferredRequests": 0,
+            "releasedRequests": 0
+          },
+          "peakPendingMeasurements": 0,
+          "keyToNextChangedPaintDistributionMs": {
+            "n": 300,
+            "p50": 25.714,
+            "p95": 62.831,
+            "max": 112.321
+          },
+          "movementPaintGapDistributionMs": {
+            "n": 283,
+            "p50": 32.62,
+            "p95": 65.061,
+            "max": 112.737
+          },
+          "firstPaintMs": 22.438,
+          "firstChangedPaintMs": 22.438,
+          "lastKeyToFinalPaintMs": 40.873,
+          "lastKeyToDetailReleaseMs": null,
+          "finalSettlementMs": 9921.959,
+          "nativeLayoutPasses": 1559,
+          "nativeLayoutMs": 123.171,
+          "keysDispatched": 300,
+          "actualKeyIntervalsMs": {
+            "n": 299,
+            "min": 0.012,
+            "p50": 32.552,
+            "p95": 57.028,
+            "max": 112.812
+          },
+          "before": {
+            "top": 46815,
+            "cursor": "{\"itemId\":\"navigation-mixed-9999\",\"graphemeOffset\":0}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-9999\",\"graphemeOffset\":0},\"preferredScreenRow\":0}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-9999:root",
+              "row": 0,
+              "column": 3,
+              "viewportRow": 10,
+              "blockRows": 2
+            }
+          },
+          "after": {
+            "top": 44977,
+            "cursor": "{\"itemId\":\"navigation-mixed-9735\",\"graphemeOffset\":16}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-9735\",\"graphemeOffset\":16},\"preferredScreenRow\":2}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-9735:markdown:0",
+              "row": 3,
+              "column": 3,
+              "viewportRow": 2,
+              "blockRows": 39
+            },
+            "measuredBlocks": 6,
+            "materializedBlocks": 6,
+            "roots": 6,
+            "descendants": 55
+          }
+        },
+        {
+          "name": "reset-before-warm-reversal",
+          "group": "setup",
+          "semanticDirection": null,
+          "semanticMonotonic": true,
+          "blankFrames": 0,
+          "mountedWindowTransitions": 1,
+          "nativeFrames": 7,
+          "measurementWork": {
+            "motions": 0,
+            "requiredMeasurements": 16,
+            "backgroundMeasurements": 1051,
+            "deferredAttempts": 0,
+            "measurementMs": 414.76205999997364,
+            "backgroundMeasurementMs": 412.77064399997107,
+            "pending": 0
+          },
+          "detailRequests": {
+            "motions": 0,
+            "deferredRequests": 0,
+            "releasedRequests": 0
+          },
+          "peakPendingMeasurements": 0,
+          "keyToNextChangedPaintDistributionMs": {
+            "n": 1,
+            "p50": 33.38,
+            "p95": 33.38,
+            "max": 33.38
+          },
+          "movementPaintGapDistributionMs": null,
+          "firstPaintMs": 667.811,
+          "firstChangedPaintMs": 667.811,
+          "lastKeyToFinalPaintMs": 62.617,
+          "lastKeyToDetailReleaseMs": null,
+          "finalSettlementMs": 717.192,
+          "nativeLayoutPasses": 8,
+          "nativeLayoutMs": 7.738,
+          "keysDispatched": 1,
+          "before": {
+            "top": 44977,
+            "cursor": "{\"itemId\":\"navigation-mixed-9735\",\"graphemeOffset\":16}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-9735\",\"graphemeOffset\":16},\"preferredScreenRow\":2}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-9735:markdown:0",
+              "row": 3,
+              "column": 3,
+              "viewportRow": 2,
+              "blockRows": 39
+            }
+          },
+          "after": {
+            "top": 47031,
+            "cursor": "{\"itemId\":\"navigation-mixed-9999\",\"graphemeOffset\":59}",
+            "viewport": "{\"kind\":\"tail\"}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-9999:root",
+              "row": 0,
+              "column": 62,
+              "viewportRow": 10,
+              "blockRows": 2
+            },
+            "measuredBlocks": 225,
+            "materializedBlocks": 278,
+            "roots": 278,
+            "descendants": 2743
+          }
+        },
+        {
+          "name": "warm-route-held-reversal",
+          "group": "queued-reversal",
+          "semanticDirection": null,
+          "semanticMonotonic": true,
+          "blankFrames": 0,
+          "mountedWindowTransitions": 224,
+          "nativeFrames": 711,
+          "measurementWork": {
+            "motions": 0,
+            "requiredMeasurements": 1254,
+            "backgroundMeasurements": 2359,
+            "deferredAttempts": 0,
+            "measurementMs": 1290.9922750000624,
+            "backgroundMeasurementMs": 771.6916600000332,
+            "pending": 0
+          },
+          "detailRequests": {
+            "motions": 0,
+            "deferredRequests": 0,
+            "releasedRequests": 0
+          },
+          "peakPendingMeasurements": 0,
+          "keyToNextChangedPaintDistributionMs": {
+            "n": 600,
+            "p50": 26.823,
+            "p95": 167.262,
+            "max": 610.644
+          },
+          "movementPaintGapDistributionMs": {
+            "n": 561,
+            "p50": 30.957,
+            "p95": 57.422,
+            "max": 616.015
+          },
+          "firstPaintMs": 47.008,
+          "firstChangedPaintMs": 47.008,
+          "lastKeyToFinalPaintMs": 29.642,
+          "lastKeyToDetailReleaseMs": null,
+          "finalSettlementMs": 19814.927,
+          "nativeLayoutPasses": 2845,
+          "nativeLayoutMs": 381.653,
+          "keysDispatched": 600,
+          "actualKeyIntervalsMs": {
+            "n": 599,
+            "min": 0.009,
+            "p50": 32.211,
+            "p95": 56.957,
+            "max": 618.747
+          },
+          "before": {
+            "top": 47031,
+            "cursor": "{\"itemId\":\"navigation-mixed-9999\",\"graphemeOffset\":59}",
+            "viewport": "{\"kind\":\"tail\"}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-9999:root",
+              "row": 0,
+              "column": 62,
+              "viewportRow": 10,
+              "blockRows": 2
+            }
+          },
+          "after": {
+            "top": 46824,
+            "cursor": "{\"itemId\":\"navigation-mixed-9993\",\"graphemeOffset\":230}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-9993\",\"graphemeOffset\":230},\"preferredScreenRow\":0}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-9993:root",
+              "row": 4,
+              "column": 9,
+              "viewportRow": 0,
+              "blockRows": 9
+            },
+            "measuredBlocks": 139,
+            "materializedBlocks": 139,
+            "roots": 139,
+            "descendants": 1371
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "vimex-budget-long-on.json",
+      "artifactSha256": "d0769b1e63038812e5399f7581224d99fb5f56aaf1fb305a2f15e30096941a2e",
+      "benchmark": "connected-transcript-navigation",
+      "workload": "held",
+      "experiment": {
+        "deferCodeDetail": false,
+        "budgetMeasurements": true,
+        "idleMs": 120
+      },
+      "status": "diagnostic",
+      "failureReason": null,
+      "machine": {
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpus": 14,
+        "bun": "1.3.6",
+        "opentui": "0.5.11"
+      },
+      "fixture": {
+        "version": "transcript-navigation-v1",
+        "shape": "mixed",
+        "canonicalItems": 10000,
+        "transcriptItems": 8750,
+        "actualRenderBlocks": 11435,
+        "connectedRenderBlocks": 11141,
+        "hash": "b31de65d",
+        "denseOracle": false,
+        "renderBlockTarget": null
+      },
+      "viewport": {
+        "width": 80,
+        "height": 24
+      },
+      "windowPolicy": {
+        "overscanRows": "viewport-default",
+        "recentTailBlocks": 300,
+        "recentTailRows": 900,
+        "olderLookAheadRows": 48,
+        "overrideIsBenchmarkOnly": false
+      },
+      "rendererCadence": {
+        "targetFps": 60,
+        "maxFps": 60
+      },
+      "requestedIntervalMs": 33,
+      "actions": [
+        {
+          "name": "first-traversal-held-up",
+          "group": "queued-paced-up",
+          "semanticDirection": "up",
+          "semanticMonotonic": true,
+          "blankFrames": 0,
+          "mountedWindowTransitions": 142,
+          "nativeFrames": 467,
+          "measurementWork": {
+            "motions": 300,
+            "requiredMeasurements": 628,
+            "backgroundMeasurements": 488,
+            "deferredAttempts": 1397,
+            "measurementMs": 433.6614010000044,
+            "backgroundMeasurementMs": 183.1012640000058,
+            "pending": 0
+          },
+          "detailRequests": {
+            "motions": 0,
+            "deferredRequests": 0,
+            "releasedRequests": 0
+          },
+          "peakPendingMeasurements": 9,
+          "keyToNextChangedPaintDistributionMs": {
+            "n": 300,
+            "p50": 22.869,
+            "p95": 39.438,
+            "max": 63.628
+          },
+          "movementPaintGapDistributionMs": {
+            "n": 311,
+            "p50": 32.498,
+            "p95": 50.159,
+            "max": 78.549
+          },
+          "firstPaintMs": 25.039,
+          "firstChangedPaintMs": 25.039,
+          "lastKeyToFinalPaintMs": 21.692,
+          "lastKeyToDetailReleaseMs": null,
+          "finalSettlementMs": 9903.731,
+          "nativeLayoutPasses": 1634,
+          "nativeLayoutMs": 109.133,
+          "keysDispatched": 300,
+          "actualKeyIntervalsMs": {
+            "n": 299,
+            "min": 0.024,
+            "p50": 32.965,
+            "p95": 43.71,
+            "max": 65.308
+          },
+          "before": {
+            "top": 46815,
+            "cursor": "{\"itemId\":\"navigation-mixed-9999\",\"graphemeOffset\":0}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-9999\",\"graphemeOffset\":0},\"preferredScreenRow\":0}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-9999:root",
+              "row": 0,
+              "column": 3,
+              "viewportRow": 10,
+              "blockRows": 2
+            }
+          },
+          "after": {
+            "top": 44974,
+            "cursor": "{\"itemId\":\"navigation-mixed-9734\",\"graphemeOffset\":0}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-9734\",\"graphemeOffset\":0},\"preferredScreenRow\":0}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-9734:root",
+              "row": 0,
+              "column": 8,
+              "viewportRow": 0,
+              "blockRows": 2
+            },
+            "measuredBlocks": 7,
+            "materializedBlocks": 7,
+            "roots": 7,
+            "descendants": 66
+          }
+        },
+        {
+          "name": "reset-before-warm-reversal",
+          "group": "setup",
+          "semanticDirection": null,
+          "semanticMonotonic": true,
+          "blankFrames": 0,
+          "mountedWindowTransitions": 1,
+          "nativeFrames": 8,
+          "measurementWork": {
+            "motions": 0,
+            "requiredMeasurements": 16,
+            "backgroundMeasurements": 268,
+            "deferredAttempts": 940,
+            "measurementMs": 43.91020599997864,
+            "backgroundMeasurementMs": 42.027040999977544,
+            "pending": 0
+          },
+          "detailRequests": {
+            "motions": 0,
+            "deferredRequests": 0,
+            "releasedRequests": 0
+          },
+          "peakPendingMeasurements": 134,
+          "keyToNextChangedPaintDistributionMs": {
+            "n": 1,
+            "p50": 16.253,
+            "p95": 16.253,
+            "max": 16.253
+          },
+          "movementPaintGapDistributionMs": null,
+          "firstPaintMs": 65.973,
+          "firstChangedPaintMs": 65.973,
+          "lastKeyToFinalPaintMs": 91.008,
+          "lastKeyToDetailReleaseMs": null,
+          "finalSettlementMs": 153.108,
+          "nativeLayoutPasses": 10,
+          "nativeLayoutMs": 3.861,
+          "keysDispatched": 1,
+          "before": {
+            "top": 44974,
+            "cursor": "{\"itemId\":\"navigation-mixed-9734\",\"graphemeOffset\":0}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-9734\",\"graphemeOffset\":0},\"preferredScreenRow\":0}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-9734:root",
+              "row": 0,
+              "column": 8,
+              "viewportRow": 0,
+              "blockRows": 2
+            }
+          },
+          "after": {
+            "top": 47031,
+            "cursor": "{\"itemId\":\"navigation-mixed-9999\",\"graphemeOffset\":59}",
+            "viewport": "{\"kind\":\"tail\"}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-9999:root",
+              "row": 0,
+              "column": 62,
+              "viewportRow": 10,
+              "blockRows": 2
+            },
+            "measuredBlocks": 140,
+            "materializedBlocks": 140,
+            "roots": 140,
+            "descendants": 1387
+          }
+        },
+        {
+          "name": "warm-route-held-reversal",
+          "group": "queued-reversal",
+          "semanticDirection": null,
+          "semanticMonotonic": true,
+          "blankFrames": 0,
+          "mountedWindowTransitions": 246,
+          "nativeFrames": 925,
+          "measurementWork": {
+            "motions": 600,
+            "requiredMeasurements": 1345,
+            "backgroundMeasurements": 1082,
+            "deferredAttempts": 6683,
+            "measurementMs": 894.6032999999406,
+            "backgroundMeasurementMs": 333.72107300001517,
+            "pending": 0
+          },
+          "detailRequests": {
+            "motions": 0,
+            "deferredRequests": 0,
+            "releasedRequests": 0
+          },
+          "peakPendingMeasurements": 28,
+          "keyToNextChangedPaintDistributionMs": {
+            "n": 600,
+            "p50": 22.772,
+            "p95": 45.737,
+            "max": 123.178
+          },
+          "movementPaintGapDistributionMs": {
+            "n": 602,
+            "p50": 33.196,
+            "p95": 51.315,
+            "max": 74.186
+          },
+          "firstPaintMs": 27.979,
+          "firstChangedPaintMs": 27.979,
+          "lastKeyToFinalPaintMs": 23.583,
+          "lastKeyToDetailReleaseMs": null,
+          "finalSettlementMs": 19807.007,
+          "nativeLayoutPasses": 3116,
+          "nativeLayoutMs": 208.34,
+          "keysDispatched": 600,
+          "actualKeyIntervalsMs": {
+            "n": 599,
+            "min": 0.02,
+            "p50": 32.843,
+            "p95": 43.649,
+            "max": 67.521
+          },
+          "before": {
+            "top": 47031,
+            "cursor": "{\"itemId\":\"navigation-mixed-9999\",\"graphemeOffset\":59}",
+            "viewport": "{\"kind\":\"tail\"}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-9999:root",
+              "row": 0,
+              "column": 62,
+              "viewportRow": 10,
+              "blockRows": 2
+            }
+          },
+          "after": {
+            "top": 47028,
+            "cursor": "{\"itemId\":\"navigation-mixed-9999\",\"graphemeOffset\":59}",
+            "viewport": "{\"kind\":\"tail\"}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-9999:root",
+              "row": 0,
+              "column": 62,
+              "viewportRow": 10,
+              "blockRows": 2
+            },
+            "measuredBlocks": 139,
+            "materializedBlocks": 139,
+            "roots": 139,
+            "descendants": 1371
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "vimex-budget-cold-off.json",
+      "artifactSha256": "e2de068dfe3ae1a5da2e4a1250f79c4ed0cb098c0337883af10c4c3d04eb60d3",
+      "benchmark": "connected-transcript-navigation",
+      "workload": "held",
+      "experiment": {
+        "deferCodeDetail": false,
+        "budgetMeasurements": false,
+        "idleMs": 120
+      },
+      "status": "diagnostic",
+      "failureReason": null,
+      "machine": {
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpus": 14,
+        "bun": "1.3.6",
+        "opentui": "0.5.11"
+      },
+      "fixture": {
+        "version": "transcript-navigation-v1",
+        "shape": "mixed",
+        "canonicalItems": 1000,
+        "transcriptItems": 876,
+        "actualRenderBlocks": 1142,
+        "connectedRenderBlocks": 1114,
+        "hash": "788e1224",
+        "denseOracle": false,
+        "renderBlockTarget": null
+      },
+      "viewport": {
+        "width": 80,
+        "height": 24
+      },
+      "windowPolicy": {
+        "overscanRows": "viewport-default",
+        "recentTailBlocks": 0,
+        "recentTailRows": 1,
+        "olderLookAheadRows": 0,
+        "overrideIsBenchmarkOnly": true
+      },
+      "rendererCadence": {
+        "targetFps": 60,
+        "maxFps": 60
+      },
+      "requestedIntervalMs": 33,
+      "actions": [
+        {
+          "name": "first-traversal-held-up",
+          "group": "queued-paced-up",
+          "semanticDirection": "up",
+          "semanticMonotonic": true,
+          "blankFrames": 0,
+          "mountedWindowTransitions": 72,
+          "nativeFrames": 175,
+          "measurementWork": {
+            "motions": 0,
+            "requiredMeasurements": 35,
+            "backgroundMeasurements": 584,
+            "deferredAttempts": 0,
+            "measurementMs": 256.7850130000016,
+            "backgroundMeasurementMs": 251.0931359999998,
+            "pending": 0
+          },
+          "detailRequests": {
+            "motions": 0,
+            "deferredRequests": 0,
+            "releasedRequests": 0
+          },
+          "peakPendingMeasurements": 0,
+          "keyToNextChangedPaintDistributionMs": {
+            "n": 100,
+            "p50": 18.982,
+            "p95": 39.262,
+            "max": 46.433
+          },
+          "movementPaintGapDistributionMs": {
+            "n": 100,
+            "p50": 33.844,
+            "p95": 53.319,
+            "max": 62.831
+          },
+          "firstPaintMs": 36.416,
+          "firstChangedPaintMs": 36.416,
+          "lastKeyToFinalPaintMs": 18.682,
+          "lastKeyToDetailReleaseMs": null,
+          "finalSettlementMs": 3300.506,
+          "nativeLayoutPasses": 555,
+          "nativeLayoutMs": 21.298,
+          "keysDispatched": 100,
+          "actualKeyIntervalsMs": {
+            "n": 99,
+            "min": 15.432,
+            "p50": 33.051,
+            "p95": 40.104,
+            "max": 47.146
+          },
+          "before": {
+            "top": 4645,
+            "cursor": "{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":0}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":0},\"preferredScreenRow\":0}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-999:root",
+              "row": 0,
+              "column": 3,
+              "viewportRow": 10,
+              "blockRows": 2
+            }
+          },
+          "after": {
+            "top": 4179,
+            "cursor": "{\"itemId\":\"navigation-mixed-903\",\"graphemeOffset\":2474}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-903\",\"graphemeOffset\":2468},\"preferredScreenRow\":1}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-903:markdown:3046",
+              "row": 1,
+              "column": 9,
+              "viewportRow": 1,
+              "blockRows": 36
+            },
+            "measuredBlocks": 2,
+            "materializedBlocks": 2,
+            "roots": 2,
+            "descendants": 38
+          }
+        },
+        {
+          "name": "reset-before-warm-reversal",
+          "group": "setup",
+          "semanticDirection": null,
+          "semanticMonotonic": true,
+          "blankFrames": 0,
+          "mountedWindowTransitions": 1,
+          "nativeFrames": 9,
+          "measurementWork": {
+            "motions": 0,
+            "requiredMeasurements": 17,
+            "backgroundMeasurements": 30,
+            "deferredAttempts": 0,
+            "measurementMs": 4.618999000002077,
+            "backgroundMeasurementMs": 3.671709000001556,
+            "pending": 0
+          },
+          "detailRequests": {
+            "motions": 0,
+            "deferredRequests": 0,
+            "releasedRequests": 0
+          },
+          "peakPendingMeasurements": 0,
+          "keyToNextChangedPaintDistributionMs": {
+            "n": 1,
+            "p50": 5.26,
+            "p95": 5.26,
+            "max": 5.26
+          },
+          "movementPaintGapDistributionMs": null,
+          "firstPaintMs": 18.71,
+          "firstChangedPaintMs": 18.71,
+          "lastKeyToFinalPaintMs": 53.629,
+          "lastKeyToDetailReleaseMs": null,
+          "finalSettlementMs": 67.919,
+          "nativeLayoutPasses": 11,
+          "nativeLayoutMs": 0.528,
+          "keysDispatched": 1,
+          "before": {
+            "top": 4179,
+            "cursor": "{\"itemId\":\"navigation-mixed-903\",\"graphemeOffset\":2474}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-903\",\"graphemeOffset\":2468},\"preferredScreenRow\":1}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-903:markdown:3046",
+              "row": 1,
+              "column": 9,
+              "viewportRow": 1,
+              "blockRows": 36
+            }
+          },
+          "after": {
+            "top": 4877,
+            "cursor": "{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":59}",
+            "viewport": "{\"kind\":\"tail\"}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-999:root",
+              "row": 0,
+              "column": 62,
+              "viewportRow": 10,
+              "blockRows": 2
+            },
+            "measuredBlocks": 13,
+            "materializedBlocks": 13,
+            "roots": 13,
+            "descendants": 114
+          }
+        },
+        {
+          "name": "warm-route-held-reversal",
+          "group": "queued-reversal",
+          "semanticDirection": null,
+          "semanticMonotonic": true,
+          "blankFrames": 0,
+          "mountedWindowTransitions": 140,
+          "nativeFrames": 348,
+          "measurementWork": {
+            "motions": 0,
+            "requiredMeasurements": 232,
+            "backgroundMeasurements": 872,
+            "deferredAttempts": 0,
+            "measurementMs": 467.6527179999771,
+            "backgroundMeasurementMs": 444.4110099999689,
+            "pending": 0
+          },
+          "detailRequests": {
+            "motions": 0,
+            "deferredRequests": 0,
+            "releasedRequests": 0
+          },
+          "peakPendingMeasurements": 0,
+          "keyToNextChangedPaintDistributionMs": {
+            "n": 200,
+            "p50": 18.682,
+            "p95": 36.489,
+            "max": 57.13
+          },
+          "movementPaintGapDistributionMs": {
+            "n": 200,
+            "p50": 34.531,
+            "p95": 53.68,
+            "max": 74.638
+          },
+          "firstPaintMs": 27.008,
+          "firstChangedPaintMs": 27.008,
+          "lastKeyToFinalPaintMs": 53.467,
+          "lastKeyToDetailReleaseMs": null,
+          "finalSettlementMs": 6622.058,
+          "nativeLayoutPasses": 1047,
+          "nativeLayoutMs": 32.439,
+          "keysDispatched": 200,
+          "actualKeyIntervalsMs": {
+            "n": 199,
+            "min": 16.741,
+            "p50": 32.874,
+            "p95": 37.477,
+            "max": 57.401
+          },
+          "before": {
+            "top": 4877,
+            "cursor": "{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":59}",
+            "viewport": "{\"kind\":\"tail\"}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-999:root",
+              "row": 0,
+              "column": 62,
+              "viewportRow": 10,
+              "blockRows": 2
+            }
+          },
+          "after": {
+            "top": 4877,
+            "cursor": "{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":59}",
+            "viewport": "{\"kind\":\"tail\"}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-999:root",
+              "row": 0,
+              "column": 62,
+              "viewportRow": 10,
+              "blockRows": 2
+            },
+            "measuredBlocks": 10,
+            "materializedBlocks": 10,
+            "roots": 10,
+            "descendants": 76
+          }
+        }
+      ]
+    },
+    {
+      "artifact": "vimex-budget-cold-on.json",
+      "artifactSha256": "97ce3da784f0218b5df2084b55a7184d9eea0d69cb168e6c74500e1c20b1d444",
+      "benchmark": "connected-transcript-navigation",
+      "workload": "held",
+      "experiment": {
+        "deferCodeDetail": false,
+        "budgetMeasurements": true,
+        "idleMs": 120
+      },
+      "status": "diagnostic",
+      "failureReason": null,
+      "machine": {
+        "platform": "darwin",
+        "arch": "arm64",
+        "cpus": 14,
+        "bun": "1.3.6",
+        "opentui": "0.5.11"
+      },
+      "fixture": {
+        "version": "transcript-navigation-v1",
+        "shape": "mixed",
+        "canonicalItems": 1000,
+        "transcriptItems": 876,
+        "actualRenderBlocks": 1142,
+        "connectedRenderBlocks": 1114,
+        "hash": "788e1224",
+        "denseOracle": false,
+        "renderBlockTarget": null
+      },
+      "viewport": {
+        "width": 80,
+        "height": 24
+      },
+      "windowPolicy": {
+        "overscanRows": "viewport-default",
+        "recentTailBlocks": 0,
+        "recentTailRows": 1,
+        "olderLookAheadRows": 0,
+        "overrideIsBenchmarkOnly": true
+      },
+      "rendererCadence": {
+        "targetFps": 60,
+        "maxFps": 60
+      },
+      "requestedIntervalMs": 33,
+      "actions": [
+        {
+          "name": "first-traversal-held-up",
+          "group": "queued-paced-up",
+          "semanticDirection": "up",
+          "semanticMonotonic": true,
+          "blankFrames": 0,
+          "mountedWindowTransitions": 88,
+          "nativeFrames": 183,
+          "measurementWork": {
+            "motions": 100,
+            "requiredMeasurements": 34,
+            "backgroundMeasurements": 425,
+            "deferredAttempts": 1119,
+            "measurementMs": 159.04611,
+            "backgroundMeasurementMs": 154.1866979999984,
+            "pending": 0
+          },
+          "detailRequests": {
+            "motions": 0,
+            "deferredRequests": 0,
+            "releasedRequests": 0
+          },
+          "peakPendingMeasurements": 11,
+          "keyToNextChangedPaintDistributionMs": {
+            "n": 100,
+            "p50": 19.834,
+            "p95": 29.353,
+            "max": 34.637
+          },
+          "movementPaintGapDistributionMs": {
+            "n": 110,
+            "p50": 30.706,
+            "p95": 47.613,
+            "max": 52.157
+          },
+          "firstPaintMs": 35.638,
+          "firstChangedPaintMs": 35.638,
+          "lastKeyToFinalPaintMs": 23.143,
+          "lastKeyToDetailReleaseMs": null,
+          "finalSettlementMs": 3321.352,
+          "nativeLayoutPasses": 574,
+          "nativeLayoutMs": 21.88,
+          "keysDispatched": 100,
+          "actualKeyIntervalsMs": {
+            "n": 99,
+            "min": 26.388,
+            "p50": 33.133,
+            "p95": 38.744,
+            "max": 42.472
+          },
+          "before": {
+            "top": 4645,
+            "cursor": "{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":0}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":0},\"preferredScreenRow\":0}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-999:root",
+              "row": 0,
+              "column": 3,
+              "viewportRow": 10,
+              "blockRows": 2
+            }
+          },
+          "after": {
+            "top": 4170,
+            "cursor": "{\"itemId\":\"navigation-mixed-903\",\"graphemeOffset\":2474}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-903\",\"graphemeOffset\":2468},\"preferredScreenRow\":1}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-903:markdown:3046",
+              "row": 1,
+              "column": 9,
+              "viewportRow": 1,
+              "blockRows": 36
+            },
+            "measuredBlocks": 2,
+            "materializedBlocks": 2,
+            "roots": 2,
+            "descendants": 38
+          }
+        },
+        {
+          "name": "reset-before-warm-reversal",
+          "group": "setup",
+          "semanticDirection": null,
+          "semanticMonotonic": true,
+          "blankFrames": 0,
+          "mountedWindowTransitions": 2,
+          "nativeFrames": 8,
+          "measurementWork": {
+            "motions": 0,
+            "requiredMeasurements": 17,
+            "backgroundMeasurements": 26,
+            "deferredAttempts": 40,
+            "measurementMs": 3.2699129999987235,
+            "backgroundMeasurementMs": 2.2283319999992273,
+            "pending": 0
+          },
+          "detailRequests": {
+            "motions": 0,
+            "deferredRequests": 0,
+            "releasedRequests": 0
+          },
+          "peakPendingMeasurements": 6,
+          "keyToNextChangedPaintDistributionMs": {
+            "n": 1,
+            "p50": 21.786,
+            "p95": 21.786,
+            "max": 21.786
+          },
+          "movementPaintGapDistributionMs": null,
+          "firstPaintMs": 30.677,
+          "firstChangedPaintMs": 30.677,
+          "lastKeyToFinalPaintMs": 30.07,
+          "lastKeyToDetailReleaseMs": null,
+          "finalSettlementMs": 54.027,
+          "nativeLayoutPasses": 11,
+          "nativeLayoutMs": 0.7,
+          "keysDispatched": 1,
+          "before": {
+            "top": 4170,
+            "cursor": "{\"itemId\":\"navigation-mixed-903\",\"graphemeOffset\":2474}",
+            "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-903\",\"graphemeOffset\":2468},\"preferredScreenRow\":1}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-903:markdown:3046",
+              "row": 1,
+              "column": 9,
+              "viewportRow": 1,
+              "blockRows": 36
+            }
+          },
+          "after": {
+            "top": 4868,
+            "cursor": "{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":59}",
+            "viewport": "{\"kind\":\"tail\"}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-999:root",
+              "row": 0,
+              "column": 62,
+              "viewportRow": 10,
+              "blockRows": 2
+            },
+            "measuredBlocks": 10,
+            "materializedBlocks": 10,
+            "roots": 10,
+            "descendants": 76
+          }
+        },
+        {
+          "name": "warm-route-held-reversal",
+          "group": "queued-reversal",
+          "semanticDirection": null,
+          "semanticMonotonic": true,
+          "blankFrames": 0,
+          "mountedWindowTransitions": 163,
+          "nativeFrames": 364,
+          "measurementWork": {
+            "motions": 200,
+            "requiredMeasurements": 169,
+            "backgroundMeasurements": 764,
+            "deferredAttempts": 1307,
+            "measurementMs": 294.2350329999663,
+            "backgroundMeasurementMs": 277.9992379999667,
+            "pending": 0
+          },
+          "detailRequests": {
+            "motions": 0,
+            "deferredRequests": 0,
+            "releasedRequests": 0
+          },
+          "peakPendingMeasurements": 6,
+          "keyToNextChangedPaintDistributionMs": {
+            "n": 200,
+            "p50": 17.671,
+            "p95": 28.592,
+            "max": 34.408
+          },
+          "movementPaintGapDistributionMs": {
+            "n": 203,
+            "p50": 33.804,
+            "p95": 47.728,
+            "max": 58.65
+          },
+          "firstPaintMs": 32.217,
+          "firstChangedPaintMs": 32.217,
+          "lastKeyToFinalPaintMs": 6.84,
+          "lastKeyToDetailReleaseMs": null,
+          "finalSettlementMs": 6592.068,
+          "nativeLayoutPasses": 1076,
+          "nativeLayoutMs": 36.377,
+          "keysDispatched": 200,
+          "actualKeyIntervalsMs": {
+            "n": 199,
+            "min": 21.356,
+            "p50": 32.767,
+            "p95": 36.501,
+            "max": 44.257
+          },
+          "before": {
+            "top": 4868,
+            "cursor": "{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":59}",
+            "viewport": "{\"kind\":\"tail\"}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-999:root",
+              "row": 0,
+              "column": 62,
+              "viewportRow": 10,
+              "blockRows": 2
+            }
+          },
+          "after": {
+            "top": 4868,
+            "cursor": "{\"itemId\":\"navigation-mixed-999\",\"graphemeOffset\":59}",
+            "viewport": "{\"kind\":\"tail\"}",
+            "cursorPoint": {
+              "blockKey": "item:navigation-mixed-999:root",
+              "row": 0,
+              "column": 62,
+              "viewportRow": 10,
+              "blockRows": 2
+            },
+            "measuredBlocks": 10,
+            "materializedBlocks": 10,
+            "roots": 10,
+            "descendants": 76
+          }
+        }
+      ]
+    }
+  ]
+}
