@@ -586,6 +586,27 @@ test("native selection clips distant semantic endpoints to bounded materialized 
     head: { itemId: mountedIds[2], graphemeOffset: 0 },
   })
   expect(diagnostics).toEqual({ blockVisits: 3, pointVisits: 3 })
+  for (const offsetY of [179, -1]) {
+    const translated = {
+      ...layout,
+      screenOffset: { x: 0, y: offsetY },
+      screenBlockRows: mountedIds.map((id, index) => ({
+        blockKey: `item:${id}:root`,
+        itemId: id,
+        screenY: index,
+        rows: 1,
+      })),
+    }
+    expect(
+      materializedSelectionEndpoints(state, translated, undefined, {
+        screenY: offsetY + 1,
+        height: 1,
+      }),
+    ).toMatchObject({
+      anchor: { itemId: mountedIds[1], screenY: offsetY + 1 },
+      head: { itemId: mountedIds[1], screenY: offsetY + 1 },
+    })
+  }
 
   const reverse = {
     ...state,

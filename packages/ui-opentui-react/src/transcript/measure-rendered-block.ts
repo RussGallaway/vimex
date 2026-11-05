@@ -1,3 +1,4 @@
+import { prepareNativeBlockPlacement } from "./scroll-preparation"
 import {
   DiffRenderable,
   MarkdownRenderable,
@@ -783,6 +784,7 @@ export function measureRenderedBlock(
   if (!state.dirty && state.geometry && sameKey(state.geometry.key, key))
     return state.geometry
 
+  prepareNativeBlockPlacement(input.renderable)
   observeNativeTree(state, input.renderable)
   const hidden = input.presentation === "activity-hidden"
   const activityLead = input.presentation === "activity-lead"

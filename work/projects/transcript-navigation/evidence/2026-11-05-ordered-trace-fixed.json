@@ -1,0 +1,1038 @@
+{
+  "qualification": "Last prepare.complete before next dispatched key, pendingRows empty and no deferredPreparation; last paint recorded under same dispatched-key count separately. A missing paint does not certify per-key presentation.",
+  "runs": {
+    "off": [
+      {
+        "key": 1,
+        "steps": [
+          {
+            "sequence": 301,
+            "requested": -7,
+            "anchoredStep": -4,
+            "moved": -4,
+            "remaining": -3,
+            "oldTop": 47052,
+            "scrollTop": 47048
+          },
+          {
+            "sequence": 301,
+            "requested": -3,
+            "anchoredStep": 0,
+            "moved": -3,
+            "remaining": 0,
+            "oldTop": 47048,
+            "scrollTop": 47045
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9994",
+            "graphemeOffset": 37
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9994",
+              "graphemeOffset": 37
+            },
+            "preferredScreenRow": 9
+          },
+          "scrollTop": 47045,
+          "geometryRevision": 297,
+          "topSpacerRows": 44972,
+          "bottomSpacerRows": 0
+        },
+        "painted": {
+          "cursor": {
+            "itemId": "navigation-mixed-9994",
+            "graphemeOffset": 37
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9994",
+              "graphemeOffset": 37
+            },
+            "preferredScreenRow": 9
+          },
+          "cursorPoint": {
+            "blockKey": "item:navigation-mixed-9994:root",
+            "row": 0,
+            "column": 62,
+            "viewportRow": 9,
+            "blockRows": 2
+          },
+          "scrollTop": 47045,
+          "cells": "  \u2502                                                                             \n  \u2502   \u25be \u2713 Adjust navigation #9993                                       +1 \u22121   \n  \u2502   packages/transcript/src/navigation.ts                    update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9993_file_0 = {                                    \n  \u2502    2 -   state: \"before-item-9993-file-0\",                                  \n  \u2502    2 +   state: \"after-item-9993-file-0\",                                   \n  \u2502    3   }                                                                    \n  \u2502                                                                             \n                                                                                \n  \u2502   \u25b8 \u2713 Child interacted Agent #9994: measured t...l and sent timing notes.   \n                                                                                \n  \u2502   \u25b8 \u2713 Web research #9997                                                    \n                                                                                \n  \u2502   \u25b8 \u2713 Provider call #9998                                                   "
+        },
+        "measurements": []
+      },
+      {
+        "key": 2,
+        "steps": [
+          {
+            "sequence": 302,
+            "requested": -7,
+            "anchoredStep": 0,
+            "moved": -7,
+            "remaining": 0,
+            "oldTop": 47045,
+            "scrollTop": 47038
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9993",
+            "graphemeOffset": 228
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9993",
+              "graphemeOffset": 228
+            },
+            "preferredScreenRow": 10
+          },
+          "scrollTop": 47038,
+          "geometryRevision": 298,
+          "topSpacerRows": 44972,
+          "bottomSpacerRows": 0
+        },
+        "painted": {
+          "cursor": {
+            "itemId": "navigation-mixed-9993",
+            "graphemeOffset": 228
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9993",
+              "graphemeOffset": 228
+            },
+            "preferredScreenRow": 10
+          },
+          "cursorPoint": {
+            "blockKey": "item:navigation-mixed-9993:root",
+            "row": 3,
+            "column": 41,
+            "viewportRow": 10,
+            "blockRows": 9
+          },
+          "scrollTop": 47038,
+          "cells": "  \u2502   scripts/bench.ts                                         update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9992_file_2 = {                                    \n  \u2502    2 -   state: \"before-item-9992-file-2\",                                  \n  \u2502    2 +   state: \"after-item-9992-file-2\",                                   \n  \u2502    3   }                                                                    \n  \u2502                                                                             \n                                                                                \n  \u2502                                                                             \n  \u2502   \u25be \u2713 Adjust navigation #9993                                       +1 \u22121   \n  \u2502   packages/transcript/src/navigation.ts                    update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9993_file_0 = {                                    \n  \u2502    2 -   state: \"before-item-9993-file-0\",                                  \n  \u2502    2 +   state: \"after-item-9993-file-0\",                                   \n  \u2502    3   }                                                                    "
+        },
+        "measurements": [
+          [
+            {
+              "key": "item:navigation-mixed-9992:edit:file:568",
+              "oldRows": null,
+              "newRows": 7,
+              "nativeRevision": 2212
+            }
+          ]
+        ]
+      },
+      {
+        "key": 3,
+        "steps": [
+          {
+            "sequence": 303,
+            "requested": -7,
+            "anchoredStep": 0,
+            "moved": -7,
+            "remaining": 0,
+            "oldTop": 47038,
+            "scrollTop": 47031
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9992",
+            "graphemeOffset": 784
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 784
+            },
+            "preferredScreenRow": 10
+          },
+          "scrollTop": 47031,
+          "geometryRevision": 299,
+          "topSpacerRows": 44972,
+          "bottomSpacerRows": 0
+        },
+        "painted": {
+          "cursor": {
+            "itemId": "navigation-mixed-9992",
+            "graphemeOffset": 784
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 784
+            },
+            "preferredScreenRow": 10
+          },
+          "cursorPoint": {
+            "blockKey": "item:navigation-mixed-9992:edit:file:568",
+            "row": 3,
+            "column": 41,
+            "viewportRow": 10,
+            "blockRows": 7
+          },
+          "scrollTop": 47031,
+          "cells": "  \u2502    2 +   state: \"after-item-9992-file-0\",                                   \n  \u2502    3   }                                                                    \n  \u2502   packages/transcript/src/window.ts                        update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9992_file_1 = {                                    \n  \u2502    2 -   state: \"before-item-9992-file-1\",                                  \n  \u2502    2 +   state: \"after-item-9992-file-1\",                                   \n  \u2502    3   }                                                                    \n  \u2502   scripts/bench.ts                                         update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9992_file_2 = {                                    \n  \u2502    2 -   state: \"before-item-9992-file-2\",                                  \n  \u2502    2 +   state: \"after-item-9992-file-2\",                                   \n  \u2502    3   }                                                                    \n  \u2502                                                                             \n                                                                                "
+        },
+        "measurements": [
+          [
+            {
+              "key": "item:navigation-mixed-9992:edit:header",
+              "oldRows": null,
+              "newRows": 7,
+              "nativeRevision": 2214
+            },
+            {
+              "key": "item:navigation-mixed-9992:edit:file:278",
+              "oldRows": null,
+              "newRows": 5,
+              "nativeRevision": 2215
+            }
+          ]
+        ]
+      },
+      {
+        "key": 4,
+        "steps": [
+          {
+            "sequence": 304,
+            "requested": -7,
+            "anchoredStep": -2,
+            "moved": -2,
+            "remaining": -5,
+            "oldTop": 47031,
+            "scrollTop": 47029
+          },
+          {
+            "sequence": 304,
+            "requested": -5,
+            "anchoredStep": 0,
+            "moved": -5,
+            "remaining": 0,
+            "oldTop": 47029,
+            "scrollTop": 47024
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9992",
+            "graphemeOffset": 490
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 490
+            },
+            "preferredScreenRow": 10
+          },
+          "scrollTop": 47024,
+          "geometryRevision": 300,
+          "topSpacerRows": 44972,
+          "bottomSpacerRows": 0
+        },
+        "painted": {
+          "cursor": {
+            "itemId": "navigation-mixed-9992",
+            "graphemeOffset": 490
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 490
+            },
+            "preferredScreenRow": 10
+          },
+          "cursorPoint": {
+            "blockKey": "item:navigation-mixed-9992:edit:file:278",
+            "row": 1,
+            "column": 41,
+            "viewportRow": 10,
+            "blockRows": 5
+          },
+          "scrollTop": 47024,
+          "cells": "  \u2502                                                                             \n                                                                                \n  \u2502                                                                             \n  \u2502   \u25be \u2713 3 files changed                                               +3 \u22123   \n  \u2502   packages/ui/src/transcript.tsx                           update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9992_file_0 = {                                    \n  \u2502    2 -   state: \"before-item-9992-file-0\",                                  \n  \u2502    2 +   state: \"after-item-9992-file-0\",                                   \n  \u2502    3   }                                                                    \n  \u2502   packages/transcript/src/window.ts                        update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9992_file_1 = {                                    \n  \u2502    2 -   state: \"before-item-9992-file-1\",                                  \n  \u2502    2 +   state: \"after-item-9992-file-1\",                                   \n  \u2502    3   }                                                                    "
+        },
+        "measurements": [
+          [
+            {
+              "key": "item:navigation-mixed-9991:markdown:9382",
+              "oldRows": 1,
+              "newRows": 7,
+              "nativeRevision": 2218
+            }
+          ]
+        ]
+      },
+      {
+        "key": 5,
+        "steps": [
+          {
+            "sequence": 305,
+            "requested": 7,
+            "anchoredStep": 7,
+            "moved": 7,
+            "remaining": 0,
+            "oldTop": 47024,
+            "scrollTop": 47031
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9992",
+            "graphemeOffset": 784
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 784
+            },
+            "preferredScreenRow": 10
+          },
+          "scrollTop": 47031,
+          "geometryRevision": 301,
+          "topSpacerRows": 44972,
+          "bottomSpacerRows": 0
+        },
+        "painted": {
+          "cursor": {
+            "itemId": "navigation-mixed-9992",
+            "graphemeOffset": 784
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 784
+            },
+            "preferredScreenRow": 10
+          },
+          "cursorPoint": {
+            "blockKey": "item:navigation-mixed-9992:edit:file:568",
+            "row": 3,
+            "column": 41,
+            "viewportRow": 10,
+            "blockRows": 7
+          },
+          "scrollTop": 47031,
+          "cells": "  \u2502    2 +   state: \"after-item-9992-file-0\",                                   \n  \u2502    3   }                                                                    \n  \u2502   packages/transcript/src/window.ts                        update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9992_file_1 = {                                    \n  \u2502    2 -   state: \"before-item-9992-file-1\",                                  \n  \u2502    2 +   state: \"after-item-9992-file-1\",                                   \n  \u2502    3   }                                                                    \n  \u2502   scripts/bench.ts                                         update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9992_file_2 = {                                    \n  \u2502    2 -   state: \"before-item-9992-file-2\",                                  \n  \u2502    2 +   state: \"after-item-9992-file-2\",                                   \n  \u2502    3   }                                                                    \n  \u2502                                                                             \n                                                                                "
+        },
+        "measurements": [
+          [
+            {
+              "key": "item:navigation-mixed-9991:markdown:9382",
+              "oldRows": 7,
+              "newRows": 7,
+              "nativeRevision": 2219
+            }
+          ]
+        ]
+      },
+      {
+        "key": 6,
+        "steps": [
+          {
+            "sequence": 306,
+            "requested": 7,
+            "anchoredStep": 6,
+            "moved": 6,
+            "remaining": 1,
+            "oldTop": 47031,
+            "scrollTop": 47037
+          },
+          {
+            "sequence": 306,
+            "requested": 1,
+            "anchoredStep": 0,
+            "moved": 1,
+            "remaining": 0,
+            "oldTop": 47037,
+            "scrollTop": 47038
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9993",
+            "graphemeOffset": 228
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 568
+            },
+            "preferredScreenRow": 1
+          },
+          "scrollTop": 47038,
+          "geometryRevision": 301,
+          "topSpacerRows": 44972,
+          "bottomSpacerRows": 0
+        },
+        "painted": {
+          "cursor": {
+            "itemId": "navigation-mixed-9993",
+            "graphemeOffset": 228
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 568
+            },
+            "preferredScreenRow": 1
+          },
+          "cursorPoint": {
+            "blockKey": "item:navigation-mixed-9993:root",
+            "row": 3,
+            "column": 41,
+            "viewportRow": 10,
+            "blockRows": 9
+          },
+          "scrollTop": 47038,
+          "cells": "  \u2502   scripts/bench.ts                                         update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9992_file_2 = {                                    \n  \u2502    2 -   state: \"before-item-9992-file-2\",                                  \n  \u2502    2 +   state: \"after-item-9992-file-2\",                                   \n  \u2502    3   }                                                                    \n  \u2502                                                                             \n                                                                                \n  \u2502                                                                             \n  \u2502   \u25be \u2713 Adjust navigation #9993                                       +1 \u22121   \n  \u2502   packages/transcript/src/navigation.ts                    update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9993_file_0 = {                                    \n  \u2502    2 -   state: \"before-item-9993-file-0\",                                  \n  \u2502    2 +   state: \"after-item-9993-file-0\",                                   \n  \u2502    3   }                                                                    "
+        },
+        "measurements": []
+      },
+      {
+        "key": 7,
+        "steps": [
+          {
+            "sequence": 307,
+            "requested": 7,
+            "anchoredStep": 4,
+            "moved": 4,
+            "remaining": 3,
+            "oldTop": 47038,
+            "scrollTop": 47042
+          },
+          {
+            "sequence": 307,
+            "requested": 3,
+            "anchoredStep": 0,
+            "moved": 3,
+            "remaining": 0,
+            "oldTop": 47042,
+            "scrollTop": 47045
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9994",
+            "graphemeOffset": 16
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9994",
+              "graphemeOffset": 16
+            },
+            "preferredScreenRow": 9
+          },
+          "scrollTop": 47045,
+          "geometryRevision": 301,
+          "topSpacerRows": 44972,
+          "bottomSpacerRows": 0
+        },
+        "painted": {
+          "cursor": {
+            "itemId": "navigation-mixed-9994",
+            "graphemeOffset": 16
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9994",
+              "graphemeOffset": 16
+            },
+            "preferredScreenRow": 9
+          },
+          "cursorPoint": {
+            "blockKey": "item:navigation-mixed-9994:root",
+            "row": 0,
+            "column": 41,
+            "viewportRow": 9,
+            "blockRows": 2
+          },
+          "scrollTop": 47045,
+          "cells": "  \u2502                                                                             \n  \u2502   \u25be \u2713 Adjust navigation #9993                                       +1 \u22121   \n  \u2502   packages/transcript/src/navigation.ts                    update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9993_file_0 = {                                    \n  \u2502    2 -   state: \"before-item-9993-file-0\",                                  \n  \u2502    2 +   state: \"after-item-9993-file-0\",                                   \n  \u2502    3   }                                                                    \n  \u2502                                                                             \n                                                                                \n  \u2502   \u25b8 \u2713 Child interacted Agent #9994: measured t...l and sent timing notes.   \n                                                                                \n  \u2502   \u25b8 \u2713 Web research #9997                                                    \n                                                                                \n  \u2502   \u25b8 \u2713 Provider call #9998                                                   "
+        },
+        "measurements": []
+      },
+      {
+        "key": 8,
+        "steps": [
+          {
+            "sequence": 308,
+            "requested": 7,
+            "anchoredStep": 6,
+            "moved": 6,
+            "remaining": 1,
+            "oldTop": 47045,
+            "scrollTop": 47051
+          },
+          {
+            "sequence": 308,
+            "requested": 1,
+            "anchoredStep": 0,
+            "moved": 1,
+            "remaining": 0,
+            "oldTop": 47051,
+            "scrollTop": 47052
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9999",
+            "graphemeOffset": 59
+          },
+          "viewport": {
+            "kind": "tail"
+          },
+          "scrollTop": 47052,
+          "geometryRevision": 301,
+          "topSpacerRows": 44972,
+          "bottomSpacerRows": 0
+        },
+        "painted": {
+          "cursor": {
+            "itemId": "navigation-mixed-9999",
+            "graphemeOffset": 59
+          },
+          "viewport": {
+            "kind": "tail"
+          },
+          "cursorPoint": {
+            "blockKey": "item:navigation-mixed-9999:root",
+            "row": 0,
+            "column": 62,
+            "viewportRow": 10,
+            "blockRows": 2
+          },
+          "scrollTop": 47052,
+          "cells": "  \u2502                                                                             \n                                                                                \n  \u2502   \u25b8 \u2713 Child interacted Agent #9994: measured t...l and sent timing notes.   \n                                                                                \n  \u2502   \u25b8 \u2713 Web research #9997                                                    \n                                                                                \n  \u2502   \u25b8 \u2713 Provider call #9998                                                   \n                                                                                \n    \u2713 Worked for 192ms                                                          \n                                                                                \n  \u2502  Streaming tail: output continues while history is detached.                \n                                                                                \n  \u2839 Working                                                                     \n                                                                                "
+        },
+        "measurements": []
+      }
+    ],
+    "on": [
+      {
+        "key": 1,
+        "steps": [
+          {
+            "sequence": 301,
+            "requested": -7,
+            "anchoredStep": -4,
+            "moved": -4,
+            "remaining": -3,
+            "oldTop": 47051,
+            "scrollTop": 47047
+          },
+          {
+            "sequence": 301,
+            "requested": -3,
+            "anchoredStep": 0,
+            "moved": -3,
+            "remaining": 0,
+            "oldTop": 47047,
+            "scrollTop": 47044
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9994",
+            "graphemeOffset": 37
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9994",
+              "graphemeOffset": 37
+            },
+            "preferredScreenRow": 9
+          },
+          "scrollTop": 47044,
+          "geometryRevision": 257,
+          "topSpacerRows": 46041,
+          "bottomSpacerRows": 0
+        },
+        "painted": {
+          "cursor": {
+            "itemId": "navigation-mixed-9994",
+            "graphemeOffset": 37
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9994",
+              "graphemeOffset": 37
+            },
+            "preferredScreenRow": 9
+          },
+          "cursorPoint": {
+            "blockKey": "item:navigation-mixed-9994:root",
+            "row": 0,
+            "column": 62,
+            "viewportRow": 9,
+            "blockRows": 2
+          },
+          "scrollTop": 47044,
+          "cells": "  \u2502                                                                             \n  \u2502   \u25be \u2713 Adjust navigation #9993                                       +1 \u22121   \n  \u2502   packages/transcript/src/navigation.ts                    update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9993_file_0 = {                                    \n  \u2502    2 -   state: \"before-item-9993-file-0\",                                  \n  \u2502    2 +   state: \"after-item-9993-file-0\",                                   \n  \u2502    3   }                                                                    \n  \u2502                                                                             \n                                                                                \n  \u2502   \u25b8 \u2713 Child interacted Agent #9994: measured t...l and sent timing notes.   \n                                                                                \n  \u2502   \u25b8 \u2713 Web research #9997                                                    \n                                                                                \n  \u2502   \u25b8 \u2713 Provider call #9998                                                   "
+        },
+        "measurements": []
+      },
+      {
+        "key": 2,
+        "steps": [
+          {
+            "sequence": 302,
+            "requested": -7,
+            "anchoredStep": -6,
+            "moved": -6,
+            "remaining": -1,
+            "oldTop": 47044,
+            "scrollTop": 47038
+          },
+          {
+            "sequence": 302,
+            "requested": -1,
+            "anchoredStep": 0,
+            "moved": -1,
+            "remaining": 0,
+            "oldTop": 47038,
+            "scrollTop": 47037
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9993",
+            "graphemeOffset": 228
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 568
+            },
+            "preferredScreenRow": 1
+          },
+          "scrollTop": 47037,
+          "geometryRevision": 257,
+          "topSpacerRows": 46041,
+          "bottomSpacerRows": 0
+        },
+        "painted": {
+          "cursor": {
+            "itemId": "navigation-mixed-9993",
+            "graphemeOffset": 228
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 568
+            },
+            "preferredScreenRow": 1
+          },
+          "cursorPoint": {
+            "blockKey": "item:navigation-mixed-9993:root",
+            "row": 3,
+            "column": 41,
+            "viewportRow": 10,
+            "blockRows": 9
+          },
+          "scrollTop": 47037,
+          "cells": "  \u2502   scripts/bench.ts                                         update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9992_file_2 = {                                    \n  \u2502    2 -   state: \"before-item-9992-file-2\",                                  \n  \u2502    2 +   state: \"after-item-9992-file-2\",                                   \n  \u2502    3   }                                                                    \n  \u2502                                                                             \n                                                                                \n  \u2502                                                                             \n  \u2502   \u25be \u2713 Adjust navigation #9993                                       +1 \u22121   \n  \u2502   packages/transcript/src/navigation.ts                    update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9993_file_0 = {                                    \n  \u2502    2 -   state: \"before-item-9993-file-0\",                                  \n  \u2502    2 +   state: \"after-item-9993-file-0\",                                   \n  \u2502    3   }                                                                    "
+        },
+        "measurements": []
+      },
+      {
+        "key": 3,
+        "steps": [
+          {
+            "sequence": 303,
+            "requested": -7,
+            "anchoredStep": -7,
+            "moved": -7,
+            "remaining": 0,
+            "oldTop": 47037,
+            "scrollTop": 47030
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9992",
+            "graphemeOffset": 784
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 784
+            },
+            "preferredScreenRow": 10
+          },
+          "scrollTop": 47030,
+          "geometryRevision": 257,
+          "topSpacerRows": 46041,
+          "bottomSpacerRows": 0
+        },
+        "painted": {
+          "cursor": {
+            "itemId": "navigation-mixed-9992",
+            "graphemeOffset": 784
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 784
+            },
+            "preferredScreenRow": 10
+          },
+          "cursorPoint": {
+            "blockKey": "item:navigation-mixed-9992:edit:file:568",
+            "row": 3,
+            "column": 41,
+            "viewportRow": 10,
+            "blockRows": 7
+          },
+          "scrollTop": 47030,
+          "cells": "  \u2502    2 +   state: \"after-item-9992-file-0\",                                   \n  \u2502    3   }                                                                    \n  \u2502   packages/transcript/src/window.ts                        update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9992_file_1 = {                                    \n  \u2502    2 -   state: \"before-item-9992-file-1\",                                  \n  \u2502    2 +   state: \"after-item-9992-file-1\",                                   \n  \u2502    3   }                                                                    \n  \u2502   scripts/bench.ts                                         update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9992_file_2 = {                                    \n  \u2502    2 -   state: \"before-item-9992-file-2\",                                  \n  \u2502    2 +   state: \"after-item-9992-file-2\",                                   \n  \u2502    3   }                                                                    \n  \u2502                                                                             \n                                                                                "
+        },
+        "measurements": []
+      },
+      {
+        "key": 4,
+        "steps": [
+          {
+            "sequence": 304,
+            "requested": -7,
+            "anchoredStep": -7,
+            "moved": -7,
+            "remaining": 0,
+            "oldTop": 47030,
+            "scrollTop": 47023
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9992",
+            "graphemeOffset": 490
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 490
+            },
+            "preferredScreenRow": 10
+          },
+          "scrollTop": 47023,
+          "geometryRevision": 257,
+          "topSpacerRows": 46041,
+          "bottomSpacerRows": 0
+        },
+        "painted": {
+          "cursor": {
+            "itemId": "navigation-mixed-9992",
+            "graphemeOffset": 490
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 490
+            },
+            "preferredScreenRow": 10
+          },
+          "cursorPoint": {
+            "blockKey": "item:navigation-mixed-9992:edit:file:278",
+            "row": 1,
+            "column": 41,
+            "viewportRow": 10,
+            "blockRows": 5
+          },
+          "scrollTop": 47023,
+          "cells": "  \u2502                                                                             \n                                                                                \n  \u2502                                                                             \n  \u2502   \u25be \u2713 3 files changed                                               +3 \u22123   \n  \u2502   packages/ui/src/transcript.tsx                           update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9992_file_0 = {                                    \n  \u2502    2 -   state: \"before-item-9992-file-0\",                                  \n  \u2502    2 +   state: \"after-item-9992-file-0\",                                   \n  \u2502    3   }                                                                    \n  \u2502   packages/transcript/src/window.ts                        update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9992_file_1 = {                                    \n  \u2502    2 -   state: \"before-item-9992-file-1\",                                  \n  \u2502    2 +   state: \"after-item-9992-file-1\",                                   \n  \u2502    3   }                                                                    "
+        },
+        "measurements": []
+      },
+      {
+        "key": 5,
+        "steps": [
+          {
+            "sequence": 305,
+            "requested": 7,
+            "anchoredStep": 7,
+            "moved": 7,
+            "remaining": 0,
+            "oldTop": 47023,
+            "scrollTop": 47030
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9992",
+            "graphemeOffset": 784
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 784
+            },
+            "preferredScreenRow": 10
+          },
+          "scrollTop": 47030,
+          "geometryRevision": 258,
+          "topSpacerRows": 46041,
+          "bottomSpacerRows": 0
+        },
+        "painted": {
+          "cursor": {
+            "itemId": "navigation-mixed-9992",
+            "graphemeOffset": 784
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 784
+            },
+            "preferredScreenRow": 10
+          },
+          "cursorPoint": {
+            "blockKey": "item:navigation-mixed-9992:edit:file:568",
+            "row": 3,
+            "column": 41,
+            "viewportRow": 10,
+            "blockRows": 7
+          },
+          "scrollTop": 47030,
+          "cells": "  \u2502    2 +   state: \"after-item-9992-file-0\",                                   \n  \u2502    3   }                                                                    \n  \u2502   packages/transcript/src/window.ts                        update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9992_file_1 = {                                    \n  \u2502    2 -   state: \"before-item-9992-file-1\",                                  \n  \u2502    2 +   state: \"after-item-9992-file-1\",                                   \n  \u2502    3   }                                                                    \n  \u2502   scripts/bench.ts                                         update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9992_file_2 = {                                    \n  \u2502    2 -   state: \"before-item-9992-file-2\",                                  \n  \u2502    2 +   state: \"after-item-9992-file-2\",                                   \n  \u2502    3   }                                                                    \n  \u2502                                                                             \n                                                                                "
+        },
+        "measurements": [
+          [
+            {
+              "key": "item:navigation-mixed-9991:markdown:9382",
+              "oldRows": 7,
+              "newRows": 7,
+              "nativeRevision": 1436
+            }
+          ]
+        ]
+      },
+      {
+        "key": 6,
+        "steps": [
+          {
+            "sequence": 306,
+            "requested": 7,
+            "anchoredStep": 6,
+            "moved": 6,
+            "remaining": 1,
+            "oldTop": 47030,
+            "scrollTop": 47036
+          },
+          {
+            "sequence": 306,
+            "requested": 1,
+            "anchoredStep": 0,
+            "moved": 1,
+            "remaining": 0,
+            "oldTop": 47036,
+            "scrollTop": 47037
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9993",
+            "graphemeOffset": 228
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 568
+            },
+            "preferredScreenRow": 1
+          },
+          "scrollTop": 47037,
+          "geometryRevision": 258,
+          "topSpacerRows": 46041,
+          "bottomSpacerRows": 0
+        },
+        "painted": {
+          "cursor": {
+            "itemId": "navigation-mixed-9993",
+            "graphemeOffset": 228
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 568
+            },
+            "preferredScreenRow": 1
+          },
+          "cursorPoint": {
+            "blockKey": "item:navigation-mixed-9993:root",
+            "row": 3,
+            "column": 41,
+            "viewportRow": 10,
+            "blockRows": 9
+          },
+          "scrollTop": 47037,
+          "cells": "  \u2502   scripts/bench.ts                                         update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9992_file_2 = {                                    \n  \u2502    2 -   state: \"before-item-9992-file-2\",                                  \n  \u2502    2 +   state: \"after-item-9992-file-2\",                                   \n  \u2502    3   }                                                                    \n  \u2502                                                                             \n                                                                                \n  \u2502                                                                             \n  \u2502   \u25be \u2713 Adjust navigation #9993                                       +1 \u22121   \n  \u2502   packages/transcript/src/navigation.ts                    update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9993_file_0 = {                                    \n  \u2502    2 -   state: \"before-item-9993-file-0\",                                  \n  \u2502    2 +   state: \"after-item-9993-file-0\",                                   \n  \u2502    3   }                                                                    "
+        },
+        "measurements": []
+      },
+      {
+        "key": 7,
+        "steps": [
+          {
+            "sequence": 307,
+            "requested": 7,
+            "anchoredStep": 4,
+            "moved": 4,
+            "remaining": 3,
+            "oldTop": 47037,
+            "scrollTop": 47041
+          },
+          {
+            "sequence": 307,
+            "requested": 3,
+            "anchoredStep": 0,
+            "moved": 3,
+            "remaining": 0,
+            "oldTop": 47041,
+            "scrollTop": 47044
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9994",
+            "graphemeOffset": 16
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9994",
+              "graphemeOffset": 16
+            },
+            "preferredScreenRow": 9
+          },
+          "scrollTop": 47044,
+          "geometryRevision": 258,
+          "topSpacerRows": 46041,
+          "bottomSpacerRows": 0
+        },
+        "painted": {
+          "cursor": {
+            "itemId": "navigation-mixed-9994",
+            "graphemeOffset": 16
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9994",
+              "graphemeOffset": 16
+            },
+            "preferredScreenRow": 9
+          },
+          "cursorPoint": {
+            "blockKey": "item:navigation-mixed-9994:root",
+            "row": 0,
+            "column": 41,
+            "viewportRow": 9,
+            "blockRows": 2
+          },
+          "scrollTop": 47044,
+          "cells": "  \u2502                                                                             \n  \u2502   \u25be \u2713 Adjust navigation #9993                                       +1 \u22121   \n  \u2502   packages/transcript/src/navigation.ts                    update \u00b7 +1 \u22121   \n  \u2502    1   export const item_9993_file_0 = {                                    \n  \u2502    2 -   state: \"before-item-9993-file-0\",                                  \n  \u2502    2 +   state: \"after-item-9993-file-0\",                                   \n  \u2502    3   }                                                                    \n  \u2502                                                                             \n                                                                                \n  \u2502   \u25b8 \u2713 Child interacted Agent #9994: measured t...l and sent timing notes.   \n                                                                                \n  \u2502   \u25b8 \u2713 Web research #9997                                                    \n                                                                                \n  \u2502   \u25b8 \u2713 Provider call #9998                                                   "
+        },
+        "measurements": []
+      },
+      {
+        "key": 8,
+        "steps": [
+          {
+            "sequence": 308,
+            "requested": 7,
+            "anchoredStep": 6,
+            "moved": 6,
+            "remaining": 1,
+            "oldTop": 47044,
+            "scrollTop": 47050
+          },
+          {
+            "sequence": 308,
+            "requested": 1,
+            "anchoredStep": 0,
+            "moved": 1,
+            "remaining": 0,
+            "oldTop": 47050,
+            "scrollTop": 47051
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9999",
+            "graphemeOffset": 59
+          },
+          "viewport": {
+            "kind": "tail"
+          },
+          "scrollTop": 47051,
+          "geometryRevision": 258,
+          "topSpacerRows": 46041,
+          "bottomSpacerRows": 0
+        },
+        "painted": {
+          "cursor": {
+            "itemId": "navigation-mixed-9999",
+            "graphemeOffset": 59
+          },
+          "viewport": {
+            "kind": "tail"
+          },
+          "cursorPoint": {
+            "blockKey": "item:navigation-mixed-9999:root",
+            "row": 0,
+            "column": 62,
+            "viewportRow": 10,
+            "blockRows": 2
+          },
+          "scrollTop": 47051,
+          "cells": "  \u2502                                                                             \n                                                                                \n  \u2502   \u25b8 \u2713 Child interacted Agent #9994: measured t...l and sent timing notes.   \n                                                                                \n  \u2502   \u25b8 \u2713 Web research #9997                                                    \n                                                                                \n  \u2502   \u25b8 \u2713 Provider call #9998                                                   \n                                                                                \n    \u2713 Worked for 192ms                                                          \n                                                                                \n  \u2502  Streaming tail: output continues while history is detached.                \n                                                                                \n  \u2838 Working                                                                     \n                                                                                "
+        },
+        "measurements": []
+      }
+    ]
+  },
+  "command": "VIMEX_NAV_DEFER_CODE_DETAIL=0 VIMEX_NAV_BUDGET_MEASUREMENTS={0|1} VIMEX_NAV_MEASUREMENT_DIAGNOSTICS=1 VIMEX_NAV_WORKLOAD=held VIMEX_NAV_ITEMS=10000 VIMEX_NAV_REPEATS=300 VIMEX_NAV_WARM_REPEATS=4 VIMEX_NAV_TRACE=1 bun scripts/benchmark-transcript-navigation.tsx",
+  "status": "post-prototype diagnostic; native/source destination agreement is not latency or general architecture acceptance",
+  "artifacts": [
+    {
+      "path": "/tmp/vimex-trace-fixed-off.json",
+      "sha256": "5ae155a6d7e472de32309bc37a2591255ba9869dad9d61c6489c2cf7d9366183"
+    },
+    {
+      "path": "/tmp/vimex-trace-fixed-on.json",
+      "sha256": "7283f233ab44a508e11c00cb2c0a43836779e76ce187a9cc4bc5559f1bedd727"
+    }
+  ]
+}

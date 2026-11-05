@@ -1,3 +1,4 @@
+import { traceNavigation } from "./navigation-trace"
 import {
   navigationMeasurementBudgetEnabled,
   navigationMeasurementBudget,
@@ -88,8 +89,14 @@ export function useTranscriptLayout(options: {
     undefined,
   )
   const queuedIntentRevision = useRef<number | undefined>(undefined)
+  const navigationSequence = useRef(0)
   const pendingScrollRows = useRef<
-    Array<{ rows: number; cursor?: "follow" | "clamp" }>
+    Array<{
+      rows: number
+      cursor?: "follow" | "clamp"
+      sequence?: number
+      followTarget?: { row: number; column: number }
+    }>
   >([])
   const pendingCursor = useRef<{ row: number; column: number } | undefined>(
     undefined,
@@ -405,7 +412,21 @@ export function useTranscriptLayout(options: {
       if (rows === undefined) {
         pendingNativeScroll.current = true
         pendingNativeDirection.current = direction
-      } else pendingScrollRows.current.push({ rows, cursor })
+      } else
+        pendingScrollRows.current.push({
+          rows,
+          cursor,
+          sequence: ++navigationSequence.current,
+        })
+      traceNavigation(renderer, "intent.enqueued", () => ({
+        sequence: navigationSequence.current,
+        rows,
+        cursor,
+        action,
+        intentRevision,
+        viewport,
+        pendingRows: pendingScrollRows.current.map((value) => ({ ...value })),
+      }))
       pendingRestore.current = false
       renderer.requestRender()
     },
@@ -605,6 +626,32 @@ export function useTranscriptLayout(options: {
       }
     }
     const prepare = () => {
+      const trace = (
+        kind: string,
+        details: () => Record<string, unknown> = () => ({}),
+      ) =>
+        traceNavigation(renderer, kind, () => {
+          const frame = latest.current.runtime?.getSnapshot()
+          return {
+            ...details(),
+            geometryRevision: frame?.geometry.revision,
+            presentationRevision: frame?.presentationRevision,
+            topSpacerRows: frame?.window.topSpacerRows,
+            bottomSpacerRows: frame?.window.bottomSpacerRows,
+            intentRevision: latest.current.runtime?.getViewportIntentRevision(),
+            scrollTop: scrollRef.current?.scrollTop,
+            cursor: frame?.transcript.cursor,
+            viewport: frame?.transcript.viewport,
+            pendingRows: pendingScrollRows.current.map((value) => ({
+              ...value,
+            })),
+            pendingCursor: pendingCursor.current && {
+              ...pendingCursor.current,
+            },
+            pendingAnchor: pendingAnchor.current,
+            pendingRestore: pendingRestore.current,
+          }
+        })
       const scrollbox = scrollRef.current
       if (!scrollbox) return
       const viewport =
@@ -650,6 +697,7 @@ export function useTranscriptLayout(options: {
         // burst; the queued moves are still resolved in this layout pass.
         const intent = pendingScrollRows.current.shift() ?? { rows: 0 }
         const requested = intent.rows
+        trace("row.begin", () => ({ intent: { ...intent } }))
         const frame = latest.current.frame
         const coherent =
           prior &&
@@ -682,11 +730,38 @@ export function useTranscriptLayout(options: {
           latest.current.transcript.cursor
         const cursorPoint =
           cursor && prior ? measuredPoint(prior, cursor) : undefined
+        // One accepted half-page motion may cross several prepared windows.
+        // Intermediate snapping to a nearby cell must not redefine its target.
+        if (intent.cursor === "follow" && cursorPoint && !intent.followTarget)
+          intent.followTarget = {
+            row: Math.max(
+              0,
+              Math.min(
+                scrollbox.viewport.height - 1,
+                cursorPoint.screenY - top,
+              ),
+            ),
+            column: cursorPoint.screenX - scrollbox.viewport.screenX,
+          }
         scrollbox.stickyScroll = false
         const oldTop = scrollbox.scrollTop
         scrollbox.scrollBy(step, "step")
         const moved = scrollbox.scrollTop - oldTop
         const remaining = requested - moved
+        trace("row.step", () => ({
+          sequence: intent.sequence,
+          requested,
+          anchoredStep,
+          step,
+          moved,
+          remaining,
+          oldTop,
+          cursorPoint: cursorPoint && {
+            screenY: cursorPoint.screenY,
+            screenX: cursorPoint.screenX,
+          },
+          viewportTop: top,
+        }))
         if (
           requested > 0 &&
           scrollbox.scrollTop >=
@@ -791,7 +866,7 @@ export function useTranscriptLayout(options: {
               (semanticMovement === 0 && rowMovement * requested < 0)
             if (destination && safeDirection) {
               if (intent.cursor && cursorPoint)
-                pendingCursor.current = {
+                pendingCursor.current = intent.followTarget ?? {
                   row: Math.max(
                     0,
                     Math.min(
@@ -829,7 +904,7 @@ export function useTranscriptLayout(options: {
             translatedRow < 0 ||
             translatedRow >= scrollbox.viewport.height
           )
-            pendingCursor.current = {
+            pendingCursor.current = intent.followTarget ?? {
               row: Math.max(
                 0,
                 Math.min(scrollbox.viewport.height - 1, translatedRow),
@@ -959,6 +1034,17 @@ export function useTranscriptLayout(options: {
               distance = score
             }
           }
+          trace("cursor.resolve", () => ({
+            desired,
+            target: target && {
+              itemId: target.itemId,
+              graphemeOffset: target.graphemeOffset,
+              screenY: target.screenY,
+              screenX: target.screenX,
+            },
+            candidates: candidates.length,
+            viewportTop: scrollbox.viewport.screenY,
+          }))
           if (target) {
             const cursor =
               latest.current.runtime?.getSnapshot().transcript.cursor ??
@@ -989,6 +1075,7 @@ export function useTranscriptLayout(options: {
         // Cold remainder is resolved after the next neighborhood is prepared.
         advance()
       }
+      trace("prepare.complete", () => ({ deferredPreparation }))
       if (pendingScrollRows.current.length || deferredPreparation) {
         preparationContinuation.current = deferredPreparation
         queuedViewport.current =

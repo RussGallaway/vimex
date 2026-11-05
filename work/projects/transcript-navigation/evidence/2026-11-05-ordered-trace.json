@@ -1,0 +1,722 @@
+{
+  "command": "VIMEX_NAV_DEFER_CODE_DETAIL=0 VIMEX_NAV_BUDGET_MEASUREMENTS={0|1} VIMEX_NAV_MEASUREMENT_DIAGNOSTICS=1 VIMEX_NAV_WORKLOAD=held VIMEX_NAV_ITEMS=10000 VIMEX_NAV_REPEATS=300 VIMEX_NAV_WARM_REPEATS=4 VIMEX_NAV_TRACE=1 bun scripts/benchmark-transcript-navigation.tsx",
+  "qualification": "Last prepare.complete before next dispatched key, pendingRows empty and no deferredPreparation; actual row steps linked by UI intent sequence. Final tail equality does not imply intermediate equivalence.",
+  "runs": {
+    "off": [
+      {
+        "key": 1,
+        "steps": [
+          {
+            "sequence": 301,
+            "requested": -7,
+            "anchoredStep": -4,
+            "moved": -4,
+            "remaining": -3,
+            "oldTop": 47042,
+            "scrollTop": 47038
+          },
+          {
+            "sequence": 301,
+            "requested": -3,
+            "anchoredStep": 0,
+            "moved": -3,
+            "remaining": 0,
+            "oldTop": 47038,
+            "scrollTop": 47035
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9994",
+            "graphemeOffset": 1
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9994",
+              "graphemeOffset": 1
+            },
+            "preferredScreenRow": 9
+          },
+          "scrollTop": 47035,
+          "geometryRevision": 393,
+          "topSpacerRows": 44962,
+          "bottomSpacerRows": 0
+        },
+        "measurements": [],
+        "scrollAdjustments": []
+      },
+      {
+        "key": 2,
+        "steps": [
+          {
+            "sequence": 302,
+            "requested": -7,
+            "anchoredStep": 0,
+            "moved": -7,
+            "remaining": 0,
+            "oldTop": 47035,
+            "scrollTop": 47028
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9993",
+            "graphemeOffset": 213
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9993",
+              "graphemeOffset": 213
+            },
+            "preferredScreenRow": 10
+          },
+          "scrollTop": 47028,
+          "geometryRevision": 394,
+          "topSpacerRows": 44962,
+          "bottomSpacerRows": 0
+        },
+        "measurements": [
+          [
+            {
+              "key": "item:navigation-mixed-9992:edit:file:568",
+              "oldRows": null,
+              "newRows": 7,
+              "nativeRevision": 2302
+            }
+          ]
+        ],
+        "scrollAdjustments": []
+      },
+      {
+        "key": 3,
+        "steps": [
+          {
+            "sequence": 303,
+            "requested": -7,
+            "anchoredStep": 0,
+            "moved": -7,
+            "remaining": 0,
+            "oldTop": 47028,
+            "scrollTop": 47021
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9992",
+            "graphemeOffset": 769
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 769
+            },
+            "preferredScreenRow": 10
+          },
+          "scrollTop": 47021,
+          "geometryRevision": 395,
+          "topSpacerRows": 44962,
+          "bottomSpacerRows": 0
+        },
+        "measurements": [
+          [
+            {
+              "key": "item:navigation-mixed-9992:edit:header",
+              "oldRows": null,
+              "newRows": 7,
+              "nativeRevision": 2304
+            },
+            {
+              "key": "item:navigation-mixed-9992:edit:file:278",
+              "oldRows": null,
+              "newRows": 5,
+              "nativeRevision": 2305
+            }
+          ]
+        ],
+        "scrollAdjustments": []
+      },
+      {
+        "key": 4,
+        "steps": [
+          {
+            "sequence": 304,
+            "requested": -7,
+            "anchoredStep": -2,
+            "moved": -2,
+            "remaining": -5,
+            "oldTop": 47021,
+            "scrollTop": 47019
+          },
+          {
+            "sequence": 304,
+            "requested": -5,
+            "anchoredStep": 0,
+            "moved": -5,
+            "remaining": 0,
+            "oldTop": 47019,
+            "scrollTop": 47014
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9992",
+            "graphemeOffset": 475
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 475
+            },
+            "preferredScreenRow": 10
+          },
+          "scrollTop": 47014,
+          "geometryRevision": 396,
+          "topSpacerRows": 44962,
+          "bottomSpacerRows": 0
+        },
+        "measurements": [
+          [
+            {
+              "key": "item:navigation-mixed-9991:markdown:9382",
+              "oldRows": 1,
+              "newRows": 7,
+              "nativeRevision": 2308
+            }
+          ]
+        ],
+        "scrollAdjustments": []
+      },
+      {
+        "key": 5,
+        "steps": [
+          {
+            "sequence": 305,
+            "requested": 7,
+            "anchoredStep": 7,
+            "moved": 7,
+            "remaining": 0,
+            "oldTop": 47014,
+            "scrollTop": 47021
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9992",
+            "graphemeOffset": 769
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 769
+            },
+            "preferredScreenRow": 10
+          },
+          "scrollTop": 47021,
+          "geometryRevision": 397,
+          "topSpacerRows": 44962,
+          "bottomSpacerRows": 0
+        },
+        "measurements": [
+          [
+            {
+              "key": "item:navigation-mixed-9991:markdown:9382",
+              "oldRows": 7,
+              "newRows": 7,
+              "nativeRevision": 2309
+            }
+          ]
+        ],
+        "scrollAdjustments": []
+      },
+      {
+        "key": 6,
+        "steps": [
+          {
+            "sequence": 306,
+            "requested": 7,
+            "anchoredStep": 6,
+            "moved": 6,
+            "remaining": 1,
+            "oldTop": 47021,
+            "scrollTop": 47027
+          },
+          {
+            "sequence": 306,
+            "requested": 1,
+            "anchoredStep": 0,
+            "moved": 1,
+            "remaining": 0,
+            "oldTop": 47027,
+            "scrollTop": 47028
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9993",
+            "graphemeOffset": 248
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9993",
+              "graphemeOffset": 248
+            },
+            "preferredScreenRow": 11
+          },
+          "scrollTop": 47028,
+          "geometryRevision": 397,
+          "topSpacerRows": 44962,
+          "bottomSpacerRows": 0
+        },
+        "measurements": [],
+        "scrollAdjustments": []
+      },
+      {
+        "key": 7,
+        "steps": [
+          {
+            "sequence": 307,
+            "requested": 7,
+            "anchoredStep": 4,
+            "moved": 4,
+            "remaining": 3,
+            "oldTop": 47028,
+            "scrollTop": 47032
+          },
+          {
+            "sequence": 307,
+            "requested": 3,
+            "anchoredStep": 0,
+            "moved": 3,
+            "remaining": 0,
+            "oldTop": 47032,
+            "scrollTop": 47035
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9998",
+            "graphemeOffset": 18
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9998",
+              "graphemeOffset": 18
+            },
+            "preferredScreenRow": 13
+          },
+          "scrollTop": 47035,
+          "geometryRevision": 397,
+          "topSpacerRows": 44962,
+          "bottomSpacerRows": 0
+        },
+        "measurements": [],
+        "scrollAdjustments": []
+      },
+      {
+        "key": 8,
+        "steps": [
+          {
+            "sequence": 308,
+            "requested": 7,
+            "anchoredStep": 6,
+            "moved": 6,
+            "remaining": 1,
+            "oldTop": 47035,
+            "scrollTop": 47041
+          },
+          {
+            "sequence": 308,
+            "requested": 1,
+            "anchoredStep": 0,
+            "moved": 1,
+            "remaining": 0,
+            "oldTop": 47041,
+            "scrollTop": 47042
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9999",
+            "graphemeOffset": 59
+          },
+          "viewport": {
+            "kind": "tail"
+          },
+          "scrollTop": 47042,
+          "geometryRevision": 397,
+          "topSpacerRows": 44962,
+          "bottomSpacerRows": 0
+        },
+        "measurements": [],
+        "scrollAdjustments": [
+          {
+            "kind": "native.scrollTo.begin",
+            "args": [9007199254740991],
+            "scrollTop": 47042,
+            "atMs": 257.085
+          },
+          {
+            "kind": "native.scrollTo.end",
+            "args": [9007199254740991],
+            "scrollTop": 47042,
+            "atMs": 257.101
+          }
+        ]
+      }
+    ],
+    "on": [
+      {
+        "key": 1,
+        "steps": [
+          {
+            "sequence": 301,
+            "requested": -7,
+            "anchoredStep": -4,
+            "moved": -4,
+            "remaining": -3,
+            "oldTop": 47031,
+            "scrollTop": 47027
+          },
+          {
+            "sequence": 301,
+            "requested": -3,
+            "anchoredStep": 0,
+            "moved": -3,
+            "remaining": 0,
+            "oldTop": 47027,
+            "scrollTop": 47024
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9994",
+            "graphemeOffset": 1
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9994",
+              "graphemeOffset": 1
+            },
+            "preferredScreenRow": 9
+          },
+          "scrollTop": 47024,
+          "geometryRevision": 359,
+          "topSpacerRows": 46021,
+          "bottomSpacerRows": 0
+        },
+        "measurements": [],
+        "scrollAdjustments": []
+      },
+      {
+        "key": 2,
+        "steps": [
+          {
+            "sequence": 302,
+            "requested": -7,
+            "anchoredStep": -7,
+            "moved": -7,
+            "remaining": 0,
+            "oldTop": 47024,
+            "scrollTop": 47017
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9993",
+            "graphemeOffset": 213
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9993",
+              "graphemeOffset": 213
+            },
+            "preferredScreenRow": 9
+          },
+          "scrollTop": 47018,
+          "geometryRevision": 360,
+          "topSpacerRows": 46021,
+          "bottomSpacerRows": 0
+        },
+        "measurements": [
+          [
+            {
+              "key": "item:navigation-mixed-9992:edit:file:568",
+              "oldRows": 7,
+              "newRows": 7,
+              "nativeRevision": 1561
+            }
+          ]
+        ],
+        "scrollAdjustments": []
+      },
+      {
+        "key": 3,
+        "steps": [
+          {
+            "sequence": 303,
+            "requested": -7,
+            "anchoredStep": -6,
+            "moved": -6,
+            "remaining": -1,
+            "oldTop": 47018,
+            "scrollTop": 47012
+          },
+          {
+            "sequence": 303,
+            "requested": -1,
+            "anchoredStep": 0,
+            "moved": -1,
+            "remaining": 0,
+            "oldTop": 47013,
+            "scrollTop": 47012
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9992",
+            "graphemeOffset": 751
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 751
+            },
+            "preferredScreenRow": 8
+          },
+          "scrollTop": 47012,
+          "geometryRevision": 361,
+          "topSpacerRows": 46021,
+          "bottomSpacerRows": 0
+        },
+        "measurements": [
+          [
+            {
+              "key": "item:navigation-mixed-9992:edit:file:278",
+              "oldRows": 5,
+              "newRows": 5,
+              "nativeRevision": 1563
+            }
+          ]
+        ],
+        "scrollAdjustments": []
+      },
+      {
+        "key": 4,
+        "steps": [
+          {
+            "sequence": 304,
+            "requested": -7,
+            "anchoredStep": -7,
+            "moved": -7,
+            "remaining": 0,
+            "oldTop": 47012,
+            "scrollTop": 47005
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9992",
+            "graphemeOffset": 565
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 565
+            },
+            "preferredScreenRow": 8
+          },
+          "scrollTop": 47008,
+          "geometryRevision": 362,
+          "topSpacerRows": 46021,
+          "bottomSpacerRows": 0
+        },
+        "measurements": [
+          [
+            {
+              "key": "item:navigation-mixed-9992:edit:header",
+              "oldRows": 7,
+              "newRows": 7,
+              "nativeRevision": 1565
+            }
+          ]
+        ],
+        "scrollAdjustments": []
+      },
+      {
+        "key": 5,
+        "steps": [
+          {
+            "sequence": 305,
+            "requested": 7,
+            "anchoredStep": 7,
+            "moved": 7,
+            "remaining": 0,
+            "oldTop": 47008,
+            "scrollTop": 47015
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9992",
+            "graphemeOffset": 787
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 787
+            },
+            "preferredScreenRow": 6
+          },
+          "scrollTop": 47015,
+          "geometryRevision": 362,
+          "topSpacerRows": 46021,
+          "bottomSpacerRows": 0
+        },
+        "measurements": [],
+        "scrollAdjustments": []
+      },
+      {
+        "key": 6,
+        "steps": [
+          {
+            "sequence": 306,
+            "requested": 7,
+            "anchoredStep": 6,
+            "moved": 6,
+            "remaining": 1,
+            "oldTop": 47015,
+            "scrollTop": 47021
+          },
+          {
+            "sequence": 306,
+            "requested": 1,
+            "anchoredStep": 0,
+            "moved": 1,
+            "remaining": 0,
+            "oldTop": 47021,
+            "scrollTop": 47022
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9993",
+            "graphemeOffset": 230
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9993",
+              "graphemeOffset": 230
+            },
+            "preferredScreenRow": 6
+          },
+          "scrollTop": 47022,
+          "geometryRevision": 362,
+          "topSpacerRows": 46021,
+          "bottomSpacerRows": 0
+        },
+        "measurements": [],
+        "scrollAdjustments": []
+      },
+      {
+        "key": 7,
+        "steps": [
+          {
+            "sequence": 307,
+            "requested": 7,
+            "anchoredStep": 7,
+            "moved": 7,
+            "remaining": 0,
+            "oldTop": 47022,
+            "scrollTop": 47029
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9997",
+            "graphemeOffset": 1
+          },
+          "viewport": {
+            "kind": "point",
+            "point": {
+              "itemId": "navigation-mixed-9997",
+              "graphemeOffset": 1
+            },
+            "preferredScreenRow": 6
+          },
+          "scrollTop": 47029,
+          "geometryRevision": 362,
+          "topSpacerRows": 46021,
+          "bottomSpacerRows": 0
+        },
+        "measurements": [],
+        "scrollAdjustments": []
+      },
+      {
+        "key": 8,
+        "steps": [
+          {
+            "sequence": 308,
+            "requested": 7,
+            "anchoredStep": 6,
+            "moved": 2,
+            "remaining": 5,
+            "oldTop": 47029,
+            "scrollTop": 47031
+          }
+        ],
+        "resolved": {
+          "cursor": {
+            "itemId": "navigation-mixed-9999",
+            "graphemeOffset": 59
+          },
+          "viewport": {
+            "kind": "tail"
+          },
+          "scrollTop": 47031,
+          "geometryRevision": 362,
+          "topSpacerRows": 46021,
+          "bottomSpacerRows": 0
+        },
+        "measurements": [],
+        "scrollAdjustments": [
+          {
+            "kind": "native.scrollTo.begin",
+            "args": [9007199254740991],
+            "scrollTop": 47031,
+            "atMs": 240.602
+          },
+          {
+            "kind": "native.scrollTo.end",
+            "args": [9007199254740991],
+            "scrollTop": 47031,
+            "atMs": 240.618
+          }
+        ]
+      }
+    ]
+  },
+  "status": "pre-prototype diagnostic; baseline is not an independent correctness oracle",
+  "artifacts": [
+    {
+      "path": "/tmp/vimex-trace-large-off.json",
+      "sha256": "9df24e80697bcbe4dc6ddfcf22ed1dd9166efcf08f1749553925d392ea141bf3"
+    },
+    {
+      "path": "/tmp/vimex-trace-large-on.json",
+      "sha256": "0d706709837196a0d4925939f0f31535623d02a429f27e4606e083a84c15aecb"
+    }
+  ]
+}

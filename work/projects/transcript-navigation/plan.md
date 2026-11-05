@@ -1,6 +1,10 @@
 # Prepared transcript navigation plan
 
-Status: architectural investigation approved; implementation pending. Work branch: `feat/transcript-prepared-navigation`.
+Status: first correctness prototype implemented; prepared-row architecture pending. Work branch: `feat/transcript-prepared-navigation`.
+
+Ordered traces reproduce disagreement at resolved input boundaries, and a 30-item native fixture isolates sensitivity to dividing one half-page motion into smaller steps. Per-input cursor target retention and native child placement preparation repair the reduced fixture and the eight-key long-transcript trace. See the [investigation record](geometry-investigation.md); this does not yet satisfy the general coherent-commit or terminal UX gates.
+
+Next: trace and reduce the remaining one-row viewport difference after the full 300-up/300-down reversal. Its source cursor now agrees, and the initial 300-key cold traversal agrees in both source and native placement. Keep both experiment flags off by default. Prepared-row API scouting can inform the design, but do not skip this remaining correction-order gate.
 
 ## Product outcome
 
@@ -61,6 +65,8 @@ The precise protocol follows slice 1 evidence. Distinguish first measurement, re
 Exit: batch size/timing and delayed measurements do not change final semantic/native placement for the same input in the reduced fixture. No blank frame, wrong-way movement, or post-release anchor jump. Do not freeze geometry for an entire hold if doing so makes cold destinations fictitiously exact.
 
 ### 3. Produce rows without rich renderables
+
+Initial API inspection of the pinned OpenTUI 0.5.11 found public `TextBuffer` and `TextBufferView` APIs that can wrap text without React or Yoga. A first prototype can use `TextBuffer.create(renderer.widthMethod)`, `setText`, `setTabWidth`, and a view configured with the same wrap mode, width, first-line offset, and viewport. `lineInfo` and `getLineSources` are candidates for source mapping; `measureForDimensions` alone provides dimensions, not a navigation map. Dispose the view before its buffer after extracting compact data. Validate these APIs against mounted native text/code before adopting a contract. Native wrapping is still synchronous and needs bounded work.
 
 Inspect reusable OpenTUI text-buffer/wrapping primitives and identify a narrow adapter contract for width-specific layout. Begin with completed plain text and code. Share layout rules with rendering rather than creating an approximate second engine.
 

@@ -1,3 +1,4 @@
+import { subscribeNavigationTrace } from "./navigation-trace"
 import { expect, test } from "bun:test"
 import type { ScrollBoxRenderable } from "@opentui/core"
 import { testRender } from "@opentui/react/test-utils"
@@ -163,6 +164,7 @@ async function navigationHarness(
   }
   return {
     fixture,
+    renderer: setup.renderer,
     runtime,
     scroll,
     frame: () => runtime.getSnapshot(),
@@ -252,27 +254,27 @@ test("half-page scroll keeps the native cursor row through a split multi-file di
     await h.key("up")
     const before = h.cursor()
     expect(before.itemId).toBe(itemId("navigation-mixed-24"))
-    expect(before.graphemeOffset).toBe(735)
+    expect(before.graphemeOffset).toBe(769)
     const source = h.frame().transcript.projectionById[before.itemId]!.plain
-    expect(source.slice(before.graphemeOffset).split("\n")[0]).toBe(
-      '+  state: "after-item-24-file-2",',
-    )
+    expect(source.slice(before.graphemeOffset).split("\n")[0]).toBe(" }")
     // Check the source destination against painted native content rather than
     // accepting a cached point map as its own placement oracle.
-    expect(h.paintedRow(before.row)).toContain(
-      '+   state: "after-item-24-file-2",',
-    )
+    expect(h.paintedRow(before.row)).toMatch(/3\s+\}\s*$/u)
     expect(before.blockId).toBe("edit:file:556")
     expect(before.row).toBeGreaterThanOrEqual(0)
     expect(before.row).toBeLessThan(h.scroll.viewport.height)
     await h.key("up")
     const after = h.cursor()
     expect(after.itemId).toBe(before.itemId)
-    expect(after.graphemeOffset).toBe(553)
-    expect(source.slice(after.graphemeOffset).split("\n")[0]).toBe(" }")
-    expect(h.paintedRow(after.row)).toMatch(/3\s+\}\s*$/u)
+    expect(after.graphemeOffset).toBe(484)
+    expect(source.slice(after.graphemeOffset).split("\n")[0]).toBe(
+      '-  state: "before-item-24-file-1",',
+    )
+    expect(h.paintedRow(after.row)).toContain(
+      '-   state: "before-item-24-file-1",',
+    )
     expect(after.blockId).toBe("edit:file:272")
-    expect(after.localRow).toBe(4)
+    expect(after.localRow).toBe(2)
     expect(after.row).toBe(before.row)
   } finally {
     await h.close()
@@ -525,4 +527,66 @@ test("an unmeasured row inside the same block still completes the original half-
   } finally {
     await h.close()
   }
+}, 30000)
+
+test("half-page cursor follow is independent of native step subdivision", async () => {
+  const results: Array<{ cursor: unknown; top: number; row: string }> = []
+  for (const maxStep of [Infinity, 1]) {
+    const h = await navigationHarness("mixed", 30, 80)
+    let unsubscribe = () => {}
+    try {
+      let rowStepPending = false
+      unsubscribe = subscribeNavigationTrace(h.renderer, (event) => {
+        if (event.kind === "row.begin") rowStepPending = true
+      })
+      const scrollBy = h.scroll.scrollBy.bind(h.scroll)
+      h.scroll.scrollBy = (delta, unit) => {
+        const rowStep = rowStepPending
+        rowStepPending = false
+        if (rowStep && typeof delta === "number")
+          return scrollBy(
+            Math.sign(delta) * Math.min(Math.abs(delta), maxStep),
+            unit,
+          )
+        return scrollBy(delta, unit)
+      }
+      const startTop = h.scroll.scrollTop
+      const startRow = h.cursor().row
+      await h.key("up")
+      await h.key("up")
+      const cursor = h.cursor()
+      expect(h.scroll.scrollTop).toBe(
+        startTop - 2 * Math.floor(h.scroll.viewport.height / 2),
+      )
+      expect(cursor.row).toBe(startRow)
+      expect(cursor.graphemeOffset).toBe(769)
+      expect(
+        h
+          .frame()
+          .transcript.projectionById[cursor.itemId]!.plain.slice(
+            cursor.graphemeOffset,
+          )
+          .split("\n")[0],
+      ).toBe(" }")
+      expect(h.paintedRow(cursor.row)).toMatch(/3\s+\}\s*$/u)
+      results.push({
+        cursor,
+        top: h.scroll.scrollTop,
+        row: h.paintedRow(cursor.row),
+      })
+      await h.key("down")
+      await h.key("down")
+      const reversed = h.cursor()
+      results.push({
+        cursor: reversed,
+        top: h.scroll.scrollTop,
+        row: h.paintedRow(reversed.row),
+      })
+    } finally {
+      unsubscribe()
+      await h.close()
+    }
+  }
+  expect(results[2]).toEqual(results[0])
+  expect(results[3]).toEqual(results[1])
 }, 30000)

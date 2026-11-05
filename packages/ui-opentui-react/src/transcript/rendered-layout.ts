@@ -1,3 +1,4 @@
+import { traceNavigation } from "./navigation-trace"
 import {
   navigationMeasurementBudgetEnabled,
   navigationMeasurementDiagnosticsEnabled,
@@ -785,9 +786,34 @@ function currentGeometry(
   if (runtimeSource?.runtime && measured.length) {
     for (const geometry of measured) schedule.pending.add(geometry.key.blockKey)
     if (budget) budget.diagnostics.pending = schedule.pending.size
+    traceNavigation(renderer, "measurement.before", () => ({
+      geometryRevision: frame!.geometry.revision,
+      topSpacerRows: frame!.window.topSpacerRows,
+      bottomSpacerRows: frame!.window.bottomSpacerRows,
+      scrollTop: scrollbox.scrollTop,
+      cursor: frame!.transcript.cursor,
+      viewport: frame!.transcript.viewport,
+      changes: measured.map((value) => ({
+        key: value.key.blockKey,
+        oldRows: frame!.geometry.byBlockKey[value.key.blockKey]?.rows ?? null,
+        newRows: value.rows,
+        nativeRevision: value.nativeRevision,
+      })),
+    }))
     runtimeSource.runtime.reportMeasurements({
       ...measurementBase!,
       measurements: measured,
+    })
+    traceNavigation(renderer, "measurement.after", () => {
+      const after = runtimeSource.runtime!.getSnapshot()
+      return {
+        geometryRevision: after.geometry.revision,
+        topSpacerRows: after.window.topSpacerRows,
+        bottomSpacerRows: after.window.bottomSpacerRows,
+        scrollTop: scrollbox.scrollTop,
+        cursor: after.transcript.cursor,
+        viewport: after.transcript.viewport,
+      }
     })
     if (diagnostics) {
       diagnostics.changedMeasurements = measured.length

@@ -691,3 +691,64 @@ test("measurement ignores stale ancestor screen caches and retains geometry duri
     await act(async () => setup.renderer.destroy())
   }
 })
+
+test("a culled subtree's first geometry matches its later visible placement", async () => {
+  const block = blockFor("alpha\n\nbeta")
+  const setup = await testRender(
+    <scrollbox id="placement-scroll" height={5} viewportCulling>
+      <box height={20} flexShrink={0} />
+      <box id="block" height={6} flexShrink={0}>
+        <text>alpha</text>
+        <text id="later-line" marginTop={2}>
+          beta
+        </text>
+      </box>
+    </scrollbox>,
+    { width: 30, height: 10 },
+  )
+  try {
+    await act(async () => {
+      await setup.flush()
+      await setup.renderOnce()
+    })
+    const root = setup.renderer.root.findDescendantById("block") as Renderable
+    const child = setup.renderer.root.findDescendantById(
+      "later-line",
+    ) as Renderable
+    const scroll = setup.renderer.root.findDescendantById(
+      "placement-scroll",
+    ) as import("@opentui/core").ScrollBoxRenderable
+    const input = {
+      renderer: setup.renderer,
+      renderable: root,
+      block,
+      width: 30,
+      styleRevision: "culled",
+      folded: false,
+    }
+    // Reproduce the prepaint state of a descendant skipped by culling:
+    // computed Yoga placement exists, but native placement has not run yet.
+    const local = child as unknown as { _y: number; _lastLayoutFrame: number }
+    expect(child.getLayoutNode().getComputedLayout().top).toBe(3)
+    local._y = 0
+    local._lastLayoutFrame = -1
+    expect(child.y - root.y).toBe(0)
+    const first = measureRenderedBlock(input)
+    const end = block.projection.sourceSpans.length - 1
+    expect(first.points[end]?.row).toBe(3)
+    expect(root.height).toBe(6)
+    await act(async () => {
+      scroll.scrollTo(20)
+      await setup.flush()
+      await setup.renderOnce()
+    })
+    const visible = measureRenderedBlock(input)
+    expect(visible.points).toEqual(first.points)
+    expect(child.screenY - root.screenY).toBe(3)
+    expect(setup.captureCharFrame().split("\n")[child.screenY]).toContain(
+      "beta",
+    )
+  } finally {
+    await act(async () => setup.renderer.destroy())
+  }
+})

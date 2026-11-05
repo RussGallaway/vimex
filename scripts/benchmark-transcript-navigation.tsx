@@ -35,6 +35,7 @@ import {
   navigationMeasurementBudget,
   navigationMeasurementBudgetEnabled,
 } from "../packages/ui-opentui-react/src/transcript/navigation-measurement-budget"
+import { subscribeNavigationTrace } from "../packages/ui-opentui-react/src/transcript/navigation-trace"
 import { transcriptBlockRenderableId } from "../packages/ui-opentui-react/src/transcript/rendered-layout"
 
 type Shape = "mixed" | "command" | "tool" | "agent" | "edit" | "markdown"
@@ -132,6 +133,9 @@ const boundaryUpSteps = envInt("VIMEX_NAV_BOUNDARY_UP_STEPS", 0, 0)
 assert(boundaryUpSteps <= 200, "VIMEX_NAV_BOUNDARY_UP_STEPS is capped at 200")
 const reversal = process.env.VIMEX_NAV_REVERSAL === "1"
 const repeats = envInt("VIMEX_NAV_REPEATS", 6)
+const warmRepeats = envInt("VIMEX_NAV_WARM_REPEATS", repeats)
+const traceNavigation = process.env.VIMEX_NAV_TRACE === "1"
+const traceLimit = envInt("VIMEX_NAV_TRACE_LIMIT", 50_000)
 const intervalMs = envInt("VIMEX_NAV_REPEAT_INTERVAL_MS", 33)
 const capacityActions = (
   process.env.VIMEX_NAV_CAPACITY_ACTIONS ??
@@ -504,6 +508,44 @@ async function observeAction(
   expected?: Captured,
 ) {
   const before = h.capture()
+  const traceEnabled = traceNavigation && action.group === "queued-reversal"
+  const navigationTrace: Record<string, unknown>[] = []
+  let dispatchedKeys = 0
+  let droppedTraceRecords = 0
+  const appendTrace = (event: Record<string, unknown>) => {
+    if (navigationTrace.length < traceLimit) navigationTrace.push(event)
+    else droppedTraceRecords++
+  }
+  const traceState = () => {
+    const frame = h.runtime.getSnapshot()
+    const transcript = h.workspaceSnapshot().transcript
+    return {
+      frameId: h.setup.renderer.frameId,
+      geometryRevision: frame.geometry.revision,
+      presentationRevision: frame.presentationRevision,
+      topSpacerRows: frame.window.topSpacerRows,
+      bottomSpacerRows: frame.window.bottomSpacerRows,
+      scrollTop: h.scroll.scrollTop,
+      cursor: transcript.cursor,
+      viewport: transcript.viewport,
+    }
+  }
+  const trace = (kind: string, data: Record<string, unknown> = {}) => {
+    if (traceEnabled)
+      appendTrace({
+        atMs: performance.now(),
+        kind,
+        dispatchedKeys,
+        ...traceState(),
+        ...data,
+      })
+  }
+  const unsubscribeTrace = traceEnabled
+    ? subscribeNavigationTrace(h.setup.renderer, (event) => {
+        appendTrace({ ...event, dispatchedKeys })
+      })
+    : () => {}
+
   const detailBefore = { ...navigationDetailGate(h.setup.renderer).diagnostics }
   const measurementBefore = {
     ...navigationMeasurementBudget(h.setup.renderer).diagnostics,
@@ -556,6 +598,10 @@ async function observeAction(
     if (event === "frame") {
       const began = performance.now()
       frames.push(h.capture())
+      trace("paint", {
+        cells: frames.at(-1)!.cells,
+        cursorPoint: frames.at(-1)!.cursorPoint,
+      })
       recordStage("frame.capture", began)
     }
     const began = performance.now()
@@ -697,6 +743,37 @@ async function observeAction(
       viewport: JSON.stringify(transcript.viewport),
     })
   }
+  const originalPressKey = h.setup.mockInput.pressKey
+  const traceScrollTo = h.scroll.scrollTo
+  const traceScrollBy = h.scroll.scrollBy
+  if (traceEnabled) {
+    h.setup.mockInput.pressKey = function (...args) {
+      dispatchedKeys++
+      trace("key.begin", { args })
+      try {
+        return originalPressKey.apply(this, args)
+      } finally {
+        trace("key.returned", { args })
+      }
+    }
+    h.scroll.scrollTo = function (...args) {
+      trace("native.scrollTo.begin", { args })
+      try {
+        return traceScrollTo.apply(this, args)
+      } finally {
+        trace("native.scrollTo.end", { args })
+      }
+    }
+    h.scroll.scrollBy = function (...args) {
+      trace("native.scrollBy.begin", { args })
+      try {
+        return traceScrollBy.apply(this, args)
+      } finally {
+        trace("native.scrollBy.end", { args })
+      }
+    }
+  }
+  trace("action.begin")
   let dispatchedAt = started
   let detailReleasedAt: number | null = null
   try {
@@ -711,6 +788,11 @@ async function observeAction(
     if (detailWasDeferred) detailReleasedAt = performance.now()
     await h.settle()
   } finally {
+    trace("action.end")
+    unsubscribeTrace()
+    h.setup.mockInput.pressKey = originalPressKey
+    h.scroll.scrollTo = traceScrollTo
+    h.scroll.scrollBy = traceScrollBy
     h.setup.renderer.emit = originalEmit
     root.calculateLayout = originalLayout
     root.updateLayout = originalUpdateLayout
@@ -818,6 +900,11 @@ async function observeAction(
 
   return {
     name: action.name,
+    droppedTraceRecords,
+    navigationTrace: navigationTrace.map((event) => ({
+      ...event,
+      atMs: round(Number(event.atMs) - started),
+    })),
     measurementWork: Object.fromEntries(
       Object.entries(
         navigationMeasurementBudget(h.setup.renderer).diagnostics,
@@ -1044,16 +1131,16 @@ async function run() {
       },
     }
     const queuedReversal: Action = {
-      name: `queued-reversal-${repeats}-each-way`,
+      name: `queued-reversal-${warmRepeats}-each-way`,
       group: "queued-reversal",
       dispatch: async (h, recordKey) => {
         const sequenceStarted = performance.now()
-        for (let index = 0; index < repeats * 2; index++) {
+        for (let index = 0; index < warmRepeats * 2; index++) {
           const due = sequenceStarted + index * intervalMs
           const remaining = due - performance.now()
           if (remaining > 0) await Bun.sleep(remaining)
-          const key = index < repeats ? "Ctrl-U" : "Ctrl-D"
-          const dispatch = index < repeats ? up : down
+          const key = index < warmRepeats ? "Ctrl-U" : "Ctrl-D"
+          const dispatch = index < warmRepeats ? up : down
           dispatch(h, () => recordKey(key, due))
         }
       },
@@ -1353,6 +1440,11 @@ async function run() {
         },
         repeat: {
           requestedIntervalMs: intervalMs,
+          warmRepeats,
+          traceNavigation,
+          traceLimit,
+          traceQualification:
+            "dispatchedKeys counts mock key dispatch entry; key.returned is synchronous delivery only. intent.enqueued marks UI acceptance; row.step/cursor.resolve/prepare.complete determine resolution.",
           pacing:
             "paced-up settles each key; queued-paced-up dispatches at the requested cadence without intermediate settle or explicit render; compare actual intervals and paint keysDispatched",
           settledActualDispatchIntervalsMs: settledDispatchStarts

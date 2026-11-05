@@ -840,11 +840,13 @@ export function materializedSelectionEndpoints(
           : [],
       )
     for (const block of mounted) {
+      // Cached block placements and point maps share the same translation.
+      const screenY = block.screenY + (layout.screenOffset?.y ?? 0)
       if (diagnostics) diagnostics.blockVisits += 1
       if (
         viewport &&
-        (block.screenY + block.rows <= viewport.screenY ||
-          block.screenY >= viewport.screenY + viewport.height)
+        (screenY + block.rows <= viewport.screenY ||
+          screenY >= viewport.screenY + viewport.height)
       )
         continue
       const selected = rangeFor(block.itemId)
@@ -877,12 +879,12 @@ export function materializedSelectionEndpoints(
         continue
       }
       const firstRow = viewport
-        ? Math.max(0, Math.floor(viewport.screenY - block.screenY))
+        ? Math.max(0, Math.floor(viewport.screenY - screenY))
         : 0
       const lastRow = viewport
         ? Math.min(
             block.rows,
-            Math.ceil(viewport.screenY + viewport.height - block.screenY),
+            Math.ceil(viewport.screenY + viewport.height - screenY),
           )
         : block.rows
       const offsets =

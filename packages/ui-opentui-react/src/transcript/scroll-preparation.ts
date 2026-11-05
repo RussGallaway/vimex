@@ -18,3 +18,24 @@ export function prepareNativeTranscriptLayout(renderer: CliRenderer): void {
   renderer.root.calculateLayout()
   renderer.root.updateLayout(0)
 }
+
+/** Resolve computed local placement for one measured subtree, including culled
+ * descendants. This does not calculate Yoga layout or paint terminal cells. */
+export function prepareNativeBlockPlacement(root: Renderable): void {
+  const pending = [root]
+  while (pending.length) {
+    const renderable = pending.pop()!
+    if (renderable.isDestroyed) continue
+    const layout = renderable.getLayoutNode().getComputedLayout()
+    // Newly reconciled children may not have participated in Yoga yet. Their
+    // normal layout/resize pass will schedule a fresh measurement.
+    if (
+      ![layout.left, layout.top, layout.width, layout.height].every(
+        Number.isFinite,
+      )
+    )
+      continue
+    renderable.updateFromLayout()
+    pending.push(...Renderable.prototype.getChildren.call(renderable))
+  }
+}
