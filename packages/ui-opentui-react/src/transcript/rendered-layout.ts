@@ -1,3 +1,9 @@
+import {
+  navigationMeasurementBudgetEnabled,
+  navigationMeasurementDiagnosticsEnabled,
+  navigationMeasurementBudget,
+  type NavigationMeasurementBudget,
+} from "./navigation-measurement-budget"
 import type {
   CliRenderer,
   Renderable,
@@ -37,6 +43,8 @@ export interface RuntimeLayoutSource {
   readonly runtime?: TranscriptRuntime
   readonly styleRevision: GeometryStyleRevision
   readonly diagnostics?: RenderedLayoutDiagnostics
+  /** Explicit experiment injection for native scheduling diagnostics. */
+  readonly measurementBudget?: NavigationMeasurementBudget
 }
 
 /** Mutable deterministic counters for focused tests and diagnostic benchmarks. */
@@ -677,7 +685,7 @@ function currentGeometry(
     ).length
     diagnostics.overscanCandidates =
       orderedCandidates.length - diagnostics.visibleCandidates
-    diagnostics.attemptedMeasurements = orderedCandidates.length
+    diagnostics.attemptedMeasurements = 0
     diagnostics.visibleBeforeOverscan =
       orderedCandidates
         .slice(0, diagnostics.visibleCandidates)
@@ -685,12 +693,52 @@ function currentGeometry(
       orderedCandidates
         .slice(diagnostics.visibleCandidates)
         .every((candidate) => !candidate.visible)
-    diagnostics.attemptedKeys?.push(
-      ...orderedCandidates.map((candidate) => candidate.key),
-    )
   }
   let rejectedMeasurements = 0
-  for (const { key, block, renderable } of orderedCandidates) {
+  let attemptedMeasurements = 0
+  let deferred = 0
+  const budget =
+    runtimeSource?.measurementBudget ??
+    (runtimeSource?.runtime && navigationMeasurementDiagnosticsEnabled
+      ? navigationMeasurementBudget(renderer)
+      : undefined)
+  const requiredPoints = budget
+    ? [
+        state.cursor,
+        state.viewport.kind === "point" ? state.viewport.point : undefined,
+        state.selection?.anchor,
+        state.selection?.head,
+      ].filter((point): point is LogicalPoint => Boolean(point))
+    : []
+  for (const { key, block, renderable, visible } of orderedCandidates) {
+    const required =
+      visible ||
+      (Boolean(budget) &&
+        "item" in block &&
+        requiredPoints.some((point) => {
+          if (point.itemId !== block.key.itemId) return false
+          const range = blockGraphemeRange(block)
+          return (
+            point.graphemeOffset >= range.from &&
+            point.graphemeOffset <= range.to
+          )
+        }))
+    if (
+      budget &&
+      (navigationMeasurementBudgetEnabled ||
+        runtimeSource?.measurementBudget) &&
+      !budget.allow(renderer.frameId, required)
+    ) {
+      schedule.pending.add(key)
+      deferred++
+      continue
+    }
+    attemptedMeasurements++
+    if (diagnostics) {
+      diagnostics.attemptedMeasurements++
+      diagnostics.attemptedKeys?.push(key)
+    }
+    const measurementStarted = budget ? performance.now() : 0
     const blockMode = blockPresentation(block, presentation)
     const next = measureRenderedBlock({
       renderer,
@@ -703,6 +751,7 @@ function currentGeometry(
         block.key.kind === "item" &&
         (blockMode !== "item" || Boolean(state.folded[block.key.itemId])),
     })
+    budget?.record(required, performance.now() - measurementStarted)
     // React/OpenTUI can briefly expose a newly reconciled child at its final
     // coordinate while the owning block still reports its prior placement.
     // Such a sample is not block-local geometry; retry it on the next frame
@@ -732,8 +781,10 @@ function currentGeometry(
       measured.push(next)
     else schedule.pending.delete(key)
   }
+  if (deferred) renderer.requestRender()
   if (runtimeSource?.runtime && measured.length) {
     for (const geometry of measured) schedule.pending.add(geometry.key.blockKey)
+    if (budget) budget.diagnostics.pending = schedule.pending.size
     runtimeSource.runtime.reportMeasurements({
       ...measurementBase!,
       measurements: measured,
@@ -741,17 +792,18 @@ function currentGeometry(
     if (diagnostics) {
       diagnostics.changedMeasurements = measured.length
       diagnostics.cachedMeasurements =
-        orderedCandidates.length - measured.length - rejectedMeasurements
+        attemptedMeasurements - measured.length - rejectedMeasurements
       diagnostics.rejectedMeasurements = rejectedMeasurements
       diagnostics.pendingAfter = schedule.pending.size
       diagnostics.trackedMountedRoots = schedule.renderableByKey.size
     }
     return { blocks, geometry: frame!.geometry }
   }
+  if (budget) budget.diagnostics.pending = schedule.pending.size
   if (diagnostics) {
     diagnostics.changedMeasurements = measured.length
     diagnostics.cachedMeasurements =
-      orderedCandidates.length - measured.length - rejectedMeasurements
+      attemptedMeasurements - measured.length - rejectedMeasurements
     diagnostics.rejectedMeasurements = rejectedMeasurements
     diagnostics.pendingAfter = schedule.pending.size
     diagnostics.trackedMountedRoots = schedule.renderableByKey.size

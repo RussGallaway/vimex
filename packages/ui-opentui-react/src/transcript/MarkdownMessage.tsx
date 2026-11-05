@@ -1,4 +1,9 @@
-import type { SyntaxStyle } from "@opentui/core"
+import { getTreeSitterClient, type SyntaxStyle } from "@opentui/core"
+import { useRenderer } from "@opentui/react"
+import {
+  navigationDetailExperimentEnabled,
+  navigationDetailGate,
+} from "./navigation-detail"
 import type { ConversationItem } from "@vimex/conversation"
 import { emberTide } from "../theme"
 
@@ -26,6 +31,11 @@ export function MarkdownMessage(props: {
   syntax: SyntaxStyle
   blockId?: string
 }) {
+  const renderer = useRenderer()
+  const deferredClient =
+    navigationDetailExperimentEnabled && props.item.status !== "running"
+      ? navigationDetailGate(renderer).client(getTreeSitterClient())
+      : undefined
   const suffix =
     props.blockId && props.blockId !== "root" ? `:${props.blockId}` : ""
   return (
@@ -34,6 +44,7 @@ export function MarkdownMessage(props: {
       id={`markdown:${props.item.id}${suffix}`}
       content={props.item.markdown}
       syntaxStyle={props.syntax}
+      treeSitterClient={deferredClient}
       streaming={props.item.status === "running"}
       internalBlockMode="top-level"
       tableOptions={{ style: "grid" }}

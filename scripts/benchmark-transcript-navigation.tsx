@@ -27,6 +27,14 @@ import {
 } from "@vimex/workbench"
 import { act, Profiler } from "react"
 import { ConnectedVimexRoot } from "../packages/ui-opentui-react/src"
+import {
+  navigationDetailExperimentEnabled,
+  navigationDetailGate,
+} from "../packages/ui-opentui-react/src/transcript/navigation-detail"
+import {
+  navigationMeasurementBudget,
+  navigationMeasurementBudgetEnabled,
+} from "../packages/ui-opentui-react/src/transcript/navigation-measurement-budget"
 import { transcriptBlockRenderableId } from "../packages/ui-opentui-react/src/transcript/rendered-layout"
 
 type Shape = "mixed" | "command" | "tool" | "agent" | "edit" | "markdown"
@@ -42,6 +50,8 @@ type Captured = {
   presentationRevision: number
   measuredBlocks: number
   materializedBlocks: number
+  windowKeys: string
+  pendingMeasurements: number
   roots: number
   descendants: number
   cursorPoint: null | {
@@ -81,8 +91,8 @@ const envInt = (name: string, fallback: number, min = 1) => {
 }
 const workload = process.env.VIMEX_NAV_WORKLOAD ?? "full"
 assert(
-  ["full", "capacity"].includes(workload),
-  "VIMEX_NAV_WORKLOAD must be full or capacity",
+  ["full", "held", "capacity"].includes(workload),
+  "VIMEX_NAV_WORKLOAD must be full, held, or capacity",
 )
 const capacity = workload === "capacity"
 const renderBlockTarget = capacity
@@ -120,6 +130,7 @@ const olderLookAheadRows =
     : envInt("VIMEX_NAV_OLDER_LOOK_AHEAD_ROWS", 48, 0)
 const boundaryUpSteps = envInt("VIMEX_NAV_BOUNDARY_UP_STEPS", 0, 0)
 assert(boundaryUpSteps <= 200, "VIMEX_NAV_BOUNDARY_UP_STEPS is capped at 200")
+const reversal = process.env.VIMEX_NAV_REVERSAL === "1"
 const repeats = envInt("VIMEX_NAV_REPEATS", 6)
 const intervalMs = envInt("VIMEX_NAV_REPEAT_INTERVAL_MS", 33)
 const capacityActions = (
@@ -327,7 +338,7 @@ async function createHarness(
       </Profiler>
     )
   }
-  const setup = await testRender(<Root />, { width, height })
+  const setup = await testRender(<Root />, { width, height, targetFps: 60 })
   const runtime = controller.transcriptRuntime("main")!
   const scroll = setup.renderer.root.findDescendantById(
     "transcript",
@@ -400,6 +411,9 @@ async function createHarness(
       presentationRevision: frame.presentationRevision,
       measuredBlocks: frame.geometry.measuredBlockCount,
       materializedBlocks: frame.window.blocks.length,
+      windowKeys: frame.window.blocks.map(blockKey).join("\n"),
+      pendingMeasurements: navigationMeasurementBudget(setup.renderer)
+        .diagnostics.pending,
       ...counts,
       cursorPoint,
       cursorItemBlocks,
@@ -408,14 +422,18 @@ async function createHarness(
   async function settle() {
     let unchanged = 0
     let last = ""
-    for (let pass = 0; pass < 40 && unchanged < 3; pass++) {
+    for (let pass = 0; pass < 400 && unchanged < 3; pass++) {
       await act(async () => {
-        await setup.flush()
+        await setup.flush({ maxPasses: 400 })
         await setup.renderOnce()
       })
       const frame = runtime.getSnapshot()
       const signature = `${frame.presentationRevision}:${scroll.scrollTop}:${frame.window.blocks.length}:${frame.geometry.revision}`
-      unchanged = signature === last ? unchanged + 1 : 0
+      unchanged =
+        signature === last &&
+        navigationMeasurementBudget(setup.renderer).diagnostics.pending === 0
+          ? unchanged + 1
+          : 0
       last = signature
     }
     assert.equal(unchanged, 3, "Native layout failed to stabilize")
@@ -486,6 +504,10 @@ async function observeAction(
   expected?: Captured,
 ) {
   const before = h.capture()
+  const detailBefore = { ...navigationDetailGate(h.setup.renderer).diagnostics }
+  const measurementBefore = {
+    ...navigationMeasurementBudget(h.setup.renderer).diagnostics,
+  }
   const frames: Captured[] = []
   const stageSamples: {
     operation: string
@@ -495,6 +517,7 @@ async function observeAction(
   const originalEmit = h.setup.renderer.emit
   const root = h.setup.renderer.root
   const originalLayout = root.calculateLayout
+  const originalUpdateLayout = root.updateLayout
   let nativeLayoutPasses = 0
   let nativeLayoutMs = 0
   root.calculateLayout = function (...args) {
@@ -504,6 +527,7 @@ async function observeAction(
     } finally {
       nativeLayoutPasses++
       nativeLayoutMs += performance.now() - began
+      recordStage("native.calculateLayout", began)
     }
   }
   const stageStarted = performance.now()
@@ -515,6 +539,15 @@ async function observeAction(
         durationMs: round(performance.now() - began),
       })
   }
+  if (profileStages)
+    root.updateLayout = function (...args) {
+      const began = performance.now()
+      try {
+        return originalUpdateLayout.apply(this, args)
+      } finally {
+        recordStage("native.updateLayout", began)
+      }
+    }
   h.setup.renderer.emit = function (
     event: string | symbol,
     ...args: unknown[]
@@ -665,17 +698,22 @@ async function observeAction(
     })
   }
   let dispatchedAt = started
+  let detailReleasedAt: number | null = null
   try {
     await act(async () => {
       await action.dispatch(h, recordKey)
       dispatchedAt = performance.now()
-      await h.setup.flush()
+      await h.setup.flush({ maxPasses: 400 })
       await h.setup.renderOnce()
     })
+    const detailWasDeferred = navigationDetailGate(h.setup.renderer).active
+    await act(async () => navigationDetailGate(h.setup.renderer).whenIdle())
+    if (detailWasDeferred) detailReleasedAt = performance.now()
     await h.settle()
   } finally {
     h.setup.renderer.emit = originalEmit
     root.calculateLayout = originalLayout
+    root.updateLayout = originalUpdateLayout
     if (profiledAction) {
       controllerPatch.transcript = originalTranscript
       scrollPatch.scrollTo = originalScrollTo
@@ -746,8 +784,62 @@ async function observeAction(
     ? frames.find((frame) => sameDestination(frame, expected))
     : undefined
   const firstFinal = frames.find((frame) => sameDestination(frame, final))
+  const changedFrames = frames.filter(
+    (frame, index) =>
+      frame.cells !== (index === 0 ? before.cells : frames[index - 1]!.cells),
+  )
+  const movementFrames = frames.filter((frame, index) => {
+    const previous = index === 0 ? before : frames[index - 1]!
+    return frame.top !== previous.top || frame.cursor !== previous.cursor
+  })
+  const movementPaintGapsMs = movementFrames
+    .slice(1)
+    .map((frame, index) => round(frame.atMs - movementFrames[index]!.atMs))
+  const changedPaintGapsMs = changedFrames
+    .slice(1)
+    .map((frame, index) => round(frame.atMs - changedFrames[index]!.atMs))
+  // A subsequent changed paint is an opportunity for visible feedback, not
+  // proof that this individual key's exact destination has been presented.
+  const keyToNextChangedPaintMs = keyDispatches.map((key) => {
+    const paint = changedFrames.find(
+      (frame) => frame.atMs >= started + key.atMs,
+    )
+    return paint ? round(paint.atMs - started - key.atMs) : null
+  })
+  const lastKeyAtMs = keyDispatches.at(-1)?.atMs
+  const finalPaintAfterLastKey =
+    lastKeyAtMs === undefined
+      ? undefined
+      : frames.find(
+          (frame) =>
+            frame.atMs >= started + lastKeyAtMs &&
+            sameDestination(frame, final),
+        )
+
   return {
     name: action.name,
+    measurementWork: Object.fromEntries(
+      Object.entries(
+        navigationMeasurementBudget(h.setup.renderer).diagnostics,
+      ).map(([key, value]) => [
+        key,
+        key === "pending"
+          ? value
+          : value - measurementBefore[key as keyof typeof measurementBefore],
+      ]),
+    ),
+    peakPendingMeasurements: Math.max(
+      before.pendingMeasurements,
+      ...frames.map((frame) => frame.pendingMeasurements),
+    ),
+    detailRequests: Object.fromEntries(
+      Object.entries(navigationDetailGate(h.setup.renderer).diagnostics).map(
+        ([key, value]) => [
+          key,
+          value - detailBefore[key as keyof typeof detailBefore],
+        ],
+      ),
+    ),
     group: action.group,
     semanticDirection,
     semanticMonotonic: semanticViolations.length === 0,
@@ -765,11 +857,39 @@ async function observeAction(
     firstFinalPaintMs: firstFinal ? round(firstFinal.atMs - started) : null,
     finalSettlementMs: round(ended - started),
     nativeFrames: frames.length,
+    mountedWindowTransitions: frames.filter(
+      (frame, index) =>
+        frame.windowKeys !==
+        (index === 0 ? before.windowKeys : frames[index - 1]!.windowKeys),
+    ).length,
+    movementPaintGapsMs,
+    movementPaintGapDistributionMs: percentile(movementPaintGapsMs),
+    changedPaintGapsMs,
+    changedPaintGapDistributionMs: percentile(changedPaintGapsMs),
+    keyToNextChangedPaintMs,
+    keyToNextChangedPaintDistributionMs: percentile(
+      keyToNextChangedPaintMs.filter(
+        (value): value is number => value !== null,
+      ),
+    ),
+    lastKeyToDetailReleaseMs:
+      lastKeyAtMs === undefined || detailReleasedAt === null
+        ? null
+        : round(detailReleasedAt - started - lastKeyAtMs),
+    detailReleaseQualification:
+      "Idle gate release permits highlighting; character captures do not certify color restoration completion.",
+    lastKeyToFinalPaintMs:
+      lastKeyAtMs === undefined || !finalPaintAfterLastKey
+        ? null
+        : round(finalPaintAfterLastKey.atMs - started - lastKeyAtMs),
     keyDispatches,
     actualKeyDispatchIntervalsMs: keyDispatches
       .slice(1)
       .map((key, index) => round(key.atMs - keyDispatches[index]!.atMs)),
-    paintFrames: frames.map((frame) => ({
+    paintFrames: frames.map((frame, index) => ({
+      mountedWindowChanged:
+        frame.windowKeys !==
+        (index === 0 ? before.windowKeys : frames[index - 1]!.windowKeys),
       atMs: round(frame.atMs - started),
       cells: frame.cells,
       blank: frame.blank,
@@ -902,8 +1022,10 @@ async function run() {
       h.setup.mockInput.pressKey("u", { ctrl: true })
       recordKey("Ctrl-U")
     }
-    const down: Action["dispatch"] = (h) =>
+    const down: Action["dispatch"] = (h, recordKey) => {
       h.setup.mockInput.pressKey("d", { ctrl: true })
+      recordKey("Ctrl-D")
+    }
     const brace =
       (value: "{" | "}"): Action["dispatch"] =>
       (h) =>
@@ -918,6 +1040,21 @@ async function run() {
           const remaining = due - performance.now()
           if (remaining > 0) await Bun.sleep(remaining)
           up(h, () => recordKey("Ctrl-U", due))
+        }
+      },
+    }
+    const queuedReversal: Action = {
+      name: `queued-reversal-${repeats}-each-way`,
+      group: "queued-reversal",
+      dispatch: async (h, recordKey) => {
+        const sequenceStarted = performance.now()
+        for (let index = 0; index < repeats * 2; index++) {
+          const due = sequenceStarted + index * intervalMs
+          const remaining = due - performance.now()
+          if (remaining > 0) await Bun.sleep(remaining)
+          const key = index < repeats ? "Ctrl-U" : "Ctrl-D"
+          const dispatch = index < repeats ? up : down
+          dispatch(h, () => recordKey(key, due))
         }
       },
     }
@@ -948,6 +1085,16 @@ async function run() {
                 ? burstUp
                 : returnToTail,
         )
+    } else if (workload === "held") {
+      // First traversal has no earlier navigation warmup. Repeat the same
+      // route to distinguish first-visit work from retained geometry revisits.
+      await runAction({ ...queuedUp, name: "first-traversal-held-up" })
+      await runAction({
+        ...returnToTail,
+        name: "reset-before-warm-reversal",
+        group: "setup",
+      })
+      await runAction({ ...queuedReversal, name: "warm-route-held-reversal" })
     } else {
       await runAction({ name: "cold-up", group: "cold", dispatch: up })
       for (let index = 0; index < repeats; index++) {
@@ -969,6 +1116,14 @@ async function run() {
         group: "setup",
       })
       await runAction(queuedUp)
+      if (reversal) {
+        await runAction({
+          ...returnToTail,
+          name: "reset-before-reversal",
+          group: "setup",
+        })
+        await runAction(queuedReversal)
+      }
       for (let index = 0; index < 3; index++)
         await runAction({
           name: `reverse-down-${index}`,
@@ -1116,6 +1271,11 @@ async function run() {
       JSON.stringify({
         benchmark: "connected-transcript-navigation",
         workload,
+        experiment: {
+          deferCodeDetail: navigationDetailExperimentEnabled,
+          budgetMeasurements: navigationMeasurementBudgetEnabled,
+          idleMs: 120,
+        },
         status: results.some(
           (result) => result.blankFrames > 0 || !result.semanticMonotonic,
         )
@@ -1144,6 +1304,10 @@ async function run() {
           opentui: opentuiVersion,
         },
         renderer: "headless OpenTUI testRender; simulated key dispatch",
+        rendererCadence: {
+          targetFps: measured.setup.renderer.targetFps,
+          maxFps: measured.setup.renderer.maxFps,
+        },
         frameClassification:
           "nonDestinationFrames includes coherent prior paints as well as intermediate paints; no claim that every such frame is visually broken",
         fixture: {
@@ -1197,6 +1361,9 @@ async function run() {
           burst: "8 synchronous key events in one React act",
           capacityActions: capacity ? capacityActions : null,
           boundaryUpSteps: capacity ? null : boundaryUpSteps,
+          queuedReversal: workload === "held" || (!capacity && reversal),
+          feedbackQualification:
+            "Per-key next changed paint is feedback opportunity, not exact key acknowledgement; cell changes can include animations. Movement paints change native top or semantic cursor; gaps include intentional input pacing. Final-paint delay is measured from the last recorded key.",
         },
         groups,
         actions: results,

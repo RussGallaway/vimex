@@ -1,3 +1,11 @@
+import {
+  navigationMeasurementBudgetEnabled,
+  navigationMeasurementBudget,
+} from "./navigation-measurement-budget"
+import {
+  navigationDetailExperimentEnabled,
+  navigationDetailGate,
+} from "./navigation-detail"
 import { composerPaintPending } from "../composer/input-paint"
 import { type ScrollBoxRenderable } from "@opentui/core"
 import { flushSync, useRenderer } from "@opentui/react"
@@ -60,6 +68,15 @@ export function useTranscriptLayout(options: {
   onAnchor?(point: LogicalPoint, preferredScreenRow: number): void
 }) {
   const renderer = useRenderer()
+  useEffect(
+    () => () => {
+      if (navigationDetailExperimentEnabled)
+        navigationDetailGate(renderer).dispose()
+      if (navigationMeasurementBudgetEnabled)
+        navigationMeasurementBudget(renderer).dispose()
+    },
+    [renderer],
+  )
   const prepareScroll = useRef<(() => void) | undefined>(undefined)
   const { transcript, threadId, width, height, scrollRef, controller } = options
   const latest = useRef(options)
@@ -350,6 +367,16 @@ export function useTranscriptLayout(options: {
         | "page_up"
         | "page_down",
     ) => {
+      if (
+        navigationDetailExperimentEnabled &&
+        (action === "half_page_up" || action === "half_page_down")
+      )
+        navigationDetailGate(renderer).motion()
+      if (
+        navigationMeasurementBudgetEnabled &&
+        (action === "half_page_up" || action === "half_page_down")
+      )
+        navigationMeasurementBudget(renderer).motion()
       controller.performanceNavigationInput?.(
         action ??
           (direction === "up"

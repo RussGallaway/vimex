@@ -1,3 +1,4 @@
+import { NavigationMeasurementBudget } from "./navigation-measurement-budget"
 import { expect, test } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
 import { act, useEffect, useState } from "react"
@@ -1080,5 +1081,94 @@ test("a drop-only window change cannot reuse native placements from the wider ma
     runtime.dispose()
     syntax.destroy()
     await act(async () => setup.renderer.destroy())
+  }
+})
+
+test("offscreen measurements yield across native frames and drain without moving semantic position", async () => {
+  const fixture = buildTranscriptScalingFixture(100)
+  const runtime = new TranscriptRuntime(
+    {
+      threadId: fixture.threadId,
+      canonicalGeneration: 0,
+      canonicalRevision: fixture.before.canonicalRevision,
+      conversation: fixture.before.conversation,
+      transcript: fixture.before.transcript,
+      mode: "follow",
+      canonicalDamage: { kind: "full" },
+      presentationDamage: { kind: "view" },
+    },
+    { windowPolicy: { viewportRows: 8, overscanRows: 32 } },
+  )
+  const syntax = createEmberTideSyntax()
+  function Harness() {
+    const [frame, setFrame] = useState(runtime.getSnapshot())
+    useEffect(
+      () => runtime.subscribe(() => setFrame(runtime.getSnapshot())),
+      [],
+    )
+    return (
+      <TranscriptViewport
+        window={frame.window}
+        state={frame.transcript}
+        surface="transcript"
+        syntax={syntax}
+        scrollRef={{ current: null }}
+      />
+    )
+  }
+  const setup = await testRender(<Harness />, { width: 80, height: 12 })
+  const budget = new NavigationMeasurementBudget(() => 1)
+  budget.motion()
+  try {
+    await act(async () => {
+      await setup.flush()
+      await setup.renderOnce()
+    })
+    const scroll = setup.renderer.root.findDescendantById(
+      "transcript",
+    ) as ScrollBoxRenderable
+    const position = runtime.getSnapshot().transcript
+    const measure = () =>
+      measureRenderedTranscript(setup.renderer, scroll, {
+        frame: runtime.getSnapshot(),
+        runtime,
+        styleRevision: "budget-test",
+        measurementBudget: budget,
+      })
+    await act(async () => {
+      measure()
+    })
+    expect(budget.diagnostics.deferredAttempts).toBeGreaterThan(0)
+    expect(budget.diagnostics.pending).toBeGreaterThan(0)
+    for (const block of runtime.getSnapshot().window.blocks) {
+      const root = scroll.getRenderable(transcriptBlockRenderableId(block))
+      if (
+        root &&
+        root.screenY < scroll.viewport.screenY + scroll.viewport.height &&
+        root.screenY + root.height > scroll.viewport.screenY
+      )
+        expect(
+          runtime.getSnapshot().geometry.byBlockKey[blockKey(block)],
+        ).toBeDefined()
+    }
+    const background = budget.diagnostics.backgroundMeasurements
+    await act(async () => {
+      measure()
+    })
+    expect(budget.diagnostics.backgroundMeasurements).toBe(background)
+    for (let frame = 0; frame < 30 && budget.diagnostics.pending > 0; frame++) {
+      await act(async () => {
+        await setup.flush()
+        await setup.renderOnce()
+        measure()
+      })
+    }
+    expect(budget.diagnostics.pending).toBe(0)
+    expect(runtime.getSnapshot().transcript.cursor).toEqual(position.cursor)
+    expect(runtime.getSnapshot().transcript.viewport).toEqual(position.viewport)
+  } finally {
+    budget.dispose()
+    await act(async () => setup.renderer.destroy())
+    syntax.destroy()
   }
 })
