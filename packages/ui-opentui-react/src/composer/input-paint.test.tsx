@@ -6,7 +6,7 @@ import {
   answer,
   thread,
   wheelHarness,
-} from "../transcript/scroll-continuity-harness"
+} from "../transcript/navigation/scroll-continuity-harness"
 import {
   composerPaintPending,
   requestComposerPaint,

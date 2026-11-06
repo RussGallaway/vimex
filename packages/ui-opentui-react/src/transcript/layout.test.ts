@@ -19,7 +19,7 @@ import {
   pointInLayout,
   selectedRangeForItem,
 } from "./layout"
-import { rebaseTranscriptLayout } from "./rendered-layout"
+import { rebaseTranscriptLayout } from "./native-layout/rendered-layout"
 
 const first = itemId("first")
 const second = itemId("second")

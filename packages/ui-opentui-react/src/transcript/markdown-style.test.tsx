@@ -12,7 +12,10 @@ import {
 } from "@vimex/transcript"
 import { createEmberTideSyntax } from "../theme"
 import { MarkdownMessage } from "./MarkdownMessage"
-import { measureRenderedTranscript, measuredPoint } from "./rendered-layout"
+import {
+  measureRenderedTranscript,
+  measuredPoint,
+} from "./native-layout/rendered-layout"
 
 const source =
   "# Heading\n\n**STRONG** and *EMPHASIS* and ~~REMOVED~~ with `INLINE`.\n\n- List item\n\n> QUOTATION\n\n[LINK](https://example.test)\n\n| Name | Value |\n| --- | --- |\n| Cell | **TABLEBOLD** |\n\n```typescript\nconst value = 42\n```"

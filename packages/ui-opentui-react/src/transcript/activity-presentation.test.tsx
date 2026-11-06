@@ -19,7 +19,7 @@ import { ActivityBatch } from "./ActivityBatch"
 import { ReasoningBlock } from "./ReasoningBlock"
 import { ToolCall } from "./ToolCall"
 import { TurnActivity } from "./TurnActivity"
-import { measureRenderedTranscript } from "./rendered-layout"
+import { measureRenderedTranscript } from "./native-layout/rendered-layout"
 
 test("renders structured agent activity as a compact foldable row", async () => {
   const item = {

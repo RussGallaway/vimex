@@ -3,7 +3,7 @@ import { useRenderer } from "@opentui/react"
 import {
   navigationDetailExperimentEnabled,
   navigationDetailGate,
-} from "./navigation-detail"
+} from "./experiments/navigation-detail"
 import type { ConversationItem } from "@vimex/conversation"
 import { emberTide } from "../theme"
 

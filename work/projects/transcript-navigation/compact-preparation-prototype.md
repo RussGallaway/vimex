@@ -6,9 +6,9 @@ Date: 2026-11-05 (local). Baseline: `3ae2f3f`; branch: `feat/transcript-prepared
 
 This standalone follow-up makes prepared geometry cheaper to retain and reusable without invoking native preparation during lookup. It also adds an explicit compatibility adapter for the existing renderer's cursor-address policy. Nothing is connected to the production viewport yet; this is not evidence that held Ctrl-U/D has become faster.
 
-- [Compact layout](../../../packages/ui-opentui-react/src/transcript/compact-prepared-text-layout.ts) stores rows and runs of sequential equal-width source points in private typed arrays. Row lookup is constant time; source-point lookup binary-searches runs. No canonical source text, verbose point array, or native resource is retained by this layout.
-- [Preparation cache](../../../packages/ui-opentui-react/src/transcript/prepared-text-cache.ts) provides lookup without preparation, LRU retention, and an explicitly drained destination-first queue. Replacing the preparation horizon discards obsolete speculative jobs; it does not own or cancel navigation intent.
-- [Navigation compatibility](../../../packages/ui-opentui-react/src/transcript/prepared-text-navigation.ts) adapts compact points to current renderer cursor addresses without materializing a permanent point-per-grapheme array. Only newline/EOF exceptions require additional retained numeric data.
+- [Compact layout](../../../packages/ui-opentui-react/src/transcript/prepared/compact-prepared-text-layout.ts) stores rows and runs of sequential equal-width source points in private typed arrays. Row lookup is constant time; source-point lookup binary-searches runs. No canonical source text, verbose point array, or native resource is retained by this layout.
+- [Preparation cache](../../../packages/ui-opentui-react/src/transcript/prepared/prepared-text-cache.ts) provides lookup without preparation, LRU retention, and an explicitly drained destination-first queue. Replacing the preparation horizon discards obsolete speculative jobs; it does not own or cancel navigation intent.
+- [Navigation compatibility](../../../packages/ui-opentui-react/src/transcript/prepared/prepared-text-navigation.ts) adapts compact points to current renderer cursor addresses without materializing a permanent point-per-grapheme array. Only newline/EOF exceptions require additional retained numeric data.
 
 ## Boundary findings
 

@@ -4,7 +4,10 @@ import {
   type TranscriptState,
 } from "@vimex/transcript"
 import type { MeasuredPoint, TranscriptLayout } from "./layout"
-import { measuredPoint, visibleMeasuredPoints } from "./rendered-layout"
+import {
+  measuredPoint,
+  visibleMeasuredPoints,
+} from "./native-layout/rendered-layout"
 
 export interface FlashTarget extends MeasuredPoint {
   label?: string

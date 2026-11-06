@@ -2,7 +2,7 @@ import type { ConversationItem } from "@vimex/conversation"
 import type { TranscriptItemFragment } from "@vimex/transcript"
 import { emberTide } from "../theme"
 import { itemStatusGlyph } from "./item-status"
-import { PreparedOutput } from "./PreparedOutput"
+import { PreparedOutput } from "./prepared/PreparedOutput"
 
 export function ToolCall(props: {
   item: Extract<ConversationItem, { kind: "command" | "tool" | "unknown" }>

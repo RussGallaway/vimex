@@ -15,7 +15,7 @@ import { ReasoningBlock } from "./ReasoningBlock"
 import { createEmberTideSyntax } from "../theme"
 import { VimexRoot } from "../index"
 import { inertController } from "../contracts"
-import { measureRenderedTranscript } from "./rendered-layout"
+import { measureRenderedTranscript } from "./native-layout/rendered-layout"
 
 const command: Extract<ConversationItem, { kind: "command" | "tool" }> = {
   id: itemId("exact-command"),

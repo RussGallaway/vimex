@@ -26,7 +26,7 @@ import {
 import {
   measureRenderedTranscript,
   transcriptBlockRenderableId,
-} from "./rendered-layout"
+} from "./native-layout/rendered-layout"
 
 test("an unrelated parent update does not reconcile a stable transcript viewport", async () => {
   const thread = threadId("memo"),

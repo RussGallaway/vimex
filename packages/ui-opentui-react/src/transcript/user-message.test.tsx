@@ -10,7 +10,10 @@ import {
   syncTranscriptItem,
 } from "@vimex/transcript"
 import { TranscriptViewport } from "./TranscriptViewport"
-import { measureRenderedTranscript, measuredPoint } from "./rendered-layout"
+import {
+  measureRenderedTranscript,
+  measuredPoint,
+} from "./native-layout/rendered-layout"
 import { createEmberTideSyntax } from "../theme"
 
 test("sent user panels preserve exact selectable Markdown without a role label through narrow reflow", async () => {

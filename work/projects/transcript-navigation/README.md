@@ -22,6 +22,7 @@ That experience is the reason for the work. A small improvement in a synthetic n
 - [Prepared runtime painting](prepared-runtime-paint.md): opt-in visible-row painting in the real app, selection-safe native fallback, connected tests, and a cost probe that does not show a plain-text speedup.
 - [Held navigation after release](held-release-investigation.md): reproduced movement backlog after input stops, independent-sender diagnostics, and repeat-aware cancellation research.
 - [Landing viewport investigation](landing-viewport-investigation.md): immediate input after release from either focus surface, readiness timing, and optional viewport-first prepared work.
+- [Architecture and topology refactor](architecture-refactor.md): responsibility-based module layout preserving the accepted navigation behavior.
 - [Retained window](retained-window.md): current experiment using one stable mounted neighborhood, replenished near its boundary.
 - [Rolling preparation prototype](rolling-preparation-prototype.md): historical experiment, superseded by the simpler retained-window planner.
 

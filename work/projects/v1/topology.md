@@ -54,7 +54,14 @@ vimex/
 │   │       │   ├── toggle-fold.ts
 │   │       │   └── open-url.ts
 │   │       ├── runtime.ts
-│   │       ├── window.ts
+│   │       ├── window.ts                 # compatible public facade
+│   │       ├── window/
+│   │       │   ├── types.ts
+│   │       │   ├── block-plan.ts
+│   │       │   ├── blocks.ts
+│   │       │   ├── activity.ts
+│   │       │   ├── addressing.ts
+│   │       │   └── planner.ts
 │   │       └── index.ts
 │   │
 │   ├── composer/
@@ -110,7 +117,10 @@ vimex/
 │   │       │   ├── FileChange.tsx
 │   │       │   ├── ReasoningBlock.tsx
 │   │       │   ├── use-transcript-runtime.ts
-│   │       │   ├── measure-rendered-block.ts
+│   │       │   ├── navigation/           # input, settlement, repeat control, tracing
+│   │       │   ├── native-layout/        # measurement, placement, readiness
+│   │       │   ├── prepared/             # prepared representations and rendering
+│   │       │   ├── experiments/          # opt-in detail/measurement policies
 │   │       │   ├── SelectionOverlay.tsx
 │   │       │   └── NewOutputMarker.tsx
 │   │       ├── composer/
@@ -311,3 +321,9 @@ Side-chat application state lives in `workbench/src/application/side-chat.ts`, s
 ## Distribution milestone (0.1.0)
 
 The proposed global CLI and distribution context are documented in [CLI architecture](../../../docs/cli-architecture.md). This is an additive proposal; apps/tui remains the current source entry point. The offline guide lives in ui-opentui-react/src/help. scripts/generate-manual.ts derives its embedded content and docs/man/vimex.1 from docs/manual.md; docs:check prevents drift.
+
+## Retained-navigation structural refactor
+
+The [transcript architecture refactor](../transcript-navigation/architecture-refactor.md) records the concrete topology following the accepted retained-window UX. `transcript/src/window.ts` remains a compatible public facade, with implementation divided under `window/` into contracts, persistent storage, block projection, activity grouping, source addressing, and pure range planning. Internal modules import one another directly rather than cycling through that facade. `runtime.ts` retains sole presentation-publication ownership.
+
+The OpenTUI transcript feature groups navigation bindings and settlement under `navigation/`, native measurement and readiness under `native-layout/`, prepared rendering under `prepared/`, and optional detail/measurement policies under `experiments/`. Tests and harnesses live beside their corresponding implementations. Feature components remain in the transcript root. Package dependencies, runtime lifetimes, behavior, and feature flags are unchanged; the grouping does not introduce another state owner or scheduling layer.

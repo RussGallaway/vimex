@@ -1,5 +1,5 @@
 /** Standalone preparation cost probe; this is not input-to-paint UX evidence. */
-import { prepareTextLayout } from "../packages/ui-opentui-react/src/transcript/prepared-text-layout"
+import { prepareTextLayout } from "../packages/ui-opentui-react/src/transcript/prepared/prepared-text-layout"
 
 const rounds = Number(process.env.VIMEX_PREPARED_TEXT_ROUNDS ?? 5)
 if (!Number.isInteger(rounds) || rounds < 2 || rounds > 30)

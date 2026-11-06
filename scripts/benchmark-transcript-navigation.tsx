@@ -31,16 +31,16 @@ import { ConnectedVimexRoot } from "../packages/ui-opentui-react/src"
 import {
   navigationDetailExperimentEnabled,
   navigationDetailGate,
-} from "../packages/ui-opentui-react/src/transcript/navigation-detail"
+} from "../packages/ui-opentui-react/src/transcript/experiments/navigation-detail"
 import {
   navigationMeasurementBudget,
   navigationMeasurementBudgetEnabled,
-} from "../packages/ui-opentui-react/src/transcript/navigation-measurement-budget"
-import { subscribeNavigationTrace } from "../packages/ui-opentui-react/src/transcript/navigation-trace"
+} from "../packages/ui-opentui-react/src/transcript/experiments/navigation-measurement-budget"
+import { subscribeNavigationTrace } from "../packages/ui-opentui-react/src/transcript/navigation/trace"
 import {
   getPreparedRuntimeGeometryDiagnostics,
   transcriptBlockRenderableId,
-} from "../packages/ui-opentui-react/src/transcript/rendered-layout"
+} from "../packages/ui-opentui-react/src/transcript/native-layout/rendered-layout"
 
 type Shape = "mixed" | "command" | "tool" | "agent" | "edit" | "markdown"
 type Harness = Awaited<ReturnType<typeof createHarness>>

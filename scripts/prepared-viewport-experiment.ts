@@ -7,7 +7,7 @@ import {
   CodeRenderable,
   SyntaxStyle,
 } from "@opentui/core"
-import { PreparedViewportExperiment } from "../packages/ui-opentui-react/src/transcript/prepared-viewport-experiment"
+import { PreparedViewportExperiment } from "../packages/ui-opentui-react/src/transcript/prepared/prepared-viewport-experiment"
 import { registerSyntaxParsers } from "../packages/ui-opentui-react/src/syntax/register-parsers"
 
 const width = 80

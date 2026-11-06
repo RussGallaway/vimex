@@ -16,7 +16,7 @@ import {
   measureRenderedTranscript,
   measuredPoint,
   bottomVisiblePoint,
-} from "./rendered-layout"
+} from "./native-layout/rendered-layout"
 import { emberTide } from "../theme"
 
 /** Transient prompt: labels decorate native cells without changing transcript source. */

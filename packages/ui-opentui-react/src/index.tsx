@@ -56,6 +56,6 @@ export { TelescopeModal } from "./composer/TelescopeModal"
 export * from "./contracts"
 export * from "./theme"
 export * from "./transcript/layout"
-export * from "./transcript/rendered-layout"
+export * from "./transcript/native-layout/rendered-layout"
 
 export { registerSyntaxParsers } from "./syntax/register-parsers"

@@ -18,7 +18,7 @@ import {
 } from "@vimex/workbench"
 import { act, Profiler } from "react"
 import { ConnectedVimexRoot } from "../packages/ui-opentui-react/src"
-import { transcriptBlockRenderableId } from "../packages/ui-opentui-react/src/transcript/rendered-layout"
+import { transcriptBlockRenderableId } from "../packages/ui-opentui-react/src/transcript/native-layout/rendered-layout"
 
 interface TimingStats {
   readonly count: number

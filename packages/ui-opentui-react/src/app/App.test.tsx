@@ -28,7 +28,7 @@ import {
   type VimexUiController,
 } from "../contracts"
 import { act, useState } from "react"
-import { measureRenderedTranscript } from "../transcript/rendered-layout"
+import { measureRenderedTranscript } from "../transcript/native-layout/rendered-layout"
 import { reduceInteraction, type Overlay } from "@vimex/interaction"
 import { createEmberTideSyntax } from "../theme"
 

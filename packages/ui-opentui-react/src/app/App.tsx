@@ -1,7 +1,7 @@
 import {
   navigationRepeatInput,
   type NavigationRepeatKey,
-} from "../transcript/navigation-repeat-control"
+} from "../transcript/navigation/repeat-control"
 import { useTranscriptLinks } from "../urls/use-transcript-links"
 import { LinkActionsBar } from "../urls/LinkActionsBar"
 import { NoticeStrip } from "../statusline/NoticeStrip"
@@ -70,9 +70,9 @@ import { useMentionPicker } from "../composer/use-mention-picker"
 import { TelescopeModal } from "../composer/TelescopeModal"
 import { useTelescopeModal } from "../composer/use-telescope-modal"
 import { Statusline } from "../statusline/Statusline"
-import { useTranscriptLayout } from "../transcript/use-transcript-layout"
+import { useTranscriptLayout } from "../transcript/navigation/use-transcript-layout"
 import { TranscriptViewport } from "../transcript/TranscriptViewport"
-import { foldedSelectionEdge } from "../transcript/measure-rendered-block"
+import { foldedSelectionEdge } from "../transcript/native-layout/measure-rendered-block"
 import { defaultVimexUiSettings, type VimexAppProps } from "../contracts"
 import {
   materializedSelectionEndpoints,
@@ -84,7 +84,7 @@ import {
   readRenderedTranscriptLayout,
   measuredPoint,
   transcriptRenderableIdForPoint,
-} from "../transcript/rendered-layout"
+} from "../transcript/native-layout/rendered-layout"
 import { createEmberTideSyntax, emberTide, selectTheme } from "../theme"
 import { commonBindings } from "../keymap/common-bindings"
 import { normalBindings } from "../keymap/normal-bindings"

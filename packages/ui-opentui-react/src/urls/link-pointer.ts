@@ -5,7 +5,7 @@ import {
   type UrlCandidate,
 } from "@vimex/transcript"
 import type { TranscriptLayout } from "../transcript/layout"
-import { visibleMeasuredPoints } from "../transcript/rendered-layout"
+import { visibleMeasuredPoints } from "../transcript/native-layout/rendered-layout"
 
 const segments = new WeakMap<object, readonly string[]>()
 function partsFor(projection: { plain: string }): readonly string[] {

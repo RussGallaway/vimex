@@ -19,12 +19,12 @@ import {
 } from "@vimex/transcript"
 import { createEmberTideSyntax } from "../packages/ui-opentui-react/src/theme"
 import { TranscriptViewport } from "../packages/ui-opentui-react/src/transcript/TranscriptViewport"
-import { transcriptBlockRenderableId } from "../packages/ui-opentui-react/src/transcript/rendered-layout"
+import { transcriptBlockRenderableId } from "../packages/ui-opentui-react/src/transcript/native-layout/rendered-layout"
 import {
   invalidateRenderedBlock,
   measureRenderedBlock,
-} from "../packages/ui-opentui-react/src/transcript/measure-rendered-block"
-import { PreparedRuntimeGeometryBridge } from "../packages/ui-opentui-react/src/transcript/prepared-runtime-geometry"
+} from "../packages/ui-opentui-react/src/transcript/native-layout/measure-rendered-block"
+import { PreparedRuntimeGeometryBridge } from "../packages/ui-opentui-react/src/transcript/prepared/prepared-runtime-geometry"
 
 async function probe(paint: boolean, width: number) {
   const thread = threadId("paint-probe"),

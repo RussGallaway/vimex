@@ -11,7 +11,7 @@ import {
   wheelHarness,
   thread,
   answer,
-} from "../packages/ui-opentui-react/src/transcript/scroll-continuity-harness"
+} from "../packages/ui-opentui-react/src/transcript/navigation/scroll-continuity-harness"
 
 function nativeBlockRoots(scroll: ScrollBoxRenderable) {
   const roots: Array<{ id: string; y: number; height: number }> = []

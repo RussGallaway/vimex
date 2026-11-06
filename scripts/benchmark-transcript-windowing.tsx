@@ -66,16 +66,16 @@ import {
   type RefObject,
 } from "react"
 import { createEmberTideSyntax } from "../packages/ui-opentui-react/src/theme"
-import { blockNativeRevision } from "../packages/ui-opentui-react/src/transcript/measure-rendered-block"
+import { blockNativeRevision } from "../packages/ui-opentui-react/src/transcript/native-layout/measure-rendered-block"
 import { movePointInTranscript } from "../packages/ui-opentui-react/src/transcript/layout"
 import {
   measureRenderedTranscript,
   transcriptBlockRenderableId,
   type RenderedLayoutDiagnostics,
-} from "../packages/ui-opentui-react/src/transcript/rendered-layout"
+} from "../packages/ui-opentui-react/src/transcript/native-layout/rendered-layout"
 import { TranscriptViewport } from "../packages/ui-opentui-react/src/transcript/TranscriptViewport"
 import { useTranscriptRuntime } from "../packages/ui-opentui-react/src/transcript/use-transcript-runtime"
-import { useTranscriptLayout } from "../packages/ui-opentui-react/src/transcript/use-transcript-layout"
+import { useTranscriptLayout } from "../packages/ui-opentui-react/src/transcript/navigation/use-transcript-layout"
 import { useVisiblePresentationSnapshot } from "../packages/ui-opentui-react/src/side-chat/SideChatLayout"
 import { inertController } from "../packages/ui-opentui-react/src/contracts"
 import {

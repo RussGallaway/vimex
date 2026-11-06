@@ -29,7 +29,7 @@ import { emberTide } from "../theme"
 import { TranscriptNode } from "./TranscriptNode"
 import { TurnActivity } from "./TurnActivity"
 import { ActivityBatch } from "./ActivityBatch"
-import { transcriptBlockRenderableId } from "./rendered-layout"
+import { transcriptBlockRenderableId } from "./native-layout/rendered-layout"
 
 export interface TranscriptViewportProps {
   window: TranscriptWindow

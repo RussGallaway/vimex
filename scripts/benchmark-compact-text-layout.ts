@@ -1,13 +1,13 @@
 /** Standalone retention/lookup probe; not terminal or input-to-paint evidence. */
-import { prepareTextLayout } from "../packages/ui-opentui-react/src/transcript/prepared-text-layout"
+import { prepareTextLayout } from "../packages/ui-opentui-react/src/transcript/prepared/prepared-text-layout"
 import {
   compactPreparedTextLayout,
   prepareCompactTextLayout,
-} from "../packages/ui-opentui-react/src/transcript/compact-prepared-text-layout"
+} from "../packages/ui-opentui-react/src/transcript/prepared/compact-prepared-text-layout"
 import {
   PreparedTextCache,
   type PreparedTextRequest,
-} from "../packages/ui-opentui-react/src/transcript/prepared-text-cache"
+} from "../packages/ui-opentui-react/src/transcript/prepared/prepared-text-cache"
 
 const fixtures = [
   {

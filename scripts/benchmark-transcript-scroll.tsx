@@ -25,7 +25,7 @@ import {
   measureRenderedTranscript,
   topVisiblePoint,
   transcriptBlockRenderableId,
-} from "../packages/ui-opentui-react/src/transcript/rendered-layout"
+} from "../packages/ui-opentui-react/src/transcript/native-layout/rendered-layout"
 
 interface Source {
   readonly conversation: ReturnType<typeof createConversation>

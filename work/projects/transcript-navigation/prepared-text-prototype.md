@@ -4,7 +4,7 @@ Date: 2026-11-05. Baseline: `94ccaf5`; branch: `feat/transcript-prepared-navigat
 
 ## Result and scope
 
-The [prototype adapter](../../../packages/ui-opentui-react/src/transcript/prepared-text-layout.ts) prepares wrapped rows and grapheme-to-cell metadata using OpenTUI 0.5.11 TextBuffer/TextBufferView, without constructing React elements, Yoga nodes, rich renderables, or highlight workers. It disposes native buffers/views before returning immutable JavaScript data. It is not wired into transcript navigation.
+The [prototype adapter](../../../packages/ui-opentui-react/src/transcript/prepared/prepared-text-layout.ts) prepares wrapped rows and grapheme-to-cell metadata using OpenTUI 0.5.11 TextBuffer/TextBufferView, without constructing React elements, Yoga nodes, rich renderables, or highlight workers. It disposes native buffers/views before returning immutable JavaScript data. It is not wired into transcript navigation.
 
 The supported test matrix agrees with mounted plain Text and syntax-highlighted, unconcealed Code renderables: row starts, row widths, source lines, source hit-testing, and actual painted cells. Reverse coverage checks require every nonblank native painted cell to be covered; marking difficult points invisible cannot bypass that check.
 
