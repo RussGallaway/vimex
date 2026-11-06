@@ -1,4 +1,5 @@
 import { traceNavigation } from "./navigation-trace"
+import { PreparedRuntimeGeometryBridge } from "./prepared-runtime-geometry"
 import {
   navigationMeasurementBudgetEnabled,
   navigationMeasurementDiagnosticsEnabled,
@@ -46,6 +47,8 @@ export interface RuntimeLayoutSource {
   readonly diagnostics?: RenderedLayoutDiagnostics
   /** Explicit experiment injection for native scheduling diagnostics. */
   readonly measurementBudget?: NavigationMeasurementBudget
+  /** Opt-in prepared geometry experiment; native painting stays unchanged. */
+  readonly preparedGeometry?: boolean
 }
 
 /** Mutable deterministic counters for focused tests and diagnostic benchmarks. */
@@ -75,6 +78,18 @@ interface LayoutCache {
 }
 
 const layoutCache = new WeakMap<ScrollBoxRenderable, LayoutCache>()
+const preparedGeometryBridges = new WeakMap<
+  ScrollBoxRenderable,
+  PreparedRuntimeGeometryBridge
+>()
+
+/** Diagnostic snapshot only; reading never prepares or publishes geometry. */
+export function getPreparedRuntimeGeometryDiagnostics(
+  scrollbox: ScrollBoxRenderable,
+) {
+  const bridge = preparedGeometryBridges.get(scrollbox)
+  return bridge ? { ...bridge.diagnostics } : undefined
+}
 const legacyGeometryCache = new WeakMap<
   ScrollBoxRenderable,
   {
@@ -216,12 +231,15 @@ export function synchronizeRenderedTranscriptWindow(
   diagnostics?: RenderedLayoutDiagnostics,
 ): void {
   synchronizeMeasurementSchedule(scrollbox, frame, diagnostics)
+  preparedGeometryBridges.get(scrollbox)?.synchronize(frame)
 }
 
 /** Release all renderer-side presentation caches owned by an unmounted transcript root. */
 export function releaseRenderedTranscriptLayout(
   scrollbox: ScrollBoxRenderable,
 ): void {
+  preparedGeometryBridges.get(scrollbox)?.dispose()
+  preparedGeometryBridges.delete(scrollbox)
   measurementSchedules.delete(scrollbox)
   layoutCache.delete(scrollbox)
   legacyGeometryCache.delete(scrollbox)
@@ -566,6 +584,24 @@ function currentGeometry(
   const state = frame?.transcript ?? (source as TranscriptState)
   const width = Math.max(1, scrollbox.viewport.width)
   const styleRevision = runtimeSource?.styleRevision ?? "legacy"
+  const usePreparedGeometry = Boolean(
+    runtimeSource?.runtime &&
+    (runtimeSource.preparedGeometry ??
+      process.env.VIMEX_NAV_PREPARED_GEOMETRY === "1"),
+  )
+  let preparedBridge = preparedGeometryBridges.get(scrollbox)
+  if (usePreparedGeometry) {
+    if (!preparedBridge) {
+      preparedBridge = new PreparedRuntimeGeometryBridge(renderer)
+      preparedGeometryBridges.set(scrollbox, preparedBridge)
+    }
+    preparedBridge.begin(frame!, styleRevision)
+  } else if (preparedBridge) {
+    preparedBridge.dispose()
+    preparedGeometryBridges.delete(scrollbox)
+    preparedBridge = undefined
+  }
+  const preparedPoints = preparedBridge?.points.bind(preparedBridge)
   if (
     runtimeSource?.runtime &&
     frame!.geometry.width !== undefined &&
@@ -747,6 +783,7 @@ function currentGeometry(
       block,
       width,
       styleRevision,
+      preparedPoints,
       presentation: blockMode,
       folded:
         block.key.kind === "item" &&

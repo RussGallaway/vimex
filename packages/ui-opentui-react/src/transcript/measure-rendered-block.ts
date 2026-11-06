@@ -22,7 +22,7 @@ import {
 } from "@vimex/transcript"
 import { graphemeCellWidth, type MeasuredPoint } from "./layout"
 
-interface NativePoint {
+export interface NativePoint {
   readonly graphemeOffset: number
   readonly x: number
   readonly y: number
@@ -60,6 +60,11 @@ export interface MeasureRenderedBlockInput {
   readonly styleRevision: GeometryStyleRevision
   readonly folded: boolean
   readonly presentation?: TranscriptBlockPresentation
+  /** Optional experiment: lookup only. Undefined retains native measurement. */
+  readonly preparedPoints?: (
+    input: MeasureRenderedBlockInput,
+    text: string,
+  ) => Record<number, NativePoint> | undefined
 }
 
 export interface DirtyRenderedBlock {
@@ -815,14 +820,15 @@ export function measureRenderedBlock(
   const textLength = range.to - range.from
   let nativePoints =
     "item" in input.block && !hidden && !activityLead
-      ? measureItem(
+      ? (input.preparedPoints?.(input, text) ??
+        measureItem(
           input.renderer,
           input.renderable,
           input.block.key.itemId,
           input.block.key.blockId,
           text,
           !input.folded,
-        )
+        ))
       : {}
   // Empty semantic items still own logical offset zero. Native Markdown has no
   // child cell to discover, so anchor it to the mounted block root.

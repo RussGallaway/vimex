@@ -18,6 +18,7 @@ That experience is the reason for the work. A small improvement in a synthetic n
 - [Prepared text prototype](prepared-text-prototype.md): native row preparation without rich renderables, painted-cell parity, cost evidence, and remaining semantic/integration gates.
 - [Compact preparation prototype](compact-preparation-prototype.md): compact source lookup, bounded cache/queue, and compatibility with existing cursor addresses; viewport integration remains pending.
 - [Prepared viewport prototype](prepared-viewport-prototype.md): isolated native movement over prepared rows, delayed real syntax detail, PTY hold/reverse/release evidence, and a synchronous-blocking control. Production integration remains pending.
+- [Prepared runtime bridge](prepared-runtime-bridge.md): opt-in prepared geometry through the production measurement/publication path for final command-output fragments; native painting remains unchanged.
 
 The [v1 specification](../v1/spec.md), [UX contract](../v1/ux.md), [architecture](../v1/architecture.md), and [topology](../v1/topology.md) remain authoritative. This project proposes an implementation direction; it does not change Vim motions or create another canonical cursor/anchor owner. The existing [navigation-decoupling design](../v1/transcript-navigation-decoupling.md) remains relevant context.
 

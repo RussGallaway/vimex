@@ -12,7 +12,9 @@ The [compact preparation follow-up](compact-preparation-prototype.md) adds lossl
 
 The [isolated prepared viewport](prepared-viewport-prototype.md) now includes compatibility/source-index preparation in its cache budget and passes a credential-free PTY hold/reverse/release fixture with delayed real highlighting. Its synchronous-blocking control still produces a backlog. This is not production or physical-terminal acceptance.
 
-Next: investigate coherent publication into the production runtime and invalidation/fallback through content/width/thread changes, while measuring cold/blocking work that the isolated fixture does not solve. Retain delayed-mapping, supersession, and correction-order regressions as gates; do not reintroduce geometry publication from display consumers or treat a completed message/unchanged height as a ready map.
+The [opt-in runtime geometry bridge](prepared-runtime-bridge.md) now uses prepared points through the existing production measurement/publication path for completed final command-output fragments. Connected tests preserve selection/copy/navigation and lifecycle tests cover stale work. Native painting and runtime point-record retention remain unchanged; no production speedup is claimed.
+
+Next: bridge prepared painting atomically for that supported subset, preserving selection/fallback and measuring cold misses/warm revisits. Then investigate nonfinal-fragment newline policy and Markdown separately. Retain delayed-mapping, supersession, and correction-order regressions as gates; do not reintroduce geometry publication from display consumers or treat a completed message/unchanged height as a ready map.
 
 ## Product outcome
 
@@ -127,6 +129,6 @@ Run focused native and domain regressions at their owning layers; run `bun run c
 - [x] Agree on the architectural direction and isolated branch workflow.
 - [ ] Slice 1: reduced correction-order reproduction and trace.
 - [ ] Slice 2: coherent geometry/viewport commit prototype.
-- [ ] Slice 3: standalone native parity, compact maps and integrated cache accounting complete for the tested subset; production geometry publication pending.
+- [ ] Slice 3: standalone parity/cache and opt-in production geometry bridge complete for final command-output fragments; broader eligibility and compact runtime retention pending.
 - [ ] Slice 4: isolated viewport with delayed real highlighting and PTY fixture complete; production bridge and physical-terminal UX validation pending.
 - [ ] Slice 5: mixed-content expansion and integration decision.

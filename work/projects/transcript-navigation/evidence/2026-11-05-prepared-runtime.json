@@ -1,0 +1,52 @@
+{
+  "baselineCommit": "bb0a6e1",
+  "status": "validated-opt-in-geometry-bridge",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "bun": "1.3.6",
+  "opentui": "0.5.11",
+  "flag": "VIMEX_NAV_PREPARED_GEOMETRY=1",
+  "defaultEnabled": false,
+  "qualification": "Prepared geometry for completed unfolded final command-output fragments; original native painting and existing runtime publication retained. Headless native/connected evidence, no latency improvement or physical terminal acceptance claimed. Compact cache points still materialize into existing runtime point records.",
+  "sourceSha256": {
+    "packages/ui-opentui-react/src/transcript/prepared-runtime-geometry.ts": "a405a93a1be601960d9ff0991771b24511faf864763e16a2c17a3b5b9f2c753e",
+    "packages/ui-opentui-react/src/transcript/measure-rendered-block.ts": "8fed646958b8257651b915ad2bb49394dba494c814d9c7d9c25342aec68254d3",
+    "packages/ui-opentui-react/src/transcript/rendered-layout.ts": "733f888fbfbf32c86288653939c5d647258972e5ca6c20c4541f96740ca21329"
+  },
+  "checks": {
+    "focused": {
+      "tests": 25,
+      "groups": {
+        "lifecycle": 9,
+        "nativeParity": 12,
+        "publication": 3,
+        "connected": 1
+      }
+    },
+    "flagEnabledScroll": {
+      "tests": 39,
+      "assertions": 1003,
+      "exitCode": 0
+    },
+    "fullCheck": {
+      "command": "bun run check",
+      "exitCode": 0
+    }
+  },
+  "logs": {
+    "fullCheck": {
+      "localPath": "/tmp/vimex-prepared-runtime-check.log",
+      "sha256": "b6c60a97e244428fdbc5811589a447cc60749c742ddcd5a52d65b8c143f88279"
+    },
+    "enabledScroll": {
+      "localPath": "/tmp/vimex-prepared-runtime-enabled-scroll.log",
+      "sha256": "2dc5a5b2c54cf15500d7d27c5a6bc9f60f7470517e208fb2e077b0f5cdbc93af"
+    }
+  },
+  "coverage": [
+    "Exact native/prepared block points,lines,rows,source offsets",
+    "Width/content/style/thread/canonical/layout scope and root/window lifecycle",
+    "Preparation completion/read-only access cannot publish",
+    "Actual connected Ctrl-U/D reversal, Visual selection, resize and fake-clipboard yank",
+    "Flag-enabled existing scroll continuity"
+  ]
+}

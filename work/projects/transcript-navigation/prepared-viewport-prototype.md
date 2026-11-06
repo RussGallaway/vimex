@@ -41,6 +41,8 @@ These are single diagnostic runs, not latency distributions or a before/after co
 
 ## What this means for UX and what comes next
 
+Follow-up: the [prepared runtime bridge](prepared-runtime-bridge.md) connects a narrow prepared-geometry subset to the real transcript while retaining native painting. It does not yet bring this experiment's prepared painter into production.
+
 Rich highlighting can finish later while this prepared viewport keeps navigating. The blocking control shows the remaining limitation directly: synchronous work on the shared event loop still delays acceptance and accumulates motion. Delaying promises alone cannot provide isolation.
 
 Next investigate a production bridge that publishes prepared geometry coherently through the existing runtime, with correct fallback and stale-result cancellation through width/content/thread changes. Preserve current cursor/selection/anchor ownership and test actual selection overlay plus copy through that bridge. Separately measure cold single-block preparation and rich reconciliation under held travel to decide whether smaller jobs, direct compact production, or a separate execution path is needed. Avoid claiming that this fixed-width fixture solves cold arbitrary Markdown or huge blocks.
