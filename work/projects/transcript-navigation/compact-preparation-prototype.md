@@ -36,6 +36,8 @@ Compaction has not removed cold preparation cost. The current producer still con
 
 ## Next experiment
 
+Follow-up: the [isolated prepared viewport](prepared-viewport-prototype.md) now integrates compatibility/source-index preparation into cache budgets and runs held/reversed movement through a PTY with delayed real highlighting. Production integration and broader UX acceptance remain pending.
+
 Build a narrow plain/code viewport over these prepared rows and keep the existing semantic cursor/anchor owner. Include compatibility preparation in its work/retention budget. Deliberately delay rich rendering, then test held movement, immediate reversal, release, and cold destinations in a credential-free terminal fixture. Verify actual source selection/copy and native placement, not just point lookup. Unsupported content must retain the current correct path.
 
 Before expanding to large blocks, investigate producing compact data directly and bounding work inside a block. The current per-job cap is a useful guard, not proof that preparation can never interrupt movement. Markdown, tables, diffs, folds, streaming reconciliation, coherent geometry publication, and actual-terminal UX acceptance remain open.

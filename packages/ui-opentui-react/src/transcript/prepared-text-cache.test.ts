@@ -175,3 +175,182 @@ test("caller limits cannot widen cache caps and queued limits cannot be mutated"
   cache.replaceRequests([limited])
   expect(drain(cache).prepared).toBe(1)
 })
+
+test("navigation preparation shares its job with compact rows and lookup remains cold", () => {
+  const cache = new PreparedTextCache({ navigation: true })
+  const item = request("a", "a\nb界")
+  const later = request("later")
+  cache.replaceRequests([item, later])
+  expect(cache.get(item)).toBeUndefined()
+  expect(cache.getNavigation(item)).toBeUndefined()
+  expect(cache.drain({ maxJobs: 1, maxMs: 0 }).jobs).toBe(0)
+  expect(cache.getNavigation(item)).toBeUndefined()
+  expect(drain(cache, 1)).toEqual({
+    jobs: 1,
+    prepared: 1,
+    unsupported: 0,
+    unretained: 0,
+    remaining: 1,
+  })
+  const layout = cache.get(item)!
+  const navigation = cache.getNavigation(item)!
+  expect(navigation.rowCount).toBe(layout.rowCount)
+  // Existing newline/EOF cursor policy differs from native insertion ends.
+  expect(layout.point(1)?.row).toBe(0)
+  expect(navigation.pointAt(1)).toEqual({
+    graphemeOffset: 1,
+    row: 1,
+    column: 0,
+  })
+  expect(layout.point(4)?.column).toBe(3)
+  expect(navigation.pointAt(4)).toEqual({
+    graphemeOffset: 4,
+    row: 1,
+    column: 2,
+  })
+  expect(cache.getNavigation(item)).toBe(navigation)
+  expect(cache.get(later)).toBeUndefined()
+  expect(cache.getNavigation(later)).toBeUndefined()
+  expect(cache.getNavigation({ ...item, contentRevision: "2" })).toBeUndefined()
+})
+
+test("navigation boundary bytes participate in refusal and eviction accounting", () => {
+  const item = request("a", "a\nb\nc")
+  const layoutOnly = new PreparedTextCache()
+  layoutOnly.replaceRequests([item])
+  drain(layoutOnly)
+  expect(layoutOnly.getNavigation(item)).toBeUndefined()
+  const cache = new PreparedTextCache({ navigation: true })
+  cache.replaceRequests([item])
+  drain(cache)
+  const boundaryBytes = cache.getNavigation(item)!.boundaryPayloadBytes
+  expect(boundaryBytes).toBeGreaterThan(0)
+  expect(cache.stats.accountedBytes).toBe(
+    layoutOnly.stats.accountedBytes + boundaryBytes,
+  )
+  const limited = new PreparedTextCache({
+    navigation: true,
+    maxBytes: layoutOnly.stats.accountedBytes,
+  })
+  limited.replaceRequests([item])
+  expect(drain(limited).unretained).toBe(1)
+  expect(limited.stats.accountedBytes).toBe(0)
+  expect(limited.get(item)).toBeUndefined()
+  expect(limited.getNavigation(item)).toBeUndefined()
+  const oneEntry = new PreparedTextCache({
+    navigation: true,
+    maxBytes: cache.stats.accountedBytes,
+  })
+  oneEntry.replaceRequests([item, { ...item, identity: "b" }])
+  expect(drain(oneEntry).prepared).toBe(2)
+  expect(oneEntry.stats.entries).toBe(1)
+  expect(oneEntry.getNavigation(item)).toBeUndefined()
+  expect(oneEntry.getNavigation({ ...item, identity: "b" })).toBeDefined()
+  oneEntry.clear()
+  expect(oneEntry.stats.accountedBytes).toBe(0)
+  expect(oneEntry.getNavigation({ ...item, identity: "b" })).toBeUndefined()
+})
+
+test("unsupported navigation rejects the whole entry without consuming later jobs", () => {
+  const tabbed = request("tabbed", "a\tb")
+  const shifted = {
+    ...request("shifted"),
+    input: { ...request("shifted").input, firstLineOffset: 1 },
+  }
+  const ready = request("ready")
+  const cache = new PreparedTextCache({ navigation: true })
+  cache.replaceRequests([tabbed, shifted, ready])
+  expect(drain(cache, 1)).toEqual({
+    jobs: 1,
+    prepared: 0,
+    unsupported: 1,
+    unretained: 0,
+    remaining: 2,
+  })
+  expect(cache.get(tabbed)).toBeUndefined()
+  expect(cache.getNavigation(tabbed)).toBeUndefined()
+  expect(drain(cache, 1).unsupported).toBe(1)
+  expect(cache.get(shifted)).toBeUndefined()
+  expect(cache.getNavigation(shifted)).toBeUndefined()
+  expect(drain(cache).prepared).toBe(1)
+  expect(cache.getNavigation(ready)).toBeDefined()
+  expect(cache.stats.queuedCodeUnits).toBe(0)
+})
+
+test("viewport mode prepares navigation and source indexing in the same job", () => {
+  const cache = new PreparedTextCache({ viewport: true, navigation: false })
+  const item = request("source", "ab界\ncd")
+  cache.replaceRequests([item, request("later")])
+  expect(cache.getViewport(item)).toBeUndefined()
+  expect(cache.getNavigation(item)).toBeUndefined()
+  expect(drain(cache, 1).remaining).toBe(1)
+  const viewport = cache.getViewport(item)!
+  expect(viewport.rows(0, 2)).toEqual([
+    { row: 0, text: "ab界" },
+    { row: 1, text: "cd" },
+  ])
+  expect(cache.getNavigation(item)).toBeDefined()
+  expect(cache.getViewport(item)).toBe(viewport)
+  expect(cache.getViewport(request("later"))).toBeUndefined()
+  expect(cache.getViewport({ ...item, contentRevision: "2" })).toBeUndefined()
+})
+
+test("viewport retention accounts source and source indexes and evicts as one entry", () => {
+  const item = request("a", "ab界\ncd")
+  const navigationOnly = new PreparedTextCache({ navigation: true })
+  navigationOnly.replaceRequests([item])
+  drain(navigationOnly)
+  expect(navigationOnly.getViewport(item)).toBeUndefined()
+  const cache = new PreparedTextCache({ viewport: true })
+  cache.replaceRequests([item])
+  drain(cache)
+  const viewport = cache.getViewport(item)!
+  expect(cache.stats.accountedBytes).toBe(
+    navigationOnly.stats.accountedBytes +
+      viewport.sourceIndexBytes +
+      item.input.text.length * 2,
+  )
+  const tooSmall = new PreparedTextCache({
+    viewport: true,
+    maxBytes: navigationOnly.stats.accountedBytes,
+  })
+  tooSmall.replaceRequests([item])
+  expect(drain(tooSmall).unretained).toBe(1)
+  expect(tooSmall.stats.entries).toBe(0)
+  expect(tooSmall.get(item)).toBeUndefined()
+  expect(tooSmall.getNavigation(item)).toBeUndefined()
+  expect(tooSmall.getViewport(item)).toBeUndefined()
+  const bounded = new PreparedTextCache({
+    viewport: true,
+    maxBytes: cache.stats.accountedBytes,
+  })
+  bounded.replaceRequests([item, { ...item, identity: "b" }])
+  expect(drain(bounded).prepared).toBe(2)
+  expect(bounded.get(item)).toBeUndefined()
+  expect(bounded.getNavigation(item)).toBeUndefined()
+  expect(bounded.getViewport(item)).toBeUndefined()
+  expect(bounded.getViewport({ ...item, identity: "b" })).toBeDefined()
+  bounded.clear()
+  expect(bounded.stats.accountedBytes).toBe(0)
+})
+
+test("unsupported partial-cell painting refuses all prepared representations", () => {
+  const item = {
+    ...request("wide", "界"),
+    input: {
+      ...request("wide", "界").input,
+      width: 1,
+      wrapMode: "none" as const,
+    },
+  }
+  const navigationOnly = new PreparedTextCache({ navigation: true })
+  navigationOnly.replaceRequests([item])
+  expect(drain(navigationOnly).prepared).toBe(1)
+  const cache = new PreparedTextCache({ viewport: true })
+  cache.replaceRequests([item])
+  expect(drain(cache).unsupported).toBe(1)
+  expect(cache.get(item)).toBeUndefined()
+  expect(cache.getNavigation(item)).toBeUndefined()
+  expect(cache.getViewport(item)).toBeUndefined()
+  expect(cache.stats.accountedBytes).toBe(0)
+})

@@ -10,7 +10,9 @@ The [prepared text prototype](prepared-text-prototype.md) now prepares native pl
 
 The [compact preparation follow-up](compact-preparation-prototype.md) adds lossless row/run storage, explicit bounded cache/queue work, and tested compatibility with current plain/code cursor addresses, including newline/EOF. Tabs with legacy/native width disagreement and nonzero first-line offsets remain unsupported. These components are standalone; cache budgets do not yet include navigation boundary preparation.
 
-Next: connect a narrow plain/code viewport experiment, include compatibility work in its preparation/retention budget, and evaluate cold movement in a credential-free terminal. Retain delayed-mapping, supersession, and correction-order regressions as gates; do not reintroduce geometry publication from display consumers or treat a completed message/unchanged height as a ready map.
+The [isolated prepared viewport](prepared-viewport-prototype.md) now includes compatibility/source-index preparation in its cache budget and passes a credential-free PTY hold/reverse/release fixture with delayed real highlighting. Its synchronous-blocking control still produces a backlog. This is not production or physical-terminal acceptance.
+
+Next: investigate coherent publication into the production runtime and invalidation/fallback through content/width/thread changes, while measuring cold/blocking work that the isolated fixture does not solve. Retain delayed-mapping, supersession, and correction-order regressions as gates; do not reintroduce geometry publication from display consumers or treat a completed message/unchanged height as a ready map.
 
 ## Product outcome
 
@@ -125,6 +127,6 @@ Run focused native and domain regressions at their owning layers; run `bun run c
 - [x] Agree on the architectural direction and isolated branch workflow.
 - [ ] Slice 1: reduced correction-order reproduction and trace.
 - [ ] Slice 2: coherent geometry/viewport commit prototype.
-- [ ] Slice 3: standalone painted-cell parity, supported cursor-address compatibility, compact maps and bounded cache complete; integrated preparation accounting and viewport use pending.
-- [ ] Slice 4: cheap movement with delayed rich rendering and terminal UX validation.
+- [ ] Slice 3: standalone native parity, compact maps and integrated cache accounting complete for the tested subset; production geometry publication pending.
+- [ ] Slice 4: isolated viewport with delayed real highlighting and PTY fixture complete; production bridge and physical-terminal UX validation pending.
 - [ ] Slice 5: mixed-content expansion and integration decision.

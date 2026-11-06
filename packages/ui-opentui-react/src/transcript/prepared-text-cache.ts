@@ -3,6 +3,14 @@ import {
   type CompactPreparedTextLayout,
 } from "./compact-prepared-text-layout"
 import type { PrepareTextLayoutInput } from "./prepared-text-layout"
+import {
+  prepareTextNavigation,
+  type PreparedTextNavigation,
+} from "./prepared-text-navigation"
+import {
+  prepareTextViewport,
+  type PreparedTextViewport,
+} from "./prepared-text-viewport"
 
 export interface PreparedTextRequest {
   /** Include presentation/thread identity; revisions must change with content. */
@@ -14,8 +22,14 @@ export interface PreparedTextRequest {
 }
 
 export interface PreparedTextCacheOptions {
+  /** Prepare current-renderer cursor compatibility in the same bounded job.
+   * Unsupported compatibility rejects the complete cache entry. */
+  readonly navigation?: boolean
+  /** Also retain visible-row source access; implies navigation compatibility.
+   * Source strings and their indexes participate in the retained byte budget. */
+  readonly viewport?: boolean
   readonly maxEntries?: number
-  /** Typed-array payload + UTF-16 key bytes, not total JavaScript heap. */
+  /** Typed-array payload + UTF-16 key/source bytes, not total JavaScript heap. */
   readonly maxBytes?: number
   readonly maxQueued?: number
   readonly maxQueuedCodeUnits?: number
@@ -30,16 +44,27 @@ export interface PreparedTextCacheOptions {
  * Native preparation is synchronous: the time budget is checked BETWEEN jobs.
  */
 export class PreparedTextCache {
-  private readonly limits: Required<PreparedTextCacheOptions>
+  private readonly limits: Required<
+    Omit<PreparedTextCacheOptions, "navigation" | "viewport">
+  >
+  private readonly navigation: boolean
+  private readonly viewport: boolean
   private readonly entries = new Map<
     string,
-    { layout: CompactPreparedTextLayout; bytes: number }
+    {
+      layout: CompactPreparedTextLayout
+      navigation?: PreparedTextNavigation
+      viewport?: PreparedTextViewport
+      bytes: number
+    }
   >()
   private queue: { key: string; input: PrepareTextLayoutInput }[] = []
   private bytes = 0
   private queuedCodeUnits = 0
 
   constructor(options: PreparedTextCacheOptions = {}) {
+    this.viewport = options.viewport ?? false
+    this.navigation = this.viewport || (options.navigation ?? false)
     this.limits = {
       maxEntries: options.maxEntries ?? 256,
       maxBytes: options.maxBytes ?? 4 * 1024 * 1024,
@@ -78,8 +103,9 @@ export class PreparedTextCache {
         ),
       },
     }
-    // Never retain canonical text in the key/cache. The caller owns immutable
-    // content revision identity; reusing a revision for changed text is invalid.
+    // Never retain canonical text in the key. Only viewport entries retain a
+    // bounded source reference. The caller owns immutable content revision
+    // identity; reusing a revision for changed text is invalid.
     const key = JSON.stringify([
       request.identity,
       request.contentRevision,
@@ -96,14 +122,32 @@ export class PreparedTextCache {
     return { key, input }
   }
 
-  get(request: PreparedTextRequest): CompactPreparedTextLayout | undefined {
+  private getEntry(request: PreparedTextRequest) {
     const normalized = this.normalize(request)
     if (!normalized) return undefined
     const entry = this.entries.get(normalized.key)
     if (!entry) return undefined
     this.entries.delete(normalized.key)
     this.entries.set(normalized.key, entry)
-    return entry.layout
+    return entry
+  }
+
+  get(request: PreparedTextRequest): CompactPreparedTextLayout | undefined {
+    return this.getEntry(request)?.layout
+  }
+
+  /** Lookup only. Available when this cache was constructed with navigation:
+   * true; coordinates and compact rows always share the same accepted entry. */
+  getNavigation(
+    request: PreparedTextRequest,
+  ): PreparedTextNavigation | undefined {
+    return this.getEntry(request)?.navigation
+  }
+
+  /** Lookup only; available with viewport:true, prepared and evicted together
+   * with navigation and compact layout under one shared retention budget. */
+  getViewport(request: PreparedTextRequest): PreparedTextViewport | undefined {
+    return this.getEntry(request)?.viewport
   }
 
   /** Replace obsolete speculative work on reversal, resize, or revision change.
@@ -178,7 +222,39 @@ export class PreparedTextCache {
         unsupported++
         continue
       }
-      const bytes = result.layout.payloadBytes + job.key.length * 2
+      let navigation: PreparedTextNavigation | undefined
+      if (this.navigation) {
+        const layout = result.layout
+        const compatible = prepareTextNavigation(job.input.text, {
+          width: layout.width,
+          rowCount: layout.rowCount,
+          graphemeCount: layout.graphemeCount,
+          firstLineOffset: layout.firstLineOffset,
+          // Pass the compact closure directly: do not capture job/source text.
+          pointAt: layout.point,
+        })
+        if (compatible.status !== "ready") {
+          unsupported++
+          continue
+        }
+        navigation = compatible.navigation
+      }
+      let viewport: PreparedTextViewport | undefined
+      if (this.viewport) {
+        const painted = prepareTextViewport(job.input.text, result.layout)
+        if (painted.status !== "ready") {
+          unsupported++
+          continue
+        }
+        viewport = painted.viewport
+      }
+      const bytes =
+        result.layout.payloadBytes +
+        (navigation?.boundaryPayloadBytes ?? 0) +
+        (viewport
+          ? viewport.sourceIndexBytes + viewport.sourceCodeUnits * 2
+          : 0) +
+        job.key.length * 2
       if (bytes > this.limits.maxBytes) {
         unretained++
         continue
@@ -191,7 +267,12 @@ export class PreparedTextCache {
         this.bytes -= this.entries.get(oldest)!.bytes
         this.entries.delete(oldest)
       }
-      this.entries.set(job.key, { layout: result.layout, bytes })
+      this.entries.set(job.key, {
+        layout: result.layout,
+        navigation,
+        viewport,
+        bytes,
+      })
       this.bytes += bytes
       prepared++
     }
