@@ -49,6 +49,8 @@ export interface RuntimeLayoutSource {
   readonly measurementBudget?: NavigationMeasurementBudget
   /** Opt-in prepared geometry experiment; native painting stays unchanged. */
   readonly preparedGeometry?: boolean
+  /** Prepared visible-row painter experiment; implies prepared geometry. */
+  readonly preparedPaint?: boolean
 }
 
 /** Mutable deterministic counters for focused tests and diagnostic benchmarks. */
@@ -584,15 +586,25 @@ function currentGeometry(
   const state = frame?.transcript ?? (source as TranscriptState)
   const width = Math.max(1, scrollbox.viewport.width)
   const styleRevision = runtimeSource?.styleRevision ?? "legacy"
+  const usePreparedPaint =
+    runtimeSource?.preparedPaint ?? process.env.VIMEX_NAV_PREPARED_PAINT === "1"
   const usePreparedGeometry = Boolean(
     runtimeSource?.runtime &&
-    (runtimeSource.preparedGeometry ??
-      process.env.VIMEX_NAV_PREPARED_GEOMETRY === "1"),
+    (usePreparedPaint ||
+      (runtimeSource.preparedGeometry ??
+        process.env.VIMEX_NAV_PREPARED_GEOMETRY === "1")),
   )
   let preparedBridge = preparedGeometryBridges.get(scrollbox)
+  if (preparedBridge && preparedBridge.paintEnabled !== usePreparedPaint) {
+    preparedBridge.dispose()
+    preparedGeometryBridges.delete(scrollbox)
+    preparedBridge = undefined
+  }
   if (usePreparedGeometry) {
     if (!preparedBridge) {
-      preparedBridge = new PreparedRuntimeGeometryBridge(renderer)
+      preparedBridge = new PreparedRuntimeGeometryBridge(renderer, undefined, {
+        paint: usePreparedPaint,
+      })
       preparedGeometryBridges.set(scrollbox, preparedBridge)
     }
     preparedBridge.begin(frame!, styleRevision)

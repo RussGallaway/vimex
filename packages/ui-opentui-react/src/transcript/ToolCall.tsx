@@ -2,6 +2,7 @@ import type { ConversationItem } from "@vimex/conversation"
 import type { TranscriptItemFragment } from "@vimex/transcript"
 import { emberTide } from "../theme"
 import { itemStatusGlyph } from "./item-status"
+import { PreparedOutput } from "./PreparedOutput"
 
 export function ToolCall(props: {
   item: Extract<ConversationItem, { kind: "command" | "tool" | "unknown" }>
@@ -24,13 +25,22 @@ export function ToolCall(props: {
         paddingX={1}
         paddingBottom={finalFragment ? 1 : 0}
       >
-        <text
-          id={`tool-output:${props.item.id}${suffix}`}
-          fg={emberTide.textMuted}
-          wrapMode="word"
-        >
-          {detail}
-        </text>
+        {finalFragment && props.item.status === "complete" && !props.folded ? (
+          <PreparedOutput
+            id={`tool-output:${props.item.id}${suffix}`}
+            fg={emberTide.textMuted}
+            wrapMode="word"
+            content={detail}
+          />
+        ) : (
+          <text
+            id={`tool-output:${props.item.id}${suffix}`}
+            fg={emberTide.textMuted}
+            wrapMode="word"
+          >
+            {detail}
+          </text>
+        )}
       </box>
     )
   const running = props.item.status === "running"

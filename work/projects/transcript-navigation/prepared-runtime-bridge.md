@@ -39,4 +39,6 @@ Validation passed: all 25 focused bridge tests (9 lifecycle, 12 native parity, 3
 
 ## Next step
 
+Follow-up: [prepared runtime painting](prepared-runtime-paint.md) now connects visible-row drawing for this subset while preserving original native source/layout and selection fallback. It remains opt-in; the first cost probe shows no plain-text speedup.
+
 Use the accepted prepared geometry to replace painting for the same supported subset, with an atomic switch that never mixes prepared row strings and native source matching. Verify native mouse selection/copy as well as keyboard selection, restore the native renderer on unsupported or changing content, and retain the existing coherent placement/publication protocol. Then extend nonfinal-fragment newline compatibility and investigate Markdown layout/concealment separately. Measure cold misses and warm revisits against the unchanged native path before claiming a user-visible speedup.

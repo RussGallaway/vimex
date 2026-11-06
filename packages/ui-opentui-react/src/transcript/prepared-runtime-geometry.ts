@@ -13,6 +13,7 @@ import {
   type MeasureRenderedBlockInput,
   type NativePoint,
 } from "./measure-rendered-block"
+import { PreparedOutputRenderable } from "./PreparedOutput"
 
 interface Job {
   readonly key: string
@@ -35,10 +36,12 @@ const scheduler: PreparedRuntimeGeometryScheduler = {
  * runtime geometry: completion only invalidates its still-current mounted root.
  * Existing measurement/publication owns placement, revisions, and coherence. */
 export class PreparedRuntimeGeometryBridge {
-  private readonly cache = new PreparedTextCache({
-    navigation: true,
-    maxQueued: 1,
-  })
+  private readonly cache: PreparedTextCache
+  readonly paintEnabled: boolean
+  private readonly painters = new Map<
+    PreparedOutputRenderable,
+    { job: Job; release: () => void }
+  >()
   private readonly pending = new Map<string, Job>()
   private readonly failures = new Map<string, true>()
   private frame?: TranscriptFrame
@@ -54,18 +57,30 @@ export class PreparedRuntimeGeometryBridge {
     fallbacks: 0,
     stale: 0,
     failed: 0,
+    preparedPaints: 0,
+    nativePaintFallbacks: 0,
+    preparedRowsPainted: 0,
   }
 
   constructor(
     private readonly renderer: CliRenderer,
     private readonly scheduling: PreparedRuntimeGeometryScheduler = scheduler,
-  ) {}
+    options: { paint?: boolean } = {},
+  ) {
+    this.paintEnabled = options.paint ?? false
+    this.cache = new PreparedTextCache({
+      navigation: true,
+      viewport: this.paintEnabled,
+      maxQueued: 1,
+    })
+  }
 
   get diagnostics() {
     return {
       ...this.counts,
       pending: this.pending.size,
       cache: this.cache.stats,
+      attachedPainters: this.painters.size,
     }
   }
 
@@ -85,11 +100,18 @@ export class PreparedRuntimeGeometryBridge {
     ])
     if (scope !== this.scope) {
       this.cancelPending()
+      this.releasePainters()
       this.cache.clear()
       this.failures.clear()
       this.scope = scope
     }
     this.frame = frame
+    for (const [body, entry] of this.painters) {
+      if (!this.current(entry.job)) {
+        entry.release()
+        this.painters.delete(body)
+      }
+    }
     for (const [key, job] of this.pending)
       if (!this.current(job)) {
         this.pending.delete(key)
@@ -110,10 +132,47 @@ export class PreparedRuntimeGeometryBridge {
 
   dispose() {
     this.cancelPending()
+    this.releasePainters()
     this.cache.clear()
     this.failures.clear()
     this.frame = undefined
     this.disposed = true
+  }
+
+  private releasePainters() {
+    for (const entry of this.painters.values()) entry.release()
+    this.painters.clear()
+  }
+
+  private attachPainter(job: Job) {
+    if (!this.paintEnabled || !(job.body instanceof PreparedOutputRenderable))
+      return
+    const body = job.body
+    const prior = this.painters.get(body)
+    if (prior?.job.key === job.key && prior.job.input.block === job.input.block)
+      return
+    prior?.release()
+    this.painters.delete(body)
+    // Bound renderable/provider retention independently of the derived cache.
+    if (this.painters.size >= 128) {
+      const oldest = this.painters.entries().next().value!
+      oldest[1].release()
+      this.painters.delete(oldest[0])
+    }
+    const release = body.installPreparedPaint(
+      () => {
+        if (!this.current(job)) return undefined
+        const viewport = this.cache.getViewport(job.request)
+        return viewport?.rowCount === body.height ? viewport : undefined
+      },
+      (rows, prepared) => {
+        if (prepared) {
+          this.counts.preparedPaints++
+          this.counts.preparedRowsPainted += rows
+        } else this.counts.nativePaintFallbacks++
+      },
+    )
+    this.painters.set(body, { job, release })
   }
 
   private current(job: Job): boolean {
@@ -254,6 +313,9 @@ export class PreparedRuntimeGeometryBridge {
           }
       }
       this.counts.hits++
+      // Attach only from the normal measurement turn, after compatibility and
+      // native dimensions agree. Painting never publishes or rewrites source.
+      this.attachPainter(job)
       return points
     }
     if (
