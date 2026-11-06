@@ -55,6 +55,8 @@ Before the repeat-control prototype, the independent sender completed a short mi
 
 ## Repeat-control prototype
 
+The results below describe the original repeat-control checkpoint. The [landing-viewport follow-up](landing-viewport-investigation.md) refines active partial motion: release still completes bookkeeping for displacement already applied, but stops the remaining future displacement at the coherent boundary so it cannot cancel the next opposite input.
+
 `VIMEX_NAV_REPEAT_CONTROL=1` requests enhanced keyboard event reporting and enables repeat-aware Ctrl-U/D navigation. Only protocol-confirmed repeats are replaceable. The queue retains at most one unstarted repeat in addition to any active partial motion. Release discards unstarted repeats for that key; reversal discards pending repeats in the old direction. A started motion finishes its coherent cursor/viewport update. Release matching does not require Ctrl still being held.
 
 Deliberate presses, explicit count holds, and Visual-mode holds retain exact behavior. Context changes discard pending replaceable repeats. Legacy terminal input remains exact because it cannot reliably distinguish a hold from deliberate repeated presses. This prototype requires the terminal and any intervening multiplexer to forward enhanced events; enabling the flag alone does not guarantee that support.

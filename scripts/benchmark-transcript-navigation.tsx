@@ -26,6 +26,7 @@ import {
   type ThreadWorkspace,
 } from "@vimex/workbench"
 import { act, Profiler } from "react"
+import { flushSync } from "@opentui/react"
 import { ConnectedVimexRoot } from "../packages/ui-opentui-react/src"
 import {
   navigationDetailExperimentEnabled,
@@ -36,7 +37,10 @@ import {
   navigationMeasurementBudgetEnabled,
 } from "../packages/ui-opentui-react/src/transcript/navigation-measurement-budget"
 import { subscribeNavigationTrace } from "../packages/ui-opentui-react/src/transcript/navigation-trace"
-import { transcriptBlockRenderableId } from "../packages/ui-opentui-react/src/transcript/rendered-layout"
+import {
+  getPreparedRuntimeGeometryDiagnostics,
+  transcriptBlockRenderableId,
+} from "../packages/ui-opentui-react/src/transcript/rendered-layout"
 
 type Shape = "mixed" | "command" | "tool" | "agent" | "edit" | "markdown"
 type Harness = Awaited<ReturnType<typeof createHarness>>
@@ -159,6 +163,46 @@ assert(
   !kittyHeldInput || independentSender,
   "Kitty held input requires independent sender",
 )
+const landingKeys = (
+  process.env.VIMEX_NAV_LANDING_KEYS ??
+  process.env.VIMEX_NAV_LANDING_KEY ??
+  ""
+)
+  .split(",")
+  .map((key) => key.trim())
+  .filter(Boolean)
+const landingKey = landingKeys[0]
+const landingIntervalMs = envInt("VIMEX_NAV_LANDING_INTERVAL_MS", 33)
+assert(landingKeys.length <= 32, "At most 32 landing probes are supported")
+const landingFocus = process.env.VIMEX_NAV_LANDING_FOCUS ?? "transcript"
+const landingDelayMs = envInt("VIMEX_NAV_LANDING_DELAY_MS", 0, 0)
+const unfoldAll = process.env.VIMEX_NAV_UNFOLD_ALL === "1"
+const initialViewportIndex =
+  process.env.VIMEX_NAV_INITIAL_VIEWPORT_INDEX === undefined
+    ? undefined
+    : envInt("VIMEX_NAV_INITIAL_VIEWPORT_INDEX", 0, 0)
+const landingTargetIndex =
+  process.env.VIMEX_NAV_LANDING_TARGET_INDEX === undefined
+    ? undefined
+    : envInt("VIMEX_NAV_LANDING_TARGET_INDEX", 0, 0)
+assert(
+  landingTargetIndex === undefined || Boolean(landingKey),
+  "Landing target requires landing probes",
+)
+assert(
+  ["transcript", "composer"].includes(landingFocus),
+  "Invalid landing focus",
+)
+assert(
+  landingKeys.every((key) =>
+    ["u", "d", "y", "e", "wheel-up", "wheel-down"].includes(key),
+  ),
+  "Invalid landing key",
+)
+assert(
+  !landingKey || (independentSender && kittyHeldInput && workload === "held"),
+  "Landing probe requires held workload and independent Kitty sender",
+)
 const capacityActions = (
   process.env.VIMEX_NAV_CAPACITY_ACTIONS ??
   "cold-up,queued-paced-up,return-to-tail"
@@ -182,7 +226,7 @@ assert(
   canonicalItems <= (capacity ? 150_000 : 10_000),
   `Connected ${workload} benchmark exceeds its canonical-item cap`,
 )
-const denseOracle = !capacity && canonicalItems <= 160
+const denseOracle = !capacity && !landingKey && canonicalItems <= 160
 const opentuiVersion = (
   (await Bun.file(
     new URL(import.meta.resolve("@opentui/core/package.json")),
@@ -294,6 +338,12 @@ async function createHarness(
   assert(workspace, "Workbench did not create the fixture workspace")
   // Setup-only injection. Timed actions enter through connected key input or
   // controller/gateway public boundaries after the initial native frame settles.
+  const initialItemId =
+    initialViewportIndex === undefined
+      ? fixture.tailItemId
+      : fixture.before.transcript.order[initialViewportIndex]
+  assert(initialItemId, "Initial viewport index is outside transcript order")
+  const initialPoint = { itemId: initialItemId, graphemeOffset: 0 }
   const seeded: ThreadWorkspace = Object.freeze({
     ...workspace,
     canonicalGeneration: 0,
@@ -302,7 +352,19 @@ async function createHarness(
     transcript: Object.freeze({
       ...fixture.before.transcript,
       selection: undefined,
-      viewport: Object.freeze({ kind: "tail" as const }),
+      cursor:
+        initialViewportIndex === undefined
+          ? fixture.before.transcript.cursor
+          : initialPoint,
+      viewport: Object.freeze(
+        initialViewportIndex === undefined
+          ? { kind: "tail" as const }
+          : {
+              kind: "point" as const,
+              point: initialPoint,
+              preferredScreenRow: 0,
+            },
+      ),
     }),
   })
   ;(state.workspaces as Record<string, ThreadWorkspace>)[fixture.threadId] =
@@ -343,8 +405,8 @@ async function createHarness(
   if (dense) connected.setWindowViewport = () => connected.getSnapshot()
   else if (overscanRows !== null) {
     const configure = connected.setWindowViewport.bind(connected)
-    connected.setWindowViewport = (viewportRows) =>
-      configure(viewportRows, overscanRows)
+    connected.setWindowViewport = (viewportRows, _, blocks, retained) =>
+      configure(viewportRows, overscanRows, blocks, retained)
   }
   const runtimes = (
     controller as unknown as {
@@ -484,14 +546,22 @@ async function createHarness(
       `Visible block geometry missing in ${dense ? "dense" : "windowed"} control: ${missingVisible.slice(0, 6).join(", ")}`,
     )
   }
+  if (unfoldAll)
+    await act(async () => {
+      controller.transcript({ type: "fold.all", folded: false })
+    })
   await settle()
   // Input is measured with normal-mode transcript focus, as a reader would use it.
   await act(async () => {
     controller.dispatchInteraction({ type: "mode.normal" })
-    controller.dispatchInteraction({ type: "focus.set", surface: "transcript" })
+    controller.dispatchInteraction({
+      type: "focus.set",
+      surface:
+        landingKey && landingFocus === "composer" ? "composer" : "transcript",
+    })
     controller.transcript({
       type: "cursor.move",
-      target: { itemId: fixture.tailItemId, graphemeOffset: 0 },
+      target: initialPoint,
       preferredScreenRow: 0,
       extend: false,
     })
@@ -514,10 +584,42 @@ async function createHarness(
   }
 }
 
+type NeighborhoodSnapshot = {
+  focus: string
+  cursor: string
+  viewport: string
+  nativeTop: number
+  measuredWindowBlocks: number
+  roots: { key: string; identity: number }[]
+}
+
+type LandingSample = {
+  key: string
+  sentAtMs: number
+  acceptedAtMs: number
+  returnedAtMs: number
+  cursorBefore: string
+  viewportBefore: string
+  neighborhood: NeighborhoodSnapshot
+  paintBefore: string
+}
+
 type SenderReport = {
   clockUncertaintyMs: number
   stoppedAtMs: number
   releaseAcceptedAtMs?: number
+  landing?: LandingSample
+  landings: LandingSample[]
+  stoppedNeighborhood?: NeighborhoodSnapshot
+  landingTarget?: {
+    itemIndex: number
+    itemId: string
+    targetWasMounted: boolean
+    measuredTargetBlocksBefore: number
+    heldViewportBefore: string
+    acceptedAtMs: number
+    returnedAtMs: number
+  }
   events: { key: string; sentAtMs: number; acceptedAtMs: number }[]
 }
 
@@ -547,6 +649,12 @@ for index,key in enumerate(config["keys"]):
     time.sleep(max(0,due-time.monotonic()))
     emit({"kind":"key", "key":key, "at":time.monotonic()*1000})
 emit({"kind":"stop", "at":time.monotonic()*1000})
+landing_start=time.monotonic()+config["landingDelayMs"]/1000
+for index,key in enumerate(config["landingKeys"]):
+    due=landing_start+index*config["landingIntervalMs"]/1000
+    time.sleep(max(0,due-time.monotonic()))
+    emit({"kind":"landing", "key":key, "at":time.monotonic()*1000})
+emit({"kind":"done"})
 `,
     ],
     { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
@@ -576,10 +684,48 @@ emit({"kind":"stop", "at":time.monotonic()*1000})
     // The child's sync sample is bracketed by the parent's request and reply.
     // Midpoint mapping carries an explicit half-round-trip uncertainty.
     const offset = (beforeSync + afterSync) / 2 - sync.at
-    child.stdin.write(JSON.stringify({ keys, intervalMs }) + "\n")
+    child.stdin.write(
+      JSON.stringify({
+        keys,
+        intervalMs,
+        landingKeys,
+        landingDelayMs,
+        landingIntervalMs,
+      }) + "\n",
+    )
     await child.stdin.flush()
     const events: SenderReport["events"] = []
     let stoppedAtMs = 0
+    const landings: LandingSample[] = []
+    let stoppedNeighborhood: NeighborhoodSnapshot | undefined
+    let landingTarget: SenderReport["landingTarget"]
+    const rootIdentities = new WeakMap<object, number>()
+    let nextRootIdentity = 1
+    const neighborhood = (): NeighborhoodSnapshot => {
+      const frame = h.runtime.getSnapshot()
+      return {
+        focus: h.workspaceSnapshot().interaction.surface,
+        cursor: JSON.stringify(frame.transcript.cursor),
+        viewport: JSON.stringify(frame.transcript.viewport),
+        nativeTop: h.scroll.scrollTop,
+        measuredWindowBlocks: frame.window.blocks.filter((block) =>
+          Boolean(frame.geometry.byBlockKey[blockKey(block)]),
+        ).length,
+        roots: frame.window.blocks.flatMap((block) => {
+          const key = blockKey(block)
+          const root = h.scroll.getRenderable(
+            transcriptBlockRenderableId(block),
+          )
+          if (!root) return []
+          let identity = rootIdentities.get(root)
+          if (identity === undefined) {
+            identity = nextRootIdentity++
+            rootIdentities.set(root, identity)
+          }
+          return [{ key, identity }]
+        }),
+      }
+    }
     let previousKey: string | undefined
     let releaseAcceptedAtMs: number | undefined
     const sendKitty = (key: string, eventType: 1 | 2 | 3) => {
@@ -591,13 +737,91 @@ emit({"kind":"stop", "at":time.monotonic()*1000})
     }
     while (true) {
       const event = await next()
+      if (event.kind === "done") break
       if (event.kind === "stop") {
         stoppedAtMs = event.at + offset
+        if (landingTargetIndex !== undefined) {
+          const frame = h.runtime.getSnapshot()
+          const itemId = frame.transcript.order[landingTargetIndex]
+          assert(itemId, "Landing target index is outside transcript order")
+          const targetBlocks = frame.blocks.filter(
+            (block) => block.key.kind === "item" && block.key.itemId === itemId,
+          )
+          const targetWasMounted = frame.window.blocks.some(
+            (block) => block.key.kind === "item" && block.key.itemId === itemId,
+          )
+          const measuredTargetBlocksBefore = targetBlocks.filter((block) =>
+            Boolean(frame.geometry.byBlockKey[blockKey(block)]),
+          ).length
+          const acceptedAtMs = performance.now()
+          // Diagnostic direct destination: this route deliberately skips relative
+          // traversal to a matching logical interior anchor. No settling occurs.
+          flushSync(() =>
+            h.controller.transcript({
+              type: "jump",
+              target: { itemId, graphemeOffset: 0 },
+              preferredScreenRow: 0,
+              preserveFolds: true,
+            }),
+          )
+          landingTarget = {
+            itemIndex: landingTargetIndex,
+            itemId,
+            targetWasMounted,
+            measuredTargetBlocksBefore,
+            heldViewportBefore: JSON.stringify(frame.transcript.viewport),
+            acceptedAtMs,
+            returnedAtMs: performance.now(),
+          }
+        }
         if (kittyHeldInput && previousKey) {
           releaseAcceptedAtMs = performance.now()
           sendKitty(previousKey, 3)
         }
-        break
+        if (landingKey) stoppedNeighborhood = neighborhood()
+        continue
+      }
+      if (event.kind === "landing") {
+        const before = h.runtime.getSnapshot().transcript
+        const beforeNeighborhood = neighborhood()
+        const paintBefore = h.setup
+          .captureCharFrame()
+          .split("\n")
+          .slice(
+            h.scroll.viewport.y,
+            h.scroll.viewport.y + h.scroll.viewport.height,
+          )
+          .join("\n")
+        const acceptedAtMs = performance.now()
+        if (event.key.startsWith("wheel-")) {
+          await h.setup.mockMouse.scroll(
+            h.scroll.viewport.screenX + Math.floor(h.scroll.viewport.width / 2),
+            h.scroll.viewport.screenY +
+              Math.floor(h.scroll.viewport.height / 2),
+            event.key === "wheel-up" ? "up" : "down",
+          )
+        } else {
+          h.setup.renderer.stdin.emit(
+            "data",
+            Buffer.from(`\x1b[${event.key.charCodeAt(0)};5:1u`),
+          )
+          h.setup.renderer.stdin.emit(
+            "data",
+            Buffer.from(`\x1b[${event.key.charCodeAt(0)};5:3u`),
+          )
+        }
+        landings.push({
+          key: event.key,
+          sentAtMs: event.at + offset,
+          acceptedAtMs,
+          returnedAtMs: performance.now(),
+          cursorBefore: JSON.stringify(before.cursor),
+          viewportBefore: JSON.stringify(before.viewport),
+          neighborhood: beforeNeighborhood,
+          paintBefore,
+        })
+        recordKey(`landing-${event.key}`, event.at + offset)
+        continue
       }
       assert.equal(event.kind, "key")
       const acceptedAtMs = performance.now()
@@ -618,6 +842,10 @@ emit({"kind":"stop", "at":time.monotonic()*1000})
       clockUncertaintyMs: (afterSync - beforeSync) / 2,
       stoppedAtMs,
       releaseAcceptedAtMs,
+      landing: landings[0],
+      landings,
+      stoppedNeighborhood,
+      landingTarget,
       events,
     }
   } finally {
@@ -643,6 +871,7 @@ async function observeAction(
   expected?: Captured,
 ) {
   const before = h.capture()
+  const preparedBefore = getPreparedRuntimeGeometryDiagnostics(h.scroll)
   const traceEnabled =
     traceNavigation &&
     ["queued-reversal", "queued-paced-up"].includes(action.group)
@@ -1006,16 +1235,15 @@ async function observeAction(
   }
   const ended = performance.now()
   const final = h.capture()
-  const semanticDirection = [
-    "cold",
-    "paced-up",
-    "queued-paced-up",
-    "synchronous-burst",
-  ].includes(action.group)
-    ? "up"
-    : action.group === "reverse-down"
-      ? "down"
-      : null
+  const semanticDirection = landingKey
+    ? null
+    : ["cold", "paced-up", "queued-paced-up", "synchronous-burst"].includes(
+          action.group,
+        )
+      ? "up"
+      : action.group === "reverse-down"
+        ? "down"
+        : null
   const semanticViolations: { from: string; to: string; step: number }[] = []
   if (semanticDirection) {
     const positions = [
@@ -1112,12 +1340,167 @@ async function observeAction(
             sameDestination(frame, final),
         )
 
+  const reportLanding = (probe: LandingSample, index: number) => {
+    const nextInputAt =
+      senderReport?.landings[index + 1]?.acceptedAtMs ?? Infinity
+    const semantic = semanticChanges.find(
+      (event) =>
+        event.atMs >= probe.acceptedAtMs &&
+        event.atMs < nextInputAt &&
+        (event.cursor !== probe.cursorBefore ||
+          event.viewport !== probe.viewportBefore),
+    )
+    const paint = semanticMovementFrames.find(
+      (frame) =>
+        frame.atMs >= probe.acceptedAtMs &&
+        frame.atMs < nextInputAt &&
+        (frame.cursor !== probe.cursorBefore ||
+          frame.viewport !== probe.viewportBefore),
+    )
+    const enqueue = navigationTrace.find(
+      (event) =>
+        event.kind === "intent.enqueued" &&
+        Number(event.atMs) >= probe.acceptedAtMs &&
+        Number(event.atMs) <= probe.returnedAtMs,
+    )
+    const sequence = (enqueue?.details as { sequence?: number } | undefined)
+      ?.sequence
+    const resolved =
+      !probe.key.startsWith("wheel-") && sequence !== undefined
+        ? navigationTrace.find(
+            (event) =>
+              event.kind === "intent.resolved" &&
+              (event.details as { sequence?: number } | undefined)?.sequence ===
+                sequence,
+          )
+        : undefined
+    return {
+      key: probe.key,
+      focus: landingFocus,
+      actualFocus: probe.neighborhood.focus,
+      index,
+      requestedDelayMs: landingDelayMs + index * landingIntervalMs,
+      neighborhood: probe.neighborhood,
+      retainedRootsFromRelease: probe.neighborhood.roots.filter((root) =>
+        senderReport?.stoppedNeighborhood?.roots.some(
+          (prior) => prior.key === root.key && prior.identity === root.identity,
+        ),
+      ).length,
+      sentAtMs: round(probe.sentAtMs - started),
+      acceptedAtMs: round(probe.acceptedAtMs - started),
+      deliveryDelayMs: round(probe.acceptedAtMs - probe.sentAtMs),
+      afterReleaseAcceptedMs:
+        senderReport?.releaseAcceptedAtMs === undefined
+          ? null
+          : round(probe.acceptedAtMs - senderReport.releaseAcceptedAtMs),
+      synchronousDispatchMs: round(probe.returnedAtMs - probe.acceptedAtMs),
+      firstSemanticChangeMs: semantic
+        ? round(semantic.atMs - probe.acceptedAtMs)
+        : null,
+      firstSemanticPaintMs: paint
+        ? round(paint.atMs - probe.acceptedAtMs)
+        : null,
+      acceptedSequence: sequence ?? null,
+      paintBefore: probe.paintBefore,
+      changedCellPaintsBeforeNextInput: frames.filter(
+        (frame) =>
+          frame.atMs >= probe.acceptedAtMs &&
+          frame.atMs < nextInputAt &&
+          frame.cells !== probe.paintBefore,
+      ).length,
+      resolvedPosition: resolved
+        ? {
+            cursor:
+              (resolved.details as Record<string, unknown>).cursor ?? null,
+            viewport:
+              (resolved.details as Record<string, unknown>).viewport ?? null,
+            nativeCursor:
+              (resolved.details as Record<string, unknown>).nativeCursor ??
+              null,
+          }
+        : null,
+      acceptedQueue: enqueue?.details ?? null,
+      resolvedMs: resolved
+        ? round(Number(resolved.atMs) - probe.acceptedAtMs)
+        : null,
+      qualification:
+        "Probe is sent by independent clock after hold stop, before settling. First semantic change/paint is feedback opportunity before the next probe and may include an active hold remainder; cell changes may include decoration. resolvedMs/resolvedPosition match the keyboard probe intent when tracing is enabled. Mouse lacks an independent exact intent acknowledgement. This is connected headless stdin/mouse input, not physical terminal acceptance.",
+    }
+  }
+  const landingReports = senderReport?.landings.map(reportLanding) ?? []
+  const landingFrames =
+    stopAt === undefined ? [] : frames.filter((frame) => frame.atMs >= stopAt)
+  const landingWindowTransitions = landingFrames.filter(
+    (frame, index) =>
+      index > 0 && frame.windowKeys !== landingFrames[index - 1]!.windowKeys,
+  ).length
+
   return {
     name: action.name,
+    preparedWork: {
+      unfoldAll,
+      before: preparedBefore ?? null,
+      after: getPreparedRuntimeGeometryDiagnostics(h.scroll) ?? null,
+    },
+    landingProbe: landingReports[0] ?? null,
+    landingProbes: landingReports,
+    landingNeighborhood: senderReport?.stoppedNeighborhood
+      ? {
+          atRelease: senderReport.stoppedNeighborhood,
+          route: senderReport.landingTarget
+            ? "direct-interior-destination-after-hold"
+            : "natural-held-arrival",
+          target: senderReport.landingTarget
+            ? {
+                ...senderReport.landingTarget,
+                acceptedAtMs: round(
+                  senderReport.landingTarget.acceptedAtMs - started,
+                ),
+                returnedAtMs: round(
+                  senderReport.landingTarget.returnedAtMs - started,
+                ),
+                returnedToPreJumpItem: (() => {
+                  const held = JSON.parse(
+                    senderReport.landingTarget.heldViewportBefore,
+                  )
+                  return (
+                    held.kind === "point" &&
+                    held.point.itemId !== senderReport.landingTarget.itemId &&
+                    landingFrames.some((frame) => {
+                      const viewport = JSON.parse(frame.viewport)
+                      return (
+                        viewport.kind === "point" &&
+                        viewport.point.itemId === held.point.itemId
+                      )
+                    })
+                  )
+                })(),
+                qualification:
+                  "A direct jump followed immediately by manual input can cancel pending native restoration and return to the prior held location. If returnedToPreJumpItem is true, these are not cold target resolution measurements. Use INITIAL_VIEWPORT_INDEX for a settled interior start followed by natural held traversal.",
+                placementDispatchMs: round(
+                  senderReport.landingTarget.returnedAtMs -
+                    senderReport.landingTarget.acceptedAtMs,
+                ),
+              }
+            : null,
+          maxMountedRootsAfterRelease: Math.max(
+            0,
+            ...landingFrames.map((frame) => frame.roots),
+          ),
+          maxMaterializedBlocksAfterRelease: Math.max(
+            0,
+            ...landingFrames.map((frame) => frame.materializedBlocks),
+          ),
+          windowTransitionsAfterRelease: landingWindowTransitions,
+          retainedWindow: process.env.VIMEX_NAV_RETAINED_WINDOW === "1",
+          qualification:
+            "Native root retention and cached geometry are not proof that offscreen Markdown has highlighted or painted. Compare atRelease viewport/cursor across runs before claiming matched-destination latency; coalesced holds may land differently.",
+        }
+      : null,
     independentSender: senderReport
       ? {
           qualification:
-            "Independent Python process feeds a pipe into connected headless mock input; not PTY or physical terminal. Clock mapping uses a request/reply midpoint and reports uncertainty. semanticChanges records runtime cursor/viewport publications; semanticMovementFrames records painted cursor/viewport changes. Neither counts native scrollTop-only remount shifts.",
+            "Independent Python process feeds a pipe into connected headless mock input; not PTY or physical terminal. Clock mapping uses a request/reply midpoint and reports uncertainty. semanticChanges records runtime cursor/viewport publications; semanticMovementFrames records painted cursor/viewport changes. Neither counts native scrollTop-only remount shifts. With a landing probe, post-stop changes include the intentional follow-up input; use landingProbe for its latency.",
           clockUncertaintyMs: round(senderReport.clockUncertaintyMs),
           stoppedAtMs: round(senderReport.stoppedAtMs - started),
           releaseAcceptedAtMs:
@@ -1439,12 +1822,14 @@ async function run() {
       // First traversal has no earlier navigation warmup. Repeat the same
       // route to distinguish first-visit work from retained geometry revisits.
       await runAction({ ...queuedUp, name: "first-traversal-held-up" })
-      await runAction({
-        ...returnToTail,
-        name: "reset-before-warm-reversal",
-        group: "setup",
-      })
-      await runAction({ ...queuedReversal, name: "warm-route-held-reversal" })
+      if (!landingKey) {
+        await runAction({
+          ...returnToTail,
+          name: "reset-before-warm-reversal",
+          group: "setup",
+        })
+        await runAction({ ...queuedReversal, name: "warm-route-held-reversal" })
+      }
     } else {
       await runAction({ name: "cold-up", group: "cold", dispatch: up })
       for (let index = 0; index < repeats; index++) {
@@ -1687,6 +2072,7 @@ async function run() {
         },
         viewport: { width, height },
         windowPolicy: {
+          retainWindow: process.env.VIMEX_NAV_RETAINED_WINDOW === "1",
           overscanRows: overscanRows ?? "viewport-default",
           recentTailBlocks:
             recentTailBlocks ?? defaultTranscriptWindowPolicy.recentTailBlocks,
@@ -1704,6 +2090,13 @@ async function run() {
         repeat: {
           independentSender,
           kittyHeldInput,
+          landingKeys,
+          landingIntervalMs,
+          landingTargetIndex: landingTargetIndex ?? null,
+          initialViewportIndex: initialViewportIndex ?? null,
+          landingKey: landingKey ?? null,
+          landingFocus: landingKey ? landingFocus : null,
+          landingDelayMs: landingKey ? landingDelayMs : null,
           repeatControl: process.env.VIMEX_NAV_REPEAT_CONTROL === "1",
           requestedIntervalMs: intervalMs,
           warmRepeats,

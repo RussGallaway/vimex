@@ -694,6 +694,9 @@ export interface PlanTranscriptWindowInput {
   readonly recentTailRows?: number
   /** Indexed rows prepared beyond either edge area's inward boundary. */
   readonly olderLookAheadRows?: number
+  /** Use the edge-sized budget everywhere, retaining covered native ranges. */
+  readonly retainWindow?: boolean
+  readonly retainedWindow?: TranscriptWindow
   readonly attachment: TranscriptWindowAttachment
   /** A one-shot target takes planning focus when it is outside the ordinary window. */
   readonly reveal?: LogicalPoint
@@ -1936,7 +1939,7 @@ export function planTranscriptWindow(
   // it all at once. The ordinary visible window still bounds distant history.
   // The legacy tail-named policy fields deliberately share both edge budgets.
   const recentTailBlocks = input.recentTailBlocks ?? 0
-  if (recentTailBlocks > 0) {
+  if (!input.retainWindow && recentTailBlocks > 0) {
     let headEnd = Math.min(blocks.length, recentTailBlocks)
     let tailStart = Math.max(0, blocks.length - recentTailBlocks)
     if (input.recentTailRows !== undefined) {
@@ -1975,6 +1978,73 @@ export function planTranscriptWindow(
         plannedTo,
         Math.max(0, heights.totalRows - 2 * distanceAboveTail),
       )
+    }
+  }
+
+  if (input.retainWindow) {
+    const coreFirst = heights.blockAtRow(plannedFrom)!
+    const coreLast = heights.blockAtRow(Math.max(plannedFrom, plannedTo - 1))!
+    const rowBudget = Math.max(
+      plannedTo - plannedFrom,
+      (input.recentTailRows ?? input.viewportRows + 2 * input.overscanRows) +
+        (input.olderLookAheadRows ?? 0),
+    )
+    const blockBudget = Math.max(coreLast - coreFirst + 1, recentTailBlocks)
+    const retained = input.retainedWindow?.blocks
+    const oldFirst = retained?.length
+      ? heights.blockIndex(blockKey(retained[0]!))
+      : undefined
+    const oldLast = retained?.length
+      ? heights.blockIndex(blockKey(retained[retained.length - 1]!))
+      : undefined
+    const oldFrom =
+      oldFirst === undefined ? undefined : heights.prefixRows(oldFirst)
+    const oldTo =
+      oldLast === undefined ? undefined : heights.prefixRows(oldLast + 1)
+    // Retain until the viewport approaches an inner boundary, rather than
+    // translating the mounted range on each row movement. Read current indexed
+    // heights at stable endpoints; old absolute spacer coordinates can be stale.
+    const guard =
+      oldFrom === undefined || oldTo === undefined
+        ? 0
+        : Math.min(
+            input.overscanRows,
+            Math.max(0, Math.floor((oldTo - oldFrom - input.viewportRows) / 4)),
+          )
+    if (
+      oldFrom !== undefined &&
+      oldTo !== undefined &&
+      oldFirst! <= oldLast! &&
+      oldLast! - oldFirst! + 1 <= blockBudget &&
+      oldTo - oldFrom <= 2 * rowBudget &&
+      visibleStart >= oldFrom &&
+      visibleEnd <= oldTo &&
+      (oldFrom === 0 || visibleStart >= oldFrom + guard) &&
+      (oldTo === heights.totalRows || visibleEnd <= oldTo - guard)
+    ) {
+      plannedFrom = oldFrom
+      plannedTo = oldTo
+    } else {
+      const from = clamp(
+        visibleStart - Math.floor((rowBudget - input.viewportRows) / 2),
+        0,
+        Math.max(0, heights.totalRows - rowBudget),
+      )
+      const to = Math.min(heights.totalRows, from + rowBudget)
+      const wantedFirst = heights.blockAtRow(from) ?? coreFirst
+      const wantedLast = heights.blockAtRow(Math.max(from, to - 1)) ?? coreLast
+      const extraBlocks = blockBudget - (coreLast - coreFirst + 1)
+      const beforeBlocks = Math.min(
+        coreFirst,
+        Math.max(
+          Math.floor(extraBlocks / 2),
+          extraBlocks - (blocks.length - coreLast - 1),
+        ),
+      )
+      const first = Math.max(wantedFirst, coreFirst - beforeBlocks)
+      const last = Math.min(wantedLast, coreLast + extraBlocks - beforeBlocks)
+      plannedFrom = Math.min(plannedFrom, heights.prefixRows(first))
+      plannedTo = Math.max(plannedTo, heights.prefixRows(last + 1))
     }
   }
 

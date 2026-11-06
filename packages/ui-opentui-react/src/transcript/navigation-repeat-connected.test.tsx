@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import { act } from "react"
-import { wheelHarness } from "./scroll-continuity-harness"
+import { itemId, turnId } from "@vimex/conversation"
+import { thread, wheelHarness } from "./scroll-continuity-harness"
 import {
   subscribeNavigationTrace,
   type NavigationTraceRecord,
@@ -167,3 +168,141 @@ test("distinct enhanced-protocol presses are never coalesced", async () => {
     })
   })
 })
+
+for (const focus of ["composer", "transcript"] as const)
+  for (const input of ["key", "wheel"] as const)
+    test(`stopped partial repeat cannot consume opposite ${input} with ${focus} focus`, async () => {
+      await fixture(true, async (h, records) => {
+        await act(async () => {
+          for (let i = 0; i < 20; i++)
+            h.emit({
+              type: "conversation",
+              event: {
+                type: "item.started",
+                threadId: thread,
+                item: {
+                  id: itemId(`partial-markdown-${i}`),
+                  turnId: turnId("wheel-turn"),
+                  kind: "assistant",
+                  markdown: Array.from(
+                    { length: 72 },
+                    (_, n) =>
+                      `Paragraph ${n}: ${"measured scrollback content ".repeat(3)}[source](https://vimex.test/${n}).`,
+                  ).join("\n\n"),
+                  status: "complete",
+                },
+              },
+            })
+          await h.controller.settle()
+          await h.flush({ maxPasses: 400 })
+          h.controller.dispatchInteraction({ type: "mode.normal" })
+          h.controller.dispatchInteraction({
+            type: "focus.set",
+            surface: focus,
+          })
+          await h.flush()
+        })
+        let partial: number | undefined
+        const repeats = new Set<number>()
+        let injected = false
+        let stopped: number | undefined
+        let injectedAt = 0
+        let baseline: string | undefined
+        let injection: Promise<void> | undefined
+        const stop = subscribeNavigationTrace(h.renderer, (event) => {
+          const details = event.details as {
+            sequence?: number
+            remaining?: number
+            intent?: { sequence?: number; repeatKey?: string }
+          }
+          if (event.kind === "row.begin" && details.intent?.repeatKey)
+            repeats.add(details.intent.sequence!)
+          if (
+            event.kind === "row.step" &&
+            details.sequence !== undefined &&
+            repeats.has(details.sequence)
+          )
+            partial = details.remaining ? details.sequence : undefined
+          if (event.kind === "intent.resolved" && details.sequence === partial)
+            partial = undefined
+          if (
+            event.kind !== "prepare.complete" ||
+            partial === undefined ||
+            injected
+          )
+            return
+          injected = true
+          stopped = partial
+          injection = new Promise<void>((resolve) =>
+            queueMicrotask(() => {
+              baseline = JSON.stringify(h.workspace().transcript.viewport)
+              injectedAt = performance.now()
+              kitty(h, "u", 3)
+              if (input === "key") {
+                h.mockInput.pressKey("e", { ctrl: true })
+                resolve()
+              } else {
+                const scroll = h.renderer.root.findDescendantById(
+                  "transcript",
+                ) as import("@opentui/core").ScrollBoxRenderable
+                void h.mockMouse
+                  .scroll(
+                    scroll.viewport.screenX + 10,
+                    scroll.viewport.screenY + 3,
+                    "down",
+                  )
+                  .then(resolve)
+              }
+            }),
+          )
+        })
+        try {
+          await act(async () => {
+            kitty(h, "u", 1)
+            for (let i = 0; i < 300 && !injected; i++) {
+              kitty(h, "u", 2)
+              await Bun.sleep(5)
+            }
+            await injection
+            await h.flush({ maxPasses: 400 })
+          })
+          expect(injected).toBe(true)
+          expect(
+            records.filter(
+              (event) =>
+                event.kind === "intent.repeat-truncated" &&
+                event.atMs < injectedAt,
+            ),
+          ).toHaveLength(0)
+          expect(
+            records.some(
+              (event) =>
+                event.kind === "intent.repeat-truncated" &&
+                event.details.sequence === stopped,
+            ),
+          ).toBe(true)
+          expect(
+            records.filter(
+              (event) =>
+                event.atMs > injectedAt &&
+                event.kind === "row.step" &&
+                event.details.sequence === stopped,
+            ),
+          ).toHaveLength(0)
+          expect(
+            records.some(
+              (event) =>
+                event.atMs > injectedAt &&
+                event.kind === "row.step" &&
+                Number(event.details.requested) > 0,
+            ),
+          ).toBe(true)
+          expect(JSON.stringify(h.workspace().transcript.viewport)).not.toBe(
+            baseline,
+          )
+          expect(h.workspace().interaction.surface).toBe(focus)
+        } finally {
+          stop()
+        }
+      })
+    }, 30000)

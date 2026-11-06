@@ -27,6 +27,10 @@ export interface PreparedRuntimeGeometryScheduler {
   schedule(task: () => void): unknown
   cancel(handle: unknown): void
 }
+interface PreparationViewport {
+  readonly screenY: number
+  readonly height: number
+}
 const scheduler: PreparedRuntimeGeometryScheduler = {
   schedule: (task) => setTimeout(task, 0),
   cancel: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
@@ -38,6 +42,8 @@ const scheduler: PreparedRuntimeGeometryScheduler = {
 export class PreparedRuntimeGeometryBridge {
   private readonly cache: PreparedTextCache
   readonly paintEnabled: boolean
+  readonly viewportFirst: boolean
+  private readonly viewport?: () => PreparationViewport
   private readonly painters = new Map<
     PreparedOutputRenderable,
     { job: Job; release: () => void }
@@ -60,14 +66,18 @@ export class PreparedRuntimeGeometryBridge {
     preparedPaints: 0,
     nativePaintFallbacks: 0,
     preparedRowsPainted: 0,
+    reprioritized: 0,
+    displaced: 0,
   }
 
   constructor(
     private readonly renderer: CliRenderer,
     private readonly scheduling: PreparedRuntimeGeometryScheduler = scheduler,
-    options: { paint?: boolean } = {},
+    options: { paint?: boolean; viewport?: () => PreparationViewport } = {},
   ) {
     this.paintEnabled = options.paint ?? false
+    this.viewport = options.viewport
+    this.viewportFirst = Boolean(options.viewport)
     this.cache = new PreparedTextCache({
       navigation: true,
       viewport: this.paintEnabled,
@@ -208,12 +218,59 @@ export class PreparedRuntimeGeometryBridge {
     this.counts.failed++
   }
 
+  /** Read current native placement at admission/drain time, never queued position.
+   * The viewport, not a cursor or focused surface, owns this priority. */
+  private priority(job: Job, viewport: PreparationViewport): number {
+    const top = job.body.screenY
+    const bottom = top + job.body.height
+    const center = viewport.screenY + viewport.height / 2
+    return Math.max(top - center, center - bottom, 0)
+  }
+
+  private nextJob() {
+    let next = this.pending.entries().next().value
+    const viewport = this.viewport?.()
+    if (!next || !viewport) return next
+    const original = next
+    let priority = this.priority(next[1], viewport)
+    for (const entry of this.pending) {
+      const candidate = this.priority(entry[1], viewport)
+      if (candidate < priority) {
+        next = entry
+        priority = candidate
+      }
+    }
+    if (next !== original) this.counts.reprioritized++
+    return next
+  }
+
+  private admit(job: Job): boolean {
+    if (this.pending.size < 16) return true
+    const viewport = this.viewport?.()
+    if (!viewport) return false
+    // A full queue from the previous viewport must not exclude the new landing.
+    // Evicted work retains its native fallback and may be requested again.
+    let worst: [string, Job] | undefined
+    let priority = this.priority(job, viewport)
+    for (const entry of this.pending) {
+      const candidate = this.priority(entry[1], viewport)
+      if (candidate > priority) {
+        worst = entry
+        priority = candidate
+      }
+    }
+    if (!worst) return false
+    this.pending.delete(worst[0])
+    this.counts.displaced++
+    return true
+  }
+
   private schedule() {
     if (this.scheduled || this.disposed || !this.pending.size) return
     this.scheduled = true
     this.timer = this.scheduling.schedule(() => {
       this.scheduled = false
-      const first = this.pending.entries().next().value
+      const first = this.nextJob()
       if (!first || this.disposed) return
       const [key, job] = first
       this.pending.delete(key)
@@ -318,11 +375,7 @@ export class PreparedRuntimeGeometryBridge {
       this.attachPainter(job)
       return points
     }
-    if (
-      !this.failures.has(key) &&
-      !this.pending.has(key) &&
-      this.pending.size < 16
-    ) {
+    if (!this.failures.has(key) && !this.pending.has(key) && this.admit(job)) {
       this.pending.set(key, job)
       this.counts.queued++
       this.schedule()

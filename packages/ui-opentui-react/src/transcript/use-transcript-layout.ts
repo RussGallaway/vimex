@@ -100,6 +100,7 @@ export function useTranscriptLayout(options: {
   const queuedIntentRevision = useRef<number | undefined>(undefined)
   const navigationSequence = useRef(0)
   const activeMotionSequence = useRef<number | undefined>(undefined)
+  const stoppedRepeatSequence = useRef<number | undefined>(undefined)
   const pendingScrollRows = useRef<
     Array<{
       rows: number
@@ -113,6 +114,7 @@ export function useTranscriptLayout(options: {
     undefined,
   )
   const pendingNativeScroll = useRef(false)
+  const pendingNativeOrigin = useRef<number | undefined>(undefined)
   const pendingNativeDirection = useRef<"up" | "down" | undefined>(undefined)
   const preparationContinuation = useRef(false)
   const pendingAnchor = useRef(false)
@@ -166,8 +168,10 @@ export function useTranscriptLayout(options: {
     prepositionedTarget.current = undefined
     pendingScrollRows.current = []
     activeMotionSequence.current = undefined
+    stoppedRepeatSequence.current = undefined
     pendingCursor.current = undefined
     pendingNativeScroll.current = false
+    pendingNativeOrigin.current = undefined
     pendingNativeDirection.current = undefined
     preparationContinuation.current = false
     queuedViewport.current = undefined
@@ -185,8 +189,10 @@ export function useTranscriptLayout(options: {
     prepositionedTarget.current = undefined
     pendingScrollRows.current = []
     activeMotionSequence.current = undefined
+    stoppedRepeatSequence.current = undefined
     pendingCursor.current = undefined
     pendingNativeScroll.current = false
+    pendingNativeOrigin.current = undefined
     pendingNativeDirection.current = undefined
     preparationContinuation.current = false
     queuedViewport.current = undefined
@@ -416,8 +422,18 @@ export function useTranscriptLayout(options: {
   }, [controller, renderer, scrollRef])
 
   const cancelPendingRepeats = useCallback(
-    (key?: NavigationRepeatKey) => {
+    (key?: NavigationRepeatKey, stopActive = true) => {
       const before = pendingScrollRows.current
+      const active = before.find(
+        (intent) =>
+          intent.sequence === activeMotionSequence.current && intent.repeatKey,
+      )
+      if (
+        stopActive &&
+        active &&
+        (key === undefined || active.repeatKey === key)
+      )
+        stoppedRepeatSequence.current = active.sequence
       const after = discardPendingRepeats(
         before,
         activeMotionSequence.current,
@@ -479,19 +495,25 @@ export function useTranscriptLayout(options: {
       ) {
         pendingScrollRows.current = []
         activeMotionSequence.current = undefined
+        stoppedRepeatSequence.current = undefined
         pendingCursor.current = undefined
         pendingNativeScroll.current = false
+        pendingNativeOrigin.current = undefined
         pendingNativeDirection.current = undefined
         preparationContinuation.current = false
       }
       queuedViewport.current = viewport
       queuedIntentRevision.current = intentRevision
       if (repeat) {
-        // A reversal supersedes only unstarted repeats, never deliberate keys.
+        // A reversal stops future repeat displacement, never deliberate keys.
         cancelPendingRepeats(repeat.key === "u" ? "d" : "u")
-        if (repeat.repeated) cancelPendingRepeats(repeat.key)
+        if (repeat.repeated) cancelPendingRepeats(repeat.key, false)
       }
       if (rows === undefined) {
+        // onMouseScroll runs before the native wheel displacement. Preserve its
+        // origin separately from the last settled semantic-layout position.
+        if (!pendingNativeScroll.current)
+          pendingNativeOrigin.current = scrollRef.current?.scrollTop
         pendingNativeScroll.current = true
         pendingNativeDirection.current = direction
       } else
@@ -513,7 +535,7 @@ export function useTranscriptLayout(options: {
       pendingRestore.current = false
       renderer.requestRender()
     },
-    [controller, renderer, cancelPendingRepeats],
+    [controller, renderer, scrollRef, cancelPendingRepeats],
   )
 
   const prepositionWindowForPoint = useCallback(
@@ -627,6 +649,9 @@ export function useTranscriptLayout(options: {
       if (current.runtime && current.frame) {
         const configured = current.runtime.setWindowViewport(
           Math.max(1, scrollbox.viewport.height),
+          undefined,
+          undefined,
+          process.env.VIMEX_NAV_RETAINED_WINDOW === "1",
         )
         if (configured !== current.frame) {
           renderer.requestRender()
@@ -677,6 +702,11 @@ export function useTranscriptLayout(options: {
         pendingCursor.current !== undefined ||
         pendingAnchor.current
       if (orderedMotionPending && !markdownReady) {
+        if (process.env.VIMEX_NAV_LANDING_DIAGNOSTICS === "1")
+          traceNavigation(renderer, "landing.markdown-wait", () => ({
+            sequence: activeMotionSequence.current,
+            pending: pendingScrollRows.current.length,
+          }))
         awaitingMarkdown = true
         renderer.requestRender()
         return
@@ -815,8 +845,10 @@ export function useTranscriptLayout(options: {
       if (superseded) {
         pendingScrollRows.current = []
         activeMotionSequence.current = undefined
+        stoppedRepeatSequence.current = undefined
         pendingCursor.current = undefined
         pendingNativeScroll.current = false
+        pendingNativeOrigin.current = undefined
         pendingNativeDirection.current = undefined
         preparationContinuation.current = false
       }
@@ -824,15 +856,17 @@ export function useTranscriptLayout(options: {
       queuedIntentRevision.current = undefined
       const wasNativeScroll = pendingNativeScroll.current
       if (pendingNativeScroll.current) {
-        const displacement = scrollbox.scrollTop - lastScrollTop.current
+        const origin = pendingNativeOrigin.current ?? lastScrollTop.current
+        const displacement = scrollbox.scrollTop - origin
         pendingScrollRows.current.push({
           rows:
             displacement === 0 && pendingNativeDirection.current === "down"
               ? 1
               : displacement,
         })
-        scrollbox.scrollTo(lastScrollTop.current)
+        scrollbox.scrollTo(origin)
         pendingNativeScroll.current = false
+        pendingNativeOrigin.current = undefined
         pendingNativeDirection.current = undefined
         if (!pendingScrollRows.current.length) pendingAnchor.current = true
       }
@@ -1166,10 +1200,25 @@ export function useTranscriptLayout(options: {
         }
         const before = latest.current.runtime?.getSnapshot()
         const top = scrollbox.scrollTop
+        const landingDiagnostics =
+          process.env.VIMEX_NAV_LANDING_DIAGNOSTICS === "1"
+        const passStarted = landingDiagnostics ? performance.now() : 0
+        let nativeLayoutMs = 0
         flushSync(() => {
           prepareNativeTranscriptLayout(renderer)
+          if (landingDiagnostics)
+            nativeLayoutMs = performance.now() - passStarted
           measure()
         })
+        if (landingDiagnostics)
+          traceNavigation(renderer, "landing.prepare-pass", () => ({
+            sequence: activeMotionSequence.current,
+            nativeLayoutMs,
+            measureAndPublishMs:
+              performance.now() - passStarted - nativeLayoutMs,
+            awaitingMarkdown,
+            pending: pendingScrollRows.current.length,
+          }))
         if (awaitingMarkdown) {
           deferredPreparation = true
           break
@@ -1250,6 +1299,28 @@ export function useTranscriptLayout(options: {
             }
           }
         }
+        // Release cancels future displacement, not settlement of movement already
+        // performed. Wait until anchor/cursor reflow is coherent before removing
+        // an active repeat's remainder, then accept the next input from here.
+        if (
+          stoppedRepeatSequence.current !== undefined &&
+          !pendingCursor.current &&
+          stoppedRepeatSequence.current === activeMotionSequence.current
+        ) {
+          const sequence = stoppedRepeatSequence.current
+          const remainder = pendingScrollRows.current.find(
+            (intent) => intent.sequence === sequence && intent.repeatKey,
+          )
+          pendingScrollRows.current = pendingScrollRows.current.filter(
+            (intent) => intent.sequence !== sequence || !intent.repeatKey,
+          )
+          stoppedRepeatSequence.current = undefined
+          if (remainder)
+            trace("intent.repeat-truncated", () => ({
+              sequence,
+              remainingRows: remainder.rows,
+            }))
+        }
         if (
           activeMotionSequence.current !== undefined &&
           pendingScrollRows.current[0]?.sequence !==
@@ -1276,6 +1347,7 @@ export function useTranscriptLayout(options: {
             }
           })
           activeMotionSequence.current = undefined
+          stoppedRepeatSequence.current = undefined
         }
         if (!pendingScrollRows.current.length || pass >= 112) break
         // Consume the largest displacement whose rows are already measured.

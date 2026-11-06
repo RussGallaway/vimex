@@ -133,6 +133,8 @@ export interface TranscriptFrame {
 }
 
 export interface TranscriptWindowPolicy {
+  /** Retain one bounded neighborhood until the viewport approaches its edge. */
+  readonly retainWindow?: boolean
   readonly viewportRows: number
   readonly overscanRows: number
   /** Shared block budget for prepared areas at the beginning and end. */
@@ -1376,6 +1378,15 @@ export class TranscriptRuntime {
           recentTailBlocks: this.windowPolicy.recentTailBlocks,
           recentTailRows: this.windowPolicy.recentTailRows,
           olderLookAheadRows: this.windowPolicy.olderLookAheadRows,
+          retainWindow: this.windowPolicy.retainWindow,
+          retainedWindow:
+            this.frame?.canonicalGeneration === frame.canonicalGeneration &&
+            this.frame?.threadId === frame.threadId &&
+            this.frame?.geometry.generation === frame.geometry.generation &&
+            this.frame?.geometry.width === frame.geometry.width &&
+            this.frame?.geometry.styleRevision === frame.geometry.styleRevision
+              ? this.frame.window
+              : undefined,
           attachment,
           ...(reveal ? { reveal } : {}),
         })
@@ -1434,6 +1445,7 @@ export class TranscriptRuntime {
     viewportRows: number,
     overscanRows = viewportRows,
     recentTailBlocks = this.windowPolicy?.recentTailBlocks ?? 0,
+    retainWindow = this.windowPolicy?.retainWindow ?? false,
   ): TranscriptFrame {
     if (
       this.disposed ||
@@ -1449,13 +1461,15 @@ export class TranscriptRuntime {
     if (
       this.windowPolicy?.viewportRows === viewportRows &&
       this.windowPolicy.overscanRows === overscanRows &&
-      (this.windowPolicy.recentTailBlocks ?? 0) === recentTailBlocks
+      (this.windowPolicy.recentTailBlocks ?? 0) === recentTailBlocks &&
+      (this.windowPolicy.retainWindow ?? false) === retainWindow
     )
       return this.frame
     this.windowPolicy = Object.freeze({
       viewportRows,
       overscanRows,
       recentTailBlocks,
+      retainWindow,
       recentTailRows: this.windowPolicy?.recentTailRows,
       olderLookAheadRows: this.windowPolicy?.olderLookAheadRows,
     })

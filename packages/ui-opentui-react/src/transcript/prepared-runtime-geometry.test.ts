@@ -34,7 +34,10 @@ class Tasks implements PreparedRuntimeGeometryScheduler {
   }
 }
 
-async function fixture(text = "hello world") {
+async function fixture(
+  text = "hello world",
+  viewport?: () => { screenY: number; height: number },
+) {
   const id = itemId("command")
   const item = {
     id,
@@ -85,7 +88,9 @@ async function fixture(text = "hello world") {
     "tool-output:command:output-1",
   ) as TextRenderable
   const tasks = new Tasks()
-  const bridge = new PreparedRuntimeGeometryBridge(setup.renderer, tasks)
+  const bridge = new PreparedRuntimeGeometryBridge(setup.renderer, tasks, {
+    viewport,
+  })
   bridge.begin(frame, "test")
   const input: MeasureRenderedBlockInput = {
     renderer: setup.renderer,
@@ -336,6 +341,110 @@ test("native root or body replacement cannot invalidate a departed subtree", asy
     f.tasks.next()
     expect(f.bridge.diagnostics.prepared).toBe(0)
     expect(f.bridge.diagnostics.stale).toBe(2)
+  } finally {
+    await f.close()
+  }
+})
+
+async function queuedWindow(viewportFirst: boolean) {
+  const viewport = { screenY: 0, height: 1 }
+  const f = await fixture(
+    "hello world",
+    viewportFirst ? () => viewport : undefined,
+  )
+  const blocks = [f.block]
+  const inputs = [f.input]
+  const bodies = [f.body]
+  for (let index = 2; index <= 20; index++) {
+    const block: TranscriptItemBlock = {
+      ...f.block,
+      key: { ...f.block.key, blockId: `output-${index}` },
+    }
+    const root = new BoxRenderable(f.setup.renderer, {
+      id: `priority-root-${index}`,
+      position: "absolute",
+      top: index * 3,
+      height: 1,
+    })
+    const body = new TextRenderable(f.setup.renderer, {
+      id: `tool-output:command:output-${index}`,
+      content: f.text,
+      width: 24,
+      height: 1,
+      wrapMode: "word",
+    })
+    root.add(body)
+    f.setup.renderer.root.add(root)
+    blocks.push(block)
+    inputs.push({ ...f.input, block, renderable: root })
+    bodies.push(body)
+  }
+  await act(async () => {
+    await f.setup.flush()
+    await f.setup.renderOnce()
+  })
+  f.bridge.begin({ ...f.frame, window: { ...f.frame.window, blocks } }, "test")
+  return { ...f, viewport, inputs, bodies }
+}
+
+for (const viewportFirst of [false, true])
+  test(`prepared job ordering uses ${viewportFirst ? "current viewport after enqueue" : "original FIFO by default"}`, async () => {
+    const f = await queuedWindow(viewportFirst)
+    try {
+      for (const input of f.inputs.slice(0, 3)) f.bridge.points(input, f.text)
+      // Moving the viewport after enqueue must select the new location, without
+      // any change to transcript cursor, focus, source, or mounted window.
+      f.viewport.screenY = f.bodies[2]!.screenY
+      f.tasks.next()
+      const selected = viewportFirst ? 2 : 0
+      expect(f.bridge.points(f.inputs[selected]!, f.text)).toBeDefined()
+      expect(f.bridge.diagnostics.prepared).toBe(1)
+      expect(f.bridge.diagnostics.reprioritized).toBe(viewportFirst ? 1 : 0)
+      if (viewportFirst) {
+        f.viewport.screenY = f.bodies[1]!.screenY
+        f.tasks.next()
+        expect(f.bridge.points(f.inputs[1]!, f.text)).toBeDefined()
+      }
+    } finally {
+      await f.close()
+    }
+  })
+
+test("a new visible preparation displaces distant queued work at capacity", async () => {
+  const f = await queuedWindow(true)
+  try {
+    for (const input of f.inputs.slice(0, 16)) f.bridge.points(input, f.text)
+    expect(f.bridge.diagnostics.pending).toBe(16)
+    f.viewport.screenY = f.bodies[19]!.screenY
+    f.bridge.points(f.inputs[19]!, f.text)
+    expect(f.bridge.diagnostics.pending).toBe(16)
+    expect(f.bridge.diagnostics.displaced).toBe(1)
+    f.tasks.next()
+    expect(f.bridge.points(f.inputs[19]!, f.text)).toBeDefined()
+    expect(f.bridge.diagnostics.pending).toBe(15)
+    // Reprioritization does not weaken stale-window cancellation.
+    f.bridge.synchronize({
+      ...f.frame,
+      window: { ...f.frame.window, blocks: [] },
+    })
+    expect(f.bridge.diagnostics.pending).toBe(0)
+    expect(f.tasks.tasks.size).toBe(0)
+  } finally {
+    await f.close()
+  }
+})
+
+test("visible preparation starts around viewport center before its outer edges", async () => {
+  const f = await queuedWindow(true)
+  try {
+    f.viewport.screenY = 0
+    f.viewport.height = 60
+    f.bridge.points(f.inputs[1]!, f.text)
+    f.bridge.points(f.inputs[9]!, f.text)
+    f.tasks.next()
+    expect(f.bridge.points(f.inputs[9]!, f.text)).toBeDefined()
+    expect(f.bridge.diagnostics.prepared).toBe(1)
+    expect(f.bridge.diagnostics.pending).toBe(1)
   } finally {
     await f.close()
   }
