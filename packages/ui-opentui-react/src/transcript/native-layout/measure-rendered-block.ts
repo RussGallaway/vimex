@@ -1,3 +1,4 @@
+import { MarkdownMeasurementCache } from "./markdown-measurement-cache"
 import { prepareNativeBlockPlacement } from "./scroll-preparation"
 import {
   DiffRenderable,
@@ -93,7 +94,24 @@ const blockProjectionCache = new WeakMap<
   object,
   { raw: string; plain: string }
 >()
+const markdownMeasurementCaches = new WeakMap<
+  MarkdownRenderable,
+  MarkdownMeasurementCache
+>()
 let nextNativeRevision = 1
+
+/** Diagnostic only; cache presence never certifies native readiness. */
+export function markdownMeasurementCacheStats(markdown: MarkdownRenderable) {
+  const cache = markdownMeasurementCaches.get(markdown)
+  return cache
+    ? {
+        hits: cache.hits,
+        misses: cache.misses,
+        entries: cache.size,
+        points: cache.pointCount,
+      }
+    : undefined
+}
 
 function stateFor(renderable: Renderable): RenderedBlockState {
   const existing = states.get(renderable)
@@ -507,7 +525,17 @@ function measureMarkdown(
   const result: Record<number, NativePoint> = {}
   let sourceCursor = 0
   let logicalCursor = 0
-  for (const block of markdownBlocks(markdown)) {
+  const blocks = markdownBlocks(markdown)
+  let measurements: MarkdownMeasurementCache | undefined
+  if (process.env.VIMEX_NAV_MARKDOWN_MEASUREMENT_CACHE === "1") {
+    measurements = markdownMeasurementCaches.get(markdown)
+    if (!measurements) {
+      measurements = new MarkdownMeasurementCache()
+      markdownMeasurementCaches.set(markdown, measurements)
+    }
+    measurements.retain(new Set(blocks.map((block) => block.renderable)))
+  }
+  for (const block of blocks) {
     const cached = blockProjectionCache.get(block as object)
     const projected =
       cached?.raw === block.tokenRaw
@@ -524,13 +552,28 @@ function measureMarkdown(
     if (start < 0) continue
     logicalCursor += graphemes(text.slice(sourceCursor, start)).length
     const logicalStart = logicalCursor
+    const cachedMeasurement =
+      measurements && !(block.renderable instanceof TextTableRenderable)
+        ? measurements.measure(block.renderable, core, () =>
+            measureRaw(renderer, block.renderable, core),
+          )
+        : undefined
     const measured =
-      block.renderable instanceof TextTableRenderable
+      cachedMeasurement?.points ??
+      (block.renderable instanceof TextTableRenderable
         ? measureTable(block.renderable, core, fillGaps)
-        : measureRaw(renderer, block.renderable, core)
+        : measureRaw(renderer, block.renderable, core))
+    const originX = cachedMeasurement?.originX ?? 0
+    const originY = cachedMeasurement?.originY ?? 0
     for (const localOffset in measured) {
       const graphemeOffset = logicalStart + Number(localOffset)
-      result[graphemeOffset] = { ...measured[localOffset]!, graphemeOffset }
+      const point = measured[localOffset]!
+      result[graphemeOffset] = {
+        ...point,
+        graphemeOffset,
+        x: point.x + originX,
+        y: point.y + originY,
+      }
     }
     sourceCursor = start + core.length
     logicalCursor += graphemes(core).length

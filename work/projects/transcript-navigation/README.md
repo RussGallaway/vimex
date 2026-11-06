@@ -24,6 +24,7 @@ That experience is the reason for the work. A small improvement in a synthetic n
 - [Landing viewport investigation](landing-viewport-investigation.md): immediate input after release from either focus surface, readiness timing, and optional viewport-first prepared work.
 - [Architecture and topology refactor](architecture-refactor.md): responsibility-based module layout preserving the accepted navigation behavior.
 - [Retained window](retained-window.md): current experiment using one stable mounted neighborhood, replenished near its boundary.
+- [Streaming measurement cache](streaming-measurement-cache.md): opt-in reuse of unchanged native Markdown measurements, paired evidence, and remaining whole-message work.
 - [Rolling preparation prototype](rolling-preparation-prototype.md): historical experiment, superseded by the simpler retained-window planner.
 
 The [v1 specification](../v1/spec.md), [UX contract](../v1/ux.md), [architecture](../v1/architecture.md), and [topology](../v1/topology.md) remain authoritative. This project proposes an implementation direction; it does not change Vim motions or create another canonical cursor/anchor owner. The existing [navigation-decoupling design](../v1/transcript-navigation-decoupling.md) remains relevant context.
