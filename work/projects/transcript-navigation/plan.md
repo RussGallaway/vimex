@@ -1,12 +1,14 @@
 # Prepared transcript navigation plan
 
-Status: first correctness prototype implemented; prepared-row architecture pending. Work branch: `feat/transcript-prepared-navigation`.
+Status: correctness repairs and standalone native text-row prototype implemented; prepared-row navigation integration pending. Work branch: `feat/transcript-prepared-navigation`.
 
 Ordered traces reproduce disagreement at resolved input boundaries, and a 30-item native fixture isolates sensitivity to dividing one half-page motion into smaller steps. Per-input cursor target retention and native child placement preparation repair the reduced fixture and the eight-key long-transcript trace. See the [investigation record](geometry-investigation.md); this does not yet satisfy the general coherent-commit or terminal UX gates.
 
 The [source mapping follow-up](source-mapping-investigation.md) repairs the reproduced one-row discrepancy: completed Markdown readiness, read-only cursor/selection geometry consumers, and preservation of a valid anchor through reflow make all 600 resolved movements agree in the original paired long-route diagnostic. Both experiment flags remain off by default. This is a correctness result, not a latency claim or proof for all scheduling patterns.
 
-Next: prototype exact text/code row preparation using shared native primitives, with source/cell parity and bounded work, then evaluate cold movement in an actual terminal. Retain the delayed-mapping, supersession, and correction-order regressions as gates; do not reintroduce geometry publication from display consumers or treat a completed message/unchanged height as a ready map.
+The [prepared text prototype](prepared-text-prototype.md) now prepares native plain/code rows without rich renderables and passes the supported mounted painted-cell matrix. It remains standalone: newline/EOF boundary policy differs from existing measurement, per-grapheme output is verbose, and a 13,000-grapheme preparation takes roughly 9–11 ms synchronously in the diagnostic run.
+
+Next: define the navigation adapter's boundary semantics, prototype compact row metadata and bounded caching/preparation, then connect a narrow plain/code viewport experiment and evaluate cold movement in an actual terminal. Retain delayed-mapping, supersession, and correction-order regressions as gates; do not reintroduce geometry publication from display consumers or treat a completed message/unchanged height as a ready map.
 
 ## Product outcome
 
@@ -68,6 +70,8 @@ Exit: batch size/timing and delayed measurements do not change final semantic/na
 
 ### 3. Produce rows without rich renderables
 
+Standalone prototype evidence is recorded in [prepared text rows](prepared-text-prototype.md). Whole-block native metadata comes from `logicalLineInfo`; grapheme widths are measured with the same text engine and verified against source-line spans. Painted-cell parity is established for the tested subset. Integration still requires boundary-policy parity and a compact bounded retention strategy.
+
 Initial API inspection of the pinned OpenTUI 0.5.11 found public `TextBuffer` and `TextBufferView` APIs that can wrap text without React or Yoga. A first prototype can use `TextBuffer.create(renderer.widthMethod)`, `setText`, `setTabWidth`, and a view configured with the same wrap mode, width, first-line offset, and viewport. `lineInfo` and `getLineSources` are candidates for source mapping; `measureForDimensions` alone provides dimensions, not a navigation map. Dispose the view before its buffer after extracting compact data. Validate these APIs against mounted native text/code before adopting a contract. Native wrapping is still synchronous and needs bounded work.
 
 Inspect reusable OpenTUI text-buffer/wrapping primitives and identify a narrow adapter contract for width-specific layout. Begin with completed plain text and code. Share layout rules with rendering rather than creating an approximate second engine.
@@ -119,6 +123,6 @@ Run focused native and domain regressions at their owning layers; run `bun run c
 - [x] Agree on the architectural direction and isolated branch workflow.
 - [ ] Slice 1: reduced correction-order reproduction and trace.
 - [ ] Slice 2: coherent geometry/viewport commit prototype.
-- [ ] Slice 3: prepared text/code rows with native parity.
+- [ ] Slice 3: standalone painted-cell parity complete; navigation boundary policy and compact retention pending.
 - [ ] Slice 4: cheap movement with delayed rich rendering and terminal UX validation.
 - [ ] Slice 5: mixed-content expansion and integration decision.

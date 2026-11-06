@@ -1,0 +1,185 @@
+{
+  "benchmark": "standalone-prepared-text-layout-v1",
+  "status": "diagnostic",
+  "qualification": "Synchronous preparation and native cleanup after module import; no React tree, terminal, input dispatch, or rich-render comparison. Serialized result size is a portable output-size proxy, not retained heap. Process memory deltas include allocator retention and GC noise; they do not measure native lifetime or prove a leak. Width and source bounds are not a wall-clock guarantee.",
+  "platform": "darwin",
+  "arch": "arm64",
+  "bun": "1.3.6",
+  "opentui": "0.5.11",
+  "rounds": 5,
+  "widthMethod": "unicode",
+  "wrapMode": "word",
+  "results": [
+    {
+      "name": "short-plain",
+      "width": 24,
+      "sourceUtf8Bytes": 288,
+      "status": "ready",
+      "rows": 17,
+      "graphemes": 288,
+      "firstCallMs": 2.141,
+      "subsequentCallsMs": [0.404, 0.361, 0.29, 0.512],
+      "serializedResultBytes": 24972,
+      "processMemoryDelta": {
+        "rss": 3997696,
+        "heapUsed": 0,
+        "external": 39235
+      }
+    },
+    {
+      "name": "short-plain",
+      "width": 80,
+      "sourceUtf8Bytes": 288,
+      "status": "ready",
+      "rows": 5,
+      "graphemes": 288,
+      "firstCallMs": 0.52,
+      "subsequentCallsMs": [0.33, 0.338, 0.31, 0.273],
+      "serializedResultBytes": 24093,
+      "processMemoryDelta": {
+        "rss": 6848512,
+        "heapUsed": 0,
+        "external": 38275
+      }
+    },
+    {
+      "name": "code-100-lines",
+      "width": 24,
+      "sourceUtf8Bytes": 4679,
+      "status": "ready",
+      "rows": 200,
+      "graphemes": 4679,
+      "firstCallMs": 4.052,
+      "subsequentCallsMs": [3.743, 3.38, 3.508, 3.223],
+      "serializedResultBytes": 408515,
+      "processMemoryDelta": {
+        "rss": 22265856,
+        "heapUsed": 0,
+        "external": 470070
+      }
+    },
+    {
+      "name": "code-100-lines",
+      "width": 80,
+      "sourceUtf8Bytes": 4679,
+      "status": "ready",
+      "rows": 100,
+      "graphemes": 4679,
+      "firstCallMs": 3.459,
+      "subsequentCallsMs": [3.444, 5.395, 3.406, 3.591],
+      "serializedResultBytes": 398932,
+      "processMemoryDelta": {
+        "rss": 10420224,
+        "heapUsed": 8756872,
+        "external": 3594732
+      }
+    },
+    {
+      "name": "unicode-and-tabs",
+      "width": 24,
+      "sourceUtf8Bytes": 1920,
+      "status": "ready",
+      "rows": 81,
+      "graphemes": 1380,
+      "firstCallMs": 1.662,
+      "subsequentCallsMs": [1.049, 1.018, 0.96, 0.91],
+      "serializedResultBytes": 120512,
+      "processMemoryDelta": {
+        "rss": 557056,
+        "heapUsed": 0,
+        "external": 156215
+      }
+    },
+    {
+      "name": "unicode-and-tabs",
+      "width": 80,
+      "sourceUtf8Bytes": 1920,
+      "status": "ready",
+      "rows": 41,
+      "graphemes": 1380,
+      "firstCallMs": 0.933,
+      "subsequentCallsMs": [0.941, 0.974, 0.925, 0.925],
+      "serializedResultBytes": 117678,
+      "processMemoryDelta": {
+        "rss": 770048,
+        "heapUsed": 0,
+        "external": 149935
+      }
+    },
+    {
+      "name": "long-code",
+      "width": 24,
+      "sourceUtf8Bytes": 13000,
+      "status": "ready",
+      "rows": 1001,
+      "graphemes": 13000,
+      "firstCallMs": 9.059,
+      "subsequentCallsMs": [11.327, 10.598, 11.351, 10.585],
+      "serializedResultBytes": 1181915,
+      "processMemoryDelta": {
+        "rss": 13123584,
+        "heapUsed": 7917533,
+        "external": 3073752
+      }
+    },
+    {
+      "name": "long-code",
+      "width": 80,
+      "sourceUtf8Bytes": 13000,
+      "status": "ready",
+      "rows": 501,
+      "graphemes": 13000,
+      "firstCallMs": 10.155,
+      "subsequentCallsMs": [10.825, 8.697, 9.378, 9.357],
+      "serializedResultBytes": 1141867,
+      "processMemoryDelta": {
+        "rss": 6045696,
+        "heapUsed": 5689956,
+        "external": 2100827
+      }
+    },
+    {
+      "name": "oversize-refusal",
+      "width": 24,
+      "sourceUtf8Bytes": 1000000,
+      "status": "unsupported",
+      "reason": "code-unit-limit",
+      "firstCallMs": 0.085,
+      "subsequentCallsMs": [0.001, 0, 0, 0],
+      "serializedResultBytes": 51,
+      "processMemoryDelta": {
+        "rss": 0,
+        "heapUsed": 0,
+        "external": 0
+      }
+    },
+    {
+      "name": "oversize-refusal",
+      "width": 80,
+      "sourceUtf8Bytes": 1000000,
+      "status": "unsupported",
+      "reason": "code-unit-limit",
+      "firstCallMs": 0,
+      "subsequentCallsMs": [0, 0, 0, 0],
+      "serializedResultBytes": 51,
+      "processMemoryDelta": {
+        "rss": 0,
+        "heapUsed": 0,
+        "external": 0
+      }
+    }
+  ],
+  "implementationSha256": "eddddb406630adb972ca941f33a38b4a9fa526142c8a0e1031dd77b2b01ecc1d",
+  "probeSha256": "41f96521794870182442ce23659318c8ed5efd734918cdcd6a9dfb96ea020567",
+  "rawSha256": "8ecbcc0924f220d8ba64a3710c49bf7da731c7b6fb610e1f9a72a187b9be2425",
+  "baselineCommit": "94ccaf5",
+  "validation": {
+    "basicTests": 7,
+    "basicAssertions": 37,
+    "mountedParityTests": 42,
+    "mountedParityAssertions": 7422,
+    "mountedWidthMethod": "unicode",
+    "otherWidthMethods": "native-buffer tests only",
+    "boundaryQualification": "Painted-cell parity excludes newline/EOF and consumed wrap whitespace; their insertion-boundary conventions are not yet adapted to transcript navigation."
+  }
+}
