@@ -226,6 +226,10 @@ export async function runApplication(options: CliOptions) {
       exitOnCtrlC: false,
       exitSignals: [],
       targetFps: 60,
+      useKittyKeyboard:
+        process.env.VIMEX_NAV_REPEAT_CONTROL === "1"
+          ? { events: true }
+          : undefined,
     })
     startupPhase("renderer_created")
     const activeRenderer = renderer

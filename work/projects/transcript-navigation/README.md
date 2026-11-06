@@ -20,6 +20,7 @@ That experience is the reason for the work. A small improvement in a synthetic n
 - [Prepared viewport prototype](prepared-viewport-prototype.md): isolated native movement over prepared rows, delayed real syntax detail, PTY hold/reverse/release evidence, and a synchronous-blocking control. Production integration remains pending.
 - [Prepared runtime bridge](prepared-runtime-bridge.md): opt-in prepared geometry through the production measurement/publication path for final command-output fragments; native painting remains unchanged.
 - [Prepared runtime painting](prepared-runtime-paint.md): opt-in visible-row painting in the real app, selection-safe native fallback, connected tests, and a cost probe that does not show a plain-text speedup.
+- [Held navigation after release](held-release-investigation.md): reproduced movement backlog after input stops, independent-sender diagnostics, and repeat-aware cancellation research.
 
 The [v1 specification](../v1/spec.md), [UX contract](../v1/ux.md), [architecture](../v1/architecture.md), and [topology](../v1/topology.md) remain authoritative. This project proposes an implementation direction; it does not change Vim motions or create another canonical cursor/anchor owner. The existing [navigation-decoupling design](../v1/transcript-navigation-decoupling.md) remains relevant context.
 

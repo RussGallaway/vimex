@@ -1,3 +1,8 @@
+import {
+  discardPendingRepeats,
+  type NavigationRepeatInput,
+  type NavigationRepeatKey,
+} from "./navigation-repeat-control"
 import { createMarkdownReadiness } from "./markdown-readiness"
 import { traceNavigation } from "./navigation-trace"
 import {
@@ -100,6 +105,7 @@ export function useTranscriptLayout(options: {
       rows: number
       cursor?: "follow" | "clamp"
       sequence?: number
+      repeatKey?: NavigationRepeatKey
       followTarget?: { row: number; column: number }
     }>
   >([])
@@ -409,6 +415,27 @@ export function useTranscriptLayout(options: {
     return true
   }, [controller, renderer, scrollRef])
 
+  const cancelPendingRepeats = useCallback(
+    (key?: NavigationRepeatKey) => {
+      const before = pendingScrollRows.current
+      const after = discardPendingRepeats(
+        before,
+        activeMotionSequence.current,
+        key,
+      )
+      pendingScrollRows.current = after
+      if (after.length !== before.length)
+        traceNavigation(renderer, "intent.repeat-pruned", () => ({
+          key,
+          canceledSequences: before
+            .filter((intent) => !after.includes(intent))
+            .map((intent) => intent.sequence),
+          pendingRows: after.map((intent) => ({ ...intent })),
+        }))
+    },
+    [renderer],
+  )
+
   const onManualScroll = useCallback(
     (
       rows?: number,
@@ -421,6 +448,7 @@ export function useTranscriptLayout(options: {
         | "half_page_down"
         | "page_up"
         | "page_down",
+      repeat?: NavigationRepeatInput,
     ) => {
       if (
         navigationDetailExperimentEnabled &&
@@ -458,6 +486,11 @@ export function useTranscriptLayout(options: {
       }
       queuedViewport.current = viewport
       queuedIntentRevision.current = intentRevision
+      if (repeat) {
+        // A reversal supersedes only unstarted repeats, never deliberate keys.
+        cancelPendingRepeats(repeat.key === "u" ? "d" : "u")
+        if (repeat.repeated) cancelPendingRepeats(repeat.key)
+      }
       if (rows === undefined) {
         pendingNativeScroll.current = true
         pendingNativeDirection.current = direction
@@ -466,6 +499,7 @@ export function useTranscriptLayout(options: {
           rows,
           cursor,
           sequence: ++navigationSequence.current,
+          repeatKey: repeat?.repeated ? repeat.key : undefined,
         })
       traceNavigation(renderer, "intent.enqueued", () => ({
         sequence: navigationSequence.current,
@@ -479,7 +513,7 @@ export function useTranscriptLayout(options: {
       pendingRestore.current = false
       renderer.requestRender()
     },
-    [controller, renderer],
+    [controller, renderer, cancelPendingRepeats],
   )
 
   const prepositionWindowForPoint = useCallback(
@@ -1337,6 +1371,7 @@ export function useTranscriptLayout(options: {
       prepareScroll.current?.()
   }, [])
   return {
+    cancelPendingRepeats,
     flushManualScroll,
     enterVisibleTranscript,
     layout,

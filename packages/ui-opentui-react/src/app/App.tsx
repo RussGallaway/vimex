@@ -1,3 +1,7 @@
+import {
+  navigationRepeatInput,
+  type NavigationRepeatKey,
+} from "../transcript/navigation-repeat-control"
 import { useTranscriptLinks } from "../urls/use-transcript-links"
 import { LinkActionsBar } from "../urls/LinkActionsBar"
 import { NoticeStrip } from "../statusline/NoticeStrip"
@@ -10,6 +14,7 @@ import {
 import {
   CliRenderEvents,
   type InputRenderable,
+  type KeyEvent,
   type Renderable,
   type ScrollBoxRenderable,
   type TextareaRenderable,
@@ -351,6 +356,7 @@ export function VimexApp({
     onManualScroll,
     enterVisibleTranscript,
     flushManualScroll,
+    cancelPendingRepeats,
   } = useTranscriptLayout({
     threadId: state.activeThreadId,
     transcript,
@@ -1209,6 +1215,36 @@ export function VimexApp({
     [applyComposerAction, controller],
   )
 
+  // The binding wrapper scopes the actual event to synchronous command dispatch.
+  const scrollKeyEvent = useRef<KeyEvent | undefined>(undefined)
+  const exactNavigationHolds = useRef(new Set<NavigationRepeatKey>())
+  useEffect(() => {
+    const release = (event: KeyEvent) => {
+      // Ctrl can be released before the letter, so do not require its modifier.
+      if (event.name !== "u" && event.name !== "d") return
+      cancelPendingRepeats(event.name)
+      exactNavigationHolds.current.delete(event.name)
+    }
+    renderer.keyInput.on("keyrelease", release)
+    return () => {
+      renderer.keyInput.off("keyrelease", release)
+    }
+  }, [renderer, cancelPendingRepeats])
+  useEffect(() => {
+    cancelPendingRepeats()
+    exactNavigationHolds.current.clear()
+  }, [
+    cancelPendingRepeats,
+    interaction.mode,
+    interaction.surface,
+    interaction.overlay,
+    interactive,
+    queueFocused,
+    jumpActive,
+    telescopeModal.active,
+    state.activeThreadId,
+  ])
+
   const scroll = useCallback(
     (direction: "up" | "down", amount: "line" | "half-page" | "page") => {
       const delta = direction === "down" ? 1 : -1
@@ -1218,6 +1254,18 @@ export function VimexApp({
       const effectiveAmount =
         explicitCount && amount === "half-page" ? "line" : amount
       const repeat = explicitCount ?? 1
+      let heldInput =
+        amount === "half-page"
+          ? navigationRepeatInput(scrollKeyEvent.current)
+          : undefined
+      if (heldInput) {
+        if (!heldInput.repeated)
+          exactNavigationHolds.current.delete(heldInput.key)
+        if (explicitCount !== undefined || interaction.mode === "visual")
+          exactNavigationHolds.current.add(heldInput.key)
+        if (exactNavigationHolds.current.has(heldInput.key))
+          heldInput = undefined
+      }
       onManualScroll(
         delta *
           repeat *
@@ -1236,12 +1284,13 @@ export function VimexApp({
           : undefined,
         undefined,
         `${amount === "half-page" ? "half_page" : amount}_${direction}`,
+        heldInput,
       )
       countRef.current = ""
       if (explicitCount !== undefined)
         controller.dispatchInteraction({ type: "count.clear" })
     },
-    [controller, onManualScroll, interaction.surface],
+    [controller, onManualScroll, interaction.surface, interaction.mode],
   )
 
   const beginVisual = useCallback(
@@ -1709,9 +1758,14 @@ export function VimexApp({
                   : []),
               ].map((binding) => ({
                 ...binding,
-                cmd: () => {
+                cmd: ({ event }: { event: KeyEvent }) => {
                   if (telescopeModal.activeRef.current) return false
-                  return flushSync(() => binding.cmd())
+                  scrollKeyEvent.current = event
+                  try {
+                    return flushSync(() => binding.cmd())
+                  } finally {
+                    scrollKeyEvent.current = undefined
+                  }
                 },
               })),
     }),

@@ -153,6 +153,12 @@ assert(
   "Navigation trace sequence range is reversed",
 )
 const intervalMs = envInt("VIMEX_NAV_REPEAT_INTERVAL_MS", 33)
+const independentSender = process.env.VIMEX_NAV_INDEPENDENT_SENDER === "1"
+const kittyHeldInput = process.env.VIMEX_NAV_KITTY_HELD_INPUT === "1"
+assert(
+  !kittyHeldInput || independentSender,
+  "Kitty held input requires independent sender",
+)
 const capacityActions = (
   process.env.VIMEX_NAV_CAPACITY_ACTIONS ??
   "cold-up,queued-paced-up,return-to-tail"
@@ -508,13 +514,126 @@ async function createHarness(
   }
 }
 
+type SenderReport = {
+  clockUncertaintyMs: number
+  stoppedAtMs: number
+  releaseAcceptedAtMs?: number
+  events: { key: string; sentAtMs: number; acceptedAtMs: number }[]
+}
+
+// Independent pacing exposes input accumulated while the application event loop
+// is busy. This is a pipe feeding mock input, not a PTY or emulator acceptance test.
+async function dispatchIndependent(
+  h: Harness,
+  recordKey: (key: string, dueAt?: number) => void,
+  keys: string[],
+): Promise<SenderReport> {
+  const child = Bun.spawn(
+    [
+      "python3",
+      "-u",
+      "-c",
+      `
+import json, sys, time
+def emit(value):
+    print(json.dumps(value), flush=True)
+emit({"kind":"ready"})
+sys.stdin.readline()
+emit({"kind":"sync", "at":time.monotonic()*1000})
+config=json.loads(sys.stdin.readline())
+start=time.monotonic()
+for index,key in enumerate(config["keys"]):
+    due=start+(index+1)*config["intervalMs"]/1000
+    time.sleep(max(0,due-time.monotonic()))
+    emit({"kind":"key", "key":key, "at":time.monotonic()*1000})
+emit({"kind":"stop", "at":time.monotonic()*1000})
+`,
+    ],
+    { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
+  )
+  const reader = child.stdout.getReader()
+  const decoder = new TextDecoder()
+  let buffered = ""
+  const next = async (): Promise<{ kind: string; at: number; key: string }> => {
+    while (!buffered.includes("\n")) {
+      const chunk = await reader.read()
+      assert(!chunk.done, "Independent sender exited before its stop marker")
+      buffered += decoder.decode(chunk.value, { stream: true })
+    }
+    const end = buffered.indexOf("\n")
+    const value = JSON.parse(buffered.slice(0, end))
+    buffered = buffered.slice(end + 1)
+    return value
+  }
+  try {
+    assert.equal((await next()).kind, "ready")
+    const beforeSync = performance.now()
+    child.stdin.write("sync\n")
+    await child.stdin.flush()
+    const sync = await next()
+    const afterSync = performance.now()
+    assert.equal(sync.kind, "sync")
+    // The child's sync sample is bracketed by the parent's request and reply.
+    // Midpoint mapping carries an explicit half-round-trip uncertainty.
+    const offset = (beforeSync + afterSync) / 2 - sync.at
+    child.stdin.write(JSON.stringify({ keys, intervalMs }) + "\n")
+    await child.stdin.flush()
+    const events: SenderReport["events"] = []
+    let stoppedAtMs = 0
+    let previousKey: string | undefined
+    let releaseAcceptedAtMs: number | undefined
+    const sendKitty = (key: string, eventType: 1 | 2 | 3) => {
+      const code = key === "Ctrl-U" ? 117 : 100
+      h.setup.renderer.stdin.emit(
+        "data",
+        Buffer.from(`\x1b[${code};5:${eventType}u`),
+      )
+    }
+    while (true) {
+      const event = await next()
+      if (event.kind === "stop") {
+        stoppedAtMs = event.at + offset
+        if (kittyHeldInput && previousKey) {
+          releaseAcceptedAtMs = performance.now()
+          sendKitty(previousKey, 3)
+        }
+        break
+      }
+      assert.equal(event.kind, "key")
+      const acceptedAtMs = performance.now()
+      if (kittyHeldInput) {
+        if (previousKey && previousKey !== event.key) sendKitty(previousKey, 3)
+        sendKitty(event.key, previousKey === event.key ? 2 : 1)
+      } else {
+        h.setup.mockInput.pressKey(event.key === "Ctrl-U" ? "u" : "d", {
+          ctrl: true,
+        })
+      }
+      previousKey = event.key
+      recordKey(event.key, event.at + offset)
+      events.push({ key: event.key, sentAtMs: event.at + offset, acceptedAtMs })
+    }
+    assert.equal(await child.exited, 0, await new Response(child.stderr).text())
+    return {
+      clockUncertaintyMs: (afterSync - beforeSync) / 2,
+      stoppedAtMs,
+      releaseAcceptedAtMs,
+      events,
+    }
+  } finally {
+    reader.releaseLock()
+    child.stdin.end()
+    if (child.exitCode === null) child.kill()
+  }
+}
+
 type Action = {
   name: string
   group: string
   dispatch: (
     h: Harness,
     recordKey: (key: string, dueAt?: number) => void,
-  ) => void | Promise<void>
+  ) => void | Promise<void | SenderReport>
 }
 
 async function observeAction(
@@ -524,7 +643,9 @@ async function observeAction(
   expected?: Captured,
 ) {
   const before = h.capture()
-  const traceEnabled = traceNavigation && action.group === "queued-reversal"
+  const traceEnabled =
+    traceNavigation &&
+    ["queued-reversal", "queued-paced-up"].includes(action.group)
   const navigationTrace: Record<string, unknown>[] = []
   let dispatchedKeys = 0
   let droppedTraceRecords = 0
@@ -668,7 +789,24 @@ async function observeAction(
   }
   let runtimePublications = 0
   let presentationPublications = 0
-  const unsubscribeRuntime = h.runtime.subscribe(() => runtimePublications++)
+  const semanticChanges: { atMs: number; cursor: string; viewport: string }[] =
+    []
+  let previousSemantic = { cursor: before.cursor, viewport: before.viewport }
+  const unsubscribeRuntime = h.runtime.subscribe(() => {
+    runtimePublications++
+    if (!independentSender) return
+    const transcript = h.runtime.getSnapshot().transcript
+    const current = {
+      cursor: JSON.stringify(transcript.cursor),
+      viewport: JSON.stringify(transcript.viewport),
+    }
+    if (
+      current.cursor !== previousSemantic.cursor ||
+      current.viewport !== previousSemantic.viewport
+    )
+      semanticChanges.push({ atMs: performance.now(), ...current })
+    previousSemantic = current
+  })
   const unsubscribePresentation = h.controller.subscribePresentation(
     "main",
     () => presentationPublications++,
@@ -830,10 +968,11 @@ async function observeAction(
   }
   trace("action.begin")
   let dispatchedAt = started
+  const senderResult: { report?: SenderReport } = {}
   let detailReleasedAt: number | null = null
   try {
     await act(async () => {
-      await action.dispatch(h, recordKey)
+      senderResult.report = (await action.dispatch(h, recordKey)) || undefined
       dispatchedAt = performance.now()
       await h.setup.flush({ maxPasses: 400 })
       await h.setup.renderOnce()
@@ -944,6 +1083,26 @@ async function observeAction(
     return paint ? round(paint.atMs - started - key.atMs) : null
   })
   const lastKeyAtMs = keyDispatches.at(-1)?.atMs
+  const semanticMovementFrames = frames.filter((frame, index) => {
+    const previous = index === 0 ? before : frames[index - 1]!
+    return (
+      frame.cursor !== previous.cursor || frame.viewport !== previous.viewport
+    )
+  })
+  const senderReport = senderResult.report
+  const stopAt = senderReport?.stoppedAtMs
+  const postStopSemanticChanges =
+    stopAt === undefined
+      ? []
+      : semanticChanges.filter(
+          (event) => event.atMs > stopAt + senderReport!.clockUncertaintyMs,
+        )
+  const postStopMovements =
+    stopAt === undefined
+      ? []
+      : semanticMovementFrames.filter(
+          (frame) => frame.atMs > stopAt + senderReport!.clockUncertaintyMs,
+        )
   const finalPaintAfterLastKey =
     lastKeyAtMs === undefined
       ? undefined
@@ -955,6 +1114,43 @@ async function observeAction(
 
   return {
     name: action.name,
+    independentSender: senderReport
+      ? {
+          qualification:
+            "Independent Python process feeds a pipe into connected headless mock input; not PTY or physical terminal. Clock mapping uses a request/reply midpoint and reports uncertainty. semanticChanges records runtime cursor/viewport publications; semanticMovementFrames records painted cursor/viewport changes. Neither counts native scrollTop-only remount shifts.",
+          clockUncertaintyMs: round(senderReport.clockUncertaintyMs),
+          stoppedAtMs: round(senderReport.stoppedAtMs - started),
+          releaseAcceptedAtMs:
+            senderReport.releaseAcceptedAtMs === undefined
+              ? null
+              : round(senderReport.releaseAcceptedAtMs - started),
+          semanticChangesAfterStop: postStopSemanticChanges.map((event) => ({
+            afterStopMs: round(event.atMs - senderReport.stoppedAtMs),
+            cursor: event.cursor,
+            viewport: event.viewport,
+          })),
+          lastSemanticChangeAfterStopMs: postStopSemanticChanges.length
+            ? round(
+                postStopSemanticChanges.at(-1)!.atMs - senderReport.stoppedAtMs,
+              )
+            : 0,
+          events: senderReport.events.map((event) => ({
+            key: event.key,
+            sentAtMs: round(event.sentAtMs - started),
+            acceptedAtMs: round(event.acceptedAtMs - started),
+            deliveryDelayMs: round(event.acceptedAtMs - event.sentAtMs),
+          })),
+          semanticMovementFramesAfterStop: postStopMovements.length,
+          lastSemanticMovementAfterStopMs: postStopMovements.length
+            ? round(postStopMovements.at(-1)!.atMs - senderReport.stoppedAtMs)
+            : 0,
+          semanticMovementsAfterStop: postStopMovements.map((frame) => ({
+            afterStopMs: round(frame.atMs - senderReport!.stoppedAtMs),
+            cursor: frame.cursor,
+            viewport: frame.viewport,
+          })),
+        }
+      : null,
     droppedTraceRecords,
     filteredTraceRecords,
     navigationTrace: navigationTrace.map((event) => ({
@@ -1177,6 +1373,12 @@ async function run() {
       name: `queued-paced-up-${repeats}`,
       group: "queued-paced-up",
       dispatch: async (h, recordKey) => {
+        if (independentSender)
+          return dispatchIndependent(
+            h,
+            recordKey,
+            Array(repeats).fill("Ctrl-U"),
+          )
         const sequenceStarted = performance.now()
         for (let index = 0; index < repeats; index++) {
           const due = sequenceStarted + index * intervalMs
@@ -1190,6 +1392,11 @@ async function run() {
       name: `queued-reversal-${warmRepeats}-each-way`,
       group: "queued-reversal",
       dispatch: async (h, recordKey) => {
+        if (independentSender)
+          return dispatchIndependent(h, recordKey, [
+            ...Array(warmRepeats).fill("Ctrl-U"),
+            ...Array(warmRepeats).fill("Ctrl-D"),
+          ])
         const sequenceStarted = performance.now()
         for (let index = 0; index < warmRepeats * 2; index++) {
           const due = sequenceStarted + index * intervalMs
@@ -1495,6 +1702,9 @@ async function run() {
             olderLookAheadRows !== null,
         },
         repeat: {
+          independentSender,
+          kittyHeldInput,
+          repeatControl: process.env.VIMEX_NAV_REPEAT_CONTROL === "1",
           requestedIntervalMs: intervalMs,
           warmRepeats,
           traceNavigation,
