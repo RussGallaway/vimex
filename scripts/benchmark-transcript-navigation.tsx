@@ -136,6 +136,22 @@ const repeats = envInt("VIMEX_NAV_REPEATS", 6)
 const warmRepeats = envInt("VIMEX_NAV_WARM_REPEATS", repeats)
 const traceNavigation = process.env.VIMEX_NAV_TRACE === "1"
 const traceLimit = envInt("VIMEX_NAV_TRACE_LIMIT", 50_000)
+const traceFromKey = envInt("VIMEX_NAV_TRACE_FROM_KEY", 0, 0)
+const traceToKey = envInt("VIMEX_NAV_TRACE_TO_KEY", Number.MAX_SAFE_INTEGER, 0)
+assert(traceToKey >= traceFromKey, "Navigation trace key range is reversed")
+const traceCells = process.env.VIMEX_NAV_TRACE_CELLS !== "0"
+const traceFromSequence =
+  process.env.VIMEX_NAV_TRACE_FROM_SEQUENCE === undefined
+    ? null
+    : envInt("VIMEX_NAV_TRACE_FROM_SEQUENCE", 0, 0)
+const traceToSequence =
+  process.env.VIMEX_NAV_TRACE_TO_SEQUENCE === undefined
+    ? Number.MAX_SAFE_INTEGER
+    : envInt("VIMEX_NAV_TRACE_TO_SEQUENCE", Number.MAX_SAFE_INTEGER, 0)
+assert(
+  traceFromSequence === null || traceToSequence >= traceFromSequence,
+  "Navigation trace sequence range is reversed",
+)
 const intervalMs = envInt("VIMEX_NAV_REPEAT_INTERVAL_MS", 33)
 const capacityActions = (
   process.env.VIMEX_NAV_CAPACITY_ACTIONS ??
@@ -512,8 +528,34 @@ async function observeAction(
   const navigationTrace: Record<string, unknown>[] = []
   let dispatchedKeys = 0
   let droppedTraceRecords = 0
+  let filteredTraceRecords = 0
+  const keysBySequence = new Map<number, number>()
+  let activeTraceSequence: number | undefined
+  let activeTraceKey: number | undefined
   const appendTrace = (event: Record<string, unknown>) => {
-    if (navigationTrace.length < traceLimit) navigationTrace.push(event)
+    // Retain explicit resolved-intent records across the whole route even when
+    // detailed event/paint context is restricted to a dispatch-key window.
+    const details = event.details as { sequence?: number } | undefined
+    const sequence = details?.sequence ?? activeTraceSequence
+    const withinRange =
+      traceFromSequence !== null
+        ? sequence !== undefined &&
+          sequence >= traceFromSequence &&
+          sequence <= traceToSequence
+        : (dispatchedKeys >= traceFromKey && dispatchedKeys <= traceToKey) ||
+          (activeTraceKey !== undefined &&
+            activeTraceKey >= traceFromKey &&
+            activeTraceKey <= traceToKey)
+    if (event.kind !== "intent.resolved" && !withinRange) {
+      filteredTraceRecords++
+      return
+    }
+    if (navigationTrace.length < traceLimit)
+      navigationTrace.push({
+        ...event,
+        activeIntentSequence: activeTraceSequence,
+        activeIntentKey: activeTraceKey,
+      })
     else droppedTraceRecords++
   }
   const traceState = () => {
@@ -542,6 +584,19 @@ async function observeAction(
   }
   const unsubscribeTrace = traceEnabled
     ? subscribeNavigationTrace(h.setup.renderer, (event) => {
+        const details = event.details as {
+          sequence?: number
+          intent?: { sequence?: number }
+        }
+        if (event.kind === "intent.enqueued" && details.sequence !== undefined)
+          keysBySequence.set(details.sequence, dispatchedKeys)
+        if (event.kind === "row.begin") {
+          activeTraceSequence = details.intent?.sequence
+          activeTraceKey =
+            activeTraceSequence === undefined
+              ? undefined
+              : keysBySequence.get(activeTraceSequence)
+        }
         appendTrace({ ...event, dispatchedKeys })
       })
     : () => {}
@@ -599,7 +654,7 @@ async function observeAction(
       const began = performance.now()
       frames.push(h.capture())
       trace("paint", {
-        cells: frames.at(-1)!.cells,
+        ...(traceCells ? { cells: frames.at(-1)!.cells } : {}),
         cursorPoint: frames.at(-1)!.cursorPoint,
       })
       recordStage("frame.capture", began)
@@ -901,6 +956,7 @@ async function observeAction(
   return {
     name: action.name,
     droppedTraceRecords,
+    filteredTraceRecords,
     navigationTrace: navigationTrace.map((event) => ({
       ...event,
       atMs: round(Number(event.atMs) - started),
@@ -1443,8 +1499,13 @@ async function run() {
           warmRepeats,
           traceNavigation,
           traceLimit,
+          traceFromKey,
+          traceToKey,
+          traceCells,
+          traceFromSequence,
+          traceToSequence,
           traceQualification:
-            "dispatchedKeys counts mock key dispatch entry; key.returned is synchronous delivery only. intent.enqueued marks UI acceptance; row.step/cursor.resolve/prepare.complete determine resolution.",
+            "dispatchedKeys counts mock key dispatch entry; key.returned is synchronous delivery only. intent.enqueued marks UI acceptance; intent.resolved reports an explicit settled intent with coherent/native cursor evidence. Detail windows follow activeIntentSequence as well as dispatched keys, so queued resolution remains visible after later keys arrive. row.step/cursor.resolve/prepare.complete provide intermediate context.",
           pacing:
             "paced-up settles each key; queued-paced-up dispatches at the requested cadence without intermediate settle or explicit render; compare actual intervals and paint keysDispatched",
           settledActualDispatchIntervalsMs: settledDispatchStarts

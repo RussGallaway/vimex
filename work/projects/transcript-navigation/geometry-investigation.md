@@ -64,4 +64,6 @@ The complete `bun run check` subsequently passed on the final implementation (lo
 
 ## Remaining gates
 
+The [source mapping follow-up](source-mapping-investigation.md) traces the residual disagreement to a repeatable provisional Markdown mapping transition and records the subsequent readiness prototype. It supersedes the unproven fallback hypothesis above for that reproduced transition.
+
 The proposed prepared-row architecture is still pending. Exact row preparation must use the renderer's layout rules; scheduling geometry differently must not reinterpret accepted movement. A real-terminal cold traversal and deliberate rich-rendering delay remain necessary to evaluate the requested experience. No synthetic result here establishes instant navigation.

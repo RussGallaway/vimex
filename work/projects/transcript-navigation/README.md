@@ -2,6 +2,8 @@
 
 Status: research checkpoint and architectural prototype plan, approved for investigation on 2026-11-05. The first correctness prototype is implemented on the feature branch; prepared-row rendering is not yet implemented or accepted for production.
 
+The [one-row follow-up](source-mapping-investigation.md) now matches all 600 resolved movements in the original paired long-route diagnostic. It identifies and repairs provisional Markdown mapping and out-of-order geometry publication; it does not establish instant cold navigation.
+
 ## Start here
 
 Russ reports hesitation when holding `Ctrl-U` and `Ctrl-D` through long transcripts, especially when the destination has not yet been rendered or retained in memory. The goal is immediate, continuous movement with rendering detail catching up: reversals respond promptly, releasing the key stops predictably, and text does not jump as detail arrives.
@@ -12,6 +14,7 @@ That experience is the reason for the work. A small improvement in a synthetic n
 - [Plan](plan.md): ownership constraints, staged implementation, correctness gates, and the next concrete investigation.
 - [Evidence](evidence/README.md): durable summaries of the local experiments and reproduction commands.
 - [Geometry investigation](geometry-investigation.md): ordered-input traces and the reduced native reproduction guiding the first implementation slice.
+- [Source mapping investigation](source-mapping-investigation.md): the one-row follow-up, delayed Markdown reproduction, and scoped readiness prototype.
 
 The [v1 specification](../v1/spec.md), [UX contract](../v1/ux.md), [architecture](../v1/architecture.md), and [topology](../v1/topology.md) remain authoritative. This project proposes an implementation direction; it does not change Vim motions or create another canonical cursor/anchor owner. The existing [navigation-decoupling design](../v1/transcript-navigation-decoupling.md) remains relevant context.
 

@@ -1,0 +1,602 @@
+{
+  "qualification": "Sequential correctness diagnostic pairs at10kitems/60FPS/33ms input; no performance claim. Aligned explicit intent.resolved sequence; source/native cursor checked independently of equivalent viewport anchors or global estimated top.",
+  "pairs": {
+    "focused": {
+      "raw": {
+        "off": {
+          "path": "/tmp/vimex-ready-focused-off.json",
+          "sha256": "7962eb38cd5fad24e0f7fdc38d94fb86c1220193625f50a08ecd80f040cfe202",
+          "dropped": 0
+        },
+        "on": {
+          "path": "/tmp/vimex-ready-focused-on.json",
+          "sha256": "d8eb23226ebc009cc95a8ccbdad4cf2c4a2cecd7798940a37d72600e08eda0a9",
+          "dropped": 0
+        }
+      },
+      "resolvedCounts": [400, 400],
+      "differences": {
+        "cursor": [],
+        "nativeCursor": [],
+        "viewport": [
+          {
+            "sequence": 445,
+            "off": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 4828
+              },
+              "preferredScreenRow": 1
+            },
+            "on": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 4822
+              },
+              "preferredScreenRow": 1
+            }
+          }
+        ],
+        "coherent": []
+      },
+      "actions": [
+        {
+          "name": "first-traversal-held-up",
+          "equal": {
+            "cursor": true,
+            "viewport": true,
+            "cursorPoint": true
+          },
+          "finalCursor": "{\"itemId\":\"navigation-mixed-9720\",\"graphemeOffset\":492}",
+          "finalNativeCursor": {
+            "blockKey": "item:navigation-mixed-9720:edit:file:278",
+            "row": 2,
+            "column": 9,
+            "viewportRow": 1,
+            "blockRows": 5
+          },
+          "blankFrames": [0, 0],
+          "pending": [0, 0],
+          "paintedCellDiff": []
+        },
+        {
+          "name": "reset-before-warm-reversal",
+          "equal": {
+            "cursor": true,
+            "viewport": true,
+            "cursorPoint": true
+          },
+          "finalCursor": "{\"itemId\":\"navigation-mixed-9999\",\"graphemeOffset\":59}",
+          "finalNativeCursor": {
+            "blockKey": "item:navigation-mixed-9999:root",
+            "row": 0,
+            "column": 62,
+            "viewportRow": 10,
+            "blockRows": 2
+          },
+          "blankFrames": [0, 0],
+          "pending": [0, 0],
+          "paintedCellDiff": [
+            "--- \n",
+            "+++ \n",
+            "@@ -10,5 +10,5 @@\n",
+            "                                                                                 ",
+            "   \u2502  Streaming tail: output continues while history is detached.                ",
+            "                                                                                 ",
+            "-  \u2819 Working                                                                     ",
+            "+  \u2834 Working                                                                     ",
+            "                                                                                 "
+          ]
+        },
+        {
+          "name": "warm-route-held-reversal",
+          "equal": {
+            "cursor": true,
+            "viewport": true,
+            "cursorPoint": true
+          },
+          "finalCursor": "{\"itemId\":\"navigation-mixed-9999\",\"graphemeOffset\":59}",
+          "finalNativeCursor": {
+            "blockKey": "item:navigation-mixed-9999:root",
+            "row": 0,
+            "column": 62,
+            "viewportRow": 10,
+            "blockRows": 2
+          },
+          "blankFrames": [0, 0],
+          "pending": [0, 0],
+          "paintedCellDiff": [
+            "--- \n",
+            "+++ \n",
+            "@@ -10,5 +10,5 @@\n",
+            "                                                                                 ",
+            "   \u2502  Streaming tail: output continues while history is detached.                ",
+            "                                                                                 ",
+            "-  \u2827 Working                                                                     ",
+            "+  \u280b Working                                                                     ",
+            "                                                                                 "
+          ]
+        }
+      ],
+      "differenceCounts": {
+        "cursor": 0,
+        "nativeCursor": 0,
+        "viewport": 1,
+        "coherent": 0
+      }
+    },
+    "long": {
+      "raw": {
+        "off": {
+          "path": "/tmp/vimex-ready-long-off.json",
+          "sha256": "556de187baab9441015828b07d3a4eb3fa5d82b5bfe040ff0248ab9907968eab",
+          "dropped": 0
+        },
+        "on": {
+          "path": "/tmp/vimex-ready-long-on.json",
+          "sha256": "07e6f23605af485f7fc9c35d51c0e19520030bb0f4480c63bd9db8452baa78de",
+          "dropped": 0
+        }
+      },
+      "resolvedCounts": [600, 600],
+      "differences": {
+        "cursor": [
+          {
+            "sequence": 739,
+            "off": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 275
+            },
+            "on": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 835
+            }
+          },
+          {
+            "sequence": 740,
+            "off": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 568
+            },
+            "on": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 1047
+            }
+          },
+          {
+            "sequence": 741,
+            "off": {
+              "itemId": "navigation-mixed-9865",
+              "graphemeOffset": 0
+            },
+            "on": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 1297
+            }
+          },
+          {
+            "sequence": 742,
+            "off": {
+              "itemId": "navigation-mixed-9869",
+              "graphemeOffset": 1
+            },
+            "on": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 1581
+            }
+          },
+          {
+            "sequence": 897,
+            "off": {
+              "itemId": "navigation-mixed-9999",
+              "graphemeOffset": 59
+            },
+            "on": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 239
+            }
+          },
+          {
+            "sequence": 898,
+            "off": {
+              "itemId": "navigation-mixed-9999",
+              "graphemeOffset": 59
+            },
+            "on": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 565
+            }
+          },
+          {
+            "sequence": 899,
+            "off": {
+              "itemId": "navigation-mixed-9999",
+              "graphemeOffset": 59
+            },
+            "on": {
+              "itemId": "navigation-mixed-9993",
+              "graphemeOffset": 0
+            }
+          },
+          {
+            "sequence": 900,
+            "off": {
+              "itemId": "navigation-mixed-9999",
+              "graphemeOffset": 59
+            },
+            "on": {
+              "itemId": "navigation-mixed-9997",
+              "graphemeOffset": 1
+            }
+          }
+        ],
+        "nativeCursor": [
+          {
+            "sequence": 739,
+            "off": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 275,
+              "screenX": 11,
+              "screenY": 3,
+              "viewportRow": 1
+            },
+            "on": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 835,
+              "screenX": 11,
+              "screenY": 3,
+              "viewportRow": 1
+            }
+          },
+          {
+            "sequence": 740,
+            "off": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 568,
+              "screenX": 11,
+              "screenY": 3,
+              "viewportRow": 1
+            },
+            "on": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 1047,
+              "screenX": 11,
+              "screenY": 2,
+              "viewportRow": 0
+            }
+          },
+          {
+            "sequence": 741,
+            "off": {
+              "itemId": "navigation-mixed-9865",
+              "graphemeOffset": 0,
+              "screenX": 11,
+              "screenY": 5,
+              "viewportRow": 3
+            },
+            "on": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 1297,
+              "screenX": 11,
+              "screenY": 3,
+              "viewportRow": 1
+            }
+          },
+          {
+            "sequence": 742,
+            "off": {
+              "itemId": "navigation-mixed-9869",
+              "graphemeOffset": 1,
+              "screenX": 11,
+              "screenY": 6,
+              "viewportRow": 4
+            },
+            "on": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 1581,
+              "screenX": 11,
+              "screenY": 3,
+              "viewportRow": 1
+            }
+          },
+          {
+            "sequence": 897,
+            "off": {
+              "itemId": "navigation-mixed-9999",
+              "graphemeOffset": 59,
+              "screenX": 64,
+              "screenY": 12,
+              "viewportRow": 10
+            },
+            "on": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 239,
+              "screenX": 11,
+              "screenY": 3,
+              "viewportRow": 1
+            }
+          },
+          {
+            "sequence": 898,
+            "off": {
+              "itemId": "navigation-mixed-9999",
+              "graphemeOffset": 59,
+              "screenX": 64,
+              "screenY": 12,
+              "viewportRow": 10
+            },
+            "on": {
+              "itemId": "navigation-mixed-9992",
+              "graphemeOffset": 565,
+              "screenX": 11,
+              "screenY": 2,
+              "viewportRow": 0
+            }
+          },
+          {
+            "sequence": 899,
+            "off": {
+              "itemId": "navigation-mixed-9999",
+              "graphemeOffset": 59,
+              "screenX": 64,
+              "screenY": 12,
+              "viewportRow": 10
+            },
+            "on": {
+              "itemId": "navigation-mixed-9993",
+              "graphemeOffset": 0,
+              "screenX": 11,
+              "screenY": 6,
+              "viewportRow": 4
+            }
+          },
+          {
+            "sequence": 900,
+            "off": {
+              "itemId": "navigation-mixed-9999",
+              "graphemeOffset": 59,
+              "screenX": 64,
+              "screenY": 12,
+              "viewportRow": 10
+            },
+            "on": {
+              "itemId": "navigation-mixed-9997",
+              "graphemeOffset": 1,
+              "screenX": 11,
+              "screenY": 7,
+              "viewportRow": 5
+            }
+          }
+        ],
+        "viewport": [
+          {
+            "sequence": 445,
+            "off": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 4828
+              },
+              "preferredScreenRow": 1
+            },
+            "on": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 4822
+              },
+              "preferredScreenRow": 1
+            }
+          },
+          {
+            "sequence": 510,
+            "off": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9799",
+                "graphemeOffset": 4935
+              },
+              "preferredScreenRow": 1
+            },
+            "on": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9799",
+                "graphemeOffset": 4929
+              },
+              "preferredScreenRow": 1
+            }
+          },
+          {
+            "sequence": 739,
+            "off": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9864",
+                "graphemeOffset": 275
+              },
+              "preferredScreenRow": 1
+            },
+            "on": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 835
+              },
+              "preferredScreenRow": 1
+            }
+          },
+          {
+            "sequence": 740,
+            "off": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9864",
+                "graphemeOffset": 568
+              },
+              "preferredScreenRow": 1
+            },
+            "on": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 1047
+              },
+              "preferredScreenRow": 0
+            }
+          },
+          {
+            "sequence": 897,
+            "off": {
+              "kind": "tail"
+            },
+            "on": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9992",
+                "graphemeOffset": 239
+              },
+              "preferredScreenRow": 1
+            }
+          },
+          {
+            "sequence": 898,
+            "off": {
+              "kind": "tail"
+            },
+            "on": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9992",
+                "graphemeOffset": 565
+              },
+              "preferredScreenRow": 0
+            }
+          },
+          {
+            "sequence": 899,
+            "off": {
+              "kind": "tail"
+            },
+            "on": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9993",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 4
+            }
+          },
+          {
+            "sequence": 900,
+            "off": {
+              "kind": "tail"
+            },
+            "on": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9997",
+                "graphemeOffset": 1
+              },
+              "preferredScreenRow": 5
+            }
+          }
+        ],
+        "coherent": []
+      },
+      "actions": [
+        {
+          "name": "first-traversal-held-up",
+          "equal": {
+            "cursor": true,
+            "viewport": true,
+            "cursorPoint": true
+          },
+          "finalCursor": "{\"itemId\":\"navigation-mixed-9720\",\"graphemeOffset\":492}",
+          "finalNativeCursor": {
+            "blockKey": "item:navigation-mixed-9720:edit:file:278",
+            "row": 2,
+            "column": 9,
+            "viewportRow": 1,
+            "blockRows": 5
+          },
+          "blankFrames": [0, 0],
+          "pending": [0, 0],
+          "paintedCellDiff": []
+        },
+        {
+          "name": "reset-before-warm-reversal",
+          "equal": {
+            "cursor": true,
+            "viewport": true,
+            "cursorPoint": true
+          },
+          "finalCursor": "{\"itemId\":\"navigation-mixed-9999\",\"graphemeOffset\":59}",
+          "finalNativeCursor": {
+            "blockKey": "item:navigation-mixed-9999:root",
+            "row": 0,
+            "column": 62,
+            "viewportRow": 10,
+            "blockRows": 2
+          },
+          "blankFrames": [0, 0],
+          "pending": [0, 0],
+          "paintedCellDiff": [
+            "--- \n",
+            "+++ \n",
+            "@@ -10,5 +10,5 @@\n",
+            "                                                                                 ",
+            "   \u2502  Streaming tail: output continues while history is detached.                ",
+            "                                                                                 ",
+            "-  \u280b Working                                                                     ",
+            "+  \u2838 Working                                                                     ",
+            "                                                                                 "
+          ]
+        },
+        {
+          "name": "warm-route-held-reversal",
+          "equal": {
+            "cursor": false,
+            "viewport": false,
+            "cursorPoint": false
+          },
+          "finalCursor": "{\"itemId\":\"navigation-mixed-9999\",\"graphemeOffset\":59}",
+          "finalNativeCursor": {
+            "blockKey": "item:navigation-mixed-9999:root",
+            "row": 0,
+            "column": 62,
+            "viewportRow": 10,
+            "blockRows": 2
+          },
+          "blankFrames": [0, 0],
+          "pending": [0, 0],
+          "paintedCellDiff": [
+            "--- \n",
+            "+++ \n",
+            "@@ -1,3 +1,4 @@\n",
+            "+  \u2502    3   }                                                                    ",
+            "   \u2502                                                                             ",
+            "                                                                                 ",
+            "   \u2502   \u25b8 \u2713 Child interacted Agent #9994: measured t...l and sent timing notes.   ",
+            "@@ -10,5 +11,4 @@\n",
+            "                                                                                 ",
+            "   \u2502  Streaming tail: output continues while history is detached.                ",
+            "                                                                                 ",
+            "-  \u280f Working                                                                     ",
+            "-                                                                                ",
+            "+  \u2838 Working                                                                     "
+          ]
+        }
+      ],
+      "differenceCounts": {
+        "cursor": 162,
+        "nativeCursor": 162,
+        "viewport": 164,
+        "coherent": 0
+      }
+    }
+  },
+  "retention": "Difference counts are complete; at most first four and last four examples per category retained. Raw hashes identify full diagnostics."
+}

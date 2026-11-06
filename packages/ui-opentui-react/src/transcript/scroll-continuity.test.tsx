@@ -534,11 +534,27 @@ for (const expanded of [false, true])
       expect(h.workspace().transcript.viewport.kind).toBe("tail")
       for (const paint of following)
         expect(paint.join("\n")).toContain("LIVE UPDATE TWO")
-      const detaching = await recordPaints(h, async () => {
-        await h.mockInput.typeText("G")
-        for (let i = 0; i < 4; i++) h.mockInput.pressKey("y", { ctrl: true })
-        delta("LIVE UPDATE WHILE DETACHING")
-      })
+      // Force the elapsed preparation threshold while the hot batch only
+      // retires overscan. A streaming replan must not expose a partial motion.
+      elapsedNativeMs = 0
+      const detachClock = spyOn(performance, "now").mockImplementation(
+        () => originalNow() + elapsedNativeMs,
+      )
+      h.renderer.root.calculateLayout = function (...args) {
+        elapsedNativeMs += 16
+        return calculateLayout.apply(this, args)
+      }
+      let detaching: string[][]
+      try {
+        detaching = await recordPaints(h, async () => {
+          await h.mockInput.typeText("G")
+          for (let i = 0; i < 4; i++) h.mockInput.pressKey("y", { ctrl: true })
+          delta("LIVE UPDATE WHILE DETACHING")
+        })
+      } finally {
+        detachClock.mockRestore()
+        h.renderer.root.calculateLayout = calculateLayout
+      }
       expect(h.workspace().transcript.viewport.kind).toBe("point")
       const reading = paintedTranscript(h)
       for (const paint of detaching) expect(paint).toEqual(reading)

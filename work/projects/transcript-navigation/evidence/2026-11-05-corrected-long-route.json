@@ -1,0 +1,140 @@
+{
+  "qualification": "Single sequential final-source correctness diagnostic pair,10kitems,300initialup+300up/down,60FPS. Source/native placement aligned by explicit resolved intent sequence. No performance claim.",
+  "command": "VIMEX_NAV_DEFER_CODE_DETAIL=0 VIMEX_NAV_BUDGET_MEASUREMENTS={0|1} VIMEX_NAV_MEASUREMENT_DIAGNOSTICS=1 VIMEX_NAV_WORKLOAD=held VIMEX_NAV_ITEMS=10000 VIMEX_NAV_REPEATS=300 VIMEX_NAV_TRACE=1 VIMEX_NAV_TRACE_FROM_SEQUENCE=730 VIMEX_NAV_TRACE_TO_SEQUENCE=750 VIMEX_NAV_TRACE_CELLS=0 bun scripts/benchmark-transcript-navigation.tsx",
+  "raw": {
+    "off": {
+      "path": "/tmp/vimex-final-source-off.json",
+      "sha256": "b7c144b62167c42e0ac419cd13256039f54947e8868b13581dffdc5b4c37a5a4",
+      "dropped": 0,
+      "status": "diagnostic"
+    },
+    "on": {
+      "path": "/tmp/vimex-final-source-on.json",
+      "sha256": "3e800eb8ca952b33c686b64e687d127cb4f1f1634294284a462d6faf620e1821",
+      "dropped": 0,
+      "status": "diagnostic"
+    }
+  },
+  "resolvedCounts": [600, 600],
+  "differences": {
+    "cursor": [],
+    "nativeCursor": [],
+    "viewport": [],
+    "coherent": []
+  },
+  "actions": [
+    {
+      "name": "first-traversal-held-up",
+      "equal": {
+        "cursor": true,
+        "viewport": true,
+        "cursorPoint": true
+      },
+      "off": {
+        "cursor": "{\"itemId\":\"navigation-mixed-9720\",\"graphemeOffset\":474}",
+        "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-9720\",\"graphemeOffset\":474},\"preferredScreenRow\":1}",
+        "cursorPoint": {
+          "blockKey": "item:navigation-mixed-9720:edit:file:278",
+          "row": 1,
+          "column": 25,
+          "viewportRow": 1,
+          "blockRows": 5
+        }
+      },
+      "on": {
+        "cursor": "{\"itemId\":\"navigation-mixed-9720\",\"graphemeOffset\":474}",
+        "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-9720\",\"graphemeOffset\":474},\"preferredScreenRow\":1}",
+        "cursorPoint": {
+          "blockKey": "item:navigation-mixed-9720:edit:file:278",
+          "row": 1,
+          "column": 25,
+          "viewportRow": 1,
+          "blockRows": 5
+        }
+      },
+      "blankFrames": [0, 0],
+      "pending": [0, 0],
+      "cellDiff": []
+    },
+    {
+      "name": "reset-before-warm-reversal",
+      "equal": {
+        "cursor": true,
+        "viewport": true,
+        "cursorPoint": true
+      },
+      "off": {
+        "cursor": "{\"itemId\":\"navigation-mixed-9999\",\"graphemeOffset\":59}",
+        "viewport": "{\"kind\":\"tail\"}",
+        "cursorPoint": {
+          "blockKey": "item:navigation-mixed-9999:root",
+          "row": 0,
+          "column": 62,
+          "viewportRow": 10,
+          "blockRows": 2
+        }
+      },
+      "on": {
+        "cursor": "{\"itemId\":\"navigation-mixed-9999\",\"graphemeOffset\":59}",
+        "viewport": "{\"kind\":\"tail\"}",
+        "cursorPoint": {
+          "blockKey": "item:navigation-mixed-9999:root",
+          "row": 0,
+          "column": 62,
+          "viewportRow": 10,
+          "blockRows": 2
+        }
+      },
+      "blankFrames": [0, 0],
+      "pending": [0, 0],
+      "cellDiff": [
+        "--- \n",
+        "+++ \n",
+        "@@ -10,5 +10,5 @@\n",
+        "                                                                                 ",
+        "   \u2502  Streaming tail: output continues while history is detached.                ",
+        "                                                                                 ",
+        "-  \u2819 Working                                                                     ",
+        "+  \u2839 Working                                                                     ",
+        "                                                                                 "
+      ]
+    },
+    {
+      "name": "warm-route-held-reversal",
+      "equal": {
+        "cursor": true,
+        "viewport": true,
+        "cursorPoint": true
+      },
+      "off": {
+        "cursor": "{\"itemId\":\"navigation-mixed-9997\",\"graphemeOffset\":1}",
+        "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-9997\",\"graphemeOffset\":1},\"preferredScreenRow\":6}",
+        "cursorPoint": {
+          "blockKey": "item:navigation-mixed-9997:root",
+          "row": 0,
+          "column": 9,
+          "viewportRow": 6,
+          "blockRows": 2
+        }
+      },
+      "on": {
+        "cursor": "{\"itemId\":\"navigation-mixed-9997\",\"graphemeOffset\":1}",
+        "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-9997\",\"graphemeOffset\":1},\"preferredScreenRow\":6}",
+        "cursorPoint": {
+          "blockKey": "item:navigation-mixed-9997:root",
+          "row": 0,
+          "column": 9,
+          "viewportRow": 6,
+          "blockRows": 2
+        }
+      },
+      "blankFrames": [0, 0],
+      "pending": [0, 0],
+      "cellDiff": []
+    }
+  ],
+  "coherentResolvedCounts": {
+    "off": 600,
+    "on": 600
+  }
+}

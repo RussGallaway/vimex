@@ -1,0 +1,3142 @@
+{
+  "qualification": "Detailed context filtered by active intent sequence730\u2013750, not current dispatch count; all600 resolved records retained. No performance claim.",
+  "runs": {
+    "off": {
+      "rawPath": "/tmp/vimex-reversal-intent-off.json",
+      "sha256": "69c06f0d872e6253a2b0a5fb7836d4cbc4302af8d6f1ef03671a06a0993cd8f9",
+      "resolvedCount": 600,
+      "drops": 0,
+      "selected": [
+        {
+          "atMs": 18896.022,
+          "frameId": 1072,
+          "kind": "row.begin",
+          "details": {
+            "intent": {
+              "rows": 7,
+              "cursor": "follow",
+              "sequence": 738
+            },
+            "geometryRevision": 844,
+            "presentationRevision": 2834,
+            "topSpacerRows": 44969,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1987,
+            "scrollTop": 45883,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 411
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 411
+              },
+              "preferredScreenRow": 3
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 135
+          },
+          "dispatchedKeys": 573,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 18896.158,
+          "frameId": 1072,
+          "kind": "row.step",
+          "details": {
+            "sequence": 738,
+            "requested": 7,
+            "anchoredStep": 6,
+            "step": 6,
+            "moved": 6,
+            "remaining": 1,
+            "oldTop": 45883,
+            "cursorPoint": {
+              "screenY": 5,
+              "screenX": 11
+            },
+            "viewportTop": 2,
+            "geometryRevision": 844,
+            "presentationRevision": 2834,
+            "topSpacerRows": 44969,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1987,
+            "scrollTop": 45889,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 411
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 411
+              },
+              "preferredScreenRow": 3
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 135
+          },
+          "dispatchedKeys": 573,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 18903.943,
+          "frameId": 1073,
+          "kind": "anchor.capture.begin",
+          "details": {
+            "sequence": 738,
+            "deltaY": -6,
+            "scrollTop": 45889,
+            "measuredGeometryRevision": 844,
+            "runtimeGeometryRevision": 844,
+            "anchor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 511,
+              "row": 45676,
+              "column": 3,
+              "screenX": 5,
+              "screenY": 2
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 411
+              },
+              "preferredScreenRow": 3
+            }
+          },
+          "dispatchedKeys": 573,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 18904.216,
+          "frameId": 1073,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 738,
+            "point": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 511
+            },
+            "row": 0,
+            "fallback": false,
+            "scrollTop": 45889,
+            "geometryRevision": 844
+          },
+          "dispatchedKeys": 573,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 18908.64,
+          "frameId": 1073,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 3,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623,
+              "screenY": 5,
+              "screenX": 11
+            },
+            "candidates": 461,
+            "viewportTop": 2,
+            "geometryRevision": 844,
+            "presentationRevision": 2835,
+            "topSpacerRows": 44969,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1988,
+            "scrollTop": 45889,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 411
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 511
+              },
+              "preferredScreenRow": 0
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 136
+          },
+          "dispatchedKeys": 573,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 18912.378,
+          "frameId": 1073,
+          "kind": "row.begin",
+          "details": {
+            "intent": {
+              "rows": 1,
+              "cursor": "follow",
+              "sequence": 738,
+              "followTarget": {
+                "row": 3,
+                "column": 11
+              }
+            },
+            "geometryRevision": 844,
+            "presentationRevision": 2836,
+            "topSpacerRows": 44969,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1989,
+            "scrollTop": 45889,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 623
+              },
+              "preferredScreenRow": 3
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 135
+          },
+          "dispatchedKeys": 573,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 18912.427,
+          "frameId": 1073,
+          "kind": "row.step",
+          "details": {
+            "sequence": 738,
+            "requested": 1,
+            "anchoredStep": 0,
+            "step": 1,
+            "moved": 1,
+            "remaining": 0,
+            "oldTop": 45889,
+            "cursorPoint": {
+              "screenY": 5,
+              "screenX": 11
+            },
+            "viewportTop": 2,
+            "geometryRevision": 844,
+            "presentationRevision": 2836,
+            "topSpacerRows": 44969,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1989,
+            "scrollTop": 45890,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 623
+              },
+              "preferredScreenRow": 3
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 135
+          },
+          "dispatchedKeys": 573,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 18929.474,
+          "frameId": 1074,
+          "kind": "anchor.capture.begin",
+          "details": {
+            "sequence": 738,
+            "deltaY": -1,
+            "scrollTop": 45890,
+            "measuredGeometryRevision": 844,
+            "runtimeGeometryRevision": 844,
+            "anchor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 548,
+              "row": 45678,
+              "column": 3,
+              "screenX": 5,
+              "screenY": 3
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 623
+              },
+              "preferredScreenRow": 3
+            }
+          },
+          "dispatchedKeys": 574,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 18929.783,
+          "frameId": 1074,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 738,
+            "point": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 548
+            },
+            "row": 1,
+            "fallback": false,
+            "scrollTop": 45890,
+            "geometryRevision": 844
+          },
+          "dispatchedKeys": 574,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 18934.544,
+          "frameId": 1074,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 3,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623,
+              "screenY": 4,
+              "screenX": 11
+            },
+            "candidates": 493,
+            "viewportTop": 2,
+            "geometryRevision": 844,
+            "presentationRevision": 2837,
+            "topSpacerRows": 44969,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1990,
+            "scrollTop": 45890,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 548
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 136
+          },
+          "dispatchedKeys": 574,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 18934.558,
+          "frameId": 1074,
+          "kind": "intent.resolved",
+          "details": {
+            "sequence": 738,
+            "coherent": true,
+            "nativeCursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623,
+              "screenX": 11,
+              "screenY": 4,
+              "viewportRow": 2
+            },
+            "geometryRevision": 844,
+            "presentationRevision": 2837,
+            "topSpacerRows": 44969,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1990,
+            "scrollTop": 45890,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 548
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 136
+          },
+          "dispatchedKeys": 574,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 18934.567,
+          "frameId": 1074,
+          "kind": "row.begin",
+          "details": {
+            "intent": {
+              "rows": 7,
+              "cursor": "follow",
+              "sequence": 739
+            },
+            "geometryRevision": 844,
+            "presentationRevision": 2837,
+            "topSpacerRows": 44969,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1990,
+            "scrollTop": 45890,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 548
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 135
+          },
+          "dispatchedKeys": 574,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 18934.716,
+          "frameId": 1074,
+          "kind": "row.step",
+          "details": {
+            "sequence": 739,
+            "requested": 7,
+            "anchoredStep": 7,
+            "step": 7,
+            "moved": 7,
+            "remaining": 0,
+            "oldTop": 45890,
+            "cursorPoint": {
+              "screenY": 4,
+              "screenX": 11
+            },
+            "viewportTop": 2,
+            "geometryRevision": 844,
+            "presentationRevision": 2837,
+            "topSpacerRows": 44969,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1990,
+            "scrollTop": 45897,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 548
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 135
+          },
+          "dispatchedKeys": 574,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 18943.163,
+          "frameId": 1074,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 844,
+            "topSpacerRows": 44969,
+            "bottomSpacerRows": 0,
+            "scrollTop": 45897,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 548
+              },
+              "preferredScreenRow": 1
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9863:markdown:1462",
+                "oldRows": 1,
+                "newRows": 36,
+                "nativeRevision": 4460
+              }
+            ]
+          },
+          "dispatchedKeys": 574,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 18944.164,
+          "frameId": 1074,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 845,
+            "topSpacerRows": 45042,
+            "bottomSpacerRows": 0,
+            "scrollTop": 45897,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 548
+              },
+              "preferredScreenRow": 1
+            }
+          },
+          "dispatchedKeys": 574,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 18962.956,
+          "frameId": 1075,
+          "kind": "anchor.capture.begin",
+          "details": {
+            "sequence": 739,
+            "deltaY": -7,
+            "scrollTop": 45897,
+            "measuredGeometryRevision": 844,
+            "runtimeGeometryRevision": 845,
+            "anchor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 760,
+              "row": 45684,
+              "column": 3,
+              "screenX": 5,
+              "screenY": 2
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 548
+              },
+              "preferredScreenRow": 1
+            }
+          },
+          "dispatchedKeys": 575,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 18963.178,
+          "frameId": 1075,
+          "kind": "anchor.capture.recover",
+          "details": {
+            "sequence": 739,
+            "roots": [
+              {
+                "id": "transcript-block:navigation-mixed-9864:edit:header",
+                "screenY": -3,
+                "y": -3,
+                "height": 7
+              }
+            ],
+            "anchor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 760,
+              "row": 45684,
+              "column": 3,
+              "screenX": 5,
+              "screenY": 2
+            }
+          },
+          "dispatchedKeys": 575,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 18968.284,
+          "frameId": 1075,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 845,
+            "topSpacerRows": 45042,
+            "bottomSpacerRows": 0,
+            "scrollTop": 45897,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 548
+              },
+              "preferredScreenRow": 1
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9864:edit:header",
+                "oldRows": 4,
+                "newRows": 7,
+                "nativeRevision": 4461
+              },
+              {
+                "key": "item:navigation-mixed-9864:edit:file:278",
+                "oldRows": 4,
+                "newRows": 5,
+                "nativeRevision": 4462
+              },
+              {
+                "key": "item:navigation-mixed-9864:edit:file:568",
+                "oldRows": 4,
+                "newRows": 7,
+                "nativeRevision": 4463
+              },
+              {
+                "key": "item:navigation-mixed-9863:markdown:1462",
+                "oldRows": 36,
+                "newRows": 36,
+                "nativeRevision": 4464
+              }
+            ]
+          },
+          "dispatchedKeys": 575,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 18969.076,
+          "frameId": 1075,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 846,
+            "topSpacerRows": 45047,
+            "bottomSpacerRows": 0,
+            "scrollTop": 45897,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 548
+              },
+              "preferredScreenRow": 1
+            }
+          },
+          "dispatchedKeys": 575,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 18972.098,
+          "frameId": 1075,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 739,
+            "point": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 239
+            },
+            "row": 0,
+            "fallback": false,
+            "scrollTop": 45897,
+            "geometryRevision": 846
+          },
+          "dispatchedKeys": 575,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 18977.976,
+          "frameId": 1075,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 2,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 275,
+              "screenY": 3,
+              "screenX": 11
+            },
+            "candidates": 551,
+            "viewportTop": 2,
+            "geometryRevision": 846,
+            "presentationRevision": 2840,
+            "topSpacerRows": 45047,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1991,
+            "scrollTop": 45897,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9864",
+                "graphemeOffset": 239
+              },
+              "preferredScreenRow": 0
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 136
+          },
+          "dispatchedKeys": 575,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 18981.81,
+          "frameId": 1075,
+          "kind": "intent.resolved",
+          "details": {
+            "sequence": 739,
+            "coherent": true,
+            "nativeCursor": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 275,
+              "screenX": 11,
+              "screenY": 3,
+              "viewportRow": 1
+            },
+            "geometryRevision": 846,
+            "presentationRevision": 2841,
+            "topSpacerRows": 45047,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1992,
+            "scrollTop": 45897,
+            "cursor": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 275
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9864",
+                "graphemeOffset": 275
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 136
+          },
+          "dispatchedKeys": 575,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 18981.818,
+          "frameId": 1075,
+          "kind": "row.begin",
+          "details": {
+            "intent": {
+              "rows": 7,
+              "cursor": "follow",
+              "sequence": 740
+            },
+            "geometryRevision": 846,
+            "presentationRevision": 2841,
+            "topSpacerRows": 45047,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1992,
+            "scrollTop": 45897,
+            "cursor": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 275
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9864",
+                "graphemeOffset": 275
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 135
+          },
+          "dispatchedKeys": 575,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        },
+        {
+          "atMs": 18981.902,
+          "frameId": 1075,
+          "kind": "row.step",
+          "details": {
+            "sequence": 740,
+            "requested": 7,
+            "anchoredStep": 6,
+            "step": 6,
+            "moved": 6,
+            "remaining": 1,
+            "oldTop": 45897,
+            "cursorPoint": {
+              "screenY": 3,
+              "screenX": 11
+            },
+            "viewportTop": 2,
+            "geometryRevision": 846,
+            "presentationRevision": 2841,
+            "topSpacerRows": 45047,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1992,
+            "scrollTop": 45903,
+            "cursor": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 275
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9864",
+                "graphemeOffset": 275
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 135
+          },
+          "dispatchedKeys": 575,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        },
+        {
+          "atMs": 18982.496,
+          "frameId": 1075,
+          "kind": "anchor.capture.begin",
+          "details": {
+            "sequence": 740,
+            "deltaY": -6,
+            "scrollTop": 45903,
+            "measuredGeometryRevision": 846,
+            "runtimeGeometryRevision": 846,
+            "anchor": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 565,
+              "row": 45747,
+              "column": 9,
+              "screenX": 11,
+              "screenY": 2
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9864",
+                "graphemeOffset": 275
+              },
+              "preferredScreenRow": 1
+            }
+          },
+          "dispatchedKeys": 575,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        },
+        {
+          "atMs": 18982.715,
+          "frameId": 1075,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 740,
+            "point": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 565
+            },
+            "row": 0,
+            "fallback": false,
+            "scrollTop": 45903,
+            "geometryRevision": 846
+          },
+          "dispatchedKeys": 575,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        },
+        {
+          "atMs": 18986.474,
+          "frameId": 1075,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 846,
+            "topSpacerRows": 45047,
+            "bottomSpacerRows": 0,
+            "scrollTop": 45903,
+            "cursor": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 275
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9864",
+                "graphemeOffset": 565
+              },
+              "preferredScreenRow": 0
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9865:root",
+                "oldRows": 4,
+                "newRows": 9,
+                "nativeRevision": 4465
+              }
+            ]
+          },
+          "dispatchedKeys": 575,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        },
+        {
+          "atMs": 18987.225,
+          "frameId": 1075,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 847,
+            "topSpacerRows": 45054,
+            "bottomSpacerRows": 0,
+            "scrollTop": 45903,
+            "cursor": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 275
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9864",
+                "graphemeOffset": 565
+              },
+              "preferredScreenRow": 0
+            }
+          },
+          "dispatchedKeys": 575,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        },
+        {
+          "atMs": 19003.805,
+          "frameId": 1075,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 1,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 565,
+              "screenY": 2,
+              "screenX": 11
+            },
+            "candidates": 528,
+            "viewportTop": 2,
+            "geometryRevision": 847,
+            "presentationRevision": 2843,
+            "topSpacerRows": 45054,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1993,
+            "scrollTop": 45903,
+            "cursor": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 275
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9864",
+                "graphemeOffset": 565
+              },
+              "preferredScreenRow": 0
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 136
+          },
+          "dispatchedKeys": 575,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        },
+        {
+          "atMs": 19015.621,
+          "frameId": 1076,
+          "kind": "row.begin",
+          "details": {
+            "intent": {
+              "rows": 1,
+              "cursor": "follow",
+              "sequence": 740,
+              "followTarget": {
+                "row": 1,
+                "column": 11
+              }
+            },
+            "geometryRevision": 847,
+            "presentationRevision": 2844,
+            "topSpacerRows": 45054,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1994,
+            "scrollTop": 45903,
+            "cursor": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 565
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9864",
+                "graphemeOffset": 565
+              },
+              "preferredScreenRow": 0
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 136
+          },
+          "dispatchedKeys": 576,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        },
+        {
+          "atMs": 19015.665,
+          "frameId": 1076,
+          "kind": "row.step",
+          "details": {
+            "sequence": 740,
+            "requested": 1,
+            "anchoredStep": 0,
+            "step": 1,
+            "moved": 1,
+            "remaining": 0,
+            "oldTop": 45903,
+            "cursorPoint": {
+              "screenY": 2,
+              "screenX": 11
+            },
+            "viewportTop": 2,
+            "geometryRevision": 847,
+            "presentationRevision": 2844,
+            "topSpacerRows": 45054,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1994,
+            "scrollTop": 45904,
+            "cursor": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 565
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9864",
+                "graphemeOffset": 565
+              },
+              "preferredScreenRow": 0
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 136
+          },
+          "dispatchedKeys": 576,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        },
+        {
+          "atMs": 19016.308,
+          "frameId": 1076,
+          "kind": "anchor.capture.begin",
+          "details": {
+            "sequence": 740,
+            "deltaY": -1,
+            "scrollTop": 45904,
+            "measuredGeometryRevision": 847,
+            "runtimeGeometryRevision": 847,
+            "anchor": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 568,
+              "row": 45749,
+              "column": 9,
+              "screenX": 11,
+              "screenY": 3
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9864",
+                "graphemeOffset": 565
+              },
+              "preferredScreenRow": 0
+            }
+          },
+          "dispatchedKeys": 576,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        },
+        {
+          "atMs": 19016.548,
+          "frameId": 1076,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 740,
+            "point": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 568
+            },
+            "row": 1,
+            "fallback": false,
+            "scrollTop": 45904,
+            "geometryRevision": 847
+          },
+          "dispatchedKeys": 576,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        },
+        {
+          "atMs": 19020.925,
+          "frameId": 1076,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 1,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 568,
+              "screenY": 3,
+              "screenX": 11
+            },
+            "candidates": 528,
+            "viewportTop": 2,
+            "geometryRevision": 847,
+            "presentationRevision": 2845,
+            "topSpacerRows": 45054,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1995,
+            "scrollTop": 45904,
+            "cursor": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 565
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9864",
+                "graphemeOffset": 568
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 136
+          },
+          "dispatchedKeys": 576,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        },
+        {
+          "atMs": 19024.705,
+          "frameId": 1076,
+          "kind": "intent.resolved",
+          "details": {
+            "sequence": 740,
+            "coherent": true,
+            "nativeCursor": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 568,
+              "screenX": 11,
+              "screenY": 3,
+              "viewportRow": 1
+            },
+            "geometryRevision": 847,
+            "presentationRevision": 2846,
+            "topSpacerRows": 45054,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1996,
+            "scrollTop": 45904,
+            "cursor": {
+              "itemId": "navigation-mixed-9864",
+              "graphemeOffset": 568
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9864",
+                "graphemeOffset": 568
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 136
+          },
+          "dispatchedKeys": 576,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        }
+      ],
+      "final": {
+        "cells": "  \u2502                                                                             \n                                                                                \n  \u2502   \u25b8 \u2713 Child interacted Agent #9994: measured t...l and sent timing notes.   \n                                                                                \n  \u2502   \u25b8 \u2713 Web research #9997                                                    \n                                                                                \n  \u2502   \u25b8 \u2713 Provider call #9998                                                   \n                                                                                \n    \u2713 Worked for 192ms                                                          \n                                                                                \n  \u2502  Streaming tail: output continues while history is detached.                \n                                                                                \n  \u2838 Working                                                                     \n                                                                                ",
+        "top": 46813,
+        "cursor": "{\"itemId\":\"navigation-mixed-9999\",\"graphemeOffset\":59}",
+        "viewport": "{\"kind\":\"tail\"}",
+        "measuredBlocks": 143,
+        "materializedBlocks": 143,
+        "roots": 143,
+        "descendants": 1435,
+        "cursorPoint": {
+          "blockKey": "item:navigation-mixed-9999:root",
+          "row": 0,
+          "column": 62,
+          "viewportRow": 10,
+          "blockRows": 2
+        },
+        "cursorItemBlocks": [
+          {
+            "key": "item:navigation-mixed-9999:root",
+            "sourceSpan": {
+              "from": 0,
+              "to": 59
+            },
+            "fragment": null,
+            "rows": 2,
+            "probes": {}
+          }
+        ]
+      },
+      "blankFrames": 0,
+      "pending": 0
+    },
+    "on": {
+      "rawPath": "/tmp/vimex-reversal-intent-on.json",
+      "sha256": "093ce51f6fc7a8e91ac786871b11e9649d92cb9c4bfb5625ab91f8598f0e772b",
+      "resolvedCount": 600,
+      "drops": 0,
+      "selected": [
+        {
+          "atMs": 15489.22,
+          "frameId": 1087,
+          "kind": "row.begin",
+          "details": {
+            "intent": {
+              "rows": 7,
+              "cursor": "follow",
+              "sequence": 738
+            },
+            "geometryRevision": 774,
+            "presentationRevision": 2756,
+            "topSpacerRows": 45686,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1979,
+            "scrollTop": 45890,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 411
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 411
+              },
+              "preferredScreenRow": 3
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 31
+          },
+          "dispatchedKeys": 469,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 15489.364,
+          "frameId": 1087,
+          "kind": "row.step",
+          "details": {
+            "sequence": 738,
+            "requested": 7,
+            "anchoredStep": 6,
+            "step": 6,
+            "moved": 6,
+            "remaining": 1,
+            "oldTop": 45890,
+            "cursorPoint": {
+              "screenY": 5,
+              "screenX": 11
+            },
+            "viewportTop": 2,
+            "geometryRevision": 774,
+            "presentationRevision": 2756,
+            "topSpacerRows": 45686,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1979,
+            "scrollTop": 45896,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 411
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 411
+              },
+              "preferredScreenRow": 3
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 31
+          },
+          "dispatchedKeys": 469,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 15501.352,
+          "frameId": 1088,
+          "kind": "anchor.capture.begin",
+          "details": {
+            "sequence": 738,
+            "deltaY": -6,
+            "scrollTop": 45896,
+            "measuredGeometryRevision": 774,
+            "runtimeGeometryRevision": 774,
+            "anchor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 511,
+              "row": 45895,
+              "column": 3,
+              "screenX": 5,
+              "screenY": 2
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 411
+              },
+              "preferredScreenRow": 3
+            }
+          },
+          "dispatchedKeys": 470,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 15501.56,
+          "frameId": 1088,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 738,
+            "point": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 511
+            },
+            "row": 0,
+            "fallback": false,
+            "scrollTop": 45896,
+            "geometryRevision": 774
+          },
+          "dispatchedKeys": 470,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 15505.203,
+          "frameId": 1088,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 3,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623,
+              "screenY": 5,
+              "screenX": 11
+            },
+            "candidates": 461,
+            "viewportTop": 2,
+            "geometryRevision": 774,
+            "presentationRevision": 2757,
+            "topSpacerRows": 45686,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1980,
+            "scrollTop": 45896,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 411
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 511
+              },
+              "preferredScreenRow": 0
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 33
+          },
+          "dispatchedKeys": 470,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 15508.118,
+          "frameId": 1088,
+          "kind": "row.begin",
+          "details": {
+            "intent": {
+              "rows": 1,
+              "cursor": "follow",
+              "sequence": 738,
+              "followTarget": {
+                "row": 3,
+                "column": 11
+              }
+            },
+            "geometryRevision": 774,
+            "presentationRevision": 2758,
+            "topSpacerRows": 45686,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1981,
+            "scrollTop": 45896,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 623
+              },
+              "preferredScreenRow": 3
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 32
+          },
+          "dispatchedKeys": 470,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 15508.167,
+          "frameId": 1088,
+          "kind": "row.step",
+          "details": {
+            "sequence": 738,
+            "requested": 1,
+            "anchoredStep": 0,
+            "step": 1,
+            "moved": 1,
+            "remaining": 0,
+            "oldTop": 45896,
+            "cursorPoint": {
+              "screenY": 5,
+              "screenX": 11
+            },
+            "viewportTop": 2,
+            "geometryRevision": 774,
+            "presentationRevision": 2758,
+            "topSpacerRows": 45686,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1981,
+            "scrollTop": 45897,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 623
+              },
+              "preferredScreenRow": 3
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 32
+          },
+          "dispatchedKeys": 470,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 15528.436,
+          "frameId": 1089,
+          "kind": "anchor.capture.begin",
+          "details": {
+            "sequence": 738,
+            "deltaY": -1,
+            "scrollTop": 45897,
+            "measuredGeometryRevision": 774,
+            "runtimeGeometryRevision": 774,
+            "anchor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 548,
+              "row": 45897,
+              "column": 3,
+              "screenX": 5,
+              "screenY": 3
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 623
+              },
+              "preferredScreenRow": 3
+            }
+          },
+          "dispatchedKeys": 471,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 15528.676,
+          "frameId": 1089,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 738,
+            "point": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 548
+            },
+            "row": 1,
+            "fallback": false,
+            "scrollTop": 45897,
+            "geometryRevision": 774
+          },
+          "dispatchedKeys": 471,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 15532.86,
+          "frameId": 1089,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 3,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623,
+              "screenY": 4,
+              "screenX": 11
+            },
+            "candidates": 493,
+            "viewportTop": 2,
+            "geometryRevision": 774,
+            "presentationRevision": 2759,
+            "topSpacerRows": 45686,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1982,
+            "scrollTop": 45897,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 548
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 33
+          },
+          "dispatchedKeys": 471,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 15532.866,
+          "frameId": 1089,
+          "kind": "intent.resolved",
+          "details": {
+            "sequence": 738,
+            "coherent": true,
+            "nativeCursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623,
+              "screenX": 11,
+              "screenY": 4,
+              "viewportRow": 2
+            },
+            "geometryRevision": 774,
+            "presentationRevision": 2759,
+            "topSpacerRows": 45686,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1982,
+            "scrollTop": 45897,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 548
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 33
+          },
+          "dispatchedKeys": 471,
+          "activeIntentSequence": 738,
+          "activeIntentKey": 438
+        },
+        {
+          "atMs": 15532.869,
+          "frameId": 1089,
+          "kind": "row.begin",
+          "details": {
+            "intent": {
+              "rows": 7,
+              "cursor": "follow",
+              "sequence": 739
+            },
+            "geometryRevision": 774,
+            "presentationRevision": 2759,
+            "topSpacerRows": 45686,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1982,
+            "scrollTop": 45897,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 548
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 32
+          },
+          "dispatchedKeys": 471,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 15533.013,
+          "frameId": 1089,
+          "kind": "row.step",
+          "details": {
+            "sequence": 739,
+            "requested": 7,
+            "anchoredStep": 7,
+            "step": 7,
+            "moved": 7,
+            "remaining": 0,
+            "oldTop": 45897,
+            "cursorPoint": {
+              "screenY": 4,
+              "screenX": 11
+            },
+            "viewportTop": 2,
+            "geometryRevision": 774,
+            "presentationRevision": 2759,
+            "topSpacerRows": 45686,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1982,
+            "scrollTop": 45904,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 548
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 32
+          },
+          "dispatchedKeys": 471,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 15540.05,
+          "frameId": 1089,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 774,
+            "topSpacerRows": 45686,
+            "bottomSpacerRows": 0,
+            "scrollTop": 45904,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 548
+              },
+              "preferredScreenRow": 1
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9863:markdown:1462",
+                "oldRows": 1,
+                "newRows": 36,
+                "nativeRevision": 3698
+              }
+            ]
+          },
+          "dispatchedKeys": 471,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 15540.715,
+          "frameId": 1089,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 775,
+            "topSpacerRows": 45715,
+            "bottomSpacerRows": 0,
+            "scrollTop": 45904,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 548
+              },
+              "preferredScreenRow": 1
+            }
+          },
+          "dispatchedKeys": 471,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 15556.481,
+          "frameId": 1090,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 775,
+            "topSpacerRows": 45715,
+            "bottomSpacerRows": 0,
+            "scrollTop": 45904,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 548
+              },
+              "preferredScreenRow": 1
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9863:markdown:1462",
+                "oldRows": 36,
+                "newRows": 36,
+                "nativeRevision": 3699
+              }
+            ]
+          },
+          "dispatchedKeys": 472,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 15556.903,
+          "frameId": 1090,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 776,
+            "topSpacerRows": 45715,
+            "bottomSpacerRows": 0,
+            "scrollTop": 45904,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 548
+              },
+              "preferredScreenRow": 1
+            }
+          },
+          "dispatchedKeys": 472,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 15580.419,
+          "frameId": 1091,
+          "kind": "anchor.capture.begin",
+          "details": {
+            "sequence": 739,
+            "deltaY": -7,
+            "scrollTop": 45904,
+            "measuredGeometryRevision": 774,
+            "runtimeGeometryRevision": 776,
+            "anchor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 760,
+              "row": 45903,
+              "column": 3,
+              "screenX": 5,
+              "screenY": 2
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 548
+              },
+              "preferredScreenRow": 1
+            }
+          },
+          "dispatchedKeys": 472,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 15580.627,
+          "frameId": 1091,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 739,
+            "point": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 760
+            },
+            "row": 0,
+            "fallback": false,
+            "scrollTop": 45904,
+            "geometryRevision": 776
+          },
+          "dispatchedKeys": 472,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 15592.804,
+          "frameId": 1091,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 2,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 835,
+              "screenY": 3,
+              "screenX": 11
+            },
+            "candidates": 531,
+            "viewportTop": 2,
+            "geometryRevision": 776,
+            "presentationRevision": 2762,
+            "topSpacerRows": 45715,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1983,
+            "scrollTop": 45904,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 623
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 760
+              },
+              "preferredScreenRow": 0
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 33
+          },
+          "dispatchedKeys": 472,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 15595.778,
+          "frameId": 1091,
+          "kind": "intent.resolved",
+          "details": {
+            "sequence": 739,
+            "coherent": true,
+            "nativeCursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 835,
+              "screenX": 11,
+              "screenY": 3,
+              "viewportRow": 1
+            },
+            "geometryRevision": 776,
+            "presentationRevision": 2763,
+            "topSpacerRows": 45715,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1984,
+            "scrollTop": 45904,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 835
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 835
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 33
+          },
+          "dispatchedKeys": 472,
+          "activeIntentSequence": 739,
+          "activeIntentKey": 439
+        },
+        {
+          "atMs": 15595.783,
+          "frameId": 1091,
+          "kind": "row.begin",
+          "details": {
+            "intent": {
+              "rows": 7,
+              "cursor": "follow",
+              "sequence": 740
+            },
+            "geometryRevision": 776,
+            "presentationRevision": 2763,
+            "topSpacerRows": 45715,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1984,
+            "scrollTop": 45904,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 835
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 835
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 32
+          },
+          "dispatchedKeys": 472,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        },
+        {
+          "atMs": 15595.91,
+          "frameId": 1091,
+          "kind": "row.step",
+          "details": {
+            "sequence": 740,
+            "requested": 7,
+            "anchoredStep": 7,
+            "step": 7,
+            "moved": 7,
+            "remaining": 0,
+            "oldTop": 45904,
+            "cursorPoint": {
+              "screenY": 3,
+              "screenX": 11
+            },
+            "viewportTop": 2,
+            "geometryRevision": 776,
+            "presentationRevision": 2763,
+            "topSpacerRows": 45715,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1984,
+            "scrollTop": 45911,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 835
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 835
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 32
+          },
+          "dispatchedKeys": 472,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        },
+        {
+          "atMs": 15609.649,
+          "frameId": 1092,
+          "kind": "anchor.capture.begin",
+          "details": {
+            "sequence": 740,
+            "deltaY": -7,
+            "scrollTop": 45911,
+            "measuredGeometryRevision": 776,
+            "runtimeGeometryRevision": 776,
+            "anchor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 1041,
+              "row": 45910,
+              "column": 3,
+              "screenX": 5,
+              "screenY": 2
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 835
+              },
+              "preferredScreenRow": 1
+            }
+          },
+          "dispatchedKeys": 473,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        },
+        {
+          "atMs": 15609.876,
+          "frameId": 1092,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 740,
+            "point": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 1041
+            },
+            "row": 0,
+            "fallback": false,
+            "scrollTop": 45911,
+            "geometryRevision": 776
+          },
+          "dispatchedKeys": 473,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        },
+        {
+          "atMs": 15613.751,
+          "frameId": 1092,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 1,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 1047,
+              "screenY": 2,
+              "screenX": 11
+            },
+            "candidates": 464,
+            "viewportTop": 2,
+            "geometryRevision": 776,
+            "presentationRevision": 2764,
+            "topSpacerRows": 45715,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1985,
+            "scrollTop": 45911,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 835
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 1041
+              },
+              "preferredScreenRow": 0
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 33
+          },
+          "dispatchedKeys": 473,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        },
+        {
+          "atMs": 15616.548,
+          "frameId": 1092,
+          "kind": "intent.resolved",
+          "details": {
+            "sequence": 740,
+            "coherent": true,
+            "nativeCursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 1047,
+              "screenX": 11,
+              "screenY": 2,
+              "viewportRow": 0
+            },
+            "geometryRevision": 776,
+            "presentationRevision": 2765,
+            "topSpacerRows": 45715,
+            "bottomSpacerRows": 0,
+            "intentRevision": 1986,
+            "scrollTop": 45911,
+            "cursor": {
+              "itemId": "navigation-mixed-9863",
+              "graphemeOffset": 1047
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9863",
+                "graphemeOffset": 1047
+              },
+              "preferredScreenRow": 0
+            },
+            "pendingAnchor": false,
+            "pendingRestore": false,
+            "pendingRowCount": 33
+          },
+          "dispatchedKeys": 473,
+          "activeIntentSequence": 740,
+          "activeIntentKey": 440
+        }
+      ],
+      "final": {
+        "cells": "  \u2502    3   }                                                                    \n  \u2502                                                                             \n                                                                                \n  \u2502   \u25b8 \u2713 Child interacted Agent #9994: measured t...l and sent timing notes.   \n                                                                                \n  \u2502   \u25b8 \u2713 Web research #9997                                                    \n                                                                                \n  \u2502   \u25b8 \u2713 Provider call #9998                                                   \n                                                                                \n    \u2713 Worked for 192ms                                                          \n                                                                                \n  \u2502  Streaming tail: output continues while history is detached.                \n                                                                                \n  \u283c Working                                                                     ",
+        "top": 47031,
+        "cursor": "{\"itemId\":\"navigation-mixed-9997\",\"graphemeOffset\":1}",
+        "viewport": "{\"kind\":\"point\",\"point\":{\"itemId\":\"navigation-mixed-9997\",\"graphemeOffset\":1},\"preferredScreenRow\":5}",
+        "measuredBlocks": 139,
+        "materializedBlocks": 139,
+        "roots": 139,
+        "descendants": 1371,
+        "cursorPoint": {
+          "blockKey": "item:navigation-mixed-9997:root",
+          "row": 0,
+          "column": 9,
+          "viewportRow": 5,
+          "blockRows": 2
+        },
+        "cursorItemBlocks": [
+          {
+            "key": "item:navigation-mixed-9997:root",
+            "sourceSpan": {
+              "from": 0,
+              "to": 72
+            },
+            "fragment": null,
+            "rows": 2,
+            "probes": {}
+          }
+        ]
+      },
+      "blankFrames": 0,
+      "pending": 0
+    }
+  },
+  "firstSourceDifference": {
+    "sequence": 739,
+    "off": {
+      "sequence": 739,
+      "coherent": true,
+      "nativeCursor": {
+        "itemId": "navigation-mixed-9864",
+        "graphemeOffset": 275,
+        "screenX": 11,
+        "screenY": 3,
+        "viewportRow": 1
+      },
+      "geometryRevision": 846,
+      "presentationRevision": 2841,
+      "topSpacerRows": 45047,
+      "bottomSpacerRows": 0,
+      "intentRevision": 1992,
+      "scrollTop": 45897,
+      "cursor": {
+        "itemId": "navigation-mixed-9864",
+        "graphemeOffset": 275
+      },
+      "viewport": {
+        "kind": "point",
+        "point": {
+          "itemId": "navigation-mixed-9864",
+          "graphemeOffset": 275
+        },
+        "preferredScreenRow": 1
+      },
+      "pendingRows": [
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 740
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 741
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 742
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 743
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 744
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 745
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 746
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 747
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 748
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 749
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 750
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 751
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 752
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 753
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 754
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 755
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 756
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 757
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 758
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 759
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 760
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 761
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 762
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 763
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 764
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 765
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 766
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 767
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 768
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 769
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 770
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 771
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 772
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 773
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 774
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 775
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 776
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 777
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 778
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 779
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 780
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 781
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 782
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 783
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 784
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 785
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 786
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 787
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 788
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 789
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 790
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 791
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 792
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 793
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 794
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 795
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 796
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 797
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 798
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 799
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 800
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 801
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 802
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 803
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 804
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 805
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 806
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 807
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 808
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 809
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 810
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 811
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 812
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 813
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 814
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 815
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 816
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 817
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 818
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 819
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 820
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 821
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 822
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 823
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 824
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 825
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 826
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 827
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 828
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 829
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 830
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 831
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 832
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 833
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 834
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 835
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 836
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 837
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 838
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 839
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 840
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 841
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 842
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 843
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 844
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 845
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 846
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 847
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 848
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 849
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 850
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 851
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 852
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 853
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 854
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 855
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 856
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 857
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 858
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 859
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 860
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 861
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 862
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 863
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 864
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 865
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 866
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 867
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 868
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 869
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 870
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 871
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 872
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 873
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 874
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 875
+        }
+      ],
+      "pendingAnchor": false,
+      "pendingRestore": false
+    },
+    "on": {
+      "sequence": 739,
+      "coherent": true,
+      "nativeCursor": {
+        "itemId": "navigation-mixed-9863",
+        "graphemeOffset": 835,
+        "screenX": 11,
+        "screenY": 3,
+        "viewportRow": 1
+      },
+      "geometryRevision": 776,
+      "presentationRevision": 2763,
+      "topSpacerRows": 45715,
+      "bottomSpacerRows": 0,
+      "intentRevision": 1984,
+      "scrollTop": 45904,
+      "cursor": {
+        "itemId": "navigation-mixed-9863",
+        "graphemeOffset": 835
+      },
+      "viewport": {
+        "kind": "point",
+        "point": {
+          "itemId": "navigation-mixed-9863",
+          "graphemeOffset": 835
+        },
+        "preferredScreenRow": 1
+      },
+      "pendingRows": [
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 740
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 741
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 742
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 743
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 744
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 745
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 746
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 747
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 748
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 749
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 750
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 751
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 752
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 753
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 754
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 755
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 756
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 757
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 758
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 759
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 760
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 761
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 762
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 763
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 764
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 765
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 766
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 767
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 768
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 769
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 770
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 771
+        },
+        {
+          "rows": 7,
+          "cursor": "follow",
+          "sequence": 772
+        }
+      ],
+      "pendingAnchor": false,
+      "pendingRestore": false
+    }
+  }
+}

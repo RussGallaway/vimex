@@ -76,7 +76,7 @@ import {
   type TranscriptLayout,
 } from "../transcript/layout"
 import {
-  measureRenderedTranscript,
+  readRenderedTranscriptLayout,
   measuredPoint,
   transcriptRenderableIdForPoint,
 } from "../transcript/rendered-layout"
@@ -693,14 +693,13 @@ export function VimexApp({
       let activeLayout = measuredLayout.current ?? layout
       const viewport = scrollbox?.viewport
       // The native viewport may move after the hook's frame listener. Refresh
-      // the O(1) cached translation before deciding cursor visibility; clean
-      // blocks are neither scanned nor remeasured on this path.
+      // cached placement before deciding cursor visibility. Measurements and
+      // height corrections belong to the hook's ordered preparation path.
       if (target && scrollbox && transcriptRuntime) {
-        const refreshed = measureRenderedTranscript(renderer, scrollbox, {
-          frame: transcriptRuntime.getSnapshot(),
-          runtime: transcriptRuntime,
-          styleRevision: transcriptStyleRevision,
-        })
+        const refreshed = readRenderedTranscriptLayout(
+          scrollbox,
+          transcriptRuntime.getSnapshot(),
+        )
         if (refreshed) {
           measuredLayout.current = refreshed
           activeLayout = refreshed
@@ -792,11 +791,7 @@ export function VimexApp({
 
       let activeLayout = layout
       if (runtimeFrame && transcriptRuntime) {
-        const refreshed = measureRenderedTranscript(renderer, scrollbox, {
-          frame: runtimeFrame,
-          runtime: transcriptRuntime,
-          styleRevision: transcriptStyleRevision,
-        })
+        const refreshed = readRenderedTranscriptLayout(scrollbox, runtimeFrame)
         if (
           !refreshed ||
           refreshed.materializedBlocks !== runtimeFrame.window.blocks

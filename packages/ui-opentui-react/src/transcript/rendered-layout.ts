@@ -877,7 +877,36 @@ export function measureRenderedTranscript(
   source: RuntimeLayoutSource | TranscriptState,
 ): TranscriptLayout | undefined {
   const { blocks, geometry } = currentGeometry(renderer, scrollbox, source)
-  const materializedBlocks = "frame" in source ? blocks : undefined
+  return layoutFromGeometry(
+    scrollbox,
+    blocks,
+    geometry,
+    "frame" in source ? blocks : undefined,
+    "frame" in source ? source.diagnostics : undefined,
+  )
+}
+
+/** Read current native placements against already-published geometry. Cursor
+ * and selection paint must never publish measurements or drain dirty work. */
+export function readRenderedTranscriptLayout(
+  scrollbox: ScrollBoxRenderable,
+  frame: TranscriptFrame,
+): TranscriptLayout | undefined {
+  return layoutFromGeometry(
+    scrollbox,
+    frame.window.blocks,
+    frame.geometry,
+    frame.window.blocks,
+  )
+}
+
+function layoutFromGeometry(
+  scrollbox: ScrollBoxRenderable,
+  blocks: readonly TranscriptBlock[],
+  geometry: TranscriptFrame["geometry"],
+  materializedBlocks?: readonly TranscriptBlock[],
+  diagnostics?: RenderedLayoutDiagnostics,
+): TranscriptLayout | undefined {
   if (geometry.measuredBlockCount === 0) return undefined
   const originX = scrollbox.viewport.screenX - scrollbox.scrollLeft
   const originY = scrollbox.viewport.screenY - scrollbox.scrollTop
@@ -888,13 +917,7 @@ export function measureRenderedTranscript(
   ) {
     const offset = { x: originX - cached.originX, y: originY - cached.originY }
     if (
-      placementsMatch(
-        scrollbox,
-        blocks,
-        cached.layout,
-        offset,
-        "frame" in source ? source.diagnostics : undefined,
-      )
+      placementsMatch(scrollbox, blocks, cached.layout, offset, diagnostics)
     ) {
       if (
         offset.x === (cached.layout.screenOffset?.x ?? 0) &&

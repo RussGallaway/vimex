@@ -1,3 +1,4 @@
+import { createMarkdownReadiness } from "./markdown-readiness"
 import { traceNavigation } from "./navigation-trace"
 import {
   navigationMeasurementBudgetEnabled,
@@ -10,7 +11,10 @@ import {
 import { composerPaintPending } from "../composer/input-paint"
 import { type ScrollBoxRenderable } from "@opentui/core"
 import { flushSync, useRenderer } from "@opentui/react"
-import { prepareNativeTranscriptLayout } from "./scroll-preparation"
+import {
+  prepareNativeBlockPlacement,
+  prepareNativeTranscriptLayout,
+} from "./scroll-preparation"
 import type { ThreadId } from "@vimex/conversation"
 import {
   blockGraphemeRange,
@@ -90,6 +94,7 @@ export function useTranscriptLayout(options: {
   )
   const queuedIntentRevision = useRef<number | undefined>(undefined)
   const navigationSequence = useRef(0)
+  const activeMotionSequence = useRef<number | undefined>(undefined)
   const pendingScrollRows = useRef<
     Array<{
       rows: number
@@ -154,6 +159,7 @@ export function useTranscriptLayout(options: {
     currentMeasuredLayout.current = undefined
     prepositionedTarget.current = undefined
     pendingScrollRows.current = []
+    activeMotionSequence.current = undefined
     pendingCursor.current = undefined
     pendingNativeScroll.current = false
     pendingNativeDirection.current = undefined
@@ -172,6 +178,7 @@ export function useTranscriptLayout(options: {
     currentMeasuredLayout.current = undefined
     prepositionedTarget.current = undefined
     pendingScrollRows.current = []
+    activeMotionSequence.current = undefined
     pendingCursor.current = undefined
     pendingNativeScroll.current = false
     pendingNativeDirection.current = undefined
@@ -210,6 +217,16 @@ export function useTranscriptLayout(options: {
     const deltaY = lastScrollTop.current - scrollbox.scrollTop
     let translated = translateTranscriptLayout(prior, 0, deltaY)
     let anchor = topVisiblePoint(translated, scrollbox)
+    let restoreCapturedAnchor = false
+    traceNavigation(renderer, "anchor.capture.begin", () => ({
+      sequence: activeMotionSequence.current,
+      deltaY,
+      scrollTop: scrollbox.scrollTop,
+      measuredGeometryRevision: prior.geometry?.revision,
+      runtimeGeometryRevision: current.runtime?.getSnapshot().geometry.revision,
+      anchor,
+      viewport: current.runtime?.getSnapshot().transcript.viewport,
+    }))
     if (current.runtime && current.frame) {
       const frame = current.frame
       // A newly visible fragment can retain estimated height or an empty
@@ -237,6 +254,16 @@ export function useTranscriptLayout(options: {
           : []
       })
       if (underestimated.length) {
+        traceNavigation(renderer, "anchor.capture.recover", () => ({
+          sequence: activeMotionSequence.current,
+          roots: underestimated.map((root) => ({
+            id: root.id,
+            screenY: root.screenY,
+            y: root.y,
+            height: root.height,
+          })),
+          anchor,
+        }))
         prepareNativeTranscriptLayout(renderer)
         for (const root of underestimated) invalidateRenderedBlock(root)
         const measuredFrame = current.runtime.getSnapshot()
@@ -256,7 +283,12 @@ export function useTranscriptLayout(options: {
           })
         if (recovered) {
           translated = recovered
-          anchor = topVisiblePoint(recovered, scrollbox)
+          // A valid translated point already defines the requested viewport.
+          // Height correction may move native roots before the new window is
+          // committed; choosing another point here would turn that correction
+          // into an additional user motion.
+          if (anchor) restoreCapturedAnchor = true
+          else anchor = topVisiblePoint(recovered, scrollbox)
         }
       }
     }
@@ -305,6 +337,14 @@ export function useTranscriptLayout(options: {
           : scrollbox.scrollTop
       }
       fallback = current.runtime.scrollAnchorAtRow(documentRow)
+      traceNavigation(renderer, "anchor.capture.fallback", () => ({
+        sequence: activeMotionSequence.current,
+        documentRow,
+        deltaY,
+        fallback,
+        geometryRevision: runtimeFrame.geometry.revision,
+        viewport,
+      }))
       const transcript = current.runtime.getSnapshot().transcript
       const priorPoint =
         transcript.viewport.kind === "point"
@@ -341,7 +381,7 @@ export function useTranscriptLayout(options: {
     measuredLayout.current = translated
     lastScrollTop.current = scrollbox.scrollTop
     pendingAnchor.current = false
-    pendingRestore.current = Boolean(fallback)
+    pendingRestore.current = Boolean(fallback) || restoreCapturedAnchor
     const point = anchor
       ? {
           itemId: anchor.itemId,
@@ -351,6 +391,14 @@ export function useTranscriptLayout(options: {
     const row = anchor
       ? anchor.screenY - scrollbox.viewport.screenY
       : fallback!.preferredScreenRow
+    traceNavigation(renderer, "anchor.capture.commit", () => ({
+      sequence: activeMotionSequence.current,
+      point,
+      row,
+      fallback: Boolean(fallback),
+      scrollTop: scrollbox.scrollTop,
+      geometryRevision: current.runtime?.getSnapshot().geometry.revision,
+    }))
     if (current.onAnchor) current.onAnchor(point, row)
     else
       controller.transcript({
@@ -402,6 +450,7 @@ export function useTranscriptLayout(options: {
           : queuedViewport.current && queuedViewport.current !== viewport
       ) {
         pendingScrollRows.current = []
+        activeMotionSequence.current = undefined
         pendingCursor.current = undefined
         pendingNativeScroll.current = false
         pendingNativeDirection.current = undefined
@@ -488,6 +537,55 @@ export function useTranscriptLayout(options: {
   useEffect(() => {
     if (options.visible === false) return
     const ownedScrollbox = scrollRef.current
+    let markdownRefreshPending = false
+    const markdownReadiness = createMarkdownReadiness((root) => {
+      markdownRefreshPending = true
+      if (!root.isDestroyed) invalidateRenderedBlock(root)
+      renderer.requestRender()
+    })
+    let awaitingMarkdown = false
+    const requiredMarkdownReady = () => {
+      const current = latest.current
+      const scrollbox = scrollRef.current
+      if (!scrollbox || !current.frame) return true
+      const state =
+        current.runtime?.getSnapshot().transcript ?? current.transcript
+      const points = [
+        state.cursor,
+        state.viewport.kind === "point" ? state.viewport.point : undefined,
+      ]
+      const roots = current.frame.window.blocks.flatMap((block) => {
+        if (!("projection" in block) || !("markdown" in block.renderItem))
+          return []
+        // Live Markdown already has an incremental native preview. Do not
+        // hold navigation waiting for an indefinitely moving highlight target.
+        if ("status" in block.item && block.item.status === "running") return []
+        const root = scrollbox.getRenderable(transcriptBlockRenderableId(block))
+        if (!root) return []
+        const visible =
+          root.y < scrollbox.viewport.y + scrollbox.viewport.height &&
+          root.y + root.height > scrollbox.viewport.y
+        const range = blockGraphemeRange(block)
+        const ownsPoint = points.some(
+          (point) =>
+            point &&
+            point.itemId === block.key.itemId &&
+            point.graphemeOffset >= range.from &&
+            (point.graphemeOffset < range.to ||
+              (range.to === block.projection.sourceSpans.length &&
+                point.graphemeOffset === range.to)),
+        )
+        return visible || ownsPoint ? [root] : []
+      })
+      // Required leaves may have been culled before this frame. Populate their
+      // computed local placement before deciding which cells intersect the view.
+      for (const root of roots) prepareNativeBlockPlacement(root)
+      return markdownReadiness.check(
+        roots,
+        current.styleRevision ?? "default",
+        scrollbox.viewport,
+      )
+    }
     const measure = () => {
       const current = latest.current
       const scrollbox = scrollRef.current
@@ -538,6 +636,17 @@ export function useTranscriptLayout(options: {
           if (scrollbox.scrollTop !== beforePreposition) return
         }
       }
+      const markdownReady = requiredMarkdownReady()
+      const orderedMotionPending =
+        pendingScrollRows.current.length > 0 ||
+        activeMotionSequence.current !== undefined ||
+        pendingCursor.current !== undefined ||
+        pendingAnchor.current
+      if (orderedMotionPending && !markdownReady) {
+        awaitingMarkdown = true
+        renderer.requestRender()
+        return
+      }
       // A manual scroll establishes semantic meaning before dirty native
       // reflow is allowed to publish corrected heights around the old anchor.
       if (
@@ -565,6 +674,12 @@ export function useTranscriptLayout(options: {
       if (current.measurementDiagnostics)
         current.onMeasurementDiagnostics?.(current.measurementDiagnostics)
       if (!next) return
+      const measuredFrame = current.runtime?.getSnapshot()
+      markdownRefreshPending = Boolean(
+        measuredFrame &&
+        (next.geometry !== measuredFrame.geometry ||
+          next.materializedBlocks !== measuredFrame.window.blocks),
+      )
       currentMeasuredLayout.current = next
       // Measurement owns a geometry cache. Its stable identity avoids serializing
       // every logical point merely to discover that a frame has not changed.
@@ -654,6 +769,7 @@ export function useTranscriptLayout(options: {
         })
       const scrollbox = scrollRef.current
       if (!scrollbox) return
+      awaitingMarkdown = false
       const viewport =
         latest.current.runtime?.getSnapshot().transcript.viewport ??
         latest.current.transcript.viewport
@@ -664,6 +780,7 @@ export function useTranscriptLayout(options: {
           : queuedViewport.current && queuedViewport.current !== viewport
       if (superseded) {
         pendingScrollRows.current = []
+        activeMotionSequence.current = undefined
         pendingCursor.current = undefined
         pendingNativeScroll.current = false
         pendingNativeDirection.current = undefined
@@ -696,6 +813,7 @@ export function useTranscriptLayout(options: {
         // Keep each key's cursor-follow boundary even when input arrives in a
         // burst; the queued moves are still resolved in this layout pass.
         const intent = pendingScrollRows.current.shift() ?? { rows: 0 }
+        activeMotionSequence.current = intent.sequence
         const requested = intent.rows
         trace("row.begin", () => ({ intent: { ...intent } }))
         const frame = latest.current.frame
@@ -844,6 +962,17 @@ export function useTranscriptLayout(options: {
             const destination = runtime.scrollDestinationAtRow(
               indexedRow + requested,
             )
+            trace("row.cold-fallback", () => ({
+              sequence: intent.sequence,
+              requested,
+              indexedRow,
+              start,
+              local,
+              destination,
+              viewportPoint,
+              preferredScreenRow,
+              owningKey: key,
+            }))
             const order = transcriptOrderIndex(runtimeFrame.transcript.order)
             const originIndex = order.get(viewportPoint.itemId)
             const targetIndex =
@@ -914,15 +1043,21 @@ export function useTranscriptLayout(options: {
         }
         pendingAnchor.current = true
         pendingRestore.current = false
-        flushSync(() => captureScrolledAnchor())
+        if (requiredMarkdownReady()) flushSync(() => captureScrolledAnchor())
+        else awaitingMarkdown = true
       }
       // Capture manual intent against the previous coherent layout before any
       // simultaneous content change can replace its geometry.
       if (
         wasNativeScroll &&
+        activeMotionSequence.current === undefined &&
+        !pendingCursor.current &&
+        !pendingAnchor.current &&
+        !markdownRefreshPending &&
         pendingScrollRows.current.length &&
         !pendingRestore.current &&
-        measuredLayout.current
+        measuredLayout.current &&
+        requiredMarkdownReady()
       )
         advance()
       // Keep ordinary hot-window bursts in one frame. Cold transitions,
@@ -1001,11 +1136,22 @@ export function useTranscriptLayout(options: {
           prepareNativeTranscriptLayout(renderer)
           measure()
         })
-        if (
-          before?.window.blocks !==
-          latest.current.runtime?.getSnapshot().window.blocks
-        )
-          budgetedPreparation = true
+        if (awaitingMarkdown) {
+          deferredPreparation = true
+          break
+        }
+        const after = latest.current.runtime?.getSnapshot()
+        if (before?.window.blocks !== after?.window.blocks && after) {
+          const mountedBefore = new Set(before?.window.blocks.map(blockKey))
+          // Retiring overscan or updating a live block does not introduce cold
+          // content. Keep a small hot input batch atomic through that replan.
+          if (
+            after.window.blocks.some(
+              (block) => !mountedBefore.has(blockKey(block)),
+            )
+          )
+            budgetedPreparation = true
+        }
         const settled =
           before === latest.current.runtime?.getSnapshot() &&
           top === scrollbox.scrollTop &&
@@ -1070,6 +1216,33 @@ export function useTranscriptLayout(options: {
             }
           }
         }
+        if (
+          activeMotionSequence.current !== undefined &&
+          pendingScrollRows.current[0]?.sequence !==
+            activeMotionSequence.current
+        ) {
+          trace("intent.resolved", () => {
+            const frame = latest.current.runtime?.getSnapshot()
+            const cursor = frame?.transcript.cursor
+            const layout = measuredLayout.current
+            const native =
+              cursor && layout ? measuredPoint(layout, cursor) : undefined
+            return {
+              sequence: activeMotionSequence.current,
+              coherent:
+                layout?.geometry === frame?.geometry &&
+                layout?.materializedBlocks === frame?.window.blocks,
+              nativeCursor: native && {
+                itemId: native.itemId,
+                graphemeOffset: native.graphemeOffset,
+                screenX: native.screenX,
+                screenY: native.screenY,
+                viewportRow: native.screenY - scrollbox.viewport.screenY,
+              },
+            }
+          })
+          activeMotionSequence.current = undefined
+        }
         if (!pendingScrollRows.current.length || pass >= 112) break
         // Consume the largest displacement whose rows are already measured.
         // Cold remainder is resolved after the next neighborhood is prepared.
@@ -1095,6 +1268,7 @@ export function useTranscriptLayout(options: {
     return () => {
       if (prepareScroll.current === prepare) prepareScroll.current = undefined
       renderer.removeFrameCallback(frameCallback)
+      markdownReadiness.dispose()
       if (ownedScrollbox) releaseRenderedTranscriptLayout(ownedScrollbox)
     }
   }, [

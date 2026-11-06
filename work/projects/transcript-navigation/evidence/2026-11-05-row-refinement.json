@@ -1,0 +1,3564 @@
+{
+  "command": "VIMEX_NAV_DEFER_CODE_DETAIL=0 VIMEX_NAV_BUDGET_MEASUREMENTS={0|1} VIMEX_NAV_MEASUREMENT_DIAGNOSTICS=1 VIMEX_NAV_WORKLOAD=held VIMEX_NAV_ITEMS=10000 VIMEX_NAV_REPEATS=300 VIMEX_NAV_WARM_REPEATS=200 VIMEX_NAV_TRACE=1 VIMEX_NAV_TRACE_FROM_KEY=170 VIMEX_NAV_TRACE_TO_KEY=200 VIMEX_NAV_TRACE_CELLS=0 bun scripts/benchmark-transcript-navigation.tsx",
+  "qualification": "Compare intent sequence, not dispatch count. Explicit resolved events can precede later asynchronous source/geometry refinement. First vertical mismatch repeats atseq484; earlier source-only transient differs by schedule.",
+  "runs": {
+    "off": {
+      "path": "/tmp/vimex-row-focused-off.json",
+      "sha256": "51b96e988c51dd4e8e351f0b347f6f03270f308eb616e555ca7ad9abde73544c",
+      "resolvedCount": 400,
+      "dropped": 0,
+      "events": [
+        {
+          "atMs": 5971.376,
+          "frameId": 695,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 481,
+            "point": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 16
+            },
+            "row": 0,
+            "fallback": false,
+            "scrollTop": 45265,
+            "geometryRevision": 482
+          },
+          "dispatchedKeys": 181
+        },
+        {
+          "atMs": 5977.201,
+          "frameId": 695,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 482,
+            "topSpacerRows": 45250,
+            "bottomSpacerRows": 736,
+            "scrollTop": 45265,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 492
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 16
+              },
+              "preferredScreenRow": 0
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9822:root",
+                "oldRows": 1,
+                "newRows": 1,
+                "nativeRevision": 2556
+              },
+              {
+                "key": "item:navigation-mixed-9823:root",
+                "oldRows": 1,
+                "newRows": 1,
+                "nativeRevision": 2557
+              },
+              {
+                "key": "item:navigation-mixed-9824:root",
+                "oldRows": 1,
+                "newRows": 1,
+                "nativeRevision": 2558
+              },
+              {
+                "key": "item:navigation-mixed-9825:root",
+                "oldRows": 3,
+                "newRows": 1,
+                "nativeRevision": 2559
+              }
+            ]
+          },
+          "dispatchedKeys": 181
+        },
+        {
+          "atMs": 5977.515,
+          "frameId": 695,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 483,
+            "topSpacerRows": 45248,
+            "bottomSpacerRows": 736,
+            "scrollTop": 45265,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 492
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 16
+              },
+              "preferredScreenRow": 0
+            }
+          },
+          "dispatchedKeys": 181
+        },
+        {
+          "atMs": 5982.57,
+          "frameId": 695,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 483,
+            "topSpacerRows": 45248,
+            "bottomSpacerRows": 736,
+            "scrollTop": 45265,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 492
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 16
+              },
+              "preferredScreenRow": 0
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9818:root",
+                "oldRows": 1,
+                "newRows": 1,
+                "nativeRevision": 2560
+              },
+              {
+                "key": "item:navigation-mixed-9821:root",
+                "oldRows": 1,
+                "newRows": 1,
+                "nativeRevision": 2561
+              }
+            ]
+          },
+          "dispatchedKeys": 181
+        },
+        {
+          "atMs": 5982.778,
+          "frameId": 695,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 484,
+            "topSpacerRows": 45248,
+            "bottomSpacerRows": 736,
+            "scrollTop": 45265,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 492
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 16
+              },
+              "preferredScreenRow": 0
+            }
+          },
+          "dispatchedKeys": 181
+        },
+        {
+          "atMs": 5989.499,
+          "frameId": 695,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 484,
+            "topSpacerRows": 45248,
+            "bottomSpacerRows": 736,
+            "scrollTop": 45277,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 492
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 16
+              },
+              "preferredScreenRow": 0
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9825:root",
+                "oldRows": 1,
+                "newRows": 3,
+                "nativeRevision": 2562
+              },
+              {
+                "key": "item:navigation-mixed-9824:root",
+                "oldRows": 1,
+                "newRows": 4,
+                "nativeRevision": 2563
+              }
+            ]
+          },
+          "dispatchedKeys": 181
+        },
+        {
+          "atMs": 5989.811,
+          "frameId": 695,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 485,
+            "topSpacerRows": 45252,
+            "bottomSpacerRows": 736,
+            "scrollTop": 45277,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 492
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 16
+              },
+              "preferredScreenRow": 0
+            }
+          },
+          "dispatchedKeys": 181
+        },
+        {
+          "atMs": 5997.377,
+          "frameId": 695,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 5,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0,
+              "screenY": 7,
+              "screenX": 11
+            },
+            "candidates": 603,
+            "viewportTop": 2,
+            "geometryRevision": 485,
+            "presentationRevision": 1757,
+            "topSpacerRows": 45252,
+            "bottomSpacerRows": 736,
+            "intentRevision": 1269,
+            "scrollTop": 45268,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 492
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 16
+              },
+              "preferredScreenRow": 0
+            },
+            "pendingRows": [
+              {
+                "rows": -1,
+                "cursor": "follow",
+                "sequence": 481,
+                "followTarget": {
+                  "row": 5,
+                  "column": 11
+                }
+              }
+            ],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 181
+        },
+        {
+          "atMs": 5999.352,
+          "frameId": 695,
+          "kind": "intent.enqueued",
+          "details": {
+            "sequence": 482,
+            "rows": -7,
+            "cursor": "follow",
+            "action": "half_page_up",
+            "intentRevision": 1270,
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9832",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 5
+            },
+            "pendingRows": [
+              {
+                "rows": -1,
+                "cursor": "follow",
+                "sequence": 481,
+                "followTarget": {
+                  "row": 5,
+                  "column": 11
+                }
+              },
+              {
+                "rows": -7,
+                "cursor": "follow",
+                "sequence": 482
+              }
+            ]
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 6005.675,
+          "frameId": 696,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 485,
+            "topSpacerRows": 45252,
+            "bottomSpacerRows": 736,
+            "scrollTop": 45268,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9832",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 5
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9831:root",
+                "oldRows": 4,
+                "newRows": 4,
+                "nativeRevision": 2564
+              }
+            ]
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 6005.99,
+          "frameId": 696,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 486,
+            "topSpacerRows": 45252,
+            "bottomSpacerRows": 736,
+            "scrollTop": 45268,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9832",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 5
+            }
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 6009.466,
+          "frameId": 696,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 481,
+            "point": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 16
+            },
+            "row": 1,
+            "fallback": false,
+            "scrollTop": 45267,
+            "geometryRevision": 486
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 6010.946,
+          "frameId": 696,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 5,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0,
+              "screenY": 8,
+              "screenX": 11
+            },
+            "candidates": 600,
+            "viewportTop": 2,
+            "geometryRevision": 486,
+            "presentationRevision": 1760,
+            "topSpacerRows": 45252,
+            "bottomSpacerRows": 736,
+            "intentRevision": 1271,
+            "scrollTop": 45267,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 16
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingRows": [
+              {
+                "rows": -7,
+                "cursor": "follow",
+                "sequence": 482
+              }
+            ],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 6010.969,
+          "frameId": 696,
+          "kind": "row.step",
+          "details": {
+            "sequence": 482,
+            "requested": -7,
+            "anchoredStep": -7,
+            "step": -7,
+            "moved": -7,
+            "remaining": 0,
+            "oldTop": 45267,
+            "cursorPoint": {
+              "screenY": 8,
+              "screenX": 11
+            },
+            "viewportTop": 2,
+            "geometryRevision": 486,
+            "presentationRevision": 1760,
+            "topSpacerRows": 45252,
+            "bottomSpacerRows": 736,
+            "intentRevision": 1271,
+            "scrollTop": 45260,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 16
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingRows": [],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 6011.038,
+          "frameId": 696,
+          "kind": "anchor.capture.begin",
+          "details": {
+            "sequence": 482,
+            "deltaY": 7,
+            "scrollTop": 45260,
+            "measuredGeometryRevision": 486,
+            "runtimeGeometryRevision": 486,
+            "anchor": {
+              "itemId": "navigation-mixed-9826",
+              "graphemeOffset": 0,
+              "row": 45259,
+              "column": 0,
+              "screenX": 2,
+              "screenY": 2
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 16
+              },
+              "preferredScreenRow": 1
+            }
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 6011.074,
+          "frameId": 696,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 482,
+            "point": {
+              "itemId": "navigation-mixed-9826",
+              "graphemeOffset": 0
+            },
+            "row": 0,
+            "fallback": false,
+            "scrollTop": 45260,
+            "geometryRevision": 486
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 6016.846,
+          "frameId": 696,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 486,
+            "topSpacerRows": 45244,
+            "bottomSpacerRows": 752,
+            "scrollTop": 45260,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9826",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9818:root",
+                "oldRows": 1,
+                "newRows": 1,
+                "nativeRevision": 2566
+              },
+              {
+                "key": "item:navigation-mixed-9821:root",
+                "oldRows": 1,
+                "newRows": 1,
+                "nativeRevision": 2567
+              },
+              {
+                "key": "item:navigation-mixed-9822:root",
+                "oldRows": 1,
+                "newRows": 1,
+                "nativeRevision": 2568
+              },
+              {
+                "key": "item:navigation-mixed-9823:root",
+                "oldRows": 1,
+                "newRows": 1,
+                "nativeRevision": 2569
+              }
+            ]
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 6017.061,
+          "frameId": 696,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 487,
+            "topSpacerRows": 45244,
+            "bottomSpacerRows": 752,
+            "scrollTop": 45260,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9826",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            }
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 6024.211,
+          "frameId": 696,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 487,
+            "topSpacerRows": 45244,
+            "bottomSpacerRows": 752,
+            "scrollTop": 45274,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9826",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9823:root",
+                "oldRows": 1,
+                "newRows": 7,
+                "nativeRevision": 2571
+              },
+              {
+                "key": "item:navigation-mixed-9817:root",
+                "oldRows": null,
+                "newRows": 9,
+                "nativeRevision": 2572
+              }
+            ]
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 6024.507,
+          "frameId": 696,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 488,
+            "topSpacerRows": 45256,
+            "bottomSpacerRows": 752,
+            "scrollTop": 45274,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9826",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            }
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 6031.437,
+          "frameId": 696,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 6,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 6,
+              "screenY": 8,
+              "screenX": 11
+            },
+            "candidates": 270,
+            "viewportTop": 2,
+            "geometryRevision": 488,
+            "presentationRevision": 1763,
+            "topSpacerRows": 45256,
+            "bottomSpacerRows": 752,
+            "intentRevision": 1272,
+            "scrollTop": 45271,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9826",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            },
+            "pendingRows": [],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 6033.222,
+          "frameId": 696,
+          "kind": "intent.enqueued",
+          "details": {
+            "sequence": 483,
+            "rows": -7,
+            "cursor": "follow",
+            "action": "half_page_up",
+            "intentRevision": 1273,
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 6
+              },
+              "preferredScreenRow": 6
+            },
+            "pendingRows": [
+              {
+                "rows": -7,
+                "cursor": "follow",
+                "sequence": 483
+              }
+            ]
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6038.009,
+          "frameId": 697,
+          "kind": "intent.resolved",
+          "details": {
+            "sequence": 482,
+            "coherent": true,
+            "nativeCursor": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 6,
+              "screenX": 11,
+              "screenY": 8,
+              "viewportRow": 6
+            },
+            "geometryRevision": 488,
+            "presentationRevision": 1764,
+            "topSpacerRows": 45256,
+            "bottomSpacerRows": 752,
+            "intentRevision": 1273,
+            "scrollTop": 45271,
+            "cursor": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 6
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 6
+              },
+              "preferredScreenRow": 6
+            },
+            "pendingRows": [
+              {
+                "rows": -7,
+                "cursor": "follow",
+                "sequence": 483
+              }
+            ],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6038.071,
+          "frameId": 697,
+          "kind": "row.step",
+          "details": {
+            "sequence": 483,
+            "requested": -7,
+            "anchoredStep": -6,
+            "step": -6,
+            "moved": -6,
+            "remaining": -1,
+            "oldTop": 45271,
+            "cursorPoint": {
+              "screenY": 8,
+              "screenX": 11
+            },
+            "viewportTop": 2,
+            "geometryRevision": 488,
+            "presentationRevision": 1764,
+            "topSpacerRows": 45256,
+            "bottomSpacerRows": 752,
+            "intentRevision": 1273,
+            "scrollTop": 45265,
+            "cursor": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 6
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 6
+              },
+              "preferredScreenRow": 6
+            },
+            "pendingRows": [],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6038.125,
+          "frameId": 697,
+          "kind": "anchor.capture.begin",
+          "details": {
+            "sequence": 483,
+            "deltaY": 6,
+            "scrollTop": 45265,
+            "measuredGeometryRevision": 488,
+            "runtimeGeometryRevision": 488,
+            "anchor": {
+              "itemId": "navigation-mixed-9824",
+              "graphemeOffset": 0,
+              "row": 45264,
+              "column": 3,
+              "screenX": 5,
+              "screenY": 2
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 6
+              },
+              "preferredScreenRow": 6
+            }
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6038.177,
+          "frameId": 697,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 483,
+            "point": {
+              "itemId": "navigation-mixed-9824",
+              "graphemeOffset": 0
+            },
+            "row": 0,
+            "fallback": false,
+            "scrollTop": 45265,
+            "geometryRevision": 488
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6044.633,
+          "frameId": 697,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 488,
+            "topSpacerRows": 45244,
+            "bottomSpacerRows": 764,
+            "scrollTop": 45265,
+            "cursor": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 6
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9824",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9818:root",
+                "oldRows": 1,
+                "newRows": 1,
+                "nativeRevision": 2574
+              },
+              {
+                "key": "item:navigation-mixed-9821:root",
+                "oldRows": 1,
+                "newRows": 1,
+                "nativeRevision": 2575
+              },
+              {
+                "key": "item:navigation-mixed-9822:root",
+                "oldRows": 1,
+                "newRows": 1,
+                "nativeRevision": 2576
+              }
+            ]
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6044.852,
+          "frameId": 697,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 489,
+            "topSpacerRows": 45244,
+            "bottomSpacerRows": 764,
+            "scrollTop": 45265,
+            "cursor": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 6
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9824",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            }
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6051.621,
+          "frameId": 697,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 489,
+            "topSpacerRows": 45244,
+            "bottomSpacerRows": 764,
+            "scrollTop": 45268,
+            "cursor": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 6
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9824",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9817:root",
+                "oldRows": 9,
+                "newRows": 9,
+                "nativeRevision": 2578
+              }
+            ]
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6051.843,
+          "frameId": 697,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 490,
+            "topSpacerRows": 45244,
+            "bottomSpacerRows": 764,
+            "scrollTop": 45268,
+            "cursor": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 6
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9824",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            }
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6054.622,
+          "frameId": 697,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 6,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9826",
+              "graphemeOffset": 0,
+              "screenY": 8,
+              "screenX": 2
+            },
+            "candidates": 149,
+            "viewportTop": 2,
+            "geometryRevision": 490,
+            "presentationRevision": 1767,
+            "topSpacerRows": 45244,
+            "bottomSpacerRows": 764,
+            "intentRevision": 1274,
+            "scrollTop": 45268,
+            "cursor": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 6
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9824",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            },
+            "pendingRows": [
+              {
+                "rows": -1,
+                "cursor": "follow",
+                "sequence": 483,
+                "followTarget": {
+                  "row": 6,
+                  "column": 11
+                }
+              }
+            ],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6056.479,
+          "frameId": 697,
+          "kind": "intent.enqueued",
+          "details": {
+            "sequence": 484,
+            "rows": -7,
+            "cursor": "follow",
+            "action": "half_page_up",
+            "intentRevision": 1275,
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9826",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 6
+            },
+            "pendingRows": [
+              {
+                "rows": -1,
+                "cursor": "follow",
+                "sequence": 483,
+                "followTarget": {
+                  "row": 6,
+                  "column": 11
+                }
+              },
+              {
+                "rows": -7,
+                "cursor": "follow",
+                "sequence": 484
+              }
+            ]
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6061.138,
+          "frameId": 698,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 490,
+            "topSpacerRows": 45244,
+            "bottomSpacerRows": 764,
+            "scrollTop": 45268,
+            "cursor": {
+              "itemId": "navigation-mixed-9826",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9826",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 6
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9825:root",
+                "oldRows": 3,
+                "newRows": 3,
+                "nativeRevision": 2580
+              }
+            ]
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6061.406,
+          "frameId": 698,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 491,
+            "topSpacerRows": 45244,
+            "bottomSpacerRows": 764,
+            "scrollTop": 45268,
+            "cursor": {
+              "itemId": "navigation-mixed-9826",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9826",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 6
+            }
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6064.109,
+          "frameId": 698,
+          "kind": "row.step",
+          "details": {
+            "sequence": 483,
+            "requested": -1,
+            "anchoredStep": 0,
+            "step": -1,
+            "moved": -1,
+            "remaining": 0,
+            "oldTop": 45268,
+            "cursorPoint": {
+              "screenY": 8,
+              "screenX": 2
+            },
+            "viewportTop": 2,
+            "geometryRevision": 491,
+            "presentationRevision": 1769,
+            "topSpacerRows": 45244,
+            "bottomSpacerRows": 764,
+            "intentRevision": 1275,
+            "scrollTop": 45267,
+            "cursor": {
+              "itemId": "navigation-mixed-9826",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9826",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 6
+            },
+            "pendingRows": [
+              {
+                "rows": -7,
+                "cursor": "follow",
+                "sequence": 484
+              }
+            ],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6064.156,
+          "frameId": 698,
+          "kind": "anchor.capture.begin",
+          "details": {
+            "sequence": 483,
+            "deltaY": 1,
+            "scrollTop": 45267,
+            "measuredGeometryRevision": 491,
+            "runtimeGeometryRevision": 491,
+            "anchor": {
+              "itemId": "navigation-mixed-9824",
+              "graphemeOffset": 0,
+              "row": 45264,
+              "column": 3,
+              "screenX": 5,
+              "screenY": 3
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9826",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 6
+            }
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6064.202,
+          "frameId": 698,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 483,
+            "point": {
+              "itemId": "navigation-mixed-9824",
+              "graphemeOffset": 0
+            },
+            "row": 1,
+            "fallback": false,
+            "scrollTop": 45267,
+            "geometryRevision": 491
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6065.5,
+          "frameId": 698,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 6,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9825",
+              "graphemeOffset": 52,
+              "screenY": 7,
+              "screenX": 11
+            },
+            "candidates": 149,
+            "viewportTop": 2,
+            "geometryRevision": 491,
+            "presentationRevision": 1770,
+            "topSpacerRows": 45244,
+            "bottomSpacerRows": 764,
+            "intentRevision": 1276,
+            "scrollTop": 45267,
+            "cursor": {
+              "itemId": "navigation-mixed-9826",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9824",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingRows": [
+              {
+                "rows": -7,
+                "cursor": "follow",
+                "sequence": 484
+              }
+            ],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6066.803,
+          "frameId": 698,
+          "kind": "intent.resolved",
+          "details": {
+            "sequence": 483,
+            "coherent": true,
+            "nativeCursor": {
+              "itemId": "navigation-mixed-9825",
+              "graphemeOffset": 52,
+              "screenX": 11,
+              "screenY": 7,
+              "viewportRow": 5
+            },
+            "geometryRevision": 491,
+            "presentationRevision": 1771,
+            "topSpacerRows": 45244,
+            "bottomSpacerRows": 764,
+            "intentRevision": 1277,
+            "scrollTop": 45267,
+            "cursor": {
+              "itemId": "navigation-mixed-9825",
+              "graphemeOffset": 52
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9825",
+                "graphemeOffset": 52
+              },
+              "preferredScreenRow": 5
+            },
+            "pendingRows": [
+              {
+                "rows": -7,
+                "cursor": "follow",
+                "sequence": 484
+              }
+            ],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6066.847,
+          "frameId": 698,
+          "kind": "row.step",
+          "details": {
+            "sequence": 484,
+            "requested": -7,
+            "anchoredStep": -6,
+            "step": -6,
+            "moved": -6,
+            "remaining": -1,
+            "oldTop": 45267,
+            "cursorPoint": {
+              "screenY": 7,
+              "screenX": 11
+            },
+            "viewportTop": 2,
+            "geometryRevision": 491,
+            "presentationRevision": 1771,
+            "topSpacerRows": 45244,
+            "bottomSpacerRows": 764,
+            "intentRevision": 1277,
+            "scrollTop": 45261,
+            "cursor": {
+              "itemId": "navigation-mixed-9825",
+              "graphemeOffset": 52
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9825",
+                "graphemeOffset": 52
+              },
+              "preferredScreenRow": 5
+            },
+            "pendingRows": [],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6066.903,
+          "frameId": 698,
+          "kind": "anchor.capture.begin",
+          "details": {
+            "sequence": 484,
+            "deltaY": 6,
+            "scrollTop": 45261,
+            "measuredGeometryRevision": 491,
+            "runtimeGeometryRevision": 491,
+            "anchor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 0,
+              "row": 45257,
+              "column": 8,
+              "screenX": 10,
+              "screenY": 2
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9825",
+                "graphemeOffset": 52
+              },
+              "preferredScreenRow": 5
+            }
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6066.945,
+          "frameId": 698,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 484,
+            "point": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 0
+            },
+            "row": 0,
+            "fallback": false,
+            "scrollTop": 45261,
+            "geometryRevision": 491
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6075.359,
+          "frameId": 698,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 491,
+            "topSpacerRows": 45240,
+            "bottomSpacerRows": 777,
+            "scrollTop": 45264,
+            "cursor": {
+              "itemId": "navigation-mixed-9825",
+              "graphemeOffset": 52
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9822:root",
+                "oldRows": 1,
+                "newRows": 2,
+                "nativeRevision": 2582
+              },
+              {
+                "key": "item:navigation-mixed-9816:edit:file:568",
+                "oldRows": null,
+                "newRows": 7,
+                "nativeRevision": 2583
+              }
+            ]
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6075.652,
+          "frameId": 698,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 492,
+            "topSpacerRows": 45247,
+            "bottomSpacerRows": 777,
+            "scrollTop": 45264,
+            "cursor": {
+              "itemId": "navigation-mixed-9825",
+              "graphemeOffset": 52
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            }
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6081.41,
+          "frameId": 698,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 5,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 34,
+              "screenY": 5,
+              "screenX": 11
+            },
+            "candidates": 203,
+            "viewportTop": 2,
+            "geometryRevision": 492,
+            "presentationRevision": 1773,
+            "topSpacerRows": 45247,
+            "bottomSpacerRows": 777,
+            "intentRevision": 1278,
+            "scrollTop": 45264,
+            "cursor": {
+              "itemId": "navigation-mixed-9825",
+              "graphemeOffset": 52
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            },
+            "pendingRows": [
+              {
+                "rows": -1,
+                "cursor": "follow",
+                "sequence": 484,
+                "followTarget": {
+                  "row": 5,
+                  "column": 11
+                }
+              }
+            ],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6087.5,
+          "frameId": 699,
+          "kind": "row.step",
+          "details": {
+            "sequence": 484,
+            "requested": -1,
+            "anchoredStep": 0,
+            "step": -1,
+            "moved": -1,
+            "remaining": 0,
+            "oldTop": 45264,
+            "cursorPoint": {
+              "screenY": 5,
+              "screenX": 11
+            },
+            "viewportTop": 2,
+            "geometryRevision": 492,
+            "presentationRevision": 1774,
+            "topSpacerRows": 45247,
+            "bottomSpacerRows": 777,
+            "intentRevision": 1279,
+            "scrollTop": 45263,
+            "cursor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 34
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 34
+              },
+              "preferredScreenRow": 3
+            },
+            "pendingRows": [
+              {
+                "rows": -7,
+                "cursor": "follow",
+                "sequence": 485
+              }
+            ],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 185
+        },
+        {
+          "atMs": 6087.58,
+          "frameId": 699,
+          "kind": "anchor.capture.begin",
+          "details": {
+            "sequence": 484,
+            "deltaY": 1,
+            "scrollTop": 45263,
+            "measuredGeometryRevision": 492,
+            "runtimeGeometryRevision": 492,
+            "anchor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 0,
+              "row": 45261,
+              "column": 8,
+              "screenX": 10,
+              "screenY": 3
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 34
+              },
+              "preferredScreenRow": 3
+            }
+          },
+          "dispatchedKeys": 185
+        },
+        {
+          "atMs": 6087.625,
+          "frameId": 699,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 484,
+            "point": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 0
+            },
+            "row": 1,
+            "fallback": false,
+            "scrollTop": 45263,
+            "geometryRevision": 492
+          },
+          "dispatchedKeys": 185
+        },
+        {
+          "atMs": 6094.361,
+          "frameId": 699,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 492,
+            "topSpacerRows": 45240,
+            "bottomSpacerRows": 777,
+            "scrollTop": 45263,
+            "cursor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 34
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 1
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9816:edit:file:568",
+                "oldRows": 7,
+                "newRows": 7,
+                "nativeRevision": 2585
+              }
+            ]
+          },
+          "dispatchedKeys": 185
+        },
+        {
+          "atMs": 6094.561,
+          "frameId": 699,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 493,
+            "topSpacerRows": 45240,
+            "bottomSpacerRows": 777,
+            "scrollTop": 45263,
+            "cursor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 34
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 1
+            }
+          },
+          "dispatchedKeys": 185
+        },
+        {
+          "atMs": 6097.267,
+          "frameId": 699,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 5,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 34,
+              "screenY": 6,
+              "screenX": 11
+            },
+            "candidates": 202,
+            "viewportTop": 2,
+            "geometryRevision": 493,
+            "presentationRevision": 1776,
+            "topSpacerRows": 45240,
+            "bottomSpacerRows": 777,
+            "intentRevision": 1280,
+            "scrollTop": 45263,
+            "cursor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 34
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingRows": [
+              {
+                "rows": -7,
+                "cursor": "follow",
+                "sequence": 485
+              }
+            ],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 185
+        },
+        {
+          "atMs": 6097.269,
+          "frameId": 699,
+          "kind": "intent.resolved",
+          "details": {
+            "sequence": 484,
+            "coherent": true,
+            "nativeCursor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 34,
+              "screenX": 11,
+              "screenY": 6,
+              "viewportRow": 4
+            },
+            "geometryRevision": 493,
+            "presentationRevision": 1776,
+            "topSpacerRows": 45240,
+            "bottomSpacerRows": 777,
+            "intentRevision": 1280,
+            "scrollTop": 45263,
+            "cursor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 34
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingRows": [
+              {
+                "rows": -7,
+                "cursor": "follow",
+                "sequence": 485
+              }
+            ],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 185
+        },
+        {
+          "atMs": 6097.756,
+          "frameId": 699,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 493,
+            "topSpacerRows": 45240,
+            "bottomSpacerRows": 777,
+            "scrollTop": 45257,
+            "cursor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 34
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 1
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9818:root",
+                "oldRows": 1,
+                "newRows": 2,
+                "nativeRevision": 2586
+              },
+              {
+                "key": "item:navigation-mixed-9821:root",
+                "oldRows": 1,
+                "newRows": 2,
+                "nativeRevision": 2587
+              }
+            ]
+          },
+          "dispatchedKeys": 185
+        },
+        {
+          "atMs": 6098.023,
+          "frameId": 699,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 494,
+            "topSpacerRows": 45247,
+            "bottomSpacerRows": 777,
+            "scrollTop": 45257,
+            "cursor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 34
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 1
+            }
+          },
+          "dispatchedKeys": 185
+        },
+        {
+          "atMs": 6098.626,
+          "frameId": 699,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 485,
+            "point": {
+              "itemId": "navigation-mixed-9818",
+              "graphemeOffset": 0
+            },
+            "row": 0,
+            "fallback": false,
+            "scrollTop": 45257,
+            "geometryRevision": 494
+          },
+          "dispatchedKeys": 185
+        },
+        {
+          "atMs": 6103.995,
+          "frameId": 699,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 4,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9822",
+              "graphemeOffset": 1,
+              "screenY": 6,
+              "screenX": 11
+            },
+            "candidates": 190,
+            "viewportTop": 2,
+            "geometryRevision": 494,
+            "presentationRevision": 1778,
+            "topSpacerRows": 45240,
+            "bottomSpacerRows": 792,
+            "intentRevision": 1281,
+            "scrollTop": 45257,
+            "cursor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 34
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9818",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            },
+            "pendingRows": [
+              {
+                "rows": -1,
+                "cursor": "follow",
+                "sequence": 485,
+                "followTarget": {
+                  "row": 4,
+                  "column": 11
+                }
+              }
+            ],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 185
+        }
+      ]
+    },
+    "on": {
+      "path": "/tmp/vimex-row-focused-on.json",
+      "sha256": "d70ad071d084346d7070cb89802c9b845aaca11bb6dac63f19c03fefaae2ae08",
+      "resolvedCount": 400,
+      "dropped": 0,
+      "events": [
+        {
+          "atMs": 5953.847,
+          "frameId": 784,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 348,
+            "topSpacerRows": 45753,
+            "bottomSpacerRows": 723,
+            "scrollTop": 45786,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 492
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9832",
+                "graphemeOffset": 492
+              },
+              "preferredScreenRow": 5
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9822:root",
+                "oldRows": null,
+                "newRows": 2,
+                "nativeRevision": 1622
+              }
+            ]
+          },
+          "dispatchedKeys": 181
+        },
+        {
+          "atMs": 5954.12,
+          "frameId": 784,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 349,
+            "topSpacerRows": 45753,
+            "bottomSpacerRows": 723,
+            "scrollTop": 45786,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 492
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9832",
+                "graphemeOffset": 492
+              },
+              "preferredScreenRow": 5
+            }
+          },
+          "dispatchedKeys": 181
+        },
+        {
+          "atMs": 5957.559,
+          "frameId": 784,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 481,
+            "point": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0
+            },
+            "row": 0,
+            "fallback": false,
+            "scrollTop": 45785,
+            "geometryRevision": 349
+          },
+          "dispatchedKeys": 181
+        },
+        {
+          "atMs": 5962.012,
+          "frameId": 784,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 349,
+            "topSpacerRows": 45751,
+            "bottomSpacerRows": 723,
+            "scrollTop": 45785,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 492
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9832",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9818:root",
+                "oldRows": null,
+                "newRows": 1,
+                "nativeRevision": 1623
+              }
+            ]
+          },
+          "dispatchedKeys": 181
+        },
+        {
+          "atMs": 5962.238,
+          "frameId": 784,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 350,
+            "topSpacerRows": 45751,
+            "bottomSpacerRows": 723,
+            "scrollTop": 45785,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 492
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9832",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            }
+          },
+          "dispatchedKeys": 181
+        },
+        {
+          "atMs": 5968.467,
+          "frameId": 784,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 5,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 278,
+              "screenY": 7,
+              "screenX": 11
+            },
+            "candidates": 790,
+            "viewportTop": 2,
+            "geometryRevision": 350,
+            "presentationRevision": 1600,
+            "topSpacerRows": 45751,
+            "bottomSpacerRows": 723,
+            "intentRevision": 1247,
+            "scrollTop": 45785,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 492
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9832",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            },
+            "pendingRows": [
+              {
+                "rows": -6,
+                "cursor": "follow",
+                "sequence": 481,
+                "followTarget": {
+                  "row": 5,
+                  "column": 11
+                }
+              }
+            ],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 181
+        },
+        {
+          "atMs": 5970.448,
+          "frameId": 784,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 350,
+            "topSpacerRows": 45751,
+            "bottomSpacerRows": 723,
+            "scrollTop": 45779,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 278
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9832",
+                "graphemeOffset": 278
+              },
+              "preferredScreenRow": 5
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9831:root",
+                "oldRows": 1,
+                "newRows": 4,
+                "nativeRevision": 1624
+              }
+            ]
+          },
+          "dispatchedKeys": 181
+        },
+        {
+          "atMs": 5970.719,
+          "frameId": 784,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 351,
+            "topSpacerRows": 45753,
+            "bottomSpacerRows": 723,
+            "scrollTop": 45779,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 278
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9832",
+                "graphemeOffset": 278
+              },
+              "preferredScreenRow": 5
+            }
+          },
+          "dispatchedKeys": 181
+        },
+        {
+          "atMs": 5971.382,
+          "frameId": 784,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 481,
+            "point": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 16
+            },
+            "row": 1,
+            "fallback": false,
+            "scrollTop": 45779,
+            "geometryRevision": 351
+          },
+          "dispatchedKeys": 181
+        },
+        {
+          "atMs": 5978.23,
+          "frameId": 784,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 5,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0,
+              "screenY": 8,
+              "screenX": 11
+            },
+            "candidates": 600,
+            "viewportTop": 2,
+            "geometryRevision": 351,
+            "presentationRevision": 1603,
+            "topSpacerRows": 45742,
+            "bottomSpacerRows": 736,
+            "intentRevision": 1249,
+            "scrollTop": 45779,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 278
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 16
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingRows": [],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 181
+        },
+        {
+          "atMs": 5980.09,
+          "frameId": 784,
+          "kind": "intent.enqueued",
+          "details": {
+            "sequence": 482,
+            "rows": -7,
+            "cursor": "follow",
+            "action": "half_page_up",
+            "intentRevision": 1250,
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9832",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 6
+            },
+            "pendingRows": [
+              {
+                "rows": -7,
+                "cursor": "follow",
+                "sequence": 482
+              }
+            ]
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 5985.883,
+          "frameId": 785,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 351,
+            "topSpacerRows": 45742,
+            "bottomSpacerRows": 736,
+            "scrollTop": 45779,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9832",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 6
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9831:root",
+                "oldRows": 4,
+                "newRows": 4,
+                "nativeRevision": 1625
+              },
+              {
+                "key": "item:navigation-mixed-9817:root",
+                "oldRows": null,
+                "newRows": 9,
+                "nativeRevision": 1626
+              }
+            ]
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 5986.155,
+          "frameId": 785,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 352,
+            "topSpacerRows": 45742,
+            "bottomSpacerRows": 736,
+            "scrollTop": 45779,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9832",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 6
+            }
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 5989.207,
+          "frameId": 785,
+          "kind": "row.step",
+          "details": {
+            "sequence": 482,
+            "requested": -7,
+            "anchoredStep": -7,
+            "step": -7,
+            "moved": -7,
+            "remaining": 0,
+            "oldTop": 45779,
+            "cursorPoint": {
+              "screenY": 8,
+              "screenX": 11
+            },
+            "viewportTop": 2,
+            "geometryRevision": 352,
+            "presentationRevision": 1605,
+            "topSpacerRows": 45742,
+            "bottomSpacerRows": 736,
+            "intentRevision": 1250,
+            "scrollTop": 45772,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9832",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 6
+            },
+            "pendingRows": [],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 5989.302,
+          "frameId": 785,
+          "kind": "anchor.capture.begin",
+          "details": {
+            "sequence": 482,
+            "deltaY": 7,
+            "scrollTop": 45772,
+            "measuredGeometryRevision": 352,
+            "runtimeGeometryRevision": 352,
+            "anchor": {
+              "itemId": "navigation-mixed-9826",
+              "graphemeOffset": 0,
+              "row": 45758,
+              "column": 0,
+              "screenX": 2,
+              "screenY": 2
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9832",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 6
+            }
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 5989.366,
+          "frameId": 785,
+          "kind": "anchor.capture.recover",
+          "details": {
+            "sequence": 482,
+            "roots": [
+              {
+                "id": "transcript-block:navigation-mixed-9826:root",
+                "screenY": 2,
+                "y": 2,
+                "height": 2
+              }
+            ],
+            "anchor": {
+              "itemId": "navigation-mixed-9826",
+              "graphemeOffset": 0,
+              "row": 45758,
+              "column": 0,
+              "screenX": 2,
+              "screenY": 2
+            }
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 5989.72,
+          "frameId": 785,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 352,
+            "topSpacerRows": 45742,
+            "bottomSpacerRows": 736,
+            "scrollTop": 45772,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9832",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 6
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9826:root",
+                "oldRows": 1,
+                "newRows": 2,
+                "nativeRevision": 1627
+              },
+              {
+                "key": "item:navigation-mixed-9829:root",
+                "oldRows": 1,
+                "newRows": 2,
+                "nativeRevision": 1628
+              },
+              {
+                "key": "item:navigation-mixed-9830:root",
+                "oldRows": 1,
+                "newRows": 2,
+                "nativeRevision": 1629
+              }
+            ]
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 5990.032,
+          "frameId": 785,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 353,
+            "topSpacerRows": 45751,
+            "bottomSpacerRows": 736,
+            "scrollTop": 45772,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9832",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 6
+            }
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 5990.725,
+          "frameId": 785,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 482,
+            "point": {
+              "itemId": "navigation-mixed-9826",
+              "graphemeOffset": 0
+            },
+            "row": 0,
+            "fallback": false,
+            "scrollTop": 45772,
+            "geometryRevision": 353
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 5996.692,
+          "frameId": 785,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 6,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 6,
+              "screenY": 8,
+              "screenX": 11
+            },
+            "candidates": 270,
+            "viewportTop": 2,
+            "geometryRevision": 353,
+            "presentationRevision": 1607,
+            "topSpacerRows": 45742,
+            "bottomSpacerRows": 752,
+            "intentRevision": 1251,
+            "scrollTop": 45772,
+            "cursor": {
+              "itemId": "navigation-mixed-9832",
+              "graphemeOffset": 0
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9826",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            },
+            "pendingRows": [],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 5998.186,
+          "frameId": 785,
+          "kind": "intent.resolved",
+          "details": {
+            "sequence": 482,
+            "coherent": true,
+            "nativeCursor": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 6,
+              "screenX": 11,
+              "screenY": 8,
+              "viewportRow": 6
+            },
+            "geometryRevision": 353,
+            "presentationRevision": 1608,
+            "topSpacerRows": 45742,
+            "bottomSpacerRows": 752,
+            "intentRevision": 1252,
+            "scrollTop": 45772,
+            "cursor": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 6
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 6
+              },
+              "preferredScreenRow": 6
+            },
+            "pendingRows": [],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 182
+        },
+        {
+          "atMs": 6006.03,
+          "frameId": 786,
+          "kind": "intent.enqueued",
+          "details": {
+            "sequence": 483,
+            "rows": -7,
+            "cursor": "follow",
+            "action": "half_page_up",
+            "intentRevision": 1252,
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 6
+              },
+              "preferredScreenRow": 6
+            },
+            "pendingRows": [
+              {
+                "rows": -7,
+                "cursor": "follow",
+                "sequence": 483
+              }
+            ]
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6023.272,
+          "frameId": 787,
+          "kind": "row.step",
+          "details": {
+            "sequence": 483,
+            "requested": -7,
+            "anchoredStep": 0,
+            "step": -7,
+            "moved": -7,
+            "remaining": 0,
+            "oldTop": 45772,
+            "cursorPoint": {
+              "screenY": 8,
+              "screenX": 11
+            },
+            "viewportTop": 2,
+            "geometryRevision": 353,
+            "presentationRevision": 1608,
+            "topSpacerRows": 45742,
+            "bottomSpacerRows": 752,
+            "intentRevision": 1252,
+            "scrollTop": 45765,
+            "cursor": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 6
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 6
+              },
+              "preferredScreenRow": 6
+            },
+            "pendingRows": [],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6023.309,
+          "frameId": 787,
+          "kind": "anchor.capture.begin",
+          "details": {
+            "sequence": 483,
+            "deltaY": 7,
+            "scrollTop": 45765,
+            "measuredGeometryRevision": 353,
+            "runtimeGeometryRevision": 353,
+            "anchor": {
+              "itemId": "navigation-mixed-9826",
+              "graphemeOffset": 0,
+              "row": 45758,
+              "column": 0,
+              "screenX": 2,
+              "screenY": 9
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 6
+              },
+              "preferredScreenRow": 6
+            }
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6023.372,
+          "frameId": 787,
+          "kind": "anchor.capture.recover",
+          "details": {
+            "sequence": 483,
+            "roots": [
+              {
+                "id": "transcript-block:navigation-mixed-9824:root",
+                "screenY": 2,
+                "y": 2,
+                "height": 4
+              },
+              {
+                "id": "transcript-block:navigation-mixed-9825:root",
+                "screenY": 6,
+                "y": 6,
+                "height": 3
+              }
+            ],
+            "anchor": {
+              "itemId": "navigation-mixed-9826",
+              "graphemeOffset": 0,
+              "row": 45758,
+              "column": 0,
+              "screenX": 2,
+              "screenY": 9
+            }
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6024.015,
+          "frameId": 787,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 353,
+            "topSpacerRows": 45742,
+            "bottomSpacerRows": 752,
+            "scrollTop": 45765,
+            "cursor": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 6
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 6
+              },
+              "preferredScreenRow": 6
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9824:root",
+                "oldRows": 1,
+                "newRows": 4,
+                "nativeRevision": 1630
+              },
+              {
+                "key": "item:navigation-mixed-9825:root",
+                "oldRows": 1,
+                "newRows": 3,
+                "nativeRevision": 1631
+              }
+            ]
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6024.34,
+          "frameId": 787,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 354,
+            "topSpacerRows": 45742,
+            "bottomSpacerRows": 752,
+            "scrollTop": 45765,
+            "cursor": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 6
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9831",
+                "graphemeOffset": 6
+              },
+              "preferredScreenRow": 6
+            }
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6024.959,
+          "frameId": 787,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 483,
+            "point": {
+              "itemId": "navigation-mixed-9824",
+              "graphemeOffset": 0
+            },
+            "row": 1,
+            "fallback": false,
+            "scrollTop": 45765,
+            "geometryRevision": 354
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6031.15,
+          "frameId": 787,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 6,
+              "column": 11
+            },
+            "target": {
+              "itemId": "navigation-mixed-9825",
+              "graphemeOffset": 45,
+              "screenY": 7,
+              "screenX": 12
+            },
+            "candidates": 149,
+            "viewportTop": 2,
+            "geometryRevision": 354,
+            "presentationRevision": 1610,
+            "topSpacerRows": 45742,
+            "bottomSpacerRows": 764,
+            "intentRevision": 1253,
+            "scrollTop": 45765,
+            "cursor": {
+              "itemId": "navigation-mixed-9831",
+              "graphemeOffset": 6
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9824",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 1
+            },
+            "pendingRows": [],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6032.583,
+          "frameId": 787,
+          "kind": "intent.resolved",
+          "details": {
+            "sequence": 483,
+            "coherent": true,
+            "nativeCursor": {
+              "itemId": "navigation-mixed-9825",
+              "graphemeOffset": 45,
+              "screenX": 12,
+              "screenY": 7,
+              "viewportRow": 5
+            },
+            "geometryRevision": 354,
+            "presentationRevision": 1611,
+            "topSpacerRows": 45742,
+            "bottomSpacerRows": 764,
+            "intentRevision": 1254,
+            "scrollTop": 45765,
+            "cursor": {
+              "itemId": "navigation-mixed-9825",
+              "graphemeOffset": 45
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9825",
+                "graphemeOffset": 45
+              },
+              "preferredScreenRow": 5
+            },
+            "pendingRows": [],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 183
+        },
+        {
+          "atMs": 6042.435,
+          "frameId": 787,
+          "kind": "intent.enqueued",
+          "details": {
+            "sequence": 484,
+            "rows": -7,
+            "cursor": "follow",
+            "action": "half_page_up",
+            "intentRevision": 1254,
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9825",
+                "graphemeOffset": 45
+              },
+              "preferredScreenRow": 5
+            },
+            "pendingRows": [
+              {
+                "rows": -7,
+                "cursor": "follow",
+                "sequence": 484
+              }
+            ]
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6043.289,
+          "frameId": 788,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 354,
+            "topSpacerRows": 45742,
+            "bottomSpacerRows": 764,
+            "scrollTop": 45765,
+            "cursor": {
+              "itemId": "navigation-mixed-9825",
+              "graphemeOffset": 45
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9825",
+                "graphemeOffset": 45
+              },
+              "preferredScreenRow": 5
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9825:root",
+                "oldRows": 3,
+                "newRows": 3,
+                "nativeRevision": 1633
+              }
+            ]
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6043.643,
+          "frameId": 788,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 355,
+            "topSpacerRows": 45735,
+            "bottomSpacerRows": 768,
+            "scrollTop": 45765,
+            "cursor": {
+              "itemId": "navigation-mixed-9825",
+              "graphemeOffset": 45
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9825",
+                "graphemeOffset": 45
+              },
+              "preferredScreenRow": 5
+            }
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6050.123,
+          "frameId": 788,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 355,
+            "topSpacerRows": 45735,
+            "bottomSpacerRows": 768,
+            "scrollTop": 45765,
+            "cursor": {
+              "itemId": "navigation-mixed-9825",
+              "graphemeOffset": 45
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9825",
+                "graphemeOffset": 45
+              },
+              "preferredScreenRow": 5
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9816:edit:file:568",
+                "oldRows": null,
+                "newRows": 7,
+                "nativeRevision": 1635
+              }
+            ]
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6050.352,
+          "frameId": 788,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 356,
+            "topSpacerRows": 45735,
+            "bottomSpacerRows": 768,
+            "scrollTop": 45765,
+            "cursor": {
+              "itemId": "navigation-mixed-9825",
+              "graphemeOffset": 45
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9825",
+                "graphemeOffset": 45
+              },
+              "preferredScreenRow": 5
+            }
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6052.458,
+          "frameId": 788,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 356,
+            "topSpacerRows": 45735,
+            "bottomSpacerRows": 768,
+            "scrollTop": 45764,
+            "cursor": {
+              "itemId": "navigation-mixed-9825",
+              "graphemeOffset": 45
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9825",
+                "graphemeOffset": 45
+              },
+              "preferredScreenRow": 5
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9823:root",
+                "oldRows": 1,
+                "newRows": 7,
+                "nativeRevision": 1636
+              }
+            ]
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6052.715,
+          "frameId": 788,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 357,
+            "topSpacerRows": 45742,
+            "bottomSpacerRows": 768,
+            "scrollTop": 45764,
+            "cursor": {
+              "itemId": "navigation-mixed-9825",
+              "graphemeOffset": 45
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9825",
+                "graphemeOffset": 45
+              },
+              "preferredScreenRow": 5
+            }
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6058.645,
+          "frameId": 788,
+          "kind": "row.step",
+          "details": {
+            "sequence": 484,
+            "requested": -7,
+            "anchoredStep": -5,
+            "step": -5,
+            "moved": -5,
+            "remaining": -2,
+            "oldTop": 45764,
+            "cursorPoint": {
+              "screenY": 7,
+              "screenX": 50
+            },
+            "viewportTop": 2,
+            "geometryRevision": 357,
+            "presentationRevision": 1614,
+            "topSpacerRows": 45742,
+            "bottomSpacerRows": 768,
+            "intentRevision": 1254,
+            "scrollTop": 45759,
+            "cursor": {
+              "itemId": "navigation-mixed-9825",
+              "graphemeOffset": 45
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9825",
+                "graphemeOffset": 45
+              },
+              "preferredScreenRow": 5
+            },
+            "pendingRows": [],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6058.717,
+          "frameId": 788,
+          "kind": "anchor.capture.begin",
+          "details": {
+            "sequence": 484,
+            "deltaY": 5,
+            "scrollTop": 45759,
+            "measuredGeometryRevision": 357,
+            "runtimeGeometryRevision": 357,
+            "anchor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 0,
+              "row": 45756,
+              "column": 8,
+              "screenX": 10,
+              "screenY": 2
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9825",
+                "graphemeOffset": 45
+              },
+              "preferredScreenRow": 5
+            }
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6058.777,
+          "frameId": 788,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 484,
+            "point": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 0
+            },
+            "row": 0,
+            "fallback": false,
+            "scrollTop": 45759,
+            "geometryRevision": 357
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6064.298,
+          "frameId": 788,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 5,
+              "column": 50
+            },
+            "target": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 73,
+              "screenY": 5,
+              "screenX": 50
+            },
+            "candidates": 203,
+            "viewportTop": 2,
+            "geometryRevision": 357,
+            "presentationRevision": 1615,
+            "topSpacerRows": 45742,
+            "bottomSpacerRows": 777,
+            "intentRevision": 1255,
+            "scrollTop": 45759,
+            "cursor": {
+              "itemId": "navigation-mixed-9825",
+              "graphemeOffset": 45
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            },
+            "pendingRows": [
+              {
+                "rows": -2,
+                "cursor": "follow",
+                "sequence": 484,
+                "followTarget": {
+                  "row": 5,
+                  "column": 50
+                }
+              }
+            ],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6070.771,
+          "frameId": 789,
+          "kind": "row.step",
+          "details": {
+            "sequence": 484,
+            "requested": -2,
+            "anchoredStep": 0,
+            "step": -2,
+            "moved": -2,
+            "remaining": 0,
+            "oldTop": 45759,
+            "cursorPoint": {
+              "screenY": 5,
+              "screenX": 50
+            },
+            "viewportTop": 2,
+            "geometryRevision": 357,
+            "presentationRevision": 1616,
+            "topSpacerRows": 45742,
+            "bottomSpacerRows": 777,
+            "intentRevision": 1256,
+            "scrollTop": 45757,
+            "cursor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 73
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 73
+              },
+              "preferredScreenRow": 3
+            },
+            "pendingRows": [],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6070.856,
+          "frameId": 789,
+          "kind": "anchor.capture.begin",
+          "details": {
+            "sequence": 484,
+            "deltaY": 2,
+            "scrollTop": 45757,
+            "measuredGeometryRevision": 357,
+            "runtimeGeometryRevision": 357,
+            "anchor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 0,
+              "row": 45756,
+              "column": 8,
+              "screenX": 10,
+              "screenY": 4
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 73
+              },
+              "preferredScreenRow": 3
+            }
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6070.911,
+          "frameId": 789,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 484,
+            "point": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 0
+            },
+            "row": 2,
+            "fallback": false,
+            "scrollTop": 45757,
+            "geometryRevision": 357
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6077.797,
+          "frameId": 789,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 357,
+            "topSpacerRows": 45735,
+            "bottomSpacerRows": 781,
+            "scrollTop": 45757,
+            "cursor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 73
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 2
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9816:edit:file:568",
+                "oldRows": 7,
+                "newRows": 7,
+                "nativeRevision": 1638
+              }
+            ]
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6078.066,
+          "frameId": 789,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 358,
+            "topSpacerRows": 45735,
+            "bottomSpacerRows": 781,
+            "scrollTop": 45757,
+            "cursor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 73
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 2
+            }
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6081.145,
+          "frameId": 789,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 5,
+              "column": 50
+            },
+            "target": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 73,
+              "screenY": 7,
+              "screenX": 50
+            },
+            "candidates": 202,
+            "viewportTop": 2,
+            "geometryRevision": 358,
+            "presentationRevision": 1618,
+            "topSpacerRows": 45735,
+            "bottomSpacerRows": 781,
+            "intentRevision": 1257,
+            "scrollTop": 45757,
+            "cursor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 73
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 2
+            },
+            "pendingRows": [],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6081.148,
+          "frameId": 789,
+          "kind": "intent.resolved",
+          "details": {
+            "sequence": 484,
+            "coherent": true,
+            "nativeCursor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 73,
+              "screenX": 50,
+              "screenY": 7,
+              "viewportRow": 5
+            },
+            "geometryRevision": 358,
+            "presentationRevision": 1618,
+            "topSpacerRows": 45735,
+            "bottomSpacerRows": 781,
+            "intentRevision": 1257,
+            "scrollTop": 45757,
+            "cursor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 73
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 2
+            },
+            "pendingRows": [],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 184
+        },
+        {
+          "atMs": 6092.127,
+          "frameId": 790,
+          "kind": "measurement.before",
+          "details": {
+            "geometryRevision": 358,
+            "topSpacerRows": 45735,
+            "bottomSpacerRows": 781,
+            "scrollTop": 45752,
+            "cursor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 73
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 2
+            },
+            "changes": [
+              {
+                "key": "item:navigation-mixed-9818:root",
+                "oldRows": 1,
+                "newRows": 2,
+                "nativeRevision": 1639
+              },
+              {
+                "key": "item:navigation-mixed-9821:root",
+                "oldRows": 1,
+                "newRows": 2,
+                "nativeRevision": 1640
+              }
+            ]
+          },
+          "dispatchedKeys": 185
+        },
+        {
+          "atMs": 6092.461,
+          "frameId": 790,
+          "kind": "measurement.after",
+          "details": {
+            "geometryRevision": 359,
+            "topSpacerRows": 45742,
+            "bottomSpacerRows": 781,
+            "scrollTop": 45752,
+            "cursor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 73
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9823",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 2
+            }
+          },
+          "dispatchedKeys": 185
+        },
+        {
+          "atMs": 6093.113,
+          "frameId": 790,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 485,
+            "point": {
+              "itemId": "navigation-mixed-9818",
+              "graphemeOffset": 0
+            },
+            "row": 0,
+            "fallback": false,
+            "scrollTop": 45752,
+            "geometryRevision": 359
+          },
+          "dispatchedKeys": 185
+        },
+        {
+          "atMs": 6099.032,
+          "frameId": 790,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 5,
+              "column": 50
+            },
+            "target": {
+              "itemId": "navigation-mixed-9822",
+              "graphemeOffset": 18,
+              "screenY": 6,
+              "screenX": 28
+            },
+            "candidates": 190,
+            "viewportTop": 2,
+            "geometryRevision": 359,
+            "presentationRevision": 1620,
+            "topSpacerRows": 45735,
+            "bottomSpacerRows": 792,
+            "intentRevision": 1258,
+            "scrollTop": 45752,
+            "cursor": {
+              "itemId": "navigation-mixed-9823",
+              "graphemeOffset": 73
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9818",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 0
+            },
+            "pendingRows": [
+              {
+                "rows": -2,
+                "cursor": "follow",
+                "sequence": 485,
+                "followTarget": {
+                  "row": 5,
+                  "column": 50
+                }
+              }
+            ],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 185
+        },
+        {
+          "atMs": 6100.554,
+          "frameId": 790,
+          "kind": "anchor.capture.commit",
+          "details": {
+            "sequence": 485,
+            "point": {
+              "itemId": "navigation-mixed-9818",
+              "graphemeOffset": 0
+            },
+            "row": 2,
+            "fallback": false,
+            "scrollTop": 45750,
+            "geometryRevision": 359
+          },
+          "dispatchedKeys": 185
+        },
+        {
+          "atMs": 6105.545,
+          "frameId": 790,
+          "kind": "cursor.resolve",
+          "details": {
+            "desired": {
+              "row": 5,
+              "column": 50
+            },
+            "target": {
+              "itemId": "navigation-mixed-9822",
+              "graphemeOffset": 18,
+              "screenY": 8,
+              "screenX": 28
+            },
+            "candidates": 190,
+            "viewportTop": 2,
+            "geometryRevision": 359,
+            "presentationRevision": 1622,
+            "topSpacerRows": 45735,
+            "bottomSpacerRows": 796,
+            "intentRevision": 1260,
+            "scrollTop": 45750,
+            "cursor": {
+              "itemId": "navigation-mixed-9822",
+              "graphemeOffset": 18
+            },
+            "viewport": {
+              "kind": "point",
+              "point": {
+                "itemId": "navigation-mixed-9818",
+                "graphemeOffset": 0
+              },
+              "preferredScreenRow": 2
+            },
+            "pendingRows": [],
+            "pendingAnchor": false,
+            "pendingRestore": false
+          },
+          "dispatchedKeys": 185
+        }
+      ]
+    }
+  }
+}

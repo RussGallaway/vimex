@@ -4,7 +4,9 @@ Status: first correctness prototype implemented; prepared-row architecture pendi
 
 Ordered traces reproduce disagreement at resolved input boundaries, and a 30-item native fixture isolates sensitivity to dividing one half-page motion into smaller steps. Per-input cursor target retention and native child placement preparation repair the reduced fixture and the eight-key long-transcript trace. See the [investigation record](geometry-investigation.md); this does not yet satisfy the general coherent-commit or terminal UX gates.
 
-Next: trace and reduce the remaining one-row viewport difference after the full 300-up/300-down reversal. Its source cursor now agrees, and the initial 300-key cold traversal agrees in both source and native placement. Keep both experiment flags off by default. Prepared-row API scouting can inform the design, but do not skip this remaining correction-order gate.
+The [source mapping follow-up](source-mapping-investigation.md) repairs the reproduced one-row discrepancy: completed Markdown readiness, read-only cursor/selection geometry consumers, and preservation of a valid anchor through reflow make all 600 resolved movements agree in the original paired long-route diagnostic. Both experiment flags remain off by default. This is a correctness result, not a latency claim or proof for all scheduling patterns.
+
+Next: prototype exact text/code row preparation using shared native primitives, with source/cell parity and bounded work, then evaluate cold movement in an actual terminal. Retain the delayed-mapping, supersession, and correction-order regressions as gates; do not reintroduce geometry publication from display consumers or treat a completed message/unchanged height as a ready map.
 
 ## Product outcome
 

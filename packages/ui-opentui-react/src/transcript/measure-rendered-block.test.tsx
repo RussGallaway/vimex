@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test"
 import {
   MarkdownRenderable,
+  CodeRenderable,
+  getTreeSitterClient,
   SyntaxStyle,
   TextRenderable,
   type Renderable,
@@ -750,5 +752,102 @@ test("a culled subtree's first geometry matches its later visible placement", as
     )
   } finally {
     await act(async () => setup.renderer.destroy())
+  }
+})
+
+test("completed Markdown link transformation changes native points without changing height", async () => {
+  const source =
+    "The transcript stays readable while [reviewing](https://vimex.test/review) older work."
+  const block = blockFor(source)
+  let release!: () => void
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const nativeClient = getTreeSitterClient()
+  const client = new Proxy(nativeClient, {
+    get(target, key) {
+      if (key === "highlightOnce")
+        return async (content: string, filetype: string) => {
+          await waiting
+          return target.highlightOnce(content, filetype)
+        }
+      const value = Reflect.get(target, key, target)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
+  const syntax = SyntaxStyle.create()
+  const setup = await testRender(
+    <box paddingLeft={2} paddingRight={2}>
+      <box id="block" paddingLeft={3}>
+        <markdown
+          id="markdown:measure-item"
+          content={source}
+          streaming={false}
+          conceal
+          syntaxStyle={syntax}
+          treeSitterClient={client}
+          internalBlockMode="top-level"
+        />
+      </box>
+    </box>,
+    { width: 80, height: 10 },
+  )
+  try {
+    await act(async () => {
+      await setup.flush()
+      await setup.renderOnce()
+    })
+    const root = setup.renderer.root.findDescendantById("block") as Renderable
+    const leaves: CodeRenderable[] = []
+    const visit = (node: Renderable) => {
+      if (node instanceof CodeRenderable) leaves.push(node)
+      for (const child of node.getChildren()) visit(child as Renderable)
+    }
+    visit(root)
+    const input = {
+      renderer: setup.renderer,
+      renderable: root,
+      block,
+      width: 76,
+      styleRevision: "delay",
+      folded: false,
+    }
+    const first = measureRenderedBlock(input)
+    // The native buffer contains raw Markdown before the worker completes, but
+    // drawUnstyledText=false means those provisional cells have never painted.
+    expect(leaves).toHaveLength(1)
+    expect(leaves[0]!.plainText).toBe(source)
+    expect(leaves[0]!.isHighlighting).toBe(true)
+    expect(leaves[0]!.drawUnstyledText).toBe(false)
+    expect(setup.captureCharFrame().trim()).toBe("")
+    release()
+    await act(async () => {
+      await Promise.all(leaves.map((n) => n.highlightingDone))
+      await setup.flush()
+      await setup.renderOnce()
+    })
+    const after = measureRenderedBlock(input)
+    expect(after.rows).toBe(first.rows)
+    expect(leaves[0]!.isHighlighting).toBe(false)
+    expect(leaves[0]!.plainText).toBe(
+      "The transcript stays readable while reviewing (https://vimex.test/review) older work.",
+    )
+    // These are projection offsets, not raw Markdown offsets: 45 is the space
+    // after reviewing, and 52 is the w in work. Check the actual painted cells.
+    expect(block.projection.plain[45]).toBe(" ")
+    expect(block.projection.plain[52]).toBe("w")
+    expect(after.points[45]).not.toEqual(first.points[45])
+    expect(after.points[52]).not.toEqual(first.points[52])
+    const painted = setup.captureCharFrame().split("\n")
+    for (const offset of [45, 52]) {
+      const point = after.points[offset]!
+      expect(painted[root.y + point.y]![root.x + point.x]).toBe(
+        block.projection.plain[offset],
+      )
+    }
+  } finally {
+    release()
+    await act(async () => setup.renderer.destroy())
+    syntax.destroy()
   }
 })

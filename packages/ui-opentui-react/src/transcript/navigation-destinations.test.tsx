@@ -1,3 +1,4 @@
+import { prepareNativeTranscriptLayout } from "./scroll-preparation"
 import { subscribeNavigationTrace } from "./navigation-trace"
 import { expect, test } from "bun:test"
 import type { ScrollBoxRenderable } from "@opentui/core"
@@ -589,4 +590,61 @@ test("half-page cursor follow is independent of native step subdivision", async 
   }
   expect(results[2]).toEqual(results[0])
   expect(results[3]).toEqual(results[1])
+}, 30000)
+
+test("native height corrections retain an already captured scroll anchor", async () => {
+  const results: unknown[] = []
+  for (const addedRows of [0, 3, 9]) {
+    const h = await navigationHarness("command", 2, 80, undefined, false)
+    let unsubscribe = () => {}
+    try {
+      await h.key("up")
+      const cursor = h.cursor()
+      const block = h
+        .frame()
+        .window.blocks.find(
+          (block) =>
+            block.key.kind === "item" &&
+            block.key.itemId === cursor.itemId &&
+            block.key.blockId === cursor.blockId,
+        )
+      expect(block).toBeDefined()
+      const root = h.scroll.getRenderable(transcriptBlockRenderableId(block!))!
+      let changed = false
+      let recovered = false
+      unsubscribe = subscribeNavigationTrace(h.renderer, (event) => {
+        if (event.kind === "anchor.capture.recover") recovered = true
+        if (event.kind !== "row.step" || changed || !addedRows) return
+        changed = true
+        // Simulate a native reflow above the visible source cells between the
+        // row movement and semantic anchor capture, without changing source.
+        root.paddingTop = addedRows
+        prepareNativeTranscriptLayout(h.renderer)
+      })
+      await h.key("up")
+      const final = h.cursor()
+      if (addedRows) {
+        expect(changed).toBe(true)
+        expect(recovered).toBe(true)
+      }
+      const projected = h.frame().transcript.projectionById[final.itemId]!.plain
+      const sourceLine = projected.slice(final.graphemeOffset).split("\n")[0]!
+      const painted = h.paintedRow(final.row)
+      expect(final.graphemeOffset).toBe(10137)
+      expect(final.row).toBe(10)
+      expect(painted).toMatch(/0090: compile output/u)
+      expect(painted).toContain(sourceLine.trim())
+      results.push({
+        itemId: final.itemId,
+        offset: final.graphemeOffset,
+        row: final.row,
+        painted,
+      })
+    } finally {
+      unsubscribe()
+      await h.close()
+    }
+  }
+  expect(results[1]).toEqual(results[0])
+  expect(results[2]).toEqual(results[0])
 }, 30000)

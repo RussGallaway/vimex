@@ -1,0 +1,297 @@
+{
+  "raw": {
+    "off": {
+      "path": "/tmp/vimex-row-trace-off.json",
+      "sha256": "cd870f56d9df66b54b15a75dd4bc8d169e235727fdbd861864444468ab70fc50"
+    },
+    "on": {
+      "path": "/tmp/vimex-row-trace-on.json",
+      "sha256": "267dbb32d35555f4211c2a4f724b0ac7cd85614bd6c9425baa5efdc274a417b7"
+    }
+  },
+  "counts": {
+    "off": {
+      "resolved": 600,
+      "dropped": 0,
+      "filtered": 9801
+    },
+    "on": {
+      "resolved": 600,
+      "dropped": 0,
+      "filtered": 10113
+    }
+  },
+  "firstDifferences": {
+    "nativeHorizontal": {
+      "sequence": 418,
+      "routeKey": 118,
+      "equal": {
+        "cursor": true,
+        "viewport": true,
+        "nativeCursor": false,
+        "coherent": true
+      },
+      "off": {
+        "sequence": 418,
+        "coherent": true,
+        "nativeCursor": {
+          "itemId": "navigation-mixed-9889",
+          "graphemeOffset": 45,
+          "screenX": 50,
+          "screenY": 7,
+          "viewportRow": 5
+        },
+        "geometryRevision": 409,
+        "presentationRevision": 1519,
+        "topSpacerRows": 45262,
+        "bottomSpacerRows": 0,
+        "intentRevision": 1107,
+        "scrollTop": 45696,
+        "cursor": {
+          "itemId": "navigation-mixed-9889",
+          "graphemeOffset": 45
+        },
+        "viewport": {
+          "kind": "point",
+          "point": {
+            "itemId": "navigation-mixed-9889",
+            "graphemeOffset": 45
+          },
+          "preferredScreenRow": 5
+        },
+        "pendingRows": [
+          {
+            "rows": -7,
+            "cursor": "follow",
+            "sequence": 419
+          },
+          {
+            "rows": -7,
+            "cursor": "follow",
+            "sequence": 420
+          }
+        ],
+        "pendingAnchor": false,
+        "pendingRestore": false
+      },
+      "on": {
+        "sequence": 418,
+        "coherent": true,
+        "nativeCursor": {
+          "itemId": "navigation-mixed-9889",
+          "graphemeOffset": 45,
+          "screenX": 12,
+          "screenY": 7,
+          "viewportRow": 5
+        },
+        "geometryRevision": 274,
+        "presentationRevision": 1366,
+        "topSpacerRows": 46042,
+        "bottomSpacerRows": 0,
+        "intentRevision": 1089,
+        "scrollTop": 46223,
+        "cursor": {
+          "itemId": "navigation-mixed-9889",
+          "graphemeOffset": 45
+        },
+        "viewport": {
+          "kind": "point",
+          "point": {
+            "itemId": "navigation-mixed-9889",
+            "graphemeOffset": 45
+          },
+          "preferredScreenRow": 5
+        },
+        "pendingRows": [],
+        "pendingAnchor": false,
+        "pendingRestore": false
+      }
+    },
+    "source": {
+      "sequence": 483,
+      "routeKey": 183,
+      "equal": {
+        "cursor": false,
+        "viewport": false,
+        "nativeCursor": false,
+        "coherent": true
+      },
+      "off": {
+        "sequence": 483,
+        "coherent": true,
+        "nativeCursor": {
+          "itemId": "navigation-mixed-9825",
+          "graphemeOffset": 52,
+          "screenX": 11,
+          "screenY": 7,
+          "viewportRow": 5
+        },
+        "geometryRevision": 495,
+        "presentationRevision": 1772,
+        "topSpacerRows": 45244,
+        "bottomSpacerRows": 764,
+        "intentRevision": 1274,
+        "scrollTop": 45267,
+        "cursor": {
+          "itemId": "navigation-mixed-9825",
+          "graphemeOffset": 52
+        },
+        "viewport": {
+          "kind": "point",
+          "point": {
+            "itemId": "navigation-mixed-9825",
+            "graphemeOffset": 52
+          },
+          "preferredScreenRow": 5
+        },
+        "pendingRows": [
+          {
+            "rows": -7,
+            "cursor": "follow",
+            "sequence": 484
+          },
+          {
+            "rows": -7,
+            "cursor": "follow",
+            "sequence": 485
+          },
+          {
+            "rows": -7,
+            "cursor": "follow",
+            "sequence": 486
+          },
+          {
+            "rows": -7,
+            "cursor": "follow",
+            "sequence": 487
+          }
+        ],
+        "pendingAnchor": false,
+        "pendingRestore": false
+      },
+      "on": {
+        "sequence": 483,
+        "coherent": true,
+        "nativeCursor": {
+          "itemId": "navigation-mixed-9825",
+          "graphemeOffset": 45,
+          "screenX": 12,
+          "screenY": 7,
+          "viewportRow": 5
+        },
+        "geometryRevision": 342,
+        "presentationRevision": 1600,
+        "topSpacerRows": 45742,
+        "bottomSpacerRows": 764,
+        "intentRevision": 1255,
+        "scrollTop": 45765,
+        "cursor": {
+          "itemId": "navigation-mixed-9825",
+          "graphemeOffset": 45
+        },
+        "viewport": {
+          "kind": "point",
+          "point": {
+            "itemId": "navigation-mixed-9825",
+            "graphemeOffset": 45
+          },
+          "preferredScreenRow": 5
+        },
+        "pendingRows": [],
+        "pendingAnchor": false,
+        "pendingRestore": false
+      }
+    },
+    "nativeVertical": {
+      "sequence": 484,
+      "routeKey": 184,
+      "equal": {
+        "cursor": false,
+        "viewport": false,
+        "nativeCursor": false,
+        "coherent": true
+      },
+      "off": {
+        "sequence": 484,
+        "coherent": true,
+        "nativeCursor": {
+          "itemId": "navigation-mixed-9823",
+          "graphemeOffset": 34,
+          "screenX": 11,
+          "screenY": 6,
+          "viewportRow": 4
+        },
+        "geometryRevision": 497,
+        "presentationRevision": 1777,
+        "topSpacerRows": 45240,
+        "bottomSpacerRows": 777,
+        "intentRevision": 1277,
+        "scrollTop": 45263,
+        "cursor": {
+          "itemId": "navigation-mixed-9823",
+          "graphemeOffset": 34
+        },
+        "viewport": {
+          "kind": "point",
+          "point": {
+            "itemId": "navigation-mixed-9823",
+            "graphemeOffset": 0
+          },
+          "preferredScreenRow": 1
+        },
+        "pendingRows": [
+          {
+            "rows": -7,
+            "cursor": "follow",
+            "sequence": 485
+          },
+          {
+            "rows": -7,
+            "cursor": "follow",
+            "sequence": 486
+          },
+          {
+            "rows": -7,
+            "cursor": "follow",
+            "sequence": 487
+          }
+        ],
+        "pendingAnchor": false,
+        "pendingRestore": false
+      },
+      "on": {
+        "sequence": 484,
+        "coherent": true,
+        "nativeCursor": {
+          "itemId": "navigation-mixed-9823",
+          "graphemeOffset": 73,
+          "screenX": 50,
+          "screenY": 7,
+          "viewportRow": 5
+        },
+        "geometryRevision": 346,
+        "presentationRevision": 1607,
+        "topSpacerRows": 45735,
+        "bottomSpacerRows": 781,
+        "intentRevision": 1258,
+        "scrollTop": 45757,
+        "cursor": {
+          "itemId": "navigation-mixed-9823",
+          "graphemeOffset": 73
+        },
+        "viewport": {
+          "kind": "point",
+          "point": {
+            "itemId": "navigation-mixed-9823",
+            "graphemeOffset": 0
+          },
+          "preferredScreenRow": 2
+        },
+        "pendingRows": [],
+        "pendingAnchor": false,
+        "pendingRestore": false
+      }
+    }
+  },
+  "qualification": "Resolved events aligned by UI intent sequence, not dispatch count. Native horizontal difference at118 converges before119 after same-height Markdown mapping refinement; first persistent source difference183 requires focused170\u2013200trace."
+}
