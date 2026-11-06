@@ -1,0 +1,177 @@
+{
+  "baselineCommit": "3ae2f3f",
+  "sourceSha256": {
+    "packages/ui-opentui-react/src/transcript/compact-prepared-text-layout.ts": "f594fedeadd3bceb1c4fd25676ff0318804a262774dcf2979cded5b7b3ded070",
+    "packages/ui-opentui-react/src/transcript/prepared-text-cache.ts": "8b6e285d8918ef5a7be8cc3c829118cd3e2f9d75e2a1d2c16d09ab2e6377b224",
+    "scripts/benchmark-compact-text-layout.ts": "d51d92ea8b24ff775d6725fde93abf65f2bb17aa4772434cb3f3bcbf8608b117"
+  },
+  "rawSha256": "3e822a6533450690f36a2eb347e565c2a4684943567ed6f9129afffd76a4bc6f",
+  "result": {
+    "benchmark": "compact-prepared-text-v1",
+    "status": "diagnostic",
+    "platform": "darwin",
+    "arch": "arm64",
+    "bun": "1.3.6",
+    "opentui": "0.5.11",
+    "qualification": "Standalone synchronous preparation after module import; no rich-render or input-to-paint comparison. Compact bytes count retained typed arrays only; verbose JSON is a different representation, neither measures heap. Preparation still constructs verbose output transiently. Lookup timings are aggregate loops, not UX latency distributions. Cache time limits apply between native jobs, never preempt a job.",
+    "results": [
+      {
+        "name": "short-plain",
+        "width": 24,
+        "rows": 17,
+        "graphemes": 288,
+        "runs": 21,
+        "compactTypedArrayBytes": 1520,
+        "verboseJsonBytes": 24944,
+        "preparationMs": [
+          0.5984580000000079, 0.3767089999999911, 0.31741700000000606,
+          0.4101659999999896, 0.307541999999998
+        ],
+        "lookupCount": 10000,
+        "lookupBatchMs": 2.1495000000000033
+      },
+      {
+        "name": "short-plain",
+        "width": 80,
+        "rows": 5,
+        "graphemes": 288,
+        "runs": 9,
+        "compactTypedArrayBytes": 560,
+        "verboseJsonBytes": 24065,
+        "preparationMs": [
+          0.3015000000000043, 0.275291999999979, 0.28283400000000825,
+          0.25629200000000196, 0.3090830000000153
+        ],
+        "lookupCount": 10000,
+        "lookupBatchMs": 1.2338329999999758
+      },
+      {
+        "name": "long-code",
+        "width": 24,
+        "rows": 1001,
+        "graphemes": 13000,
+        "runs": 1501,
+        "compactTypedArrayBytes": 100080,
+        "verboseJsonBytes": 1181887,
+        "preparationMs": [
+          10.97675000000001, 10.774541, 12.242208000000005, 10.276499999999999,
+          10.672333000000009
+        ],
+        "lookupCount": 10000,
+        "lookupBatchMs": 1.616500000000002
+      },
+      {
+        "name": "long-code",
+        "width": 80,
+        "rows": 501,
+        "graphemes": 13000,
+        "runs": 1001,
+        "compactTypedArrayBytes": 60080,
+        "verboseJsonBytes": 1141839,
+        "preparationMs": [
+          10.096958999999998, 8.765999999999991, 8.505540999999994,
+          8.335540999999978, 9.392875000000004
+        ],
+        "lookupCount": 10000,
+        "lookupBatchMs": 1.4575419999999895
+      },
+      {
+        "name": "unicode-tabs",
+        "width": 24,
+        "rows": 81,
+        "graphemes": 1380,
+        "runs": 261,
+        "compactTypedArrayBytes": 13680,
+        "verboseJsonBytes": 120484,
+        "preparationMs": [
+          1.108791999999994, 1.1092499999999745, 1.0693750000000364,
+          1.1023750000000518, 1.0332920000000172
+        ],
+        "lookupCount": 10000,
+        "lookupBatchMs": 1.300375000000031
+      },
+      {
+        "name": "unicode-tabs",
+        "width": 80,
+        "rows": 41,
+        "graphemes": 1380,
+        "runs": 221,
+        "compactTypedArrayBytes": 10480,
+        "verboseJsonBytes": 117650,
+        "preparationMs": [
+          1.029124999999965, 1.0000420000000076, 1.0948750000000018,
+          1.1083750000000236, 1.23112500000002
+        ],
+        "lookupCount": 10000,
+        "lookupBatchMs": 1.2076659999999606
+      },
+      {
+        "name": "irregular-widths",
+        "width": 24,
+        "rows": 251,
+        "graphemes": 4000,
+        "runs": 4001,
+        "compactTypedArrayBytes": 170080,
+        "verboseJsonBytes": 355140,
+        "preparationMs": [
+          3.658416999999986, 4.273875000000032, 3.844832999999994,
+          3.5015410000000315, 3.466415999999981
+        ],
+        "lookupCount": 10000,
+        "lookupBatchMs": 1.9671659999999633
+      },
+      {
+        "name": "irregular-widths",
+        "width": 80,
+        "rows": 77,
+        "graphemes": 4000,
+        "runs": 4001,
+        "compactTypedArrayBytes": 163120,
+        "verboseJsonBytes": 339992,
+        "preparationMs": [
+          3.3680420000000026, 3.772583999999995, 3.182957999999985,
+          3.8819579999999974, 3.838707999999997
+        ],
+        "lookupCount": 10000,
+        "lookupBatchMs": 2.013541000000032
+      }
+    ],
+    "cache": {
+      "admission": {
+        "queued": 4,
+        "cached": 0,
+        "refused": 0,
+        "duplicate": 0
+      },
+      "firstDrain": {
+        "jobs": 1,
+        "prepared": 1,
+        "unsupported": 0,
+        "unretained": 0,
+        "remaining": 3
+      },
+      "reversalAdmission": {
+        "queued": 2,
+        "cached": 1,
+        "refused": 0,
+        "duplicate": 0
+      },
+      "reversalDrain": {
+        "jobs": 2,
+        "prepared": 2,
+        "unsupported": 0,
+        "unretained": 0,
+        "remaining": 0
+      },
+      "stats": {
+        "entries": 3,
+        "accountedBytes": 15414,
+        "queued": 0,
+        "queuedCodeUnits": 0
+      },
+      "lookupCount": 10000,
+      "lookupBatchMs": 5.153958999999986
+    },
+    "checksum": 1936367
+  }
+}

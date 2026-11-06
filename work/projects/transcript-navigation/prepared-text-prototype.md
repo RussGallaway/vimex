@@ -42,6 +42,8 @@ On the recorded macOS arm64/Bun 1.3.6 run, subsequent calls took roughly 0.3–0
 
 ## Before navigation integration
 
+Follow-up: [compact preparation](compact-preparation-prototype.md) now implements compact runs, bounded cache/queue work, and a supported-subset compatibility adapter for the boundary differences below. Viewport integration remains pending.
+
 The current transcript measurement path assigns newline offsets to the next visible row and EOF relative to its last observed cell. This prototype uses native insertion boundaries, including trailing empty lines and wide-grapheme widths. Those policies are not interchangeable. Painted-cell parity deliberately excludes these boundaries; cursor/selection parity needs an explicit adapter and independent tests before publishing this data as runtime geometry.
 
 Next, prototype compact row spans and on-demand point lookup, a bounded cache keyed by identity/content/layout inputs, and bounded preparation ahead of travel. Then connect a narrow plain/code viewport experiment to the existing semantic cursor/anchor owner and deliberately delay rich detail. Preserve unsupported-content fallback and the correction-order regressions. A large synchronous native call remains uninterruptible; input/output caps alone do not guarantee a frame budget.
