@@ -26,7 +26,7 @@ master, slave = pty.openpty()
 fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 28, 100, 0, 0))
 process = subprocess.Popen([shutil.which("bun"), "run", "apps/tui/src/main.tsx", *arguments], cwd=root,
                            stdin=slave, stdout=slave, stderr=slave, start_new_session=True,
-                           env={**os.environ, "TERM": "xterm-256color", "NO_COLOR": "0", "HERDR_ENV": "0", "XDG_STATE_HOME": temporary.name, "VIMEX_TEST_TRACE": trace})
+                           env={**os.environ, "TERM": "xterm-256color", "NO_COLOR": "0", "HERDR_ENV": "0", "XDG_STATE_HOME": temporary.name, "VIMEX_TEST_TRACE": trace, "REX_SESSION": "fixture-session" if scenario == "rex" else "", "REX_BLOCK": "fixture-block" if scenario == "rex" else ""})
 os.close(slave)
 output = bytearray()
 
@@ -103,7 +103,7 @@ try:
     wait_for(b"INSERT", offset)
     offset = send(b"terminal integration draft")
     wait_for(b"terminal integration draft", offset)
-    if scenario == "server":
+    if scenario in ("server", "rex"):
         # Kitty keyboard protocol distinguishes Shift+Enter from plain Enter.
         send(b"\x1b[13;2u")
         offset = send(b"second line")
@@ -115,7 +115,7 @@ try:
         wait_for(b"Approval needed")
     offset = send(b"\x1b")
     wait_for(b"NORMAL", offset)
-    if scenario == "server":
+    if scenario in ("server", "rex"):
         offset = send(b":")
         wait_for(b"COMMAND", offset)
         send(b"approve")
@@ -142,13 +142,25 @@ try:
     assert process.returncode == expected_exit, f"exit code {process.returncode}, expected {expected_exit}"
     assert b"\x1b[?1049l" in output, "alternate screen not restored"
     assert b"\x1b[?25h" in output, "cursor not restored"
-    if scenario == "server":
+    if scenario in ("server", "rex"):
         with open(trace) as file:
             requests = [json.loads(line) for line in file]
         starts = [r for r in requests if r.get("method") == "turn/start"]
         assert len(starts) == 1, "Shift+Enter submitted a turn or Enter submitted more than once"
         assert starts[0]["params"]["input"][0]["text"] == "terminal integration draft\nsecond line", "Shift+Enter did not preserve a newline in the submitted prompt"
         assert any(r.get("id") == 77 and r.get("result", {}).get("decision") == "accept" for r in requests), "approval response never reached app server"
+    if scenario == "rex":
+        cursor = 0
+        for state in (b"idle", b"working", b"blocked", b"working", b"done", b"clear"):
+            needle = b"\x1b]7501;state=" + state + b":app=vimex"
+            position = output.find(needle, cursor)
+            assert position >= 0, f"Missing Rex status {state!r} after {cursor}"
+            cursor = position + len(needle)
+        assert b":kind=permission:" in output, "Missing Rex approval kind"
+        assert any(prefix in output for prefix in (b"\x1b]0;Vimex", b"\x1b]2;Vimex")), "Missing Vimex terminal title OSC"
+        assert output.find(b"\x1b]7501;state=clear") < output.find(b"\x1b[?1049l"), "Rex clear must precede renderer destruction"
+    else:
+        assert b"\x1b]7501;" not in output, "Rex status leaked outside Rex"
     print(json.dumps({"passed": True, "bytes": len(output), "checks": ["alternate-screen", "markdown", "insert", "draft", "escape", "command", "quit", "terminal-restoration"]}))
 finally:
     if process.poll() is None:

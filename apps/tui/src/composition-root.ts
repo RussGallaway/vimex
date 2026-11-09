@@ -16,6 +16,7 @@ import {
   createClipboard,
   createHostClipboard,
   createRendererClipboardAdapter,
+  resolveRenderLib,
 } from "@opentui/core"
 import { createRoot } from "@opentui/react"
 import {
@@ -58,10 +59,12 @@ import {
 } from "./native-handoff"
 import { createMachineNavigation } from "./machine-navigation"
 import { PerformanceProfileRecorder } from "./performance-profile"
+import { RexIntegration } from "./rex-integration"
 
 export async function runApplication(options: CliOptions) {
   let controller!: VimexController
   let renderer: Awaited<ReturnType<typeof createCliRenderer>> | undefined
+  let rex: RexIntegration | undefined
   const performanceProfile = new PerformanceProfileRecorder({
     metadata: {
       vimexVersion: version,
@@ -218,6 +221,7 @@ export async function runApplication(options: CliOptions) {
   let failure: unknown
   let cleanupFailure: unknown
   let lastHerdrError: string | undefined
+  const rexNotice = new FailureNotice()
   let root: ReturnType<typeof createRoot> | undefined
   let detachHandlers = () => {}
   try {
@@ -233,6 +237,16 @@ export async function runApplication(options: CliOptions) {
     })
     startupPhase("renderer_created")
     const activeRenderer = renderer
+    rex = new RexIntegration({
+      enabled: Boolean(
+        process.env.REX_SESSION &&
+        process.env.REX_BLOCK &&
+        process.stdout.isTTY,
+      ),
+      write: (sequence) =>
+        resolveRenderLib().writeOut(activeRenderer.rendererPtr, sequence),
+      setTitle: (title) => activeRenderer.setTerminalTitle(title),
+    })
     const onFrameStart = async () => {
       frameAwaitingCompletion = true
       const atMs = performance.now()
@@ -359,6 +373,15 @@ export async function runApplication(options: CliOptions) {
       onLifecycle(
         state: import("@vimex/workbench").WorkbenchLifecycleSnapshot,
       ) {
+        try {
+          rex?.report(state)
+          rexNotice.clear()
+        } catch (error) {
+          rexNotice.fail(
+            new Error(`Rex reporting failed: ${String(error)}`),
+            (message) => controller.notice(message),
+          )
+        }
         if (state.connection === "connected") startupPhase("connected")
         if (state.connection === "connected" && state.summary)
           startupPhase("session_bound")
@@ -495,7 +518,13 @@ export async function runApplication(options: CliOptions) {
     try {
       await shutdownApplication({
         unmount: () => root?.unmount(),
-        restoreTerminal: () => renderer?.destroy(),
+        restoreTerminal: () => {
+          try {
+            rex?.dispose()
+          } finally {
+            renderer?.destroy()
+          }
+        },
         releaseResources: () => lifecycle.close(),
         detachHandlers,
       })

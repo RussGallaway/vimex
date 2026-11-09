@@ -98,3 +98,21 @@ test.skipIf(process.env.VIMEX_TEST_TMUX !== "1" || !Bun.which("tmux"))(
   },
   30000,
 )
+
+test("real PTY: Rex title and idle, working, approval, done, cleanup status", async () => {
+  const child = Bun.spawn(
+    ["python3", join(import.meta.dir, "driver.py"), "rex"],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  )
+  const [stdout, stderr, exit] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ])
+  if (exit !== 0)
+    throw new Error(`Rex PTY integration failed: ${stderr}\n${stdout}`)
+  expect(JSON.parse(stdout).passed).toBe(true)
+}, 30000)

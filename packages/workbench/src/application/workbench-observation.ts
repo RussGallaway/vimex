@@ -1,4 +1,4 @@
-import type { ThreadSummary } from "@vimex/conversation"
+import type { ThreadSummary, Turn } from "@vimex/conversation"
 import type { WorkbenchState } from "./workbench-state"
 
 /** Lifecycle data exposed to integrations such as Herdr. */
@@ -6,6 +6,10 @@ export interface WorkbenchLifecycleSnapshot {
   readonly summary?: ThreadSummary
   readonly connection: WorkbenchState["connection"]
   readonly pendingApprovals: number
+  /** Unresolved user questions for the active thread; absent in older observers. */
+  readonly pendingQuestions?: number
+  /** Active turn, or the latest settled turn. Never includes transcript content. */
+  readonly turn?: Readonly<Pick<Turn, "id" | "status">>
 }
 
 export function captureWorkbenchLifecycle(
@@ -21,10 +25,19 @@ export function captureWorkbenchLifecycle(
         0,
       )
     : 0
+  const turn = lifecycleTurn(state)
   return Object.freeze({
     summary,
     connection: state.connection,
     pendingApprovals,
+    pendingQuestions: summary
+      ? Object.values(state.questions).filter(
+          (request) => request.threadId === summary.id,
+        ).length
+      : 0,
+    turn: turn
+      ? Object.freeze({ id: turn.id, status: turn.status })
+      : undefined,
   })
 }
 
@@ -46,6 +59,9 @@ export function workbenchLifecycleSignature(
     summary?.status,
     value.connection,
     value.pendingApprovals,
+    value.pendingQuestions ?? 0,
+    value.turn?.id,
+    value.turn?.status,
   ])
 }
 
@@ -72,5 +88,23 @@ export function workbenchLifecycleChanged(
     left?.status !== right?.status
   )
     return true
-  return before.approvals !== after.approvals
+  if (
+    before.approvals !== after.approvals ||
+    before.questions !== after.questions
+  )
+    return true
+  const previousTurn = lifecycleTurn(before)
+  const nextTurn = lifecycleTurn(after)
+  return (
+    previousTurn?.id !== nextTurn?.id ||
+    previousTurn?.status !== nextTurn?.status
+  )
+}
+
+function lifecycleTurn(state: WorkbenchState): Turn | undefined {
+  const conversation = state.activeThreadId
+    ? state.workspaces[state.activeThreadId]?.conversation
+    : undefined
+  const id = conversation?.activeTurnId ?? conversation?.turnIds.at(-1)
+  return id ? conversation?.turns[id] : undefined
 }
