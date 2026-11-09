@@ -351,174 +351,185 @@ export function Composer(props: {
       flexShrink={0}
       border={["left"]}
       borderColor={accent}
-      backgroundColor={
-        emberTide.composerBackground ?? emberTide.backgroundRaised
-      }
-      paddingTop={compact ? 0 : 1}
-      paddingX={2}
     >
-      {props.drawer}
-      <textarea
-        id="composer"
-        ref={props.textareaRef}
-        height={inputHeight}
-        minHeight={inputHeight}
-        maxHeight={inputHeight}
-        wrapMode="word"
-        placeholder={shellMode ? "Run a shell command…" : "Message Codex…"}
-        placeholderColor={emberTide.textMuted}
-        textColor={emberTide.textSoft}
-        focusedTextColor={emberTide.text}
+      {/* Keep the accent cell on the canvas, outside the filled input surface. */}
+      <box
+        id="composer-surface"
+        flexShrink={0}
         backgroundColor={
           emberTide.composerBackground ?? emberTide.backgroundRaised
         }
-        focusedBackgroundColor={
-          emberTide.composerBackground ?? emberTide.backgroundRaised
-        }
-        cursorColor={emberTide.sage}
-        cursorStyle={{
-          style: props.mode === "insert" ? "line" : "block",
-          blinking: false,
-        }}
-        keyBindings={[
-          ...(props.insertEnter === "submit"
-            ? [{ name: "return", action: "submit" } as const]
-            : []),
-          { name: "return", shift: true, action: "newline" },
-        ]}
-        onKeyDown={(event) => {
-          if (
-            props.interactive !== false &&
-            committedMode.current === "insert"
-          ) {
-            nativeInputPending.current = true
-            nativeRevision.current = Math.max(
-              nativeRevision.current,
-              props.state.revision,
-            )
-            requestComposerPaint(renderer)
-          }
-          if (
-            event.ctrl &&
-            (event.name.toLowerCase() === "return" ||
-              event.name.toLowerCase() === "enter")
-          ) {
-            nativeSubmitIntent.current = "steer"
-          }
-          if (props.interactive === false || committedMode.current !== "insert")
-            event.preventDefault()
-        }}
-        onMouseDown={(event) => {
-          if (
-            props.interactive === false ||
-            event.modifiers.shift ||
-            event.modifiers.ctrl ||
-            event.modifiers.alt
-          )
-            return
-          if (event.button > 2) return
-          if (props.onMouseActivate?.() === false) return
-          committedMode.current = "insert"
-          if (event.button === 1 || event.button === 2) {
-            event.preventDefault()
-            if (props.mousePasteText) {
-              props.textareaRef.current?.insertText(props.mousePasteText)
-              publishNativeDraft()
-            }
-          }
-        }}
-        onPaste={(event) => {
-          if (
-            props.interactive === false ||
-            committedMode.current !== "insert"
-          ) {
-            event.preventDefault()
-            return
-          }
-          const path = imagePathFromPaste(new TextDecoder().decode(event.bytes))
-          if (path) {
-            event.preventDefault()
-            publishNativeDraft()
-            const textarea = props.textareaRef.current
-            props.onImagePath?.(
-              path,
-              textarea
-                ? nativeOffsetToGraphemeOffset(
-                    textarea.plainText,
-                    textarea.cursorOffset,
-                  )
-                : props.state.cursorOffset,
-            )
-          }
-        }}
-        onContentChange={publishNativeDraft}
-        onCursorChange={publishNativeDraft}
-        onSubmit={() => {
-          if (props.interactive === false) return
-          const intent = nativeSubmitIntent.current
-          nativeSubmitIntent.current = undefined
-          submitNativeDraft(intent)
-        }}
-      />
-      <box
-        height={1}
-        flexDirection="row"
-        gap={1}
-        marginTop={compact ? 0 : 1}
-        justifyContent="space-between"
+        paddingTop={compact ? 0 : 1}
+        paddingX={2}
       >
+        {props.drawer}
+        <textarea
+          id="composer"
+          ref={props.textareaRef}
+          height={inputHeight}
+          minHeight={inputHeight}
+          maxHeight={inputHeight}
+          wrapMode="word"
+          placeholder={shellMode ? "Run a shell command…" : "Message Codex…"}
+          placeholderColor={emberTide.textMuted}
+          textColor={emberTide.textSoft}
+          focusedTextColor={emberTide.text}
+          backgroundColor={
+            emberTide.composerBackground ?? emberTide.backgroundRaised
+          }
+          focusedBackgroundColor={
+            emberTide.composerBackground ?? emberTide.backgroundRaised
+          }
+          cursorColor={emberTide.sage}
+          cursorStyle={{
+            style: props.mode === "insert" ? "line" : "block",
+            blinking: false,
+          }}
+          keyBindings={[
+            ...(props.insertEnter === "submit"
+              ? [{ name: "return", action: "submit" } as const]
+              : []),
+            { name: "return", shift: true, action: "newline" },
+          ]}
+          onKeyDown={(event) => {
+            if (
+              props.interactive !== false &&
+              committedMode.current === "insert"
+            ) {
+              nativeInputPending.current = true
+              nativeRevision.current = Math.max(
+                nativeRevision.current,
+                props.state.revision,
+              )
+              requestComposerPaint(renderer)
+            }
+            if (
+              event.ctrl &&
+              (event.name.toLowerCase() === "return" ||
+                event.name.toLowerCase() === "enter")
+            ) {
+              nativeSubmitIntent.current = "steer"
+            }
+            if (
+              props.interactive === false ||
+              committedMode.current !== "insert"
+            )
+              event.preventDefault()
+          }}
+          onMouseDown={(event) => {
+            if (
+              props.interactive === false ||
+              event.modifiers.shift ||
+              event.modifiers.ctrl ||
+              event.modifiers.alt
+            )
+              return
+            if (event.button > 2) return
+            if (props.onMouseActivate?.() === false) return
+            committedMode.current = "insert"
+            if (event.button === 1 || event.button === 2) {
+              event.preventDefault()
+              if (props.mousePasteText) {
+                props.textareaRef.current?.insertText(props.mousePasteText)
+                publishNativeDraft()
+              }
+            }
+          }}
+          onPaste={(event) => {
+            if (
+              props.interactive === false ||
+              committedMode.current !== "insert"
+            ) {
+              event.preventDefault()
+              return
+            }
+            const path = imagePathFromPaste(
+              new TextDecoder().decode(event.bytes),
+            )
+            if (path) {
+              event.preventDefault()
+              publishNativeDraft()
+              const textarea = props.textareaRef.current
+              props.onImagePath?.(
+                path,
+                textarea
+                  ? nativeOffsetToGraphemeOffset(
+                      textarea.plainText,
+                      textarea.cursorOffset,
+                    )
+                  : props.state.cursorOffset,
+              )
+            }
+          }}
+          onContentChange={publishNativeDraft}
+          onCursorChange={publishNativeDraft}
+          onSubmit={() => {
+            if (props.interactive === false) return
+            const intent = nativeSubmitIntent.current
+            nativeSubmitIntent.current = undefined
+            submitNativeDraft(intent)
+          }}
+        />
         <box
-          id="composer-metadata"
+          height={1}
           flexDirection="row"
           gap={1}
-          flexGrow={1}
-          flexShrink={1}
-          minWidth={0}
-          overflow="hidden"
-        >
-          <text fg={accent}>{shellMode ? "Shell" : "Codex"}</text>
-          <text fg={emberTide.textMuted}>·</text>
-          <text fg={emberTide.textSoft} wrapMode="none" truncate>
-            {props.model ?? "model —"}
-          </text>
-          <text fg={emberTide.textMuted}>·</text>
-          <text fg={emberTide.textSoft} wrapMode="none" truncate>
-            {props.reasoningEffort ?? "effort —"}
-          </text>
-        </box>
-        <box flexDirection="row" gap={1} flexShrink={0}>
-          {props.activeTurn && showSendHint ? (
-            <text fg={emberTide.amber}>tab queue</text>
-          ) : null}
-          {showSendHint ? (
-            <text id="composer-send-hint" fg={emberTide.textMuted}>
-              {props.insertEnter === "submit"
-                ? props.activeTurn
-                  ? `enter ${props.busySubmit} · shift↵ newline`
-                  : "enter send · shift↵ newline"
-                : "enter newline · ctrl↵ send"}
-            </text>
-          ) : null}
-        </box>
-      </box>
-      {props.queueNotice ? (
-        <text fg={emberTide.amber}>{props.queueNotice}</text>
-      ) : null}
-      {failed.map((message) => (
-        <box
-          key={message.id}
-          flexDirection="row"
+          marginTop={compact ? 0 : 1}
           justifyContent="space-between"
-          backgroundColor={emberTide.backgroundPanel}
-          paddingX={1}
         >
-          <text fg={emberTide.red} wrapMode="word">
-            failed: {message.reason ?? "send failed"} ·{" "}
-            {message.text || `[${message.images?.length ?? 0} images]`}
-          </text>
-          <text fg={emberTide.amber}>R retry</text>
+          <box
+            id="composer-metadata"
+            flexDirection="row"
+            gap={1}
+            flexGrow={1}
+            flexShrink={1}
+            minWidth={0}
+            overflow="hidden"
+          >
+            <text fg={accent}>{shellMode ? "Shell" : "Codex"}</text>
+            <text fg={emberTide.textMuted}>·</text>
+            <text fg={emberTide.textSoft} wrapMode="none" truncate>
+              {props.model ?? "model —"}
+            </text>
+            <text fg={emberTide.textMuted}>·</text>
+            <text fg={emberTide.textSoft} wrapMode="none" truncate>
+              {props.reasoningEffort ?? "effort —"}
+            </text>
+          </box>
+          <box flexDirection="row" gap={1} flexShrink={0}>
+            {props.activeTurn && showSendHint ? (
+              <text fg={emberTide.amber}>tab queue</text>
+            ) : null}
+            {showSendHint ? (
+              <text id="composer-send-hint" fg={emberTide.textMuted}>
+                {props.insertEnter === "submit"
+                  ? props.activeTurn
+                    ? `enter ${props.busySubmit} · shift↵ newline`
+                    : "enter send · shift↵ newline"
+                  : "enter newline · ctrl↵ send"}
+              </text>
+            ) : null}
+          </box>
         </box>
-      ))}
+        {props.queueNotice ? (
+          <text fg={emberTide.amber}>{props.queueNotice}</text>
+        ) : null}
+        {failed.map((message) => (
+          <box
+            key={message.id}
+            flexDirection="row"
+            justifyContent="space-between"
+            backgroundColor={emberTide.backgroundPanel}
+            paddingX={1}
+          >
+            <text fg={emberTide.red} wrapMode="word">
+              failed: {message.reason ?? "send failed"} ·{" "}
+              {message.text || `[${message.images?.length ?? 0} images]`}
+            </text>
+            <text fg={emberTide.amber}>R retry</text>
+          </box>
+        ))}
+      </box>
     </box>
   )
 }
