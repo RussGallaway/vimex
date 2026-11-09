@@ -651,7 +651,7 @@ export function useTranscriptLayout(options: {
           Math.max(1, scrollbox.viewport.height),
           undefined,
           undefined,
-          process.env.VIMEX_NAV_RETAINED_WINDOW === "1",
+          process.env.VIMEX_NAV_RETAINED_WINDOW !== "0",
         )
         if (configured !== current.frame) {
           renderer.requestRender()

@@ -1492,7 +1492,7 @@ async function observeAction(
             ...landingFrames.map((frame) => frame.materializedBlocks),
           ),
           windowTransitionsAfterRelease: landingWindowTransitions,
-          retainedWindow: process.env.VIMEX_NAV_RETAINED_WINDOW === "1",
+          retainedWindow: process.env.VIMEX_NAV_RETAINED_WINDOW !== "0",
           qualification:
             "Native root retention and cached geometry are not proof that offscreen Markdown has highlighted or painted. Compare atRelease viewport/cursor across runs before claiming matched-destination latency; coalesced holds may land differently.",
         }
@@ -2072,7 +2072,7 @@ async function run() {
         },
         viewport: { width, height },
         windowPolicy: {
-          retainWindow: process.env.VIMEX_NAV_RETAINED_WINDOW === "1",
+          retainWindow: process.env.VIMEX_NAV_RETAINED_WINDOW !== "0",
           overscanRows: overscanRows ?? "viewport-default",
           recentTailBlocks:
             recentTailBlocks ?? defaultTranscriptWindowPolicy.recentTailBlocks,
@@ -2097,7 +2097,7 @@ async function run() {
           landingKey: landingKey ?? null,
           landingFocus: landingKey ? landingFocus : null,
           landingDelayMs: landingKey ? landingDelayMs : null,
-          repeatControl: process.env.VIMEX_NAV_REPEAT_CONTROL === "1",
+          repeatControl: process.env.VIMEX_NAV_REPEAT_CONTROL !== "0",
           requestedIntervalMs: intervalMs,
           warmRepeats,
           traceNavigation,

@@ -1,5 +1,7 @@
 # Retained transcript window
 
+Current status (2026-11-09): promoted to default behavior following Russ's positive local feedback. The corresponding environment flag now disables the feature only when set to `0`. The opt-in instructions and results below describe the historical experiment.
+
 Status: opt-in experiment, 2026-11-06. Replaces the rolling-preparation experiment after local feedback that middle-transcript movement remains slow.
 
 ## Change

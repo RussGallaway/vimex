@@ -589,7 +589,7 @@ function currentGeometry(
   const width = Math.max(1, scrollbox.viewport.width)
   const styleRevision = runtimeSource?.styleRevision ?? "legacy"
   const usePreparedPaint =
-    runtimeSource?.preparedPaint ?? process.env.VIMEX_NAV_PREPARED_PAINT === "1"
+    runtimeSource?.preparedPaint ?? process.env.VIMEX_NAV_PREPARED_PAINT !== "0"
   const usePreparedGeometry = Boolean(
     runtimeSource?.runtime &&
     (usePreparedPaint ||

@@ -56,6 +56,9 @@ function snapshot(h: Harness) {
 
 async function scenario(enabled: boolean) {
   const previous = process.env.VIMEX_NAV_PREPARED_GEOMETRY
+  const previousPaint = process.env.VIMEX_NAV_PREPARED_PAINT
+  // Isolate the geometry bridge from the default-on prepared painter.
+  process.env.VIMEX_NAV_PREPARED_PAINT = "0"
   process.env.VIMEX_NAV_PREPARED_GEOMETRY = enabled ? "1" : "0"
   const h = await wheelHarness(0, true)
   const copied: string[] = []
@@ -165,6 +168,8 @@ async function scenario(enabled: boolean) {
     await h.close()
     if (previous === undefined) delete process.env.VIMEX_NAV_PREPARED_GEOMETRY
     else process.env.VIMEX_NAV_PREPARED_GEOMETRY = previous
+    if (previousPaint === undefined) delete process.env.VIMEX_NAV_PREPARED_PAINT
+    else process.env.VIMEX_NAV_PREPARED_PAINT = previousPaint
   }
 }
 

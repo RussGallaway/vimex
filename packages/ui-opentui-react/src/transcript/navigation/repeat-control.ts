@@ -7,7 +7,7 @@ export type NavigationRepeatInput = {
 }
 
 export function navigationRepeatControlEnabled(): boolean {
-  return process.env.VIMEX_NAV_REPEAT_CONTROL === "1"
+  return process.env.VIMEX_NAV_REPEAT_CONTROL !== "0"
 }
 
 /** Only protocol-confirmed repeats are replaceable; legacy presses stay exact. */

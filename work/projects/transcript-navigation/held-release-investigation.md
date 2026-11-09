@@ -1,5 +1,7 @@
 # Held navigation after release
 
+Current status (2026-11-09): promoted to default behavior following Russ's positive local feedback. The corresponding environment flag now disables the feature only when set to `0`. The opt-in instructions and results below describe the historical experiment.
+
 Status: opt-in repeat-control prototype, 2026-11-06. Default navigation remains unchanged; physical-terminal acceptance remains pending.
 
 Russ reports substantially better Ctrl-U/D scrolling with `VIMEX_NAV_PREPARED_PAINT=1`, followed by continued movement after releasing a sufficiently long hold. This is the next UX target: continuous movement while held, prompt reversal, and a stable location after release while detail finishes rendering.

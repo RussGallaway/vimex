@@ -120,3 +120,9 @@ Successful handoff archives the old backend thread after validating the imported
 On macOS, Vimex defaults to preventing idle system sleep while its connected local runtime has an active agent turn or a pending submission. The display may still sleep. The status line shows `awake:on` while the assertion is active, `awake:auto` while enabled but idle, or `awake:off` when disabled. Errors are reported rather than showing an active assertion.
 
 Use `/caffeinate` or `:caffeinate` to toggle; `on`, `off`, and `toggle` are also accepted. The `caffeinate` boolean configuration setting persists your preference. Finishing local work releases the assertion automatically. Disconnecting, switching to another machine, and closing Vimex also release it; remote work does not keep the laptop awake. Detached local daemon work is not monitored after switching away. Other operating systems do not launch the macOS utility.
+
+## Transcript navigation
+
+Retained transcript neighborhoods, prepared command-output painting, held-navigation repeat control, and the Markdown measurement cache are enabled by default in both `vimex` and `vimex-dev`. No configuration entries or shell exports are needed.
+
+For diagnostic comparisons, set an individual environment variable to `0` when launching: `VIMEX_NAV_RETAINED_WINDOW`, `VIMEX_NAV_PREPARED_PAINT`, `VIMEX_NAV_REPEAT_CONTROL`, or `VIMEX_NAV_MARKDOWN_MEASUREMENT_CACHE`. These are runtime overrides, not JSON configuration keys. Existing values of `1` remain compatible but are redundant.

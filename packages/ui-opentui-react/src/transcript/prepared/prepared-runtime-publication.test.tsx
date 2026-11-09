@@ -86,6 +86,7 @@ async function fixture() {
         runtime,
         styleRevision: "test",
         preparedGeometry: enabled,
+        preparedPaint: false,
       })
     })
   }

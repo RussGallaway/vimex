@@ -1,6 +1,8 @@
 # Responsive transcript navigation
 
-Status: research checkpoint and architectural prototype plan, approved for investigation on 2026-11-05. Correctness repairs and a standalone text-row preparation prototype are implemented on the feature branch; prepared-row navigation is not yet integrated or accepted for production.
+Status: promoted to default behavior on 2026-11-09 after Russ's positive local testing and request to merge to main. Retained neighborhoods, prepared command-output painting, repeat control, and the Markdown measurement cache now default on. Set their existing environment flags to `0` for diagnostic controls; no flags are needed for normal use. Earlier documents below preserve the experiment history and its measurement limitations.
+
+Promotion validation: formatting, TypeScript, boundaries, and generated documentation passed. Two full-check attempts encountered native Bun 1.3.6 segmentation faults in different UI files; the visual-interaction crash also reproduced with all four features disabled. Both affected files passed isolated reruns with the new defaults. Geometry-only comparison fixtures now explicitly disable prepared painting rather than relying on its old default. The test inventory was completed in sequential groups, not one uninterrupted full-check run.
 
 The [one-row follow-up](source-mapping-investigation.md) now matches all 600 resolved movements in the original paired long-route diagnostic. It identifies and repairs provisional Markdown mapping and out-of-order geometry publication; it does not establish instant cold navigation.
 

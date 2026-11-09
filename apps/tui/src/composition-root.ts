@@ -227,7 +227,7 @@ export async function runApplication(options: CliOptions) {
       exitSignals: [],
       targetFps: 60,
       useKittyKeyboard:
-        process.env.VIMEX_NAV_REPEAT_CONTROL === "1"
+        process.env.VIMEX_NAV_REPEAT_CONTROL !== "0"
           ? { events: true }
           : undefined,
     })

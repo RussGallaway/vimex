@@ -1,5 +1,7 @@
 # Opt-in prepared painting in the real transcript
 
+Current status (2026-11-09): promoted to default behavior following Russ's positive local feedback. The corresponding environment flag now disables the feature only when set to `0`. The opt-in instructions and results below describe the historical experiment.
+
 Date: 2026-11-05 (local). Baseline: `73a60c8`; branch: `feat/transcript-prepared-navigation`.
 
 ## User-facing scope

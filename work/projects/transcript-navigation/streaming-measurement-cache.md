@@ -1,5 +1,7 @@
 # Streaming Markdown measurement experiment
 
+Current status (2026-11-09): promoted to default behavior following Russ's positive local feedback. The corresponding environment flag now disables the feature only when set to `0`. The opt-in instructions and results below describe the historical experiment.
+
 Russ reports that navigation feels good in the retained neighborhood, but slows while navigating and acting near the newest growing answer. This experiment targets that situation without changing navigation, window replenishment, repeat handling, or token cadence.
 
 ## Finding and scope

@@ -161,7 +161,7 @@ console.log(
       qualification:
         "Offline headless connected harness. A cycle includes optional token settlement, one Ctrl-Y/E input, native preparation, and explicit render. Cycle duration is not input-to-paint latency; compare source size, actual anchors, and stage costs. No real threads or host clipboard.",
       markdownMeasurementCache:
-        process.env.VIMEX_NAV_MARKDOWN_MEASUREMENT_CACHE === "1",
+        process.env.VIMEX_NAV_MARKDOWN_MEASUREMENT_CACHE !== "0",
       machine: {
         platform: process.platform,
         arch: process.arch,

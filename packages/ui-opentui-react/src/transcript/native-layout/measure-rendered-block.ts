@@ -527,7 +527,7 @@ function measureMarkdown(
   let logicalCursor = 0
   const blocks = markdownBlocks(markdown)
   let measurements: MarkdownMeasurementCache | undefined
-  if (process.env.VIMEX_NAV_MARKDOWN_MEASUREMENT_CACHE === "1") {
+  if (process.env.VIMEX_NAV_MARKDOWN_MEASUREMENT_CACHE !== "0") {
     measurements = markdownMeasurementCaches.get(markdown)
     if (!measurements) {
       measurements = new MarkdownMeasurementCache()
