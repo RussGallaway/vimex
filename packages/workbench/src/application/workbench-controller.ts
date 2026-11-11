@@ -750,7 +750,11 @@ export class VimexController
     captureStartupReadiness(this.state)
 
   /** Creates the local-first workspace that makes the composer usable before Codex is ready. */
-  prepareDraft(cwd: string, model?: string): void {
+  prepareDraft(
+    cwd: string,
+    model?: string,
+    saved?: import("./local-state").SavedThreadView,
+  ): void {
     if (this.closing || this.state.provisionalThreadIds.length) return
     const id = threadId(`local-${crypto.randomUUID()}`)
     this.setState({
@@ -773,7 +777,9 @@ export class VimexController
       },
       workspaces: {
         ...this.state.workspaces,
-        [id]: createWorkspace(id),
+        [id]: saved
+          ? restoreThreadView(createWorkspace(id), saved)
+          : createWorkspace(id),
       },
     })
   }

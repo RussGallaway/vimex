@@ -11,6 +11,7 @@ test("help and version never invoke interactive or distribution capabilities", a
     version: "0.1.0",
     write: (text) => output.push(text),
     launch: unexpected,
+    rex: unexpected,
     doctor: unexpected,
     upgrade: unexpected,
   }
@@ -25,6 +26,7 @@ test("resume dispatch preserves typed intent, and update delegates to the shared
   const ports: CommandPorts = {
     version: "0.1.0",
     write() {},
+    rex: async () => undefined,
     launch: async (options) => {
       launches.push(options)
     },
@@ -41,4 +43,31 @@ test("resume dispatch preserves typed intent, and update delegates to the shared
     await runCommand(parseCommand([name, "--version", "0.1.1"]), ports)
   expect(upgrades).toEqual(["0.1.1", "0.1.1"])
   expect(await runCommand({ kind: "doctor" }, ports)).toBe(1)
+})
+
+test("Rex dispatch loads the interactive application only for a saved active pane", async () => {
+  const launches: unknown[] = []
+  const options = {
+    cwd: "/project",
+    thread: "exact-thread",
+    demo: false,
+    help: false,
+    version: false,
+    restorePane: true,
+  }
+  const ports: CommandPorts = {
+    version: "test",
+    write() {},
+    launch: async (value) => {
+      launches.push(value)
+    },
+    doctor: async () => {},
+    upgrade: async () => {},
+    rex: async () => undefined,
+  }
+  await runCommand(parseCommand(["rex", "resume-pane"]), ports)
+  expect(launches).toEqual([])
+  ports.rex = async () => options
+  await runCommand(parseCommand(["rex", "resume-pane"]), ports)
+  expect(launches).toEqual([options])
 })

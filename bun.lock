@@ -85,6 +85,7 @@
       "dependencies": {
         "@vimex/distribution": "workspace:*",
         "@vimex/interaction": "workspace:*",
+        "@vimex/workbench": "workspace:*",
       },
     },
     "packages/testkit": {

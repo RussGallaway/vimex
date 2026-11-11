@@ -10,6 +10,7 @@ function harness() {
   let diagnoses = 0
   const ports: CommandPorts = {
     version: "0.1.0",
+    rex: async () => undefined,
     write: (line) => {
       output.push(line)
     },

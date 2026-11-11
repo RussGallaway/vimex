@@ -1,9 +1,13 @@
 import { parseCliOptions, type CliOptions } from "../../tui/src/cli-options"
+export type RexCommand =
+  | { action: "resume-pane" | "import-state" }
+  | { action: "hook" | "install" | "uninstall"; shell: "zsh" | "bash" }
 export type CliCommand =
   | { kind: "launch"; options: CliOptions }
   | { kind: "help" | "version" }
   | { kind: "doctor"; config?: string }
   | { kind: "upgrade"; version?: string }
+  | { kind: "rex"; command: RexCommand }
 
 /** Parse syntax without loading OpenTUI, contacting Codex, or changing the cwd. */
 export function parseCommand(
@@ -13,6 +17,30 @@ export function parseCommand(
   if (args.includes("--help") || args.includes("-h") || args[0] === "help")
     return { kind: "help" }
   const [head, ...tail] = args
+  if (head === "rex") {
+    const [action, ...values] = tail
+    if (
+      (action === "resume-pane" || action === "import-state") &&
+      !values.length
+    )
+      return { kind: "rex", command: { action } }
+    if (
+      action === "hook" &&
+      values.length === 1 &&
+      (values[0] === "zsh" || values[0] === "bash")
+    )
+      return { kind: "rex", command: { action, shell: values[0] } }
+    if (
+      (action === "install" || action === "uninstall") &&
+      values.length === 2 &&
+      values[0] === "--shell" &&
+      (values[1] === "zsh" || values[1] === "bash")
+    )
+      return { kind: "rex", command: { action, shell: values[1] } }
+    throw new Error(
+      "Usage: vimex rex hook zsh|bash | vimex rex install|uninstall --shell zsh|bash | vimex rex resume-pane|import-state",
+    )
+  }
   if (head === "upgrade" || head === "update") {
     if (!tail.length) return { kind: "upgrade" }
     if (

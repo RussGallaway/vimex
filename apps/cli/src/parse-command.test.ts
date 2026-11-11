@@ -64,3 +64,29 @@ test("machine selection works for launch and resume with remote paths", () => {
     options: { machine: "devbox", thread: "id" },
   })
 })
+
+test("Rex setup and pane bootstrap have strict headless command syntax", () => {
+  expect(parseCommand(["rex", "import-state"])).toEqual({
+    kind: "rex",
+    command: { action: "import-state" },
+  })
+  expect(parseCommand(["rex", "resume-pane"])).toEqual({
+    kind: "rex",
+    command: { action: "resume-pane" },
+  })
+  expect(parseCommand(["rex", "hook", "zsh"])).toEqual({
+    kind: "rex",
+    command: { action: "hook", shell: "zsh" },
+  })
+  expect(parseCommand(["rex", "install", "--shell", "bash"])).toEqual({
+    kind: "rex",
+    command: { action: "install", shell: "bash" },
+  })
+  for (const args of [
+    ["rex"],
+    ["rex", "resume-pane", "anything"],
+    ["rex", "hook", "fish"],
+    ["rex", "install", "--shell", "zsh", "extra"],
+  ])
+    expect(() => parseCommand(args)).toThrow("Usage: vimex rex")
+})

@@ -6,6 +6,10 @@ Usage:
   vimex resume --last [options]  Resume this directory's most recent session
   vimex doctor                  Check installation and dependencies
   vimex upgrade [--version V]   Upgrade Vimex (update is an alias)
+  vimex rex install --shell zsh|bash  Enable restart restoration in Rex panes
+  vimex rex uninstall --shell zsh|bash  Remove the shell integration
+  vimex rex hook zsh|bash       Print the shell integration
+  vimex rex import-state       Import legacy views into this inactive Rex pane
 
 Options:
   --cwd PATH       Working directory

@@ -1,6 +1,8 @@
 import { resolve } from "node:path"
 
 export interface CliOptions {
+  /** Internal bootstrap intent; never accepted as a user-supplied flag. */
+  restorePane?: boolean
   cwd: string
   machine?: string
   remoteCwd?: string

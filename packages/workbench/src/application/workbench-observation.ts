@@ -3,6 +3,14 @@ import type { WorkbenchState } from "./workbench-state"
 
 /** Lifecycle data exposed to integrations such as Herdr. */
 export interface WorkbenchLifecycleSnapshot {
+  /** Stable application target; withheld while a machine transition is pending. */
+  readonly resumeTarget?: {
+    readonly machine: string
+    readonly cwd: string
+    readonly thread?: string
+    readonly draftId?: string
+    readonly model?: string
+  }
   readonly summary?: ThreadSummary
   readonly connection: WorkbenchState["connection"]
   readonly pendingApprovals: number
@@ -27,6 +35,17 @@ export function captureWorkbenchLifecycle(
     : 0
   const turn = lifecycleTurn(state)
   return Object.freeze({
+    resumeTarget:
+      summary && !state.machineChanging
+        ? Object.freeze({
+            machine: state.machine?.id ?? "local",
+            cwd: summary.cwd,
+            ...(state.provisionalThreadIds.includes(summary.id)
+              ? { draftId: summary.id }
+              : { thread: summary.id }),
+            ...(summary.model ? { model: summary.model } : {}),
+          })
+        : undefined,
     summary,
     connection: state.connection,
     pendingApprovals,
@@ -50,6 +69,7 @@ export function workbenchLifecycleSignature(
 ): string {
   const summary = value.summary
   return JSON.stringify([
+    value.resumeTarget,
     summary?.id,
     summary?.title,
     summary?.cwd,
@@ -72,6 +92,9 @@ export function workbenchLifecycleChanged(
 ): boolean {
   if (
     before.activeThreadId !== after.activeThreadId ||
+    before.machine?.id !== after.machine?.id ||
+    before.machineChanging !== after.machineChanging ||
+    before.provisionalThreadIds !== after.provisionalThreadIds ||
     before.connection !== after.connection
   )
     return true

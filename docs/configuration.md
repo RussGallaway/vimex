@@ -1,5 +1,7 @@
 # Configuration
 
+For automatic reopening of local and remote Vimex panes after Rex restarts, see [Rex pane restoration](rex-restoration.md).
+
 Vimex reads JSON from `$XDG_CONFIG_HOME/vimex/config.json`, or `~/.config/vimex/config.json` when `XDG_CONFIG_HOME` is unset. Pass `--config PATH` to use another file. A missing file is valid and uses defaults. Vimex rejects unknown keys and invalid values rather than silently ignoring them.
 
 ```json

@@ -39,6 +39,27 @@ function signature(state: WorkbenchState): string {
   return workbenchLifecycleSignature(captureWorkbenchLifecycle(state))
 }
 
+test("resume identities namespace threads by machine and withhold pending transitions", () => {
+  const local = fixture()
+  expect(captureWorkbenchLifecycle(local).resumeTarget).toMatchObject({
+    machine: "local",
+    thread: active,
+    cwd: "/tmp",
+  })
+  const changing = { ...local, machineChanging: true }
+  expect(workbenchLifecycleChanged(local, changing)).toBe(true)
+  expect(captureWorkbenchLifecycle(changing).resumeTarget).toBeUndefined()
+  const remote = { ...local, machine: { id: "remote" } }
+  expect(workbenchLifecycleChanged(local, remote)).toBe(true)
+  expect(captureWorkbenchLifecycle(remote).resumeTarget?.machine).toBe("remote")
+  expect(signature(remote)).not.toBe(signature(local))
+  const draft = { ...local, provisionalThreadIds: [active] }
+  expect(captureWorkbenchLifecycle(draft).resumeTarget).toMatchObject({
+    draftId: active,
+  })
+  expect(captureWorkbenchLifecycle(draft).resumeTarget?.thread).toBeUndefined()
+})
+
 test("lifecycle questions are scoped to the active thread and observe resolution", () => {
   const initial = fixture()
   const other = run(initial, {

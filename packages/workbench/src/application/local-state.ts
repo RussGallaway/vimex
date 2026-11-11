@@ -506,6 +506,9 @@ export function captureLocalState(
   before?: WorkbenchState,
 ): LocalState {
   const threads = { ...previous.threads }
+  for (const id of before?.provisionalThreadIds ?? [])
+    if (!state.provisionalThreadIds.includes(id) && !state.workspaces[id])
+      delete threads[id]
   for (const [id, workspace] of Object.entries(state.workspaces)) {
     // The previous capture already owns this view. Canonical-only changes
     // may replace a workspace without changing any persisted fields.

@@ -53,3 +53,35 @@ test("config defaults and invalid settings", () => {
     expect(() => parseConfig(bad)).toThrow()
   }
 })
+
+test("shared mutations preserve concurrent cross-process changes", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "vimex-shared-store-"))
+  try {
+    const path = join(directory, "shared.json")
+    const children = Array.from({ length: 3 }, (_, index) =>
+      Bun.spawn(
+        [
+          process.execPath,
+          "-e",
+          `import { JsonStore } from ${JSON.stringify(import.meta.dir + "/json-store.ts")};
+       const store = new JsonStore(process.argv[1], value => value);
+       for (let i = 0; i < 12; i++) await store.update({}, current => ({...current, [process.argv[2]]: (current[process.argv[2]] ?? 0) + 1}));`,
+          path,
+          String(index),
+        ],
+        { stdout: "pipe", stderr: "pipe" },
+      ),
+    )
+    for (const child of children) {
+      expect(await new Response(child.stderr).text()).toBe("")
+      expect(await child.exited).toBe(0)
+    }
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
+      0: 12,
+      1: 12,
+      2: 12,
+    })
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})

@@ -69,7 +69,9 @@ function checkHost(host: string): void {
 export async function hostOperation(
   host: Pick<MachineHost, "sshHost">,
   request: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<Record<string, any>> {
+  signal?.throwIfAborted()
   if (host.sshHost) checkHost(host.sshHost)
   const command = host.sshHost ? "ssh" : "python3"
   const args = host.sshHost
@@ -89,15 +91,30 @@ export async function hostOperation(
     const chunks: Buffer[] = []
     let size = 0
     let stderr = ""
-    const timer = setTimeout(() => {
+    let settled = false
+    const cleanup = () => {
+      clearTimeout(timer)
+      signal?.removeEventListener("abort", abort)
+    }
+    const fail = (error: unknown) => {
+      if (settled) return
+      settled = true
+      cleanup()
       child.kill()
-      reject(new Error("Machine operation timed out"))
+      reject(error)
+    }
+    const abort = () =>
+      fail(
+        signal?.reason ??
+          new DOMException("Machine operation aborted", "AbortError"),
+      )
+    const timer = setTimeout(() => {
+      fail(new Error("Machine operation timed out"))
     }, 120_000)
     child.stdout.on("data", (chunk: Buffer) => {
       size += chunk.length
       if (size > 100 * 1024 * 1024) {
-        child.kill()
-        reject(new Error("Machine response exceeds transfer limit"))
+        fail(new Error("Machine response exceeds transfer limit"))
         return
       }
       chunks.push(chunk)
@@ -105,18 +122,22 @@ export async function hostOperation(
     child.stderr.on("data", (chunk) => {
       if (stderr.length < 8192) stderr += String(chunk)
     })
-    child.on("error", (error) => {
-      clearTimeout(timer)
-      reject(error)
-    })
+    child.on("error", fail)
     child.on("close", () => {
-      clearTimeout(timer)
+      if (settled) return
+      settled = true
+      cleanup()
       const result = Buffer.concat(chunks).toString("utf8")
       if (!result.includes(marker))
         reject(new Error(`Machine operation failed: ${stderr.trim()}`))
       else resolve(result)
     })
     child.stdin.on("error", () => {})
+    signal?.addEventListener("abort", abort, { once: true })
+    if (signal?.aborted) {
+      abort()
+      return
+    }
     child.stdin.end(JSON.stringify(request))
   })
   const lines = response
@@ -149,9 +170,14 @@ export async function runHostCommand(
 export async function resolveMachineDirectory(
   sshHost: string,
   requested?: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   return (
-    await hostOperation({ sshHost }, { action: "resolve", path: requested })
+    await hostOperation(
+      { sshHost },
+      { action: "resolve", path: requested },
+      signal,
+    )
   ).path
 }
 export async function createHostTransaction(

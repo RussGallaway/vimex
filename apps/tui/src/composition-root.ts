@@ -34,6 +34,10 @@ import {
   openUrl,
   resolveMachineDirectory,
   prepareLegacyHandoff,
+  paneIdentity,
+  PaneStateStore,
+  verifyRexPane,
+  type PaneCheckpoint,
 } from "@vimex/platform-node"
 import {
   createHerdrExternalActions,
@@ -60,8 +64,82 @@ import {
 import { createMachineNavigation } from "./machine-navigation"
 import { PerformanceProfileRecorder } from "./performance-profile"
 import { RexIntegration } from "./rex-integration"
+import {
+  mergeLocalChanges,
+  mergeConfigPatch,
+  navigationSeed,
+  observePaneTarget,
+} from "./pane-persistence"
+import { openRestoredRuntime } from "./restored-runtime"
 
 export async function runApplication(options: CliOptions) {
+  const identity =
+    !options.demo && process.stdout.isTTY ? paneIdentity() : undefined
+  if (!identity) {
+    if (options.restorePane) return
+    return runApplicationWithPane(options)
+  }
+  try {
+    await verifyRexPane(identity)
+  } catch (error) {
+    if (options.restorePane) throw error
+    // Environment may be inherited by a different terminal (for example a PTY test).
+    // Such a process must never claim or rewrite the original pane's checkpoint.
+    console.error(`Vimex pane restoration is unavailable: ${String(error)}`)
+    return runApplicationWithPane(options)
+  }
+  const store = new PaneStateStore(identity)
+  const release = await store.acquire()
+  if (!release) {
+    if (options.restorePane) return
+    throw new Error("Vimex is already running in this Rex pane")
+  }
+  try {
+    const previous = await store.read()
+    if (options.restorePane && !previous?.active) return
+    if (options.restorePane && previous) {
+      const target = previous.target
+      options = {
+        ...options,
+        cwd: target.machine === "local" ? target.cwd : target.localCwd,
+        remoteCwd: target.machine === "local" ? undefined : target.cwd,
+        machine: target.machine,
+        thread: target.thread,
+        config: target.config,
+        model: target.model,
+      }
+    }
+    const checkpoint: PaneCheckpoint = {
+      version: 1,
+      instanceId: previous?.instanceId ?? crypto.randomUUID(),
+      active: true,
+      target: {
+        machine: options.machine ?? "local",
+        cwd: options.remoteCwd ?? options.cwd,
+        localCwd: options.cwd,
+        ...(options.thread ? { thread: options.thread } : {}),
+        ...(options.config ? { config: options.config } : {}),
+        ...(options.model ? { model: options.model } : {}),
+        ...(options.restorePane && previous?.target.draftId
+          ? { draftId: previous.target.draftId }
+          : {}),
+        ...(options.restorePane && previous?.target.sshHost
+          ? { sshHost: previous.target.sshHost }
+          : {}),
+      },
+      machines: previous?.machines ?? {},
+    }
+    await store.write(checkpoint)
+    await runApplicationWithPane(options, { store, checkpoint })
+  } finally {
+    await release()
+  }
+}
+
+async function runApplicationWithPane(
+  options: CliOptions,
+  pane?: { store: PaneStateStore; checkpoint: PaneCheckpoint },
+) {
   let controller!: VimexController
   let renderer: Awaited<ReturnType<typeof createCliRenderer>> | undefined
   let rex: RexIntegration | undefined
@@ -155,9 +233,13 @@ export async function runApplication(options: CliOptions) {
     const operation = configWrites
       .catch(() => {})
       .then(async () => {
-        const next = { ...config, ...patch }
-        await configStore.write(next)
-        config = next
+        const before = config
+        await configStore.update(before, (latest) =>
+          mergeConfigPatch(latest, before, patch),
+        )
+        // Keep the baseline owned by this client. Adopting another client's map
+        // here would turn its unseen additions into deletions on our next edit.
+        config = { ...before, ...patch }
       })
     configWrites = operation
     return operation
@@ -166,6 +248,12 @@ export async function runApplication(options: CliOptions) {
   const localStores = new Map<string, JsonStore<LocalState>>()
   const machineViews = new Map<string, LocalState>()
   const savedViews = new Map<string, string>()
+  const previousViews = new Map<string, LocalState>()
+  const favoriteStores = new Map<string, JsonStore<LocalState>>()
+  const previousFavorites = new Map<string, LocalState>()
+  let checkpoint = pane?.checkpoint
+  let savedCheckpoint = checkpoint ? JSON.stringify(checkpoint) : undefined
+  let explicitQuit = false
   const loadMachineState = async (id: string) => {
     if (machineViews.has(id)) return machineViews.get(id)!
     const store = new JsonStore(
@@ -175,10 +263,31 @@ export async function runApplication(options: CliOptions) {
       ),
       parseLocalState,
     )
-    const state = options.demo
-      ? emptyLocalState()
-      : await store.read(emptyLocalState())
-    if (!options.demo) localStores.set(id, store)
+    const legacy =
+      options.demo || checkpoint?.machines[id]
+        ? emptyLocalState()
+        : await store.read(emptyLocalState())
+    let state = checkpoint
+      ? (checkpoint.machines[id] ?? navigationSeed(legacy))
+      : legacy
+    if (!options.demo) {
+      const favorites = new JsonStore(
+        join(stateDirectory(), `thread-preferences-${id}.json`),
+        parseLocalState,
+      )
+      const shared = await favorites.read({
+        ...emptyLocalState(),
+        favoriteThreadIds: state.favoriteThreadIds ?? [],
+      })
+      state = { ...state, favoriteThreadIds: shared.favoriteThreadIds ?? [] }
+      favoriteStores.set(id, favorites)
+      previousFavorites.set(id, {
+        ...emptyLocalState(),
+        favoriteThreadIds: state.favoriteThreadIds,
+      })
+    }
+    if (!options.demo && !pane) localStores.set(id, store)
+    previousViews.set(id, state)
     machineViews.set(id, state)
     savedViews.set(id, JSON.stringify(state))
     return state
@@ -187,25 +296,68 @@ export async function runApplication(options: CliOptions) {
   let saveTimer: ReturnType<typeof setTimeout> | undefined
   let persistenceError: unknown
   const persistenceNotice = new FailureNotice()
-  const save = async () => {
+  let persistenceWrites = Promise.resolve()
+  const save = () => {
+    if (saveTimer) clearTimeout(saveTimer)
     saveTimer = undefined
-    try {
-      for (const [id, state] of machineViews) {
-        const store = localStores.get(id)
-        if (!store) continue
-        const json = JSON.stringify(state)
-        if (json === savedViews.get(id)) continue
-        await store.write(state)
-        savedViews.set(id, json)
-      }
-      persistenceError = undefined
-      persistenceNotice.clear()
-    } catch (error) {
-      persistenceError = error
-      persistenceNotice.fail(error, (message) =>
-        controller.notice(`Local view state is not being saved: ${message}`),
-      )
-    }
+    const operation = persistenceWrites
+      .catch(() => {})
+      .then(async () => {
+        try {
+          if (pane && checkpoint) {
+            checkpoint = {
+              ...checkpoint,
+              active: !explicitQuit,
+              machines: {
+                ...checkpoint.machines,
+                ...Object.fromEntries(machineViews),
+              },
+            }
+            const json = JSON.stringify(checkpoint)
+            if (json !== savedCheckpoint) {
+              await pane.store.write(checkpoint)
+              savedCheckpoint = json
+            }
+          }
+          for (const [id, state] of machineViews) {
+            const favorites = favoriteStores.get(id)
+            if (favorites) {
+              const before = previousFavorites.get(id) ?? emptyLocalState()
+              const after = {
+                ...emptyLocalState(),
+                favoriteThreadIds: state.favoriteThreadIds,
+              }
+              if (JSON.stringify(before) !== JSON.stringify(after)) {
+                await favorites.update(before, (latest) =>
+                  mergeLocalChanges(latest, before, after),
+                )
+                previousFavorites.set(id, after)
+              }
+            }
+            const store = localStores.get(id)
+            if (!store) continue
+            const json = JSON.stringify(state)
+            if (json === savedViews.get(id)) continue
+            const before = previousViews.get(id) ?? emptyLocalState()
+            await store.update(emptyLocalState(), (latest) =>
+              mergeLocalChanges(latest, before, state),
+            )
+            previousViews.set(id, state)
+            savedViews.set(id, json)
+          }
+          persistenceError = undefined
+          persistenceNotice.clear()
+        } catch (error) {
+          persistenceError = error
+          persistenceNotice.fail(error, (message) =>
+            controller?.notice(
+              `Local view state is not being saved: ${message}`,
+            ),
+          )
+        }
+      })
+    persistenceWrites = operation
+    return operation
   }
   const lifecycle = new Lifecycle()
   let finish!: () => void
@@ -219,11 +371,29 @@ export async function runApplication(options: CliOptions) {
     finish()
   }
   let failure: unknown
+  const startupCancelled = Symbol("restoration cancelled")
   let cleanupFailure: unknown
   let lastHerdrError: string | undefined
   const rexNotice = new FailureNotice()
   let root: ReturnType<typeof createRoot> | undefined
   let detachHandlers = () => {}
+  const startupAbort = new AbortController()
+  void finished.then(() => startupAbort.abort())
+  lifecycle.add(() => startupAbort.abort())
+  const stop = () => finish()
+  for (const signal of signals) process.on(signal, stop)
+  process.on("uncaughtException", onFailure)
+  process.on("unhandledRejection", onFailure)
+  detachHandlers = () => {
+    for (const signal of signals) process.off(signal, stop)
+    process.off("uncaughtException", onFailure)
+    process.off("unhandledRejection", onFailure)
+  }
+  lifecycle.add(async () => {
+    await save()
+    await Promise.all([...localStores.values()].map((store) => store.flush()))
+    if (persistenceError) throw persistenceError
+  })
   try {
     renderer = await createCliRenderer({
       screenMode: "alternate-screen",
@@ -315,8 +485,12 @@ export async function runApplication(options: CliOptions) {
       terminal: createRendererClipboardAdapter(renderer),
     })
     lifecycle.add(() => clipboard.dispose())
-    const images = imageInput(clipboard)
+    const images = imageInput(
+      clipboard,
+      pane ? join(pane.store.directory, "images") : undefined,
+    )
     lifecycle.add(async () => {
+      await save()
       if (!persistenceError) {
         // Retain image snapshots referenced by drafts on any visited machine.
         const combined = emptyLocalState()
@@ -354,7 +528,10 @@ export async function runApplication(options: CliOptions) {
       },
       images,
       openUrl: externalActions.openUrl,
-      quit: finish,
+      quit: () => {
+        explicitQuit = true
+        finish()
+      },
       onPerformanceMark: recordPerformanceMark,
       async exportPerformance() {
         const filename = `vimex-${new Date().toISOString().replace(/[:.]/g, "-")}-${crypto.randomUUID().slice(0, 8)}.json`
@@ -365,7 +542,7 @@ export async function runApplication(options: CliOptions) {
       onLocalState(state: LocalState, machineId = initialMachine) {
         localState = state
         machineViews.set(machineId, state)
-        if (localStores.size && !saveTimer)
+        if ((pane || localStores.size) && !saveTimer)
           saveTimer = setTimeout(() => {
             void save()
           }, 200)
@@ -373,6 +550,20 @@ export async function runApplication(options: CliOptions) {
       onLifecycle(
         state: import("@vimex/workbench").WorkbenchLifecycleSnapshot,
       ) {
+        if (checkpoint) {
+          const next = observePaneTarget(
+            checkpoint,
+            state,
+            state.resumeTarget
+              ? machineManager.target(state.resumeTarget.machine).sshHost
+              : undefined,
+          )
+          if (next !== checkpoint) {
+            checkpoint = next
+            // Conversation identity changes are semantic checkpoints, not token cadence.
+            void save()
+          }
+        }
         try {
           rex?.report(state)
           rexNotice.clear()
@@ -396,15 +587,26 @@ export async function runApplication(options: CliOptions) {
     }
     const demo = options.demo ? createDemoGateway() : undefined
     const gateways = new Map<string, ReturnType<typeof createCodexGateways>>()
+    let restoringInitialMachine = Boolean(options.restorePane)
     const machineManager = createMachineNavigation({
       config,
       saveMachines: (machines, favoriteMachines) =>
         updateConfig({ machines, favoriteMachines }),
       initialMachine,
-      localCwd: initialMachine === "local" ? options.cwd : process.cwd(),
+      localCwd: options.cwd,
       remoteCwd: options.remoteCwd,
       loadState: loadMachineState,
-      resolveRemoteDirectory: resolveMachineDirectory,
+      resolveRemoteDirectory: (host, cwd) => {
+        if (
+          restoringInitialMachine &&
+          checkpoint?.target.sshHost &&
+          host !== checkpoint.target.sshHost
+        )
+          throw new Error(
+            "The saved machine's SSH connection has changed. Restore its configuration before retrying.",
+          )
+        return resolveMachineDirectory(host, cwd, startupAbort.signal)
+      },
       createRuntime(target, cwd) {
         const gateway = createCodexGateways(cwd, target.executable, undefined, {
           machine: target,
@@ -444,9 +646,27 @@ export async function runApplication(options: CliOptions) {
       root.render(
         createElement("text", null, `Connecting to ${initialMachine}…`),
       )
+    const openRuntime = () => machineManager.navigation.open(initialMachine)
     const initialRuntime = demo
       ? undefined
-      : await machineManager.navigation.open(initialMachine)
+      : options.restorePane
+        ? await openRestoredRuntime(openRuntime, {
+            finished,
+            render(message) {
+              root!.render(createElement("text", null, message))
+            },
+            onKey(handler) {
+              activeRenderer.keyInput.on("keypress", handler)
+              return () => activeRenderer.keyInput.off("keypress", handler)
+            },
+            quit() {
+              explicitQuit = true
+              finish()
+            },
+          })
+        : await openRuntime()
+    if (!demo && !initialRuntime) throw startupCancelled
+    restoringInitialMachine = false
     const initialCwd = initialRuntime?.cwd ?? options.cwd
     controller = demo
       ? new VimexController({
@@ -463,24 +683,15 @@ export async function runApplication(options: CliOptions) {
           ...ports,
           resolveDirectory: initialRuntime?.resolveDirectory ?? resolve,
         })
-    if (!options.thread && !options.resumeMode)
-      controller.prepareDraft(initialCwd, options.model)
-    lifecycle.add(async () => {
-      if (saveTimer) clearTimeout(saveTimer)
-      await save()
-      await Promise.all([...localStores.values()].map((store) => store.flush()))
-      if (persistenceError) throw persistenceError
-    })
-    lifecycle.add(() => controller.close())
-    const stop = () => finish()
-    for (const signal of signals) process.on(signal, stop)
-    process.on("uncaughtException", onFailure)
-    process.on("unhandledRejection", onFailure)
-    detachHandlers = () => {
-      for (const signal of signals) process.off(signal, stop)
-      process.off("uncaughtException", onFailure)
-      process.off("unhandledRejection", onFailure)
+    if (!options.thread && !options.resumeMode) {
+      const draftId = options.restorePane
+        ? pane?.checkpoint.target.draftId
+        : undefined
+      const draft = draftId ? localState.threads[draftId] : undefined
+      if (draftId) delete localState.threads[draftId]
+      controller.prepareDraft(initialCwd, options.model, draft)
     }
+    lifecycle.add(() => controller.close())
     root.render(
       createElement(
         FatalBoundary,
@@ -513,7 +724,8 @@ export async function runApplication(options: CliOptions) {
       })
     await finished
   } catch (error) {
-    failure ??= error ?? new Error("Unknown runtime failure")
+    if (error !== startupCancelled)
+      failure ??= error ?? new Error("Unknown runtime failure")
   } finally {
     try {
       await shutdownApplication({

@@ -5,6 +5,10 @@ export function createCommandPorts(): CommandPorts {
   return {
     version,
     write: (text) => console.log(text),
+    rex: async (command) => {
+      const { runRexCommand } = await import("./rex-commands")
+      return runRexCommand(command, { write: (text) => console.log(text) })
+    },
     launch: async (options) => {
       configurePackagedAssets()
       const { resolveLaunchDirectory } = await import("./launch-directory")
