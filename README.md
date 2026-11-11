@@ -42,6 +42,16 @@ It installs the launcher under `~/.local/bin` by default. Ensure that directory 
 
 See [installation](docs/install.md) for explicit versions, custom install directories, source builds, bundled manual locations, update ownership, and uninstall instructions.
 
+### Optional: reopen Vimex panes in Rex
+
+Rex users can enable automatic reopening of local and remote conversations with one setup command:
+
+```sh
+vimex rex install --shell zsh
+```
+
+Use `--shell bash` for Bash, or `vimex-dev` instead of `vimex` for a development installation. This adds a hook to your existing shell; it does not install a shell. Run it once, not after each launch, reboot, or normal upgrade. Existing Vimex panes need one relaunch to save their checkpoints. Ensure Rex opens at login for recovery after a computer restart. See [Rex pane restoration](docs/rex-restoration.md) for details and removal.
+
 ## Use
 
 Open Vimex in the current project:
@@ -102,6 +112,8 @@ To build a global `vimex-dev` command from this checkout, run `bun run install:d
 Run it again after source changes to rebuild, then launch `vimex-dev` from any
 project directory. See [local development installation](docs/install.md#repeatable-local-development-install)
 for paths and setup.
+
+If you use Rex, run `vimex-dev rex install --shell zsh` once after the first development install. Later `bun run install:dev` rebuilds keep that setup.
 
 The offline demo needs no Codex credentials. Start a live source session with `bun run start`, and run the complete validation suite with:
 

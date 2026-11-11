@@ -89,6 +89,14 @@ directory and the bundle in `share/vimex-dev`. This rebuilds in place, so close
 running development sessions first. Configuration and Codex sessions are shared
 with regular Vimex; only the executable and its bundled assets are separate.
 
+For automatic reopening of development panes in Rex, run this once after installation:
+
+```sh
+vimex-dev rex install --shell zsh
+```
+
+Use `--shell bash` for Bash. Later `bun run install:dev` rebuilds do not require repeating the shell setup. Relaunch existing Vimex panes once to create their checkpoints. See [Rex setup](#optional-rex-pane-restoration) for the startup requirement and removal command.
+
 ### Build without installing
 
 ```sh
@@ -123,6 +131,22 @@ Read the downloaded script before running it if desired. An optional positional 
 The installer checks SHA-256, rejects unsafe archive entries, and switches a managed current symlink atomically. `vimex upgrade` uses the same release artifact/checksum contract and preserves previous bundles. Explicit --version may downgrade; latest never does. Installs and upgrades share a lock. No silent updates run during a session. Homebrew files and unrelated existing executables are not overwritten.
 
 For the direct bundle manual, use `man ~/.local/share/vimex/current/share/man/man1/vimex.1`, or `:manual` inside Vimex. To uninstall a default direct installation, remove its `~/.local/bin/vimex` symlink and `~/.local/share/vimex` bundle directory after checking they belong to Vimex. Configuration and conversation state are separate and remain intact.
+
+## Optional Rex pane restoration
+
+Only users who want automatic reopening in Rex need this one-time setup. With an installation that includes the restoration commands, run:
+
+```sh
+vimex rex install --shell zsh
+# Development installation:
+vimex-dev rex install --shell zsh
+```
+
+Choose the command for the installation you want Rex to reopen. Use `--shell bash` if that is your shell. The setup adds a marked startup hook to the existing shell configuration; it does not install Zsh or require a Rex server restart. Normal upgrades and development rebuilds preserve it. Repeat setup only if you remove the hook or change which installation or shell should reopen Vimex.
+
+Relaunch existing Vimex panes once so they record their conversations. For recovery after a computer restart, ensure Rex opens at login and restores its saved sessions. Vimex setup leaves OS login settings unchanged.
+
+Remove the integration with `vimex rex uninstall --shell zsh` (or the corresponding development command and shell). See [Rex pane restoration](rex-restoration.md) for remote recovery, legacy state import, and implementation details.
 
 ## Codex compatibility
 
